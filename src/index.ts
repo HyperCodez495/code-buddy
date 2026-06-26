@@ -2533,6 +2533,98 @@ program
     }
   });
 
+program
+  .command("rules [action] [args...]")
+  .description("Administer sensory rules (event→action) — list|enable|disable|rm|runs|validate|add")
+  .option("--json <rule>", "rule JSON (for `add`)")
+  .option("--from-file <path>", "read rule JSON from a file (for `add`)")
+  .option("--limit <n>", "max rows (for `runs`)", "20")
+  .action(async (action: string | undefined, args: string[] = [], options) => {
+    const r = await import("./sensory/sensory-rules-engine.js");
+    const act = (action || "list").toLowerCase();
+    try {
+      if (act === "list") {
+        const rules = await r.listSensoryRules();
+        if (!rules.length) {
+          cli.stdout("No sensory rules. Edit ~/.codebuddy/sensory-rules.json or: buddy rules add --json '…'");
+          return;
+        }
+        for (const x of rules) {
+          cli.stdout(
+            `${x.enabled === false ? "◦" : "•"} ${x.id}  on:${x.match.kind}  → ${x.action.type}` +
+              `${x.cooldownMs ? `  cd:${Math.round(x.cooldownMs / 1000)}s` : ""}${x.name ? `  (${x.name})` : ""}`,
+          );
+        }
+      } else if (act === "enable" || act === "disable") {
+        const id = args[0];
+        if (!id) {
+          cli.stdout(`Usage: buddy rules ${act} <id>`);
+          return;
+        }
+        const ok = await r.toggleSensoryRule(id, act === "enable");
+        cli.stdout(
+          ok
+            ? `${act === "enable" ? "✅ enabled" : "⏸️  disabled"} ${id} (live within ~2s on a running server — no restart)`
+            : `Rule not found: ${id}`,
+        );
+      } else if (act === "rm" || act === "remove") {
+        const id = args[0];
+        if (!id) {
+          cli.stdout("Usage: buddy rules rm <id>");
+          return;
+        }
+        cli.stdout((await r.removeSensoryRule(id)) ? `🗑️  Removed ${id}` : `Rule not found: ${id}`);
+      } else if (act === "runs") {
+        const runs = await r.readRuleRuns(parseInt(options.limit, 10) || 20);
+        if (!runs.length) {
+          cli.stdout("No rule fires logged yet.");
+          return;
+        }
+        for (const run of runs) {
+          cli.stdout(
+            `${new Date(run.ts).toISOString().slice(0, 19).replace("T", " ")}  ${run.ok ? "ok  " : "FAIL"}  ` +
+              `${run.rule}  ${run.action}${run.detail ? `  ${String(run.detail).slice(0, 60)}` : ""}`,
+          );
+        }
+      } else if (act === "validate") {
+        const rules = await r.listSensoryRules();
+        let bad = 0;
+        for (const x of rules) {
+          const v = r.validateRule(x);
+          if (!v.ok) {
+            bad++;
+            cli.stdout(`❌ ${x.id}: ${v.errors.join("; ")}`);
+          }
+        }
+        cli.stdout(bad ? `${bad} invalid rule(s).` : `✅ ${rules.length} rule(s) valid.`);
+      } else if (act === "add") {
+        let raw = options.json as string | undefined;
+        if (!raw && options.fromFile) {
+          raw = await (await import("node:fs/promises")).readFile(options.fromFile, "utf8");
+        }
+        if (!raw) {
+          cli.stdout(
+            'Usage: buddy rules add --json \'{"id":"x","match":{"kind":"person_entered"},"action":{"type":"alert","message":"hi"}}\'',
+          );
+          return;
+        }
+        let rule;
+        try {
+          rule = JSON.parse(raw);
+        } catch (e) {
+          cli.stdout(`❌ invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+          return;
+        }
+        const res = await r.upsertSensoryRule(rule);
+        cli.stdout(res.ok ? `✅ Saved rule ${rule.id}` : `❌ rejected:\n  - ${res.errors.join("\n  - ")}`);
+      } else {
+        cli.stdout("Usage: buddy rules list|enable|disable|rm|runs|validate|add");
+      }
+    } catch (e) {
+      cli.stdout(`❌ ${e instanceof Error ? e.message : String(e)}`);
+    }
+  });
+
 // Cowork (the Electron desktop GUI) needs Node >= 22; the terminal CLI runs on
 // Node >= 18. Without this guard a Node 18/20 user gets a cryptic Electron/Vite
 // crash mid-launch instead of a clear message — a classic first-run star-killer.

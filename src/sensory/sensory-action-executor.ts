@@ -50,7 +50,10 @@ function actionEnv(ctx: SensoryEventContext): NodeJS.ProcessEnv {
 }
 
 /** Refuse a command that contains a destructive pattern (guardrail even for user rules). */
-function isDestructive(command: string): boolean {
+/** True when a shell command hits the dangerous-command set or a destructive bash pattern.
+ *  Exported so the rules admin can run the SAME gate at write-time (reject a bad rule on save),
+ *  not only at fire-time. */
+export function isDestructive(command: string): boolean {
   const firstWord = command.trim().split(/\s+/)[0] ?? '';
   return isDangerousCommand(firstWord) || matchAllDangerousPatterns(command, 'bash').length > 0;
 }

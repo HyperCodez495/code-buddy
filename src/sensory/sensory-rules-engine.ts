@@ -11,12 +11,18 @@
  */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { readFile, appendFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, appendFile, mkdir, stat } from 'node:fs/promises';
 import { getGlobalEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
-import { executeSensoryAction, type SensoryAction, type SensoryEventContext } from './sensory-action-executor.js';
+import {
+  executeSensoryAction,
+  isDestructive,
+  type ActionResult,
+  type SensoryAction,
+  type SensoryEventContext,
+} from './sensory-action-executor.js';
 
 export interface SensoryRule {
   id: string;
@@ -27,15 +33,116 @@ export interface SensoryRule {
   cooldownMs?: number;
 }
 
-const RULES_PATH = process.env.CODEBUDDY_SENSORY_RULES_FILE || join(homedir(), '.codebuddy', 'sensory-rules.json');
-const AUDIT_PATH = join(homedir(), '.codebuddy', 'companion', 'rule-runs.jsonl');
+// Path helpers read env at call-time (test isolation), mirroring reminders.ts.
+function rulesPath(): string {
+  return process.env.CODEBUDDY_SENSORY_RULES_FILE || join(homedir(), '.codebuddy', 'sensory-rules.json');
+}
+function auditPath(): string {
+  return process.env.CODEBUDDY_RULE_RUNS_FILE || join(homedir(), '.codebuddy', 'companion', 'rule-runs.jsonl');
+}
 
-export async function loadSensoryRules(path = RULES_PATH): Promise<SensoryRule[]> {
+export async function loadSensoryRules(path = rulesPath()): Promise<SensoryRule[]> {
   try {
     const raw = await readFile(path, 'utf8');
     const data = JSON.parse(raw) as { rules?: SensoryRule[] } | SensoryRule[];
     const rules = Array.isArray(data) ? data : (data.rules ?? []);
     return rules.filter((r) => r && r.match?.kind && r.action?.type);
+  } catch {
+    return [];
+  }
+}
+
+// ── admin CRUD-lite (the surface `buddy rules` / Cowork call) ──────────
+
+const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/;
+
+/** Validate a rule BEFORE persisting — the same destructive gate the executor uses at fire-time,
+ *  moved earlier so a dangerous shell/agent rule is rejected on save, not discovered at 3am. */
+export function validateRule(rule: SensoryRule): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!rule || typeof rule.id !== 'string' || !rule.id.trim()) errors.push('rule needs a non-empty id');
+  if (!rule?.match?.kind) errors.push('rule.match.kind is required');
+  const b = rule?.match?.between;
+  if (b && (!Array.isArray(b) || b.length !== 2 || !HHMM.test(b[0]) || !HHMM.test(b[1])))
+    errors.push('match.between must be [HH:MM, HH:MM]');
+  const a = rule?.action;
+  if (!a?.type) errors.push('action.type is required');
+  else if (a.type === 'shell') {
+    if (!a.command?.trim()) errors.push('shell action needs a command');
+    else if (isDestructive(a.command)) errors.push(`shell command rejected (destructive): ${a.command.slice(0, 60)}`);
+  } else if (a.type === 'agent') {
+    if (!a.prompt?.trim()) errors.push('agent action needs a prompt');
+  } else if (a.type === 'webhook') {
+    if (!/^https?:\/\//i.test(a.url ?? '')) errors.push('webhook url must start with http(s)://');
+  } else if (a.type !== 'alert') {
+    errors.push(`unknown action.type '${(a as { type?: string }).type}'`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export async function saveSensoryRules(rules: SensoryRule[], path = rulesPath()): Promise<void> {
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, JSON.stringify(rules, null, 2), 'utf8');
+}
+
+export const listSensoryRules = loadSensoryRules;
+
+/** Add or replace a rule by id. Rejects (no write) when invalid. */
+export async function upsertSensoryRule(rule: SensoryRule): Promise<{ ok: boolean; errors: string[] }> {
+  const v = validateRule(rule);
+  if (!v.ok) return v;
+  const rules = await loadSensoryRules();
+  const idx = rules.findIndex((r) => r.id === rule.id);
+  if (idx >= 0) rules[idx] = rule;
+  else rules.push(rule);
+  await saveSensoryRules(rules);
+  return { ok: true, errors: [] };
+}
+
+/** Enable/disable a rule. Returns false if the id wasn't found. */
+export async function toggleSensoryRule(id: string, enabled: boolean): Promise<boolean> {
+  const rules = await loadSensoryRules();
+  const r = rules.find((x) => x.id === id);
+  if (!r) return false;
+  r.enabled = enabled;
+  await saveSensoryRules(rules);
+  return true;
+}
+
+/** Delete a rule. Returns false if the id wasn't found. */
+export async function removeSensoryRule(id: string): Promise<boolean> {
+  const rules = await loadSensoryRules();
+  const next = rules.filter((r) => r.id !== id);
+  if (next.length === rules.length) return false;
+  await saveSensoryRules(next);
+  return true;
+}
+
+export interface RuleRun {
+  ts: number;
+  rule: string;
+  action: string;
+  kind?: string;
+  ok: boolean;
+  detail?: string | null;
+}
+
+/** Recent rule fires (newest first) from the audit log — the observe surface. */
+export async function readRuleRuns(limit = 20): Promise<RuleRun[]> {
+  try {
+    const raw = await readFile(auditPath(), 'utf8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    return lines
+      .slice(-limit)
+      .reverse()
+      .map((l) => {
+        try {
+          return JSON.parse(l) as RuleRun;
+        } catch {
+          return null;
+        }
+      })
+      .filter((x): x is RuleRun => x !== null);
   } catch {
     return [];
   }
@@ -72,21 +179,49 @@ export function ruleMatches(
   return true;
 }
 
-export function wireSensoryRules(options: { rules?: SensoryRule[]; now?: () => number } = {}): () => void {
+export function wireSensoryRules(
+  options: {
+    rules?: SensoryRule[];
+    now?: () => number;
+    /** Throttle for the mtime-cached hot-reload stat (ms). Default 2000. 0 = check every event. */
+    reloadThrottleMs?: number;
+    /** Injectable action executor (tests). Default: executeSensoryAction. */
+    execute?: (action: SensoryAction, ctx: SensoryEventContext) => Promise<ActionResult>;
+  } = {},
+): () => void {
   const bus = getGlobalEventBus();
   const now = options.now ?? (() => Date.now());
+  const execute = options.execute ?? executeSensoryAction;
+  // When rules are injected (tests for matching) we don't touch the file. Otherwise we load once
+  // AND hot-reload on change (admin edits take effect on the running robot — the whole point).
+  const fileBacked = !options.rules;
+  const reloadThrottleMs = options.reloadThrottleMs ?? 2000;
   let rules: SensoryRule[] = options.rules ?? [];
-  if (!options.rules) {
-    void loadSensoryRules().then((r) => {
-      rules = r;
-      logger.info(`[rules] loaded ${r.length} sensory rule(s)`);
-    });
+  let loadedMtimeMs = -1;
+  let lastStatAt = Number.NEGATIVE_INFINITY;
+
+  async function maybeReload(t: number): Promise<void> {
+    if (!fileBacked) return;
+    if (t - lastStatAt < reloadThrottleMs) return;
+    lastStatAt = t;
+    try {
+      const mt = (await stat(rulesPath())).mtimeMs;
+      if (mt === loadedMtimeMs) return;
+      rules = await loadSensoryRules();
+      loadedMtimeMs = mt;
+      logger.info(`[rules] reloaded ${rules.length} sensory rule(s)`);
+    } catch {
+      /* file missing → keep current rules */
+    }
   }
+  if (fileBacked) void maybeReload(now()); // initial load
+
   const lastFired = new Map<string, number>();
 
-  const id = bus.on('sensory:perception', (evt: BaseEvent) => {
+  const id = bus.on('sensory:perception', async (evt: BaseEvent) => {
     const p = perceptionOf(evt);
     const t = now();
+    await maybeReload(t); // pick up admin edits (throttled stat) BEFORE matching this event
     for (const rule of rules) {
       if (!ruleMatches(rule, p, new Date(t))) continue;
       const cd = rule.cooldownMs ?? 0;
@@ -105,12 +240,13 @@ export function wireSensoryRules(options: { rules?: SensoryRule[]; now?: () => n
       };
 
       void (async () => {
-        const res = await executeSensoryAction(rule.action, ctx).catch((e) => ({ ok: false, detail: String(e) }));
+        const res = await execute(rule.action, ctx).catch((e) => ({ ok: false, detail: String(e) }));
         logger.info(`[rules] ${rule.id} (${rule.action.type}) → ${res.ok ? 'ok' : 'FAIL'}${res.detail ? `: ${res.detail.slice(0, 80)}` : ''}`);
         try {
-          await mkdir(join(homedir(), '.codebuddy', 'companion'), { recursive: true });
+          const ap = auditPath();
+          await mkdir(join(ap, '..'), { recursive: true });
           await appendFile(
-            AUDIT_PATH,
+            ap,
             JSON.stringify({ ts: t, rule: rule.id, action: rule.action.type, kind: p.kind, ok: res.ok, detail: res.detail }) + '\n',
           );
         } catch {
