@@ -49,8 +49,10 @@ export interface ResponseDeciderOptions {
 
 export interface ResponseDecider {
   decide(transcript: string): Promise<ResponseDecision>;
-  /** (Re)open the engagement window — call after the robot has spoken so a long reply
-   *  doesn't let the window lapse before the human's follow-up. */
+  /** Open the engagement window as if just addressed. `decide` calls this on a name match;
+   *  expose it so a caller can explicitly start a conversation (e.g. a wake-word from another
+   *  channel). NOTE: do NOT call this after every reply — that would make the window slide on
+   *  ambient cross-talk and the robot would answer the whole room. */
   markEngaged(): void;
 }
 
@@ -168,15 +170,18 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
       const text = (transcript ?? '').trim();
       if (!text) return { respond: false, reason: 'empty' };
 
-      // Tier 0 — addressed by name (fuzzy, no LLM).
+      // Tier 0 — addressed by name (fuzzy, no LLM). ONLY an explicit address anchors the
+      // engagement window — so it decays from the address, NOT from whatever was said next.
       if (nameMatch(text, robotName)) {
         markEngaged();
         return { respond: true, reason: 'addressed' };
       }
 
-      // Tier 1 — inside the engagement window (continuity, no LLM).
+      // Tier 1 — inside the engagement window (continuity, no LLM). Reply to the follow-up
+      // but DO NOT slide the window: otherwise, once addressed, ambient cross-talk would keep
+      // refreshing it and the robot would answer the whole room forever. The window is a
+      // bounded grace period after each address; re-address to extend.
       if (now() - lastEngagedAt < engageWindowMs) {
-        markEngaged();
         return { respond: true, reason: 'engaged' };
       }
 
@@ -186,7 +191,8 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
       // Tier 2 — cheap cue gate (no LLM unless a cue fires).
       if (!hasResponseCue(text)) return { respond: false, reason: 'no-cue' };
 
-      // Tier 3 — rare LLM judgment, high bar, error → silent.
+      // Tier 3 — rare LLM judgment, high bar, error → silent. A spontaneous chime-in does NOT
+      // open a window (each is judged independently — keeps the risky path conservative).
       let warranted = false;
       try {
         const ctx = await recentContext();
@@ -196,7 +202,6 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
         return { respond: false, reason: 'judge-error' };
       }
       if (warranted) {
-        markEngaged();
         return { respond: true, reason: 'chime-in' };
       }
       return { respond: false, reason: 'not-warranted' };

@@ -30,6 +30,20 @@ describe('respond-decider — addressed + engagement window (no LLM)', () => {
     expect(judge).not.toHaveBeenCalled();
   });
 
+  it('window does NOT slide on cross-talk — bounded to one window per address', async () => {
+    let t = 0;
+    const d = createResponseDecider({ now: () => t, engageWindowMs: 30_000, recentContext: async () => [] });
+    expect((await d.decide('Buddy tu es là ?')).reason).toBe('addressed'); // anchor at t=0
+    t = 10_000;
+    expect((await d.decide('on parle d’autre chose')).reason).toBe('engaged'); // <30s → reply
+    t = 25_000;
+    expect((await d.decide('encore autre chose')).reason).toBe('engaged'); // still <30s, must NOT re-anchor
+    t = 31_000;
+    // >30s since the ADDRESS (not since the last reply) → drops out. The old sticky bug would
+    // have slid the anchor to 25s and kept answering.
+    expect((await d.decide('toujours pas pour le robot')).respond).toBe(false);
+  });
+
   it('markEngaged opens the window manually', async () => {
     let t = 0;
     const d = createResponseDecider({ now: () => t, engageWindowMs: 5000, recentContext: async () => [] });
