@@ -117,6 +117,12 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
 /** Start the interval. Returns a teardown that stops it. */
 export function wireReminderRunner(deps: ReminderRunnerDeps = {}): () => void {
   const intervalMs = Number(process.env.CODEBUDDY_REMINDER_TICK_MS) || 60_000;
+  // Restore pending acks first: a reminder that fired before a restart must still be re-nagged or
+  // escalated to a logged 'missed' — never silently dropped (health safety).
+  void (async () => {
+    const { loadPendingAcks } = await import('./reminders.js');
+    await loadPendingAcks();
+  })();
   const timer = setInterval(() => {
     void runReminderTick(new Date(), deps);
   }, intervalMs);

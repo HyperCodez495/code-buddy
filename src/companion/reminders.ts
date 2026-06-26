@@ -214,14 +214,16 @@ export function ackWindowMs(): number {
 
 export function openAck(reminder: Pick<Reminder, 'id' | 'label'>, nowMs: number): void {
   pending.set(reminder.id, { id: reminder.id, label: reminder.label, firedAt: nowMs, nags: 0 });
+  void savePendingAcks();
 }
 export function closeAck(id: string): void {
-  pending.delete(id);
+  if (pending.delete(id)) void savePendingAcks();
 }
 export function bumpNag(id: string): number {
   const a = pending.get(id);
   if (!a) return 0;
   a.nags += 1;
+  void savePendingAcks();
   return a.nags;
 }
 /** Pending acks still inside the window, newest first. */
@@ -232,11 +234,57 @@ export function pendingAcks(nowMs: number, windowMs = ackWindowMs()): PendingAck
 export function expireAcks(nowMs: number, windowMs = ackWindowMs()): PendingAck[] {
   const expired = [...pending.values()].filter((a) => nowMs - a.firedAt >= windowMs);
   for (const a of expired) pending.delete(a.id);
+  if (expired.length) void savePendingAcks();
   return expired;
 }
 /** Test seam. */
 export function resetAcks(): void {
   pending.clear();
+}
+
+// ── pending-ack PERSISTENCE (survive a restart mid-window — health safety) ──
+// Without this, a `buddy server` restart between a reminder firing and the ack silently loses
+// the pending ack: no re-nag, and — worse — NO `missed` log. The registry is mirrored to disk on
+// every mutation and reloaded at runner start, so a fired-but-unacked dose still escalates.
+
+function pendingAcksFile(): string {
+  return (
+    process.env.CODEBUDDY_REMINDER_PENDING_FILE || join(homedir(), '.codebuddy', 'companion', 'pending-acks.json')
+  );
+}
+
+async function savePendingAcks(): Promise<void> {
+  try {
+    const file = pendingAcksFile();
+    await mkdir(join(file, '..'), { recursive: true });
+    await writeFile(file, JSON.stringify([...pending.values()]), 'utf8');
+  } catch (err) {
+    logger.warn(`[reminders] could not persist pending acks: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Restore the pending-ack registry from disk (call at runner start). Never-throws. */
+export async function loadPendingAcks(): Promise<void> {
+  try {
+    const raw = (await readFile(pendingAcksFile(), 'utf8')).trim();
+    if (!raw) return;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return;
+    for (const a of list) {
+      if (a && typeof a.id === 'string' && Number.isFinite(a.firedAt)) {
+        pending.set(a.id, {
+          id: a.id,
+          label: typeof a.label === 'string' ? a.label : a.id,
+          firedAt: a.firedAt,
+          nags: Number.isFinite(a.nags) ? a.nags : 0,
+        });
+      }
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      logger.warn(`[reminders] could not load pending acks: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
 
 // ── the safety-critical matcher ───────────────────────────────────────
