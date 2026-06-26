@@ -1,3 +1,32 @@
+## [1.7.0](https://github.com/phuetz/code-buddy/compare/v1.6.1...v1.7.0) (2026-06-26)
+
+### Features
+
+* **companion:** reminders — the robot reminds you (meds…) and you flag them done ([f239327](https://github.com/phuetz/code-buddy/commit/f2393275ff91f0b47f17c1832dd0565bafe2ad41))
+* **cowork:** Automations panel — administer reminders + rules from the GUI (thin client) ([fe99899](https://github.com/phuetz/code-buddy/commit/fe99899c2677cf17659ef4f8e1f09f2529fce5ba))
+* **cowork:** code blocks -> live Artifact preview + copy buttons everywhere (Lisa-inspired) ([8d8aa68](https://github.com/phuetz/code-buddy/commit/8d8aa68260d16b5910c2a31b31561feaeea7aa7d))
+* **cowork:** React live preview in the Artifact panel (Phase 2) ([5a12973](https://github.com/phuetz/code-buddy/commit/5a1297332b75331d2dd01be89778fbf8cabda02b))
+* **fleet:** council --fleet — several machines collaborate on one question (token recipe) ([3f9b6da](https://github.com/phuetz/code-buddy/commit/3f9b6daf0e9a4a97e9c0d271bca4c8c2fc83ad5b))
+* **rendering:** complete the unified layer — ansi + plain renderers + façade ([a28d03d](https://github.com/phuetz/code-buddy/commit/a28d03d339ae9b5cf8d652f438eb1821c3d7bac8))
+* **sensory:** administer triggerable actions — rules CRUD + write-validate + HOT-RELOAD ([68f0e3e](https://github.com/phuetz/code-buddy/commit/68f0e3e30691fb166bb202ea4bd2c6b70ee3a650))
+* **sensory:** close the voice loop — hear → think → speak (Piper TTS + local LLM) ([0de62df](https://github.com/phuetz/code-buddy/commit/0de62df59f049a1f388db7b0558224465c4d36c6))
+* **sensory:** robot listens like a human — reply only when addressed or warranted ([b866649](https://github.com/phuetz/code-buddy/commit/b866649f9423ab1b808d6ede5552329dd77c4ea9))
+* **sensory:** the robot's voice follows you — Telegram voice notes when away ([2084dfb](https://github.com/phuetz/code-buddy/commit/2084dfbf3003370220c09a0394f88ec4f3b08495))
+* **vision:** anti-spam dedup — alert only on a meaningfully changed scene (Phase 2a) ([ce0d125](https://github.com/phuetz/code-buddy/commit/ce0d12590573aaa0ce33afc61b5766421fcd0424))
+* **vision:** event->action rules engine (Phase 2c) — a camera event triggers code, safely ([a48e11a](https://github.com/phuetz/code-buddy/commit/a48e11a96fc06f58a7f0845a807f3adfe4832e12))
+* **vision:** robot eyes — live camera motion sense + local-VLM understanding + Telegram alert ([07e61a5](https://github.com/phuetz/code-buddy/commit/07e61a531e2085db60d7c1e189599807610567a8))
+* **vision:** semantic event detection — person/drowsy reactions + shared alert (Phase 2b) ([9be3e99](https://github.com/phuetz/code-buddy/commit/9be3e99b17d7f6cdfd007b052720dbd7af895678))
+* **voice:** Cowork defaults to voice piloting; spoken return stays switch-gated ([90787b5](https://github.com/phuetz/code-buddy/commit/90787b503ec3cd5c4ff4bc468d38fded28e2a691))
+* **voice:** harden voice ACT — capable agent-turn model knob + process-global posture warning ([5689539](https://github.com/phuetz/code-buddy/commit/56895398167aef4c99d3d6b019a4be73ba046aa2))
+* **voice:** latency-route the spoken reply to the fastest capable LLM ([144be78](https://github.com/phuetz/code-buddy/commit/144be78d04c0345fc1e736247ad7524520135c4b))
+* **voice:** voice commands — speak an instruction, the agent acts, the result is spoken ([ed5ab72](https://github.com/phuetz/code-buddy/commit/ed5ab727b4a5d2275b3b44ee422befdaf8d0c47c))
+
+### Bug Fixes
+
+* **companion:** harden the reminder ack — reject lookalike affirmations (health safety) ([2abc19d](https://github.com/phuetz/code-buddy/commit/2abc19d72e0a896f827e08b1fc291abfbb8979f5))
+* **sensory:** engagement window is bounded per-address, not sticky ([150a9e7](https://github.com/phuetz/code-buddy/commit/150a9e75f32481a112900773b973946be042b984))
+* **vision:** swallow EPIPE on a shell action's stdin (a command that ignores stdin would crash the host) ([b6fe1a4](https://github.com/phuetz/code-buddy/commit/b6fe1a4ac896a72c899d3611745db3b06f5b5fb6))
+
 # Changelog
 
 All notable changes to Code Buddy are documented here.
