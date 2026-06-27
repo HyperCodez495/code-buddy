@@ -37,6 +37,12 @@ export interface SpeechReactionOptions {
 export async function transcribeWav(wav: string): Promise<string> {
   const { spawn } = await import('child_process');
   const model = process.env.CODEBUDDY_SPEECH_MODEL ?? 'base';
+  // Resolve the Python interpreter from env so STT works when faster-whisper lives
+  // OUTSIDE the service PATH's python3 (e.g. a conda/miniforge env). Without this a
+  // systemd service whose python3 is /usr/bin/python3 (no faster_whisper) fails STT
+  // SILENTLY → no transcription, no spoken reply. Set CODEBUDDY_SPEECH_PYTHON to the
+  // interpreter that has faster-whisper.
+  const python = process.env.CODEBUDDY_SPEECH_PYTHON || process.env.CODEBUDDY_PYTHON_BIN || 'python3';
   const py = [
     'import sys',
     'from faster_whisper import WhisperModel',
@@ -45,11 +51,22 @@ export async function transcribeWav(wav: string): Promise<string> {
     "print(' '.join(s.text for s in segs).strip())",
   ].join('\n');
   return new Promise<string>((resolve) => {
-    const proc = spawn('python3', ['-c', py, wav], { stdio: ['ignore', 'pipe', 'ignore'] });
+    // Capture stderr (was ignored) so an STT failure is LOUD in the journal, not silent.
+    const proc = spawn(python, ['-c', py, wav], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
+    let err = '';
     proc.stdout.on('data', (d) => (out += String(d)));
-    proc.on('close', () => resolve(out.trim()));
-    proc.on('error', () => resolve(''));
+    proc.stderr.on('data', (d) => (err += String(d)));
+    proc.on('close', (code) => {
+      if ((code !== 0 || !out.trim()) && err.trim()) {
+        logger.warn(`[speech] STT failed (python='${python}', exit=${code}): ${err.trim().slice(0, 300)}`);
+      }
+      resolve(out.trim());
+    });
+    proc.on('error', (e) => {
+      logger.warn(`[speech] STT spawn failed (python='${python}'): ${e instanceof Error ? e.message : String(e)}`);
+      resolve('');
+    });
   });
 }
 
