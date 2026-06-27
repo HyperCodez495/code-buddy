@@ -38,6 +38,9 @@ export interface SpeechReactionOptions {
 export async function transcribeWav(wav: string): Promise<string> {
   const { spawn } = await import('child_process');
   const model = process.env.CODEBUDDY_SPEECH_MODEL ?? 'base';
+  // Pin the language (e.g. 'fr') so short utterances + a wake-name aren't mis-detected
+  // as another language (faster-whisper auto-detect turned "Lisa ..." into German).
+  const lang = process.env.CODEBUDDY_SPEECH_LANG;
   // Resolve the Python interpreter from env so STT works when faster-whisper lives
   // OUTSIDE the service PATH's python3 (e.g. a conda/miniforge env). Without this a
   // systemd service whose python3 is /usr/bin/python3 (no faster_whisper) fails STT
@@ -48,7 +51,7 @@ export async function transcribeWav(wav: string): Promise<string> {
     'import sys',
     'from faster_whisper import WhisperModel',
     `m = WhisperModel(${JSON.stringify(model)}, device='cpu', compute_type='int8')`,
-    'segs, _ = m.transcribe(sys.argv[1])',
+    `segs, _ = m.transcribe(sys.argv[1]${lang ? `, language=${JSON.stringify(lang)}` : ''})`,
     "print(' '.join(s.text for s in segs).strip())",
   ].join('\n');
   return new Promise<string>((resolve) => {
