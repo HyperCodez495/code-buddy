@@ -54,6 +54,18 @@ function resolvePiperModel(voice?: string): string | undefined {
   return candidate && candidate.trim() ? candidate.trim() : undefined;
 }
 
+/**
+ * The Piper binary. Defaults to `piper` (PATH lookup) but honours
+ * CODEBUDDY_PIPER_BIN / COWORK_PIPER_BIN — the same convention as
+ * src/voice/local-tts.ts — so it works when piper is installed outside the
+ * process PATH (e.g. /usr/local/bin under a systemd service whose PATH is
+ * trimmed to /usr/bin:/bin). Without this the sensory greeting/voice fail
+ * silently with `spawn piper ENOENT`.
+ */
+function resolvePiperBin(): string {
+  return process.env.CODEBUDDY_PIPER_BIN || process.env.COWORK_PIPER_BIN || 'piper';
+}
+
 export async function synthesizeTextToSpeech(
   input: TextToSpeechInput,
   options: TextToSpeechOptions = {},
@@ -124,7 +136,7 @@ export async function listAvailableTextToSpeechProviders(options: TextToSpeechOp
   if (await commandExists('espeak', { platform })) {
     providers.push('espeak');
   }
-  if (resolvePiperModel() && await commandExists('piper', { platform })) {
+  if (resolvePiperModel() && await commandExists(resolvePiperBin(), { platform })) {
     providers.push('piper');
   }
   return providers;
@@ -164,7 +176,7 @@ async function resolveProvider(
   // Prefer Piper (real neural voice) ONLY when a model is explicitly configured —
   // otherwise leave the existing order untouched so current Linux callers don't
   // silently switch voice (a piper binary alone is not enough: it has no default voice).
-  if (resolvePiperModel() && await commandExists('piper', { platform })) {
+  if (resolvePiperModel() && await commandExists(resolvePiperBin(), { platform })) {
     return 'piper';
   }
   if (await commandExists('edge-tts', { platform })) {
@@ -249,7 +261,7 @@ function buildProviderCommand(
       }
       return {
         kind: 'spawn',
-        command: 'piper',
+        command: resolvePiperBin(),
         args: ['--model', model, '--output_file', input.outputPath],
         stdin: input.text, // Piper reads the utterance from stdin
       };
