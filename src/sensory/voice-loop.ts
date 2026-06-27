@@ -19,6 +19,7 @@ import { spawn } from 'child_process';
 import { logger } from '../utils/logger.js';
 import { commandExists } from '../utils/command-exists.js';
 import { inferTaskType } from '../fleet/model-capability-heuristics.js';
+import { withSpeakingGuard } from './voice-activity.js';
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
 export type ReplyFn = (heard: string) => Promise<string>;
@@ -285,7 +286,7 @@ export async function sayNow(
     const play = options.play ?? defaultPlay;
     const wav = await synth(t);
     if (wav) {
-      await play(wav);
+      await withSpeakingGuard(() => play(wav)); // half-duplex: mute the ear while speaking
       try {
         const { unlink } = await import('fs/promises');
         await unlink(wav);
@@ -336,7 +337,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): (heard: string)
       }
       const wav = await synth(reply);
       if (!wav) return;
-      await play(wav);
+      await withSpeakingGuard(() => play(wav)); // half-duplex: mute the ear while speaking
       logger.info(`[voice] spoke → ${reply}`);
       options.onSpoke?.(reply);
       // Best-effort cleanup of the synthesized WAV.

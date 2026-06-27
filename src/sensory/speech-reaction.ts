@@ -11,6 +11,7 @@
 
 import { getGlobalEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
+import { isSpeaking } from './voice-activity.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
 
@@ -85,6 +86,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     if (!wav) return; // no audio to transcribe (e.g. a live-mic path not yet wired)
 
     const t = now();
+    if (isSpeaking(t)) return; // half-duplex: ignore the mic while the robot is speaking (+ echo tail)
     if (t - lastAt < debounceMs) return; // one transcription per utterance
     if (inFlight) return; // a prior STT (faster-whisper, seconds) is still running
     lastAt = t;
