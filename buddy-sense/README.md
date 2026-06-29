@@ -70,6 +70,29 @@ On the Code Buddy side: `CODEBUDDY_SENSORY=true buddy server` starts the bridge.
 | `live-screen` | live screen capture (xcap, X11/Wayland) | xcb libs |
 | `live-ui` | live AT-SPI focus events (atspi/zbus) | a running a11y bus (none to build) |
 | `neural-vad` | Silero neural VAD via ONNX Runtime | a model + onnxruntime — see [models/README.md](models/README.md) |
+| `stt` | in-process offline STT (sherpa-onnx) — the `buddy-sense stt` subcommand | nothing to install: sherpa-rs's `download-binaries` fetches the prebuilt sherpa-onnx + onnxruntime at build (no C++ compile, no sudo) |
+
+#### In-process STT (`stt` feature)
+
+`buddy-sense stt` is a persistent worker: it loads the NeMo Parakeet-TDT offline
+transducer **once** and decodes a whole utterance in ~110 ms (RTF ~0.03 on CPU),
+replacing the out-of-process python whisper/parakeet workers — no python on the hot
+path, no per-utterance spawn. Protocol (mirrors the TS `FasterWhisperWorker`): emits
+`{"ready":true}` once loaded, then reads `{"id","wav"}` lines on stdin and answers
+`{"id","text"}` (or `{"id","error"}`) on stdout; sherpa's own logs go to stderr.
+
+```bash
+cargo build --release --features stt
+# the prebuilt .so are copied next to the binary → point the loader at that dir:
+LD_LIBRARY_PATH=target/release \
+  BUDDY_SENSE_STT_MODEL_DIR=~/.codebuddy/asr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 \
+  ./target/release/buddy-sense stt
+```
+
+Code Buddy's `speech-reaction.ts` drives this worker when `CODEBUDDY_SPEECH_ENGINE=sherpa-rs`
+(or `auto` when the binary is built). Env: `BUDDY_SENSE_STT_MODEL_DIR` (model dir),
+`BUDDY_SENSE_STT_THREADS` (decode threads). **Rebuild after pulling** — an older
+binary built without `stt` ignores the `stt` arg and runs the daemon instead.
 
 Built with tokio + tokio-tungstenite (+ optional cpal / xcap / atspi / vad-rs).
 Local-only, $0. Permissive deps (MIT/Apache) — clean-room, no proprietary code.

@@ -3,6 +3,8 @@
 //! video motion detection ship; live capture is opt-in per sense.
 
 pub mod audio;
+#[cfg(feature = "stt")]
+pub mod stt;
 pub mod screen;
 pub mod ui;
 pub mod video;

@@ -32,8 +32,18 @@ ort-sys = { version = "=2.0.0-rc.6", optional = true }
 atspi = { version = "0.30", optional = true, features = ["tokio"] }
 tokio-stream = { version = "0.1", optional = true }
 
+# In-process STT (sherpa-onnx offline transducer) is opt-in behind `stt`. sherpa-rs's
+# default `download-binaries` feature fetches the prebuilt sherpa-onnx + onnxruntime
+# shared libs at build time → no C++ compile, no system install, no sudo.
+# At RUNTIME the loader needs those .so on its path: they are copied next to the binary
+# in target/<profile>/, so spawn the `stt` subcommand with LD_LIBRARY_PATH set to the
+# binary's own directory (the TS worker does exactly this).
+sherpa-rs = { version = "0.6.8", optional = true }
+
 [features]
 default = []
+# In-process offline STT (sherpa-onnx) — powers the `buddy-sense stt` subcommand.
+stt = ["dep:sherpa-rs"]
 # Live camera sense via ffmpeg (v4l2) — no extra crate, uses the system ffmpeg.
 # The pure motion detector builds + tests without it.
 live-vision = []

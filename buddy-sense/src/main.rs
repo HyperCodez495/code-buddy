@@ -60,6 +60,20 @@ fn compute_audio_events(path: &str) -> Result<Vec<SensoryEvent>, String> {
 
 #[tokio::main]
 async fn main() {
+    // `buddy-sense stt` → run the in-process STT worker (JSONL on stdin/stdout) and
+    // never return. Built only with `--features stt`; a clear error otherwise.
+    if std::env::args().skip(1).any(|a| a == "stt") {
+        #[cfg(feature = "stt")]
+        {
+            senses::stt::run_worker();
+        }
+        #[cfg(not(feature = "stt"))]
+        {
+            eprintln!("[buddy-sense] `stt` requires building with --features stt");
+            std::process::exit(2);
+        }
+    }
+
     let url = std::env::var("BUDDY_SENSE_BRIDGE_URL").unwrap_or_else(|_| "ws://127.0.0.1:8129".to_string());
     let wav = std::env::args().skip(1).find(|a| a.ends_with(".wav"));
 
