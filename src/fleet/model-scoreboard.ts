@@ -2,7 +2,7 @@
  * Model Scoreboard — the learning layer for the multi-LLM council.
  *
  * Records, per (taskType × model), the outcome of each council run (won?,
- * judge quality 0-1, latency, cost) to an append-only JSON ledger under
+ * optional role, judge quality 0-1, latency, cost) to an append-only JSON ledger under
  * ~/.codebuddy/fleet-model-performance.json (same spirit as cost-tracker.ts).
  *
  * The council reads `winRate(taskType, model)` to bias model selection toward
@@ -25,6 +25,8 @@ export interface OutcomeRecord {
   model: string;
   /** Provider id (e.g. 'chatgpt', 'grok'). */
   provider: string;
+  /** Optional council role played by this answer (e.g. 'reviewer', 'verifier'). */
+  role?: string;
   /** Did this model win the judge's vote this run? */
   won: boolean;
   /** Judge quality score for this answer, 0-1. */
@@ -45,6 +47,16 @@ export interface ModelStat {
   avgQuality: number;
   avgLatencyMs: number;
   avgCostUsd: number;
+}
+
+export interface RoleModelStat {
+  role: string;
+  model: string;
+  provider: string;
+  runs: number;
+  wins: number;
+  winRate: number;
+  avgQuality: number;
 }
 
 function defaultLedgerPath(): string {
@@ -96,6 +108,50 @@ export class ModelScoreboard {
     if (runs.length === 0) return 0;
     const wins = runs.filter((r) => r.won).length;
     return wins / runs.length;
+  }
+
+  /** Historical role-specific score for assigning future council roles. 0 when never seen. */
+  roleScore(taskType: string, role: string, model: string): number {
+    const runs = this.records.filter((r) => r.taskType === taskType && r.role === role && r.model === model);
+    if (runs.length === 0) return 0;
+    const wins = runs.filter((r) => r.won).length;
+    const winRate = wins / runs.length;
+    const avgQuality = runs.reduce((acc, r) => acc + r.quality, 0) / runs.length;
+    return 0.7 * winRate + 0.3 * avgQuality;
+  }
+
+  roleRanking(taskType?: string, role?: string): RoleModelStat[] {
+    const scoped = this.records.filter((r) =>
+      Boolean(r.role) &&
+      (!taskType || r.taskType === taskType) &&
+      (!role || r.role === role),
+    );
+    const byRoleModel = new Map<string, OutcomeRecord[]>();
+    for (const r of scoped) {
+      const key = `${r.role}\u0000${r.model}`;
+      const arr = byRoleModel.get(key) ?? [];
+      arr.push(r);
+      byRoleModel.set(key, arr);
+    }
+
+    const stats: RoleModelStat[] = [];
+    for (const runs of byRoleModel.values()) {
+      const first = runs[0]!;
+      const wins = runs.filter((r) => r.won).length;
+      const n = runs.length;
+      stats.push({
+        role: first.role!,
+        model: first.model,
+        provider: first.provider,
+        runs: n,
+        wins,
+        winRate: wins / n,
+        avgQuality: runs.reduce((acc, r) => acc + r.quality, 0) / n,
+      });
+    }
+    return stats.sort(
+      (a, b) => a.role.localeCompare(b.role) || b.winRate - a.winRate || b.avgQuality - a.avgQuality,
+    );
   }
 
   /**
@@ -150,7 +206,18 @@ export class ModelScoreboard {
       const cost = s.avgCostUsd === 0 ? '$0' : `$${s.avgCostUsd.toFixed(4)}`;
       return `  ${i + 1}. ${s.model.padEnd(22)} win ${wr.padStart(4)} (${s.wins}/${s.runs})  q${q}  ${lat}  ${cost}`;
     });
-    return [header, ...lines].join('\n');
+    const roleRows = this.roleRanking(taskType);
+    if (roleRows.length === 0) return [header, ...lines].join('\n');
+
+    const bestByRole = new Map<string, RoleModelStat>();
+    for (const row of roleRows) {
+      if (!bestByRole.has(row.role)) bestByRole.set(row.role, row);
+    }
+    const roleLines = Array.from(bestByRole.values()).map((s) => {
+      const wr = `${Math.round(s.winRate * 100)}%`;
+      return `  ${s.role.padEnd(14)} ${s.model.padEnd(22)} win ${wr.padStart(4)} (${s.wins}/${s.runs})  q${s.avgQuality.toFixed(2)}`;
+    });
+    return [header, ...lines, '', 'Role specialists:', ...roleLines].join('\n');
   }
 }
 

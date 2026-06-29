@@ -71,13 +71,16 @@ JWT_SECRET=<shared-secret> buddy fleet token --ttl 30d   # prints a JWT (peer:in
 /fleet listen ws://100.73.222.64:3010/ws --jwt <token> --name darkstar
 /fleet listen ws://100.98.18.76:3010/ws  --jwt <token> --name ministar-linux
 buddy council "Propose une architecture pour X" --fleet
-# → each connected machine answers via its own LLM; the council judges + reconciles all answers,
-#   and the model-scoreboard learns which machine/model wins per task type. ($0 on local LLMs.)
+# → the conductor assigns complementary roles across local models + connected machines,
+#   then the council judges, synthesizes, reconciles all answers and the scoreboard learns winners
+#   per task type. ($0 on local LLMs; add --no-conductor for direct fan-out.)
 ```
 
 **Proven (this box, two real server PIDs, $0):** two `buddy server` (3010 qwen2.5:7b + 3020
 gemma4), a coordinator connected to both, `council --fleet` → both machines contributed an answer,
-judged together (`scripts/fleet-council-2proc-smoke.ts`). A true multi-machine Tailscale run uses
+judged together (`scripts/fleet-council-2proc-smoke.ts`). Current `council --fleet` also uses the
+adaptive conductor and final synthesis pass, so remote machines can receive specialized roles
+alongside local models and still fold into one final answer. A true multi-machine Tailscale run uses
 the same recipe with your real hosts.
 
 ---

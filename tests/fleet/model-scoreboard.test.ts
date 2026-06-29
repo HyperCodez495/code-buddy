@@ -71,6 +71,21 @@ describe('ModelScoreboard', () => {
     expect(sb.winRate('french', 'grok-3')).toBe(0);
   });
 
+  it('computes role-specific scores and rankings', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ model: 'grok-3', provider: 'grok', role: 'reviewer', won: true, quality: 0.8 }));
+    sb.recordOutcome(rec({ model: 'grok-3', provider: 'grok', role: 'reviewer', won: false, quality: 0.4 }));
+    sb.recordOutcome(rec({ model: 'gpt-5.5', provider: 'chatgpt', role: 'reviewer', won: false, quality: 0.9 }));
+    sb.recordOutcome(rec({ model: 'gpt-5.5', provider: 'chatgpt', role: 'architect', won: true, quality: 1 }));
+
+    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
+    expect(sb.roleScore('code', 'reviewer', 'unknown')).toBe(0);
+
+    const reviewerRanking = sb.roleRanking('code', 'reviewer');
+    expect(reviewerRanking.map((stat) => stat.model)).toEqual(['grok-3', 'gpt-5.5']);
+    expect(reviewerRanking[0]!.role).toBe('reviewer');
+  });
+
   it('ranks models by win rate then quality', () => {
     const sb = new ModelScoreboard(tmpFile);
     // grok: 1 win / 1; gpt: 0 win / 1 but higher quality
@@ -102,9 +117,11 @@ describe('ModelScoreboard', () => {
 
   it('prints a ranking once it has data', () => {
     const sb = new ModelScoreboard(tmpFile);
-    sb.recordOutcome(rec({ model: 'grok-3', won: true }));
+    sb.recordOutcome(rec({ model: 'grok-3', won: true, role: 'reviewer' }));
     const out = sb.print('code');
     expect(out).toMatch(/grok-3/);
     expect(out).toMatch(/100%/);
+    expect(out).toMatch(/Role specialists/);
+    expect(out).toMatch(/reviewer/);
   });
 });
