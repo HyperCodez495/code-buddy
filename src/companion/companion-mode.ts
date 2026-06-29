@@ -14,6 +14,11 @@ import type { VoiceInputConfig } from '../input/voice-input-enhanced.js';
 import { getTTSManager } from '../input/text-to-speech.js';
 import type { TTSConfig } from '../input/text-to-speech.js';
 import { describeVoiceReadiness, type VoiceReadiness } from '../sensory/voice-loop.js';
+import {
+  resolveSpeechRecognitionEngine,
+  resolveParakeetModelDir,
+  engineUsesParakeetModel,
+} from '../sensory/speech-engine-config.js';
 import { getActivePersonaVoiceAsync } from '../personas/persona-manager.js';
 import { DEFAULT_WAKE_WORD_CONFIG } from '../voice/types.js';
 import { hasCodexCredentials, getCodexAuthFilePath } from '../providers/codex-oauth.js';
@@ -312,21 +317,6 @@ function resolveSpeechModel(): string {
   return process.env.CODEBUDDY_SPEECH_MODEL?.trim() || 'base';
 }
 
-function resolveSpeechEngine(): string {
-  const configured = process.env.CODEBUDDY_SPEECH_ENGINE?.trim().toLowerCase();
-  if (configured === 'parakeet' || configured === 'sherpa-onnx') return 'parakeet';
-  if (configured === 'auto') return 'auto';
-  return 'faster-whisper';
-}
-
-function resolveParakeetModelDir(): string {
-  return expandHome(
-    process.env.CODEBUDDY_PARAKEET_MODEL_DIR?.trim()
-      || process.env.CODEBUDDY_SHERPA_ONNX_MODEL_DIR?.trim()
-      || '~/.codebuddy/asr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
-  );
-}
-
 function resolveSpeechLanguage(): string {
   return process.env.CODEBUDDY_SPEECH_LANG?.trim()
     || process.env.CODEBUDDY_COMPANION_LANGUAGE?.trim()
@@ -449,13 +439,13 @@ export async function buildCompanionListenCheck(
   const audioDir = resolveCompanionAudioDir();
   const wav = options.wav ? expandHome(options.wav) : newestCompanionUtterance(audioDir);
   const robotName = await resolveRobotName();
-  const speechEngine = resolveSpeechEngine();
+  const speechEngine = resolveSpeechRecognitionEngine();
   const speechModel = resolveSpeechModel();
   const speechLanguage = resolveSpeechLanguage();
   const speechPython = resolveSpeechPython(runtime);
   const parakeetModelDir = resolveParakeetModelDir();
   const now = options.now ?? (() => Date.now());
-  const parakeetFields = speechEngine === 'parakeet' || speechEngine === 'auto' ? { parakeetModelDir } : {};
+  const parakeetFields = engineUsesParakeetModel(speechEngine) ? { parakeetModelDir } : {};
 
   if (!wav) {
     return {
@@ -546,9 +536,11 @@ export async function buildCompanionListenCheck(
 export function formatCompanionListenCheck(check: CompanionListenCheck): string {
   const sttLabel = check.speechEngine === 'parakeet'
     ? 'Parakeet/sherpa-onnx'
-    : check.speechEngine === 'auto'
-      ? `auto (${check.parakeetModelDir ? 'Parakeet preferred' : 'faster-whisper'})`
-      : `faster-whisper ${check.speechModel}`;
+    : check.speechEngine === 'sherpa-rs'
+      ? 'sherpa-rs (in-process Rust)'
+      : check.speechEngine === 'auto'
+        ? `auto (${check.parakeetModelDir ? 'Parakeet preferred' : 'faster-whisper'})`
+        : `faster-whisper ${check.speechModel}`;
   const lines = [
     `${check.robotName} Listen Check`,
     '='.repeat(50),
@@ -1051,7 +1043,7 @@ function buildLiveCommands(
   const tokenFallback = "${CODEBUDDY_SENSORY_TOKEN:-'<shared-sensory-token>'}";
   const sidecarTokenFallback = "${BUDDY_SENSE_TOKEN:-${CODEBUDDY_SENSORY_TOKEN:-'<shared-sensory-token>'}}";
   const voiceModel = process.env.CODEBUDDY_SENSORY_SPEAK_MODEL || assistant.readiness.model || 'auto';
-  const speechEngine = resolveSpeechEngine();
+  const speechEngine = resolveSpeechRecognitionEngine();
   const speechModel = resolveSpeechModel();
   const speechLanguage = resolveSpeechLanguage();
   const parakeetModelDir = resolveParakeetModelDir();

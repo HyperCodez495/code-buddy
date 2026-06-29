@@ -22,6 +22,16 @@ import { logger } from '../utils/logger.js';
 import { isSpeaking } from './voice-activity.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
+import {
+  resolveSpeechRecognitionEngine,
+  resolveParakeetModelDir,
+  expandSpeechPath,
+  type SpeechRecognitionEngine,
+} from './speech-engine-config.js';
+
+// Re-exported for back-compat: callers + tests import these from speech-reaction.
+export { resolveSpeechRecognitionEngine };
+export type { SpeechRecognitionEngine };
 
 export type Transcriber = (wav: string) => Promise<string>;
 
@@ -82,8 +92,6 @@ export interface NormalizedSpeechTranscript {
   filteredReason?: 'subtitle_hallucination' | 'prompt_leakage' | 'non_speech' | 'repetitive_noise' | 'filler_noise';
 }
 
-export type SpeechRecognitionEngine = 'faster-whisper' | 'parakeet' | 'sherpa-rs' | 'auto';
-
 interface FasterWhisperWorkerMessage {
   ready?: boolean;
   id?: string;
@@ -124,29 +132,6 @@ function splitSpeechPhrases(value: string): string[] {
     .split(/[\n,;]/)
     .map(item => item.trim())
     .filter(Boolean);
-}
-
-function expandSpeechPath(value: string): string {
-  if (value === '~') return homedir();
-  if (value.startsWith('~/')) return join(homedir(), value.slice(2));
-  return value;
-}
-
-export function resolveSpeechRecognitionEngine(): SpeechRecognitionEngine {
-  const configured = process.env.CODEBUDDY_SPEECH_ENGINE?.trim().toLowerCase();
-  if (configured === 'sherpa-rs' || configured === 'sherpa-rust' || configured === 'rust') return 'sherpa-rs';
-  if (configured === 'parakeet' || configured === 'sherpa-onnx') return 'parakeet';
-  if (configured === 'faster-whisper' || configured === 'whisper') return 'faster-whisper';
-  if (configured === 'auto') return 'auto';
-  return 'faster-whisper';
-}
-
-function resolveParakeetModelDir(): string {
-  return expandSpeechPath(
-    process.env.CODEBUDDY_PARAKEET_MODEL_DIR?.trim()
-      || process.env.CODEBUDDY_SHERPA_ONNX_MODEL_DIR?.trim()
-      || '~/.codebuddy/asr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
-  );
 }
 
 function parakeetFallbackEnabled(): boolean {
