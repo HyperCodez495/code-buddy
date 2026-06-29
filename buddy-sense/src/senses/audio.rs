@@ -7,7 +7,7 @@ use crate::event::{Modality, SensoryEvent};
 
 const SPEECH_SALIENCE: u8 = 200; // speech is salient → never coalesced away
 
-fn rms_i16(frame: &[i16]) -> f64 {
+pub(crate) fn rms_i16(frame: &[i16]) -> f64 {
     if frame.is_empty() {
         return 0.0;
     }

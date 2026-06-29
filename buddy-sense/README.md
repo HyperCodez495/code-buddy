@@ -71,6 +71,7 @@ On the Code Buddy side: `CODEBUDDY_SENSORY=true buddy server` starts the bridge.
 | `live-ui` | live AT-SPI focus events (atspi/zbus) | a running a11y bus (none to build) |
 | `neural-vad` | Silero neural VAD via ONNX Runtime | a model + onnxruntime — see [models/README.md](models/README.md) |
 | `stt` | in-process offline STT (sherpa-onnx) — the `buddy-sense stt` subcommand | nothing to install: sherpa-rs's `download-binaries` fetches the prebuilt sherpa-onnx + onnxruntime at build (no C++ compile, no sudo) |
+| `live-audio` | live-microphone sense (the robot's real-time ears): continuous ffmpeg capture → VAD endpointer → offline decode → `audio/transcript_final` | the system `ffmpeg` + a PulseAudio/PipeWire source (no `cpal`, no `libasound2-dev`, no sudo); implies `stt` |
 
 #### In-process STT (`stt` feature)
 
@@ -94,5 +95,30 @@ Code Buddy's `speech-reaction.ts` drives this worker when `CODEBUDDY_SPEECH_ENGI
 `BUDDY_SENSE_STT_THREADS` (decode threads). **Rebuild after pulling** — an older
 binary built without `stt` ignores the `stt` arg and runs the daemon instead.
 
-Built with tokio + tokio-tungstenite (+ optional cpal / xcap / atspi / vad-rs).
+#### Live microphone (`live-audio` feature)
+
+The daemon's real-time ears. Instead of the batch `ear.py → WAV → worker` chain,
+`live-audio` keeps **one** ffmpeg reading the mic continuously (`-f pulse`, the same
+ffmpeg the camera sense uses — so no `cpal`, no `libasound2-dev`, no sudo), runs a
+streaming energy-VAD endpointer to carve the stream into utterances, decodes each
+one in-process (`stt`, ~120 ms) and broadcasts an `audio/transcript_final` event
+whose payload already carries the text — the Code Buddy side consumes it directly,
+no WAV round-trip. The model is OFFLINE, so there is no frame-by-frame
+`transcript_partial`; latency is set by the endpoint silence, not the decode.
+
+```bash
+cargo build --release --features live-audio   # implies stt
+LD_LIBRARY_PATH=target/release \
+  BUDDY_SENSE_MIC_SOURCE=default \
+  BUDDY_SENSE_MIC_DEBUG=1 \
+  ./target/release/buddy-sense           # then speak — finals print to stderr
+```
+
+Env: `BUDDY_SENSE_MIC_SOURCE` (PulseAudio source, default `default`; e.g. the BRIO's
+`alsa_input.usb-046d_Logitech_BRIO…`), `BUDDY_SENSE_MIC_THRESHOLD` (energy VAD, default
+`0.05`), `BUDDY_SENSE_MIC_ENDPOINT_MS` (silence to close an utterance, default `700`),
+`BUDDY_SENSE_MIC_DEBUG=1` (echo each final to stderr), `BUDDY_SENSE_FFMPEG` (ffmpeg path).
+
+Built with tokio + tokio-tungstenite (+ optional xcap / atspi / vad-rs / sherpa-rs;
+the `live-audio` mic path uses the system ffmpeg, not cpal).
 Local-only, $0. Permissive deps (MIT/Apache) — clean-room, no proprietary code.

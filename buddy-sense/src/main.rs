@@ -138,6 +138,21 @@ async fn main() {
         tokio::spawn(async move { senses::ui::live::run(tx).await });
     }
 
+    // Live-microphone sense — the robot's real-time ears (opt-in build). Captures
+    // the mic continuously via ffmpeg, segments by VAD, decodes each utterance
+    // in-process and emits `audio/transcript_final` (text already in the payload).
+    // Needs the recognizer .so on the loader path → spawn this binary with
+    // LD_LIBRARY_PATH set to its own directory (where the prebuilt .so are copied).
+    #[cfg(feature = "live-audio")]
+    {
+        let tx = sense_tx.clone();
+        let source = std::env::var("BUDDY_SENSE_MIC_SOURCE").unwrap_or_else(|_| "default".to_string());
+        let threshold = std::env::var("BUDDY_SENSE_MIC_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.05);
+        let endpoint_ms = std::env::var("BUDDY_SENSE_MIC_ENDPOINT_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(700);
+        eprintln!("[buddy-sense] live-audio sense active (pulse:{source}, threshold {threshold}, endpoint {endpoint_ms}ms)");
+        tokio::spawn(async move { senses::live_audio::run(tx, source, threshold, endpoint_ms).await });
+    }
+
     match wav {
         Some(path) => {
             // Audio runs concurrently with the heartbeat — both feed the thalamus.

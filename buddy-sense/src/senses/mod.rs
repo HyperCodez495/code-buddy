@@ -5,6 +5,8 @@
 pub mod audio;
 #[cfg(feature = "stt")]
 pub mod stt;
+#[cfg(feature = "live-audio")]
+pub mod live_audio;
 pub mod screen;
 pub mod ui;
 pub mod video;

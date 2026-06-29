@@ -44,6 +44,10 @@ sherpa-rs = { version = "0.6.8", optional = true }
 default = []
 # In-process offline STT (sherpa-onnx) — powers the `buddy-sense stt` subcommand.
 stt = ["dep:sherpa-rs"]
+# Live-microphone sense (the robot's real-time ears): continuous ffmpeg `-f pulse`
+# capture → streaming VAD endpointer → offline decode → `audio/transcript_final`.
+# No `cpal`, no `libasound2-dev`, no sudo — reuses the system ffmpeg + `stt`.
+live-audio = ["stt"]
 # Live camera sense via ffmpeg (v4l2) — no extra crate, uses the system ffmpeg.
 # The pure motion detector builds + tests without it.
 live-vision = []
