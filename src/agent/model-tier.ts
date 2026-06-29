@@ -119,14 +119,15 @@ export async function resolveLiveModelTierConfig(
   let discovered: NetworkModel[] = [];
   let benchmarkScores = new Map<string, number>();
   try {
-    const { TailscaleManager } = await import('../integrations/tailscale.js');
-    discovered = (await TailscaleManager.getInstance().discoverOllamaPeers()).flatMap((peer) =>
-      peer.models.map((model) => ({
-        model,
-        baseUrl: peer.baseURL,
-        label: peer.hostname,
-      }))
-    );
+    const { buildModelInventory } = await import('../fleet/model-inventory.js');
+    const inventory = await buildModelInventory({ env, includeTailnetPeers: true });
+    discovered = inventory.entries
+      .filter((entry) => entry.runtimeProvider === 'ollama' && entry.executionLocation === 'lan' && entry.baseURL)
+      .map((entry) => ({
+        model: entry.model,
+        baseUrl: entry.baseURL!,
+        label: entry.machineLabel,
+      }));
   } catch {
     discovered = [];
   }

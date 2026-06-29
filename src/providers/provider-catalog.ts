@@ -160,7 +160,7 @@ export const RUNTIME_PROVIDER_CATALOG: RuntimeProviderCatalogEntry[] = [
     defaultBaseURL: 'http://localhost:1234/v1',
     defaultModel: 'local-model',
     apiKeyPlaceholder: 'lm-studio',
-    models: ['local-model', 'qwen2.5-coder', 'llama-3.1-8b', 'mistral-7b'],
+    models: ['local-model', 'qwen2.5-coder', 'meta-llama-3.1-8b-instruct', 'llama-3.1-8b', 'mistral-7b'],
   },
   {
     id: 'grok',

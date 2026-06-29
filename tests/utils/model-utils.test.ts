@@ -51,6 +51,13 @@ describe('Model Utilities', () => {
       expect(info.provider).toBe('ollama');
     });
 
+    it('should return Ollama info for the Lisa voice reply model', () => {
+      const info = getModelInfo('qwen2.5:7b-instruct');
+      expect(info.isSupported).toBe(true);
+      expect(info.maxTokens).toBe(32768);
+      expect(info.provider).toBe('ollama');
+    });
+
     it('should resolve Ollama :latest tags to their supported base model', () => {
       const info = getModelInfo('qwen3.5-ctx32k:latest');
       expect(info.isSupported).toBe(true);
@@ -142,6 +149,7 @@ describe('Model Utilities', () => {
     it('should return models for lmstudio provider', () => {
       const models = getModelsByProvider('lmstudio');
       expect(models).toContain('local-model');
+      expect(models).toContain('meta-llama-3.1-8b-instruct');
       expect(models).toContain('llama-3.1-8b');
       expect(models.length).toBeGreaterThan(0);
     });

@@ -696,6 +696,7 @@ denylist = ["rm -rf /", "sudo .*"]
 
       it('should have local LLM support', () => {
         expect(SUPPORTED_MODELS['lmstudio']).toBeDefined();
+        expect(SUPPORTED_MODELS['meta-llama-3.1-8b-instruct']).toBeDefined();
         expect(SUPPORTED_MODELS['ollama']).toBeDefined();
       });
 

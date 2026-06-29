@@ -134,6 +134,7 @@ export const SUPPORTED_MODELS = {
   'lmstudio': { maxTokens: 8192, provider: 'lmstudio' },
   'local-model': { maxTokens: 8192, provider: 'lmstudio' },
   // Common open-source models used with LM Studio
+  'meta-llama-3.1-8b-instruct': { maxTokens: 131072, provider: 'lmstudio' },
   'llama-3.1-8b': { maxTokens: 131072, provider: 'lmstudio' },
   'llama-3.1-70b': { maxTokens: 131072, provider: 'lmstudio' },
   'llama-3.2-3b': { maxTokens: 131072, provider: 'lmstudio' },
@@ -156,6 +157,7 @@ export const SUPPORTED_MODELS = {
   'codellama': { maxTokens: 16384, provider: 'ollama' },
   'deepseek-coder-v2': { maxTokens: 131072, provider: 'ollama' },
   'qwen2.5': { maxTokens: 32768, provider: 'ollama' },
+  'qwen2.5:7b-instruct': { maxTokens: 32768, provider: 'ollama' },
   'qwen2.5-coder:7b': { maxTokens: 32768, provider: 'ollama' },
   'qwen3.5-ctx32k': { maxTokens: 32768, provider: 'ollama' },
   'qwen3.5:35b': { maxTokens: 32768, provider: 'ollama' },

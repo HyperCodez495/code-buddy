@@ -480,6 +480,18 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
 
   // LM Studio (same as Ollama)
   {
+    model: 'meta-llama-3.1-8b-instruct',
+    supportsReasoning: false,
+    supportsToolCalls: false,
+    supportsVision: false,
+    contextWindow: 131072,
+    maxOutputTokens: 4096,
+    maxToolRounds: 10,
+    disabledTools: ['apply_patch', 'browser', 'computer_control'],
+    patchFormat: 'full_file',
+    promptProfile: 'lite',
+  },
+  {
     model: 'lmstudio/*',
     supportsReasoning: false,
     supportsToolCalls: false,

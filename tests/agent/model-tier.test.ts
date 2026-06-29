@@ -28,6 +28,47 @@ vi.mock('../../src/integrations/tailscale.js', () => ({
   },
 }));
 
+vi.mock('../../src/fleet/model-inventory.js', () => ({
+  buildModelInventory: vi.fn(async () => ({
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    machineLabel: 'local',
+    entries: [
+      {
+        runtimeProvider: 'ollama',
+        provider: 'ollama',
+        model: 'qwen3.6:35b-a3b-q4_K_M',
+        baseURL: 'http://100.73.222.64:11434/v1',
+        machineLabel: 'darkstar',
+        executionLocation: 'lan',
+      },
+      {
+        runtimeProvider: 'ollama',
+        provider: 'ollama',
+        model: 'phi4:latest',
+        baseURL: 'http://100.73.222.64:11434/v1',
+        machineLabel: 'darkstar',
+        executionLocation: 'lan',
+      },
+      {
+        runtimeProvider: 'ollama',
+        provider: 'ollama',
+        model: 'qwen3.6:27b',
+        baseURL: 'http://100.98.18.76:11434/v1',
+        machineLabel: 'ministar-linux',
+        executionLocation: 'lan',
+      },
+      {
+        runtimeProvider: 'lmstudio',
+        provider: 'lm-studio',
+        model: 'local-model',
+        baseURL: 'http://localhost:1234/v1',
+        machineLabel: 'local',
+        executionLocation: 'local',
+      },
+    ],
+  })),
+}));
+
 vi.mock('../../src/agent/model-benchmark.js', () => ({
   loadBenchmarkScoreMap: vi.fn(async () => new Map<string, number>([
     ['http://100.73.222.64:11434/v1::qwen3.6:35b-a3b-q4_K_M', 950],
