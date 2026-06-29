@@ -75,6 +75,9 @@ export default [
   {
     ignores: [
       'node_modules/**',
+      '**/.venv/**',
+      '**/venv/**',
+      '**/site-packages/**',
       'dist/**',
       'build/**',
       'coverage/**',

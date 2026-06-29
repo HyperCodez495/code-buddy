@@ -65,6 +65,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   video_generate: ['group:fs', 'group:web'],
   video_analyze: ['group:fs', 'group:fs:read', 'group:web'],
   vision_analyze: ['group:fs', 'group:fs:read'],
+  object_detect: ['group:fs', 'group:fs:read'],
 
   // Web - Search
   web_search: ['group:web', 'group:web:search'],

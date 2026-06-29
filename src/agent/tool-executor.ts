@@ -213,6 +213,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   audio: 'media',
   video: 'media',
   ocr: 'media',
+  object_detect: 'media',
   clipboard: 'media',
   // Document
   pdf: 'document',

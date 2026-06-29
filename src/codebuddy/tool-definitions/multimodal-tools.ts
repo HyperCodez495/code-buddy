@@ -532,6 +532,66 @@ export const VISION_ANALYZE_TOOL: CodeBuddyTool = {
   }
 };
 
+// YOLOv8 Object Detection Tool - local object detection from image files
+export const OBJECT_DETECT_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "object_detect",
+    description: "Detect objects in a local image using a local YOLOv8/Ultralytics Python runtime. For webcam use, first call camera_snapshot, then pass the captured image path here.",
+    parameters: {
+      type: "object",
+      properties: {
+        image_path: {
+          type: "string",
+          description: "Absolute or workspace-relative path to the image file"
+        },
+        model_path: {
+          type: "string",
+          description: "Optional YOLO model path. Defaults to CODEBUDDY_YOLO_MODEL, ~/vision_tests/yolov8n.onnx, ~/vision_tests/yolov8n.pt, or yolov8n.pt"
+        },
+        python_path: {
+          type: "string",
+          description: "Optional Python executable with ultralytics installed. Defaults to CODEBUDDY_YOLO_PYTHON, ~/vision_tests/venv/bin/python, or python3"
+        },
+        min_confidence: {
+          type: "number",
+          description: "Minimum detection confidence from 0 to 1. Default 0.25"
+        },
+        iou_threshold: {
+          type: "number",
+          description: "YOLO IoU threshold from 0 to 1. Default 0.7"
+        },
+        classes: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional class names or numeric class IDs to keep, e.g. [\"person\"] or [\"0\"]"
+        },
+        device: {
+          type: "string",
+          description: "Optional Ultralytics device, e.g. cpu, cuda:0, mps, or a ROCm-supported device string"
+        },
+        max_detections: {
+          type: "number",
+          description: "Maximum detections to return. Default 100"
+        },
+        save_annotated: {
+          type: "boolean",
+          description: "Also save an annotated image with boxes. Default false"
+        },
+        annotated_output_path: {
+          type: "string",
+          description: "Optional output path for the annotated image when save_annotated is true"
+        },
+        timeout_ms: {
+          type: "number",
+          description: "YOLO runtime timeout in milliseconds. Default 120000"
+        }
+      },
+      required: ["image_path"]
+    }
+  }
+};
+
 // Diagram Tool - Generate diagrams
 export const DIAGRAM_TOOL: CodeBuddyTool = {
   type: "function",
@@ -867,6 +927,7 @@ export const MULTIMODAL_TOOLS: CodeBuddyTool[] = [
   DOCUMENT_TOOL,
   OCR_TOOL,
   VISION_ANALYZE_TOOL,
+  OBJECT_DETECT_TOOL,
   DIAGRAM_TOOL,
   EXPORT_TOOL,
   QR_TOOL,

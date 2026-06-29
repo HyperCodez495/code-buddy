@@ -176,6 +176,7 @@ export {
   BrowserVisionTool,
   OcrExtractTool,
   ImageAnalyzeTool,
+  ObjectDetectTool,
   CameraSnapshotTool,
   createVisionTools,
 } from './vision-tools.js';

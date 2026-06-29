@@ -15,6 +15,10 @@ import {
   type VisionAnalysisOptions,
   type VisionAnalysisResult,
 } from '../vision/vision-analysis.js';
+import {
+  detectObjectsInImage,
+  type ObjectDetectionRuntime,
+} from '../vision/object-detection.js';
 import { captureCameraSnapshot } from '../../companion/camera.js';
 import { BrowserExecuteTool } from './misc-tools.js';
 
@@ -425,6 +429,163 @@ export class ImageAnalyzeTool implements ITool {
 }
 
 // ============================================================================
+// ObjectDetectTool
+// ============================================================================
+
+export class ObjectDetectTool implements ITool {
+  readonly name = 'object_detect';
+  readonly description = 'Detect objects in a local image using a local YOLOv8/Ultralytics Python runtime.';
+
+  constructor(
+    private readonly options: VisionAnalysisOptions = {},
+    private readonly runtime: ObjectDetectionRuntime = {},
+  ) {}
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    try {
+      const result = await detectObjectsInImage({
+        imagePath: requiredString(input, 'image_path'),
+        modelPath: optionalString(input, 'model_path'),
+        pythonPath: optionalString(input, 'python_path'),
+        minConfidence: optionalNumber(input, 'min_confidence'),
+        iouThreshold: optionalNumber(input, 'iou_threshold'),
+        classes: optionalStringArray(input, 'classes'),
+        device: optionalString(input, 'device'),
+        maxDetections: optionalNumber(input, 'max_detections'),
+        saveAnnotated: input.save_annotated === true,
+        annotatedOutputPath: optionalString(input, 'annotated_output_path'),
+        timeoutMs: optionalNumber(input, 'timeout_ms'),
+      }, {
+        rootDir: this.options.rootDir ?? context?.cwd,
+        now: this.options.now,
+        createId: this.options.createId,
+      }, this.runtime);
+
+      return {
+        success: true,
+        output: JSON.stringify(result, null, 2),
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          image_path: {
+            type: 'string',
+            description: 'Absolute or workspace-relative path to the image file. For webcam use, call camera_snapshot first and pass the captured path here.',
+          },
+          model_path: {
+            type: 'string',
+            description: 'Optional YOLO model path. Defaults to CODEBUDDY_YOLO_MODEL, ~/vision_tests/yolov8n.onnx, ~/vision_tests/yolov8n.pt, or yolov8n.pt.',
+          },
+          python_path: {
+            type: 'string',
+            description: 'Optional Python executable with ultralytics installed. Defaults to CODEBUDDY_YOLO_PYTHON, ~/vision_tests/venv/bin/python, or python3.',
+          },
+          min_confidence: {
+            type: 'number',
+            description: 'Minimum detection confidence from 0 to 1. Default 0.25.',
+            minimum: 0,
+            maximum: 1,
+          },
+          iou_threshold: {
+            type: 'number',
+            description: 'YOLO IoU threshold from 0 to 1. Default 0.7.',
+            minimum: 0,
+            maximum: 1,
+          },
+          classes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional class names or numeric class IDs to keep, e.g. ["person"] or ["0"].',
+          },
+          device: {
+            type: 'string',
+            description: 'Optional Ultralytics device, e.g. cpu, cuda:0, mps, or a ROCm-supported device string.',
+          },
+          max_detections: {
+            type: 'number',
+            description: 'Maximum detections to return. Default 100.',
+            minimum: 1,
+            maximum: 1000,
+          },
+          save_annotated: {
+            type: 'boolean',
+            description: 'Also save an annotated image with boxes. Default false.',
+          },
+          annotated_output_path: {
+            type: 'string',
+            description: 'Optional output path for the annotated image when save_annotated is true.',
+          },
+          timeout_ms: {
+            type: 'number',
+            description: 'YOLO runtime timeout in milliseconds. Default 120000.',
+            minimum: 1000,
+            maximum: 600000,
+          },
+        },
+        required: ['image_path'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const data = input as Record<string, unknown>;
+    if (typeof data.image_path !== 'string' || data.image_path.trim() === '') {
+      return { valid: false, errors: ['image_path is required'] };
+    }
+    for (const key of ['model_path', 'python_path', 'device', 'annotated_output_path']) {
+      if (data[key] !== undefined && typeof data[key] !== 'string') {
+        return { valid: false, errors: [`${key} must be a string`] };
+      }
+    }
+    for (const key of ['min_confidence', 'iou_threshold', 'max_detections', 'timeout_ms']) {
+      if (data[key] !== undefined && typeof data[key] !== 'number') {
+        return { valid: false, errors: [`${key} must be a number`] };
+      }
+    }
+    if (data.classes !== undefined && (
+      !Array.isArray(data.classes) ||
+      !data.classes.every(value => typeof value === 'string')
+    )) {
+      return { valid: false, errors: ['classes must be an array of strings'] };
+    }
+    if (data.save_annotated !== undefined && typeof data.save_annotated !== 'boolean') {
+      return { valid: false, errors: ['save_annotated must be a boolean'] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['vision', 'image', 'object', 'detect', 'detection', 'yolo', 'yolov8', 'ultralytics', 'person'],
+      priority: 8,
+      modifiesFiles: true,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
 // CameraSnapshotTool
 // ============================================================================
 
@@ -784,6 +945,7 @@ export function createVisionTools(options: VisionAnalysisOptions = {}): ITool[] 
     new BrowserVisionTool(options),
     new OcrExtractTool(),
     new ImageAnalyzeTool(),
+    new ObjectDetectTool(options),
     new CameraSnapshotTool(),
     new CameraAnalyzeTool(options),
   ];
@@ -835,6 +997,17 @@ function requiredString(data: Record<string, unknown>, key: string): string {
 function optionalString(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function optionalNumber(data: Record<string, unknown>, key: string): number | undefined {
+  const value = data[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function optionalStringArray(data: Record<string, unknown>, key: string): string[] | undefined {
+  const value = data[key];
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 function sanitizeFilename(id: string): string {

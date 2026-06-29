@@ -219,6 +219,13 @@ export const TOOL_METADATA: Record<string, Partial<ToolMetadata>> = {
     parallelSafe: true,
     priority: 7,
   },
+  object_detect: {
+    reads: ["file"],
+    writes: ["file"],
+    hasSideEffects: true,
+    parallelSafe: true,
+    priority: 7,
+  },
 
   // Generation tools (write files)
   screenshot: {

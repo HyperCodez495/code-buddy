@@ -767,6 +767,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Analyze a local image with metadata, colors, labels, and optional OCR evidence',
   },
   {
+    name: 'object_detect',
+    category: 'media',
+    keywords: ['vision', 'image', 'object', 'detect', 'detection', 'yolo', 'yolov8', 'ultralytics', 'person', 'people', 'presence', 'camera'],
+    priority: 8,
+    description: 'Detect objects in a local image using local YOLOv8/Ultralytics inference',
+  },
+  {
     name: 'clipboard',
     category: 'media',
     keywords: ['clipboard', 'copy', 'paste', 'cut'],
