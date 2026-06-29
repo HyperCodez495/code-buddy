@@ -14,6 +14,7 @@ jest.mock('fs', () => {
   const impl = {
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
+  statSync: jest.fn(),
   writeFileSync: jest.fn(),
 };
   return { ...impl, default: impl };
@@ -44,6 +45,7 @@ describe('ExcelAgent', () => {
 
     // Default mock implementations
     (fs.existsSync as jest.Mock).mockReturnValue(true);
+    (fs.statSync as jest.Mock).mockReturnValue({ size: 1024 });
     (fs.readFileSync as jest.Mock).mockImplementation((path: string) => {
       if (path.endsWith('.csv')) return mockCsvContent;
       if (path.endsWith('.tsv')) return mockTsvContent;
@@ -588,6 +590,21 @@ describe('ExcelAgent', () => {
     });
 
     describe('error handling', () => {
+      it('should reject oversized Excel files before invoking xlsx parser', async () => {
+        (fs.statSync as jest.Mock).mockReturnValue({ size: 30 * 1024 * 1024 });
+
+        const task: AgentTask = {
+          action: 'read',
+          inputFiles: ['/test/data.xlsx'],
+        };
+
+        const result = await agent.execute(task);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('too large');
+        expect(mockXlsx.read).not.toHaveBeenCalled();
+      });
+
       it('should catch and return errors gracefully', async () => {
         (fs.readFileSync as jest.Mock).mockImplementation(function() {
           throw new Error('Read error');

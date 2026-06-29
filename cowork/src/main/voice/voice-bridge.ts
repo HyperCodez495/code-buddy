@@ -15,6 +15,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildFilteredSubprocessEnv } from '../../../../src/utils/subprocess-env.js';
 import { log, logError, logWarn } from '../utils/logger';
 
 interface PendingTranscription {
@@ -34,6 +35,7 @@ interface WorkerResponse {
 }
 
 const WORKER_SCRIPT_BUNDLED = 'transcribe-worker.py';
+const DEFAULT_BOOT_TIMEOUT_MS = 30000;
 
 function voiceStackRoots(): string[] {
   const explicit = process.env.COWORK_VOICE_ROOT;
@@ -84,6 +86,30 @@ function missingPythonMessage(python: string): string {
   ].join('. ');
 }
 
+function bootTimeoutMs(): number {
+  const raw = Number(process.env.COWORK_VOICE_BOOT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_BOOT_TIMEOUT_MS;
+}
+
+function buildVoiceWorkerEnv(): NodeJS.ProcessEnv {
+  return buildFilteredSubprocessEnv({
+    allowEnv: [
+      'COWORK_VOICE_ROOT',
+      'COWORK_VOICE_VENV',
+      'COWORK_WHISPER_MODEL',
+      'COWORK_WHISPER_COMPUTE',
+      'COWORK_WHISPER_DEVICE',
+    ],
+    extraEnv: {
+      // Default to the FR-friendly base model on CPU/int8. Patrice
+      // can tune via env vars.
+      COWORK_WHISPER_MODEL: process.env.COWORK_WHISPER_MODEL ?? 'base',
+      COWORK_WHISPER_COMPUTE: process.env.COWORK_WHISPER_COMPUTE ?? 'int8',
+      COWORK_WHISPER_DEVICE: process.env.COWORK_WHISPER_DEVICE ?? 'cpu',
+    },
+  });
+}
+
 /**
  * Resolve the path of `transcribe-worker.py` regardless of whether
  * Cowork is running in dev (loose ts files) or packaged (bundled main).
@@ -112,17 +138,19 @@ function resolveWorkerScript(): string {
 
 export class VoiceBridge {
   private worker: ChildProcessWithoutNullStreams | null = null;
+  private workerReady = false;
   private bootPromise: Promise<void> | null = null;
   private bootError: string | null = null;
   private pending = new Map<string, PendingTranscription>();
   private bootResolve: (() => void) | null = null;
   private bootReject: ((err: Error) => void) | null = null;
+  private bootTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private stdoutBuffer = '';
   private nextId = 0;
 
   /** True when the worker process is alive and the model has loaded. */
   isReady(): boolean {
-    return this.worker !== null && this.bootError === null;
+    return this.worker !== null && this.workerReady && this.bootError === null;
   }
 
   /** Last-known boot error (e.g. faster-whisper missing, venv broken). */
@@ -193,23 +221,24 @@ export class VoiceBridge {
       }
       this.worker = null;
     }
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeoutHandle);
-      pending.reject(new Error('voice bridge shutting down'));
-    }
-    this.pending.clear();
+    this.workerReady = false;
+    this.clearBootTimeout();
+    this.rejectBoot(new Error('voice bridge shutting down'));
+    this.rejectPending(new Error('voice bridge shutting down'));
   }
 
   // ─────────── Internals ───────────
 
   private async ensureWorker(): Promise<void> {
-    if (this.worker && !this.bootError) return;
+    if (this.worker && this.workerReady && !this.bootError) return;
     if (this.bootPromise) return this.bootPromise;
 
     this.bootPromise = new Promise<void>((resolve, reject) => {
       this.bootResolve = resolve;
       this.bootReject = reject;
       try {
+        this.bootError = null;
+        this.workerReady = false;
         const python = resolveVoicePythonExecutable();
         if (!existsSync(python)) {
           throw new Error(missingPythonMessage(python));
@@ -218,14 +247,7 @@ export class VoiceBridge {
         log(`[VoiceBridge] spawning worker ${python} ${script}`);
         this.worker = spawn(python, ['-u', script], {
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: {
-            ...process.env,
-            // Default to the FR-friendly base model on CPU/int8. Patrice
-            // can tune via env vars.
-            COWORK_WHISPER_MODEL: process.env.COWORK_WHISPER_MODEL ?? 'base',
-            COWORK_WHISPER_COMPUTE: process.env.COWORK_WHISPER_COMPUTE ?? 'int8',
-            COWORK_WHISPER_DEVICE: process.env.COWORK_WHISPER_DEVICE ?? 'cpu',
-          },
+          env: buildVoiceWorkerEnv(),
         });
         this.worker.stdout.on('data', (chunk) => this.handleStdout(chunk));
         this.worker.stderr.on('data', (chunk) => {
@@ -236,23 +258,37 @@ export class VoiceBridge {
         this.worker.on('exit', (code) => {
           logWarn(`[VoiceBridge] worker exited (code ${code ?? '?'})`);
           this.worker = null;
-          for (const pending of this.pending.values()) {
-            clearTimeout(pending.timeoutHandle);
-            pending.reject(new Error('voice worker exited unexpectedly'));
-          }
-          this.pending.clear();
+          this.workerReady = false;
+          const err = new Error('voice worker exited unexpectedly');
+          this.rejectBoot(err);
+          this.rejectPending(err);
         });
         this.worker.on('error', (err) => {
           this.bootError = err.message;
-          this.bootReject?.(err);
-          this.bootReject = null;
-          this.bootResolve = null;
+          this.worker = null;
+          this.workerReady = false;
+          this.rejectBoot(err);
+          this.rejectPending(err);
         });
+        this.bootTimeoutHandle = setTimeout(() => {
+          const err = new Error(`voice worker boot timed out after ${bootTimeoutMs()}ms`);
+          this.bootError = err.message;
+          this.workerReady = false;
+          if (this.worker) {
+            try {
+              this.worker.kill('SIGTERM');
+            } catch {
+              /* already gone */
+            }
+          }
+          this.rejectBoot(err);
+          this.rejectPending(err);
+        }, bootTimeoutMs());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.bootError = message;
-        this.bootReject = null;
-        this.bootResolve = null;
+        this.workerReady = false;
+        this.rejectBoot(new Error(message));
         reject(new Error(message));
       }
     }).finally(() => {
@@ -260,6 +296,35 @@ export class VoiceBridge {
     });
 
     return this.bootPromise;
+  }
+
+  private clearBootTimeout(): void {
+    if (this.bootTimeoutHandle) {
+      clearTimeout(this.bootTimeoutHandle);
+      this.bootTimeoutHandle = null;
+    }
+  }
+
+  private rejectBoot(err: Error): void {
+    this.clearBootTimeout();
+    this.bootReject?.(err);
+    this.bootReject = null;
+    this.bootResolve = null;
+  }
+
+  private resolveBoot(): void {
+    this.clearBootTimeout();
+    this.bootResolve?.();
+    this.bootReject = null;
+    this.bootResolve = null;
+  }
+
+  private rejectPending(err: Error): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeoutHandle);
+      pending.reject(err);
+    }
+    this.pending.clear();
   }
 
   private handleStdout(chunk: Buffer): void {
@@ -279,14 +344,21 @@ export class VoiceBridge {
       if (parsed.id === 'boot') {
         if (parsed.ok) {
           log(`[VoiceBridge] worker ready (model=${parsed.model}, device=${parsed.device})`);
-          this.bootResolve?.();
+          this.workerReady = true;
+          this.resolveBoot();
         } else {
           this.bootError = parsed.error ?? 'worker boot failed';
+          this.workerReady = false;
           logError('[VoiceBridge] worker boot failed:', this.bootError);
-          this.bootReject?.(new Error(this.bootError));
+          if (this.worker) {
+            try {
+              this.worker.kill('SIGTERM');
+            } catch {
+              /* already gone */
+            }
+          }
+          this.rejectBoot(new Error(this.bootError));
         }
-        this.bootResolve = null;
-        this.bootReject = null;
         continue;
       }
       const pending = this.pending.get(parsed.id);
@@ -308,4 +380,4 @@ export class VoiceBridge {
   }
 }
 
-export const __test = { resolveVoicePythonExecutable, missingPythonMessage };
+export const __test = { resolveVoicePythonExecutable, missingPythonMessage, buildVoiceWorkerEnv };

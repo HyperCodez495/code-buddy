@@ -90,7 +90,7 @@ vi.mock('node:fs', async () => {
 
 import { __test, VoiceBridge } from '../src/main/voice/voice-bridge';
 
-const { missingPythonMessage, resolveVoicePythonExecutable } = __test;
+const { buildVoiceWorkerEnv, missingPythonMessage, resolveVoicePythonExecutable } = __test;
 
 describe('VoiceBridge protocol', () => {
   beforeEach(() => {
@@ -110,6 +110,27 @@ describe('VoiceBridge protocol', () => {
     expect(missingPythonMessage('C:\\missing\\python.exe')).toContain('COWORK_VOICE_VENV');
   });
 
+  it('builds a filtered worker env without provider secrets', () => {
+    const previous = {
+      openai: process.env.OPENAI_API_KEY,
+      model: process.env.COWORK_WHISPER_MODEL,
+    };
+    process.env.OPENAI_API_KEY = 'sk-test-secret-that-must-not-leak';
+    process.env.COWORK_WHISPER_MODEL = 'small';
+    try {
+      const env = buildVoiceWorkerEnv();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env.COWORK_WHISPER_MODEL).toBe('small');
+      expect(env.COWORK_WHISPER_COMPUTE).toBe('int8');
+      expect(env.COWORK_WHISPER_DEVICE).toBe('cpu');
+    } finally {
+      if (previous.openai === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous.openai;
+      if (previous.model === undefined) delete process.env.COWORK_WHISPER_MODEL;
+      else process.env.COWORK_WHISPER_MODEL = previous.model;
+    }
+  });
+
   it('signals readiness on `boot:ok` and resolves a transcription request', async () => {
     const bridge = new VoiceBridge();
     const sentLines: string[] = [];
@@ -121,11 +142,13 @@ describe('VoiceBridge protocol', () => {
     // Wait one tick for spawn() and the boot promise to settle.
     await new Promise((r) => setImmediate(r));
     expect(lastSpawned).not.toBeNull();
+    expect(bridge.isReady()).toBe(false);
     lastSpawned!.setStdinHandler((line) => sentLines.push(line));
     lastSpawned!.emitStdout(JSON.stringify({ id: 'boot', ok: true, model: 'base', device: 'cpu' }));
 
     // Allow the boot promise to drain + the request to be sent.
     await new Promise((r) => setImmediate(r));
+    expect(bridge.isReady()).toBe(true);
     expect(sentLines).toHaveLength(1);
     const parsed = JSON.parse(sentLines[0]) as Record<string, unknown>;
     expect(parsed).toMatchObject({ language: 'fr' });
@@ -139,6 +162,19 @@ describe('VoiceBridge protocol', () => {
     const result = await transcribePromise;
     expect(result.text).toBe('bonjour le monde');
     expect(result.durationMs).toBe(500);
+  });
+
+  it('rejects boot if the worker exits before boot:ok', async () => {
+    const bridge = new VoiceBridge();
+    const promise = bridge.transcribe(Buffer.from('x'));
+
+    await new Promise((r) => setImmediate(r));
+    expect(lastSpawned).not.toBeNull();
+    expect(bridge.isReady()).toBe(false);
+    lastSpawned!.emit('exit', 1);
+
+    await expect(promise).rejects.toThrow(/exited/);
+    expect(bridge.isReady()).toBe(false);
   });
 
   it('rejects a transcription when the worker reports ok=false', async () => {

@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { buildFilteredSubprocessEnv } from '../../../../src/utils/subprocess-env.js';
 import { log, logWarn } from '../utils/logger';
 
 const DEFAULT_VOICE_NAME = 'fr_FR-siwis-medium.onnx';
@@ -145,6 +146,9 @@ export class TTSBridge {
     // and underscores aloud. Cheap heuristic — for richer cleanup the
     // renderer should pre-process before calling.
     const cleaned = sanitizeForSpeech(text);
+    if (!cleaned) {
+      throw new Error('TTSBridge: text is empty after sanitization');
+    }
 
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cowork-tts-'));
     const outPath = path.join(tmpDir, 'speech.wav');
@@ -193,6 +197,7 @@ function spawnPiper(
   return new Promise<void>((resolve, reject) => {
     const child = spawn(binary, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: buildPiperEnv(),
     });
     let stderr = '';
     child.stderr.on('data', (c) => {
@@ -225,6 +230,12 @@ function spawnPiper(
     });
     child.stdin.write(text + '\n');
     child.stdin.end();
+  });
+}
+
+function buildPiperEnv(): NodeJS.ProcessEnv {
+  return buildFilteredSubprocessEnv({
+    allowEnv: ['COWORK_VOICE_ROOT'],
   });
 }
 
@@ -263,4 +274,5 @@ export const __test = {
   resolvePiperBinary,
   resolvePiperVoice,
   missingPiperMessage,
+  buildPiperEnv,
 };

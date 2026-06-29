@@ -140,6 +140,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'local-model', name: 'local-model' },
       { id: 'qwen2.5-coder', name: 'qwen2.5-coder' },
       { id: 'deepseek-coder', name: 'deepseek-coder' },
+      { id: 'meta-llama-3.1-8b-instruct', name: 'meta-llama-3.1-8b-instruct' },
       { id: 'llama-3.1-8b', name: 'llama-3.1-8b' },
     ],
     keyPlaceholder: 'Optional',

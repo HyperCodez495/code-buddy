@@ -5,7 +5,7 @@
  * Uses xlsx library for Excel files and built-in parsing for CSV.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { basename, extname } from 'path';
 import {
   SpecializedAgent,
@@ -28,6 +28,24 @@ import { getErrorMessage } from '../../types/index.js';
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type XLSXModule = any;
+
+const DEFAULT_MAX_EXCEL_BYTES = 25 * 1024 * 1024;
+
+function maxExcelBytes(): number {
+  const configured = Number(process.env.CODEBUDDY_MAX_EXCEL_BYTES);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_EXCEL_BYTES;
+}
+
+function assertExcelFileWithinLimit(filePath: string): void {
+  const size = statSync(filePath).size;
+  const maxBytes = maxExcelBytes();
+  if (size > maxBytes) {
+    throw new Error(
+      `Excel file is too large to parse safely (${size} bytes > ${maxBytes} bytes). ` +
+        'Set CODEBUDDY_MAX_EXCEL_BYTES to override.',
+    );
+  }
+}
 
 // ============================================================================
 // Configuration
@@ -559,6 +577,7 @@ export class ExcelAgent extends SpecializedAgent {
   }
 
   private readExcelFile(filePath: string): ExcelWorkbook {
+    assertExcelFileWithinLimit(filePath);
     const buffer = readFileSync(filePath);
     const wb = this.xlsx.read(buffer, { type: 'buffer' });
 

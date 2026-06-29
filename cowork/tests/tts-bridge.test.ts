@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 import { __test, TTSBridge } from '../src/main/voice/tts-bridge';
 
 const {
+  buildPiperEnv,
   missingPiperMessage,
   readWavSampleRate,
   resolvePiperBinary,
@@ -119,6 +120,25 @@ describe('TTSBridge — portable runtime resolution', () => {
     expect(missingPiperMessage('binary', 'C:\\missing\\piper.exe')).toContain('COWORK_PIPER_BIN');
     expect(missingPiperMessage('voice', 'C:\\missing\\voice.onnx')).toContain('COWORK_PIPER_VOICE');
   });
+
+  it('builds a filtered Piper env without provider secrets', () => {
+    const previous = {
+      openai: process.env.OPENAI_API_KEY,
+      root: process.env.COWORK_VOICE_ROOT,
+    };
+    process.env.OPENAI_API_KEY = 'sk-test-secret-that-must-not-leak';
+    process.env.COWORK_VOICE_ROOT = '/home/patrice/voice';
+    try {
+      const env = buildPiperEnv();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env.COWORK_VOICE_ROOT).toBe('/home/patrice/voice');
+    } finally {
+      if (previous.openai === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous.openai;
+      if (previous.root === undefined) delete process.env.COWORK_VOICE_ROOT;
+      else process.env.COWORK_VOICE_ROOT = previous.root;
+    }
+  });
 });
 
 describe('TTSBridge — boot error handling', () => {
@@ -146,5 +166,13 @@ describe('TTSBridge — boot error handling', () => {
     });
     await expect(bridge.synthesize('')).rejects.toThrow(/empty/);
     await expect(bridge.synthesize('   ')).rejects.toThrow(/empty/);
+  });
+
+  it('synthesize() rejects when sanitization removes all speakable text', async () => {
+    const bridge = new TTSBridge({
+      binary: process.execPath,
+      voice: process.execPath,
+    });
+    await expect(bridge.synthesize('![screenshot](image.png)')).rejects.toThrow(/empty after sanitization/);
   });
 });

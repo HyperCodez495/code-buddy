@@ -143,6 +143,7 @@ import { runConfigApiTest } from './config/config-test-routing';
 import { resolveEngineRuntimeConfig } from './config/engine-runtime-config';
 import { listLmStudioModels } from './config/lmstudio-api';
 import { listOllamaModels } from './config/ollama-api';
+import { buildModelInventory } from '@codebuddy/fleet/model-inventory.js';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
@@ -3416,6 +3417,22 @@ ipcMain.handle('config.discover-lmstudio-local', async (_event, payload?: { base
       available: false,
       baseUrl: payload?.baseUrl || 'http://localhost:1234/v1',
       status: 'unavailable',
+    };
+  }
+});
+
+ipcMain.handle('config.model-inventory', async (_event, payload?: { includeTailnetPeers?: boolean }) => {
+  try {
+    return await buildModelInventory({
+      includeTailnetPeers: payload?.includeTailnetPeers ?? true,
+      forceCapabilityRefresh: true,
+    });
+  } catch (error) {
+    logError('[Config] Error building model inventory:', error);
+    return {
+      updatedAt: new Date().toISOString(),
+      machineLabel: '',
+      entries: [],
     };
   }
 });

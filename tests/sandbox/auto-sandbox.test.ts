@@ -52,6 +52,26 @@ describe('AutoSandboxRouter', () => {
       // Either sandbox or direct depending on Docker availability
       expect(['sandbox', 'direct']).toContain(result.mode);
     });
+
+    it('should block sandbox-required commands when fail-closed is enabled and Docker is unavailable', async () => {
+      router = new AutoSandboxRouter({ enabled: true, failClosedOnUnavailable: true });
+      Object.defineProperty(router, 'dockerAvailable', { value: false, writable: true });
+
+      const result = await router.route('npm install');
+
+      expect(result.mode).toBe('blocked');
+      expect(result.reason).toContain('fail-closed');
+    });
+
+    it('should keep historical direct fallback when fail-closed is disabled and Docker is unavailable', async () => {
+      router = new AutoSandboxRouter({ enabled: true, failClosedOnUnavailable: false });
+      Object.defineProperty(router, 'dockerAvailable', { value: false, writable: true });
+
+      const result = await router.route('npm install');
+
+      expect(result.mode).toBe('direct');
+      expect(result.reason).toContain('Docker not available');
+    });
   });
 
   describe('configuration', () => {

@@ -9,6 +9,7 @@
  *   render(md, 'ansi', ctx) → string    (colored terminal)
  *   render(md, 'plain') → string        (stripped, structure-preserving)
  */
+/* eslint-disable no-redeclare -- TypeScript overload signatures intentionally redeclare render. */
 import type { RenderContext } from '../renderers/types.js';
 import { renderTelegramHtml } from './telegram-html.js';
 import { renderAnsi } from './ansi.js';

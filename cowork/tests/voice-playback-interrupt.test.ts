@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { interruptSpeech } from '../src/renderer/components/VoiceOutputToggle';
+import { hasVoiceOutputSupport, interruptSpeech } from '../src/renderer/components/VoiceOutputToggle';
 
 describe('voice playback interruption', () => {
   afterEach(() => {
@@ -59,5 +59,15 @@ describe('voice playback interruption', () => {
     expect(cancel).toHaveBeenCalled();
     expect(dispatchEvent).toHaveBeenCalled();
     expect(recordInterruption).not.toHaveBeenCalled();
+  });
+
+  it('treats the Piper IPC bridge as voice output support without browser speechSynthesis', () => {
+    vi.stubGlobal('window', {
+      electronAPI: {
+        voice: { speak: vi.fn() },
+      },
+    });
+
+    expect(hasVoiceOutputSupport()).toBe(true);
   });
 });

@@ -1991,6 +1991,36 @@ export interface ProviderModelInfo {
   name: string;
 }
 
+export interface ModelInventoryEntry {
+  provider: string;
+  runtimeProvider: string;
+  model: string;
+  baseURL?: string;
+  machineLabel: string;
+  machineSpec?: {
+    cpu?: string;
+    gpu?: string;
+    ramGb?: number;
+  };
+  executionLocation: 'local' | 'lan' | 'cloud';
+  launchHint: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  supportsReasoning: boolean;
+  supportsToolCalls: boolean;
+  supportsVision: boolean;
+  strengths: string[];
+  benchmarkScore?: number;
+  bestFor: string[];
+  source: 'local-capability' | 'tailnet-peer' | 'catalog';
+}
+
+export interface ModelInventorySnapshot {
+  updatedAt: string;
+  machineLabel: string;
+  entries: ModelInventoryEntry[];
+}
+
 export interface ApiTestInput {
   provider: AppConfig['provider'];
   apiKey: string;

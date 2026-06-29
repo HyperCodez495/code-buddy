@@ -17,6 +17,7 @@ import type {
   ScheduleCreateInput,
   ScheduleUpdateInput,
   ProviderModelInfo,
+  ModelInventorySnapshot,
   LocalLmStudioDiscoveryResult,
   LocalOllamaDiscoveryResult,
   Project,
@@ -375,6 +376,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.discover-local', payload),
     discoverLocalLmStudio: (payload?: { baseUrl?: string }): Promise<LocalLmStudioDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-lmstudio-local', payload),
+    modelInventory: (payload?: { includeTailnetPeers?: boolean }): Promise<ModelInventorySnapshot> =>
+      ipcRenderer.invoke('config.model-inventory', payload),
   },
 
   // Workflow Builder Pro API
@@ -4513,6 +4516,7 @@ declare global {
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
         discoverLocalLmStudio: (payload?: { baseUrl?: string }) => Promise<LocalLmStudioDiscoveryResult>;
+        modelInventory: (payload?: { includeTailnetPeers?: boolean }) => Promise<ModelInventorySnapshot>;
       };
       workflowBuilder: {
         start: () => Promise<{ success: boolean; error?: string }>;

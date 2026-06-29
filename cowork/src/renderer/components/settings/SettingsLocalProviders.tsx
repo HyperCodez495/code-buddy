@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, Cpu, Loader2, Plug, RefreshCw, Server } from 'lucide-react';
-import type { ProviderModelInfo } from '../../types';
+import type { ModelInventorySnapshot, ProviderModelInfo } from '../../types';
 import { SettingsContentSection } from './shared';
 
 type LocalProviderKey = 'ollama' | 'lmstudio';
@@ -10,6 +10,9 @@ interface LocalProviderState {
   status: 'idle' | 'loading' | 'ready' | 'empty' | 'unavailable';
   baseUrl: string;
   models: ProviderModelInfo[];
+  machineLabel?: string;
+  launchHint?: string;
+  benchmarkScore?: number;
   error?: string;
 }
 
@@ -39,6 +42,20 @@ function normalizeModels(models?: string[]): ProviderModelInfo[] {
     .map((id) => ({ id, name: id }));
 }
 
+function snapshotToModels(snapshot: ModelInventorySnapshot | null | undefined, provider: LocalProviderKey): LocalProviderState {
+  const entries = snapshot?.entries.filter((entry) => entry.runtimeProvider === provider) ?? [];
+  const models = entries.map((entry) => ({ id: entry.model, name: entry.model }));
+  const first = entries[0];
+  return {
+    status: entries.length > 0 ? 'ready' : 'empty',
+    baseUrl: first?.baseURL || (provider === 'ollama' ? 'http://localhost:11434/v1' : 'http://localhost:1234/v1'),
+    models,
+    machineLabel: first?.machineLabel,
+    launchHint: first?.launchHint,
+    benchmarkScore: first?.benchmarkScore,
+  };
+}
+
 export function SettingsLocalProviders({ onConnect }: SettingsLocalProvidersProps) {
   const { t } = useTranslation();
   const [providers, setProviders] = useState<Record<LocalProviderKey, LocalProviderState>>(DEFAULT_PROVIDER_STATE);
@@ -51,29 +68,42 @@ export function SettingsLocalProviders({ onConnect }: SettingsLocalProvidersProp
     }));
 
     try {
-      const result =
-        provider === 'ollama'
-          ? await window.electronAPI.config.discoverLocal()
-          : await window.electronAPI.config.discoverLocalLmStudio();
-
-      const models = normalizeModels(result.models);
-      setProviders((current) => ({
-        ...current,
-        [provider]: {
-          baseUrl: result.baseUrl,
-          models,
-          status: !result.available ? 'unavailable' : result.status === 'service_available' ? 'empty' : 'ready',
-        },
-      }));
-    } catch (error) {
+      const snapshot = await window.electronAPI.config.modelInventory?.({ includeTailnetPeers: provider === 'ollama' });
+      const nextState = snapshotToModels(snapshot, provider);
       setProviders((current) => ({
         ...current,
         [provider]: {
           ...current[provider],
-          status: 'unavailable',
-          error: error instanceof Error ? error.message : String(error),
+          ...nextState,
+          status: nextState.models.length > 0 ? 'ready' : 'empty',
         },
       }));
+    } catch (error) {
+      try {
+        const result =
+          provider === 'ollama'
+            ? await window.electronAPI.config.discoverLocal()
+            : await window.electronAPI.config.discoverLocalLmStudio();
+
+        const models = normalizeModels(result.models);
+        setProviders((current) => ({
+          ...current,
+          [provider]: {
+            baseUrl: result.baseUrl,
+            models,
+            status: !result.available ? 'unavailable' : result.status === 'service_available' ? 'empty' : 'ready',
+          },
+        }));
+      } catch (fallbackError) {
+        setProviders((current) => ({
+          ...current,
+          [provider]: {
+            ...current[provider],
+            status: 'unavailable',
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          },
+        }));
+      }
     }
   }, []);
 
@@ -161,6 +191,19 @@ export function SettingsLocalProviders({ onConnect }: SettingsLocalProvidersProp
                   )}
                 </div>
                 <div className="break-all">{state.baseUrl}</div>
+                {state.machineLabel && (
+                  <div className="text-[11px] text-text-muted">
+                    {t('api.localProviderMachine', 'Machine')}: {state.machineLabel}
+                  </div>
+                )}
+                {state.launchHint && (
+                  <div className="text-[11px] text-text-muted">{state.launchHint}</div>
+                )}
+                {typeof state.benchmarkScore === 'number' && (
+                  <div className="text-[11px] text-text-muted">
+                    {t('api.localProviderBenchmark', 'Benchmark')}: {state.benchmarkScore.toFixed(0)}
+                  </div>
+                )}
                 {state.models.length > 0 && (
                   <div className="rounded-lg bg-surface px-3 py-2 text-[11px] text-text-muted">
                     {state.models.slice(0, 4).map((model) => model.id).join(' • ')}

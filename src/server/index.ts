@@ -1250,9 +1250,14 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                     : responseDecider.decide(t);
               }
               sensoryTeardown.push(wireSpeechReaction(wireOpts));
+              const gateLabel = alwaysRespond
+                ? 'always-respond'
+                : chimeIn
+                  ? 'gate[addressed+greeting+chime-in]'
+                  : 'gate[addressed+greeting]';
               logger.info(
                 `Sensory speech reaction: Enabled (speech_end → STT → ${
-                  alwaysRespond ? 'always-respond' : chimeIn ? 'gate[addressed+chime-in]' : 'gate[addressed-only]'
+                  gateLabel
                 } → ${readiness.act ? `agent[${readiness.permissionMode}]` : `think[${readiness.model}]`} → speak` +
                   `${readiness.speakReady ? `[${readiness.voice}]` : ' — SILENT until CODEBUDDY_TTS_VOICE is set'})`,
               );

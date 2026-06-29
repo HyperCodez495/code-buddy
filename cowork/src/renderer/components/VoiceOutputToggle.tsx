@@ -28,6 +28,11 @@ export function isTtsEnabled(): boolean {
   }
 }
 
+export function hasVoiceOutputSupport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.speechSynthesis || window.electronAPI?.voice?.speak);
+}
+
 /** Currently-playing audio element so subsequent speak() can interrupt. */
 let activeAudio: HTMLAudioElement | null = null;
 
@@ -102,6 +107,7 @@ async function speakViaPiper(text: string): Promise<boolean> {
   const api = window.electronAPI?.voice;
   if (!api?.speak) return false;
   try {
+    interruptSpeech('new_speech');
     const result = await api.speak(text);
     if (!result.ok || !result.audio) {
       if (result.error) {
@@ -109,22 +115,36 @@ async function speakViaPiper(text: string): Promise<boolean> {
       }
       return false;
     }
-    interruptSpeech('new_speech');
     const blob = new Blob([result.audio], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     activeAudio = audio;
     recordVoiceEvent({ type: 'assistant_speech_started' });
+    let finished = false;
+    const finishSpeech = () => {
+      if (finished) return;
+      finished = true;
+      recordVoiceEvent({ type: 'assistant_speech_finished' });
+    };
     const cleanup = () => {
       URL.revokeObjectURL(url);
       if (activeAudio === audio) activeAudio = null;
     };
     audio.addEventListener('ended', () => {
-      recordVoiceEvent({ type: 'assistant_speech_finished' });
+      finishSpeech();
       cleanup();
     });
-    audio.addEventListener('error', cleanup);
-    await audio.play();
+    audio.addEventListener('error', () => {
+      finishSpeech();
+      cleanup();
+    });
+    try {
+      await audio.play();
+    } catch (err) {
+      finishSpeech();
+      cleanup();
+      throw err;
+    }
     return true;
   } catch (err) {
     console.warn('[VoiceOutputToggle] piper synth failed:', err);
@@ -171,7 +191,7 @@ export const VoiceOutputToggle: React.FC = () => {
   const [supported, setSupported] = useState<boolean>(true);
 
   useEffect(() => {
-    setSupported(typeof window !== 'undefined' && Boolean(window.speechSynthesis));
+    setSupported(hasVoiceOutputSupport());
     setEnabled(isTtsEnabled());
   }, []);
 

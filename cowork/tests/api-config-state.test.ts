@@ -142,6 +142,9 @@ describe('api config state helpers', () => {
   it('exposes lmstudio presets and guidance', () => {
     expect(FALLBACK_PROVIDER_PRESETS.lmstudio.baseUrl).toBe('http://localhost:1234/v1');
     expect(FALLBACK_PROVIDER_PRESETS.lmstudio.keyHint).toContain('LM Studio');
+    expect(FALLBACK_PROVIDER_PRESETS.lmstudio.models.map((model) => model.id)).toContain(
+      'meta-llama-3.1-8b-instruct'
+    );
     expect(getModelInputGuidance('lmstudio').placeholder).toContain('local-model');
   });
 
@@ -315,6 +318,8 @@ describe('api config state helpers', () => {
 
   it('wires local Ollama discovery through the shared config hook', () => {
     const source = fs.readFileSync(hookPath, 'utf8');
+    expect(source).toContain('window.electronAPI.config.modelInventory');
+    expect(source).toContain('localProviderModelsFromInventory');
     expect(source).toContain('window.electronAPI.config.discoverLocal({');
     expect(source).toContain('baseUrl: requestedBaseUrl || undefined');
     expect(source).toContain("showErrorKey('api.localOllamaNotFound')");

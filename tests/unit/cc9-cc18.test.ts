@@ -341,10 +341,22 @@ describe('CC11: Bash Injection', () => {
     expect(result).toContain('<!-- bash error');
   });
 
+  it('blocks dangerous shell injection syntax before execution', async () => {
+    const { resolveBashInjections } = await import('../../src/skills/bash-injection.js');
+    const result = resolveBashInjections('Result: !`echo safe; rm -rf /`');
+    expect(result).toContain('<!-- bash blocked:');
+  });
+
   it('hasBashInjections detects patterns', async () => {
     const { hasBashInjections } = await import('../../src/skills/bash-injection.js');
     expect(hasBashInjections('Hello !`echo world`')).toBe(true);
     expect(hasBashInjections('Hello world')).toBe(false);
+  });
+
+  it('hasBashInjections stays stable across repeated calls', async () => {
+    const { hasBashInjections } = await import('../../src/skills/bash-injection.js');
+    expect(hasBashInjections('Hello !`echo world`')).toBe(true);
+    expect(hasBashInjections('Hello !`echo world`')).toBe(true);
   });
 });
 

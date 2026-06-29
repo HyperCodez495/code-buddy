@@ -7,6 +7,7 @@ import type {
   ApiTestResult,
   CustomProtocolType,
   DiagnosticResult,
+  ModelInventorySnapshot,
   ProviderModelInfo,
   ProviderProfile,
   ProviderProfileKey,
@@ -276,6 +277,55 @@ function normalizeDiscoveredOllamaModels(models: string[] | undefined): Provider
     .map((id) => id.trim())
     .filter(Boolean)
     .map((id) => ({ id, name: id }));
+}
+
+function normalizeInventoryBaseUrl(provider: ProviderType, baseUrl: string): string {
+  if (provider === 'ollama') {
+    return normalizeOllamaBaseUrl(baseUrl) || baseUrl.replace(/\/+$/, '');
+  }
+  if (provider === 'lmstudio') {
+    return normalizeLmStudioBaseUrl(baseUrl);
+  }
+  return baseUrl.replace(/\/+$/, '');
+}
+
+function localProviderModelsFromInventory(
+  snapshot: ModelInventorySnapshot | null | undefined,
+  provider: ProviderType,
+  requestedBaseUrl: string
+): ProviderModelInfo[] {
+  if (!(provider === 'ollama' || provider === 'lmstudio')) {
+    return [];
+  }
+  if (requestedBaseUrl && !isLoopbackBaseUrl(requestedBaseUrl)) {
+    return [];
+  }
+
+  const normalizedRequested = requestedBaseUrl
+    ? normalizeInventoryBaseUrl(provider, requestedBaseUrl)
+    : '';
+  const seen = new Set<string>();
+  return (snapshot?.entries ?? [])
+    .filter((entry) => {
+      if (entry.runtimeProvider !== provider || !entry.model.trim()) {
+        return false;
+      }
+      if (!normalizedRequested) {
+        return true;
+      }
+      const entryBase = entry.baseURL
+        ? normalizeInventoryBaseUrl(provider, entry.baseURL)
+        : '';
+      return !entryBase || entryBase === normalizedRequested;
+    })
+    .flatMap((entry) => {
+      const id = entry.model.trim();
+      if (!id || seen.has(id)) {
+        return [];
+      }
+      seen.add(id);
+      return [{ id, name: id }];
+    });
 }
 
 // Inline helper: produces a partial discoveredModels update that clears a profile key.
@@ -1616,11 +1666,20 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     dispatch({ type: 'SET_IS_REFRESHING_MODELS', payload: true });
     clearError();
     try {
-      const models = await window.electronAPI.config.listModels({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: requestedBaseUrl || undefined,
-      });
+      let models: ProviderModelInfo[] = [];
+      if (window.electronAPI.config.modelInventory) {
+        const inventory = await window.electronAPI.config.modelInventory({
+          includeTailnetPeers: provider === 'ollama',
+        });
+        models = localProviderModelsFromInventory(inventory, provider, requestedBaseUrl);
+      }
+      if (models.length === 0) {
+        models = await window.electronAPI.config.listModels({
+          provider,
+          apiKey: apiKey.trim(),
+          baseUrl: requestedBaseUrl || undefined,
+        });
+      }
 
       const latestTarget = latestLocalProviderTargetRef.current;
       if (

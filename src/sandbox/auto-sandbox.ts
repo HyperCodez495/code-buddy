@@ -8,7 +8,7 @@
  * 1. Parses the command to extract base commands
  * 2. Checks if any are classified as "should-sandbox"
  * 3. If Docker is available, routes to DockerSandbox
- * 4. Falls back to normal execution if Docker unavailable
+ * 4. Falls back to normal execution if Docker unavailable, unless fail-closed is enabled
  */
 
 import { parseBashCommand } from '../security/bash-parser.js';
@@ -31,6 +31,8 @@ export interface AutoSandboxConfig {
   cpuLimit: string;
   /** Enable networking in sandbox */
   networkEnabled: boolean;
+  /** Block commands that require sandboxing when Docker is unavailable */
+  failClosedOnUnavailable: boolean;
 }
 
 const DEFAULT_CONFIG: AutoSandboxConfig = {
@@ -50,6 +52,9 @@ const DEFAULT_CONFIG: AutoSandboxConfig = {
   memoryLimit: '512m',
   cpuLimit: '1.0',
   networkEnabled: true,
+  failClosedOnUnavailable:
+    process.env.CODEBUDDY_AUTO_SANDBOX_FAIL_CLOSED === 'true' ||
+    process.env.AUTO_SANDBOX_FAIL_CLOSED === 'true',
 };
 
 export class AutoSandboxRouter {
@@ -126,7 +131,7 @@ export class AutoSandboxRouter {
    * Route a command: returns 'sandbox' or 'direct' with reason.
    */
   async route(command: string): Promise<{
-    mode: 'sandbox' | 'direct';
+    mode: 'sandbox' | 'direct' | 'blocked';
     reason: string;
   }> {
     const check = this.shouldSandbox(command);
@@ -137,6 +142,18 @@ export class AutoSandboxRouter {
 
     const dockerOk = await this.isDockerAvailable();
     if (!dockerOk) {
+      if (this.config.failClosedOnUnavailable) {
+        logger.warn('Auto-sandbox: Docker not available, blocking sandbox-required command');
+        auditLogger.log({
+          action: 'sandbox_execute',
+          decision: 'block',
+          source: 'auto-sandbox',
+          target: command.slice(0, 200),
+          details: 'Docker unavailable — fail-closed enabled',
+        });
+        return { mode: 'blocked', reason: 'Docker not available and fail-closed is enabled' };
+      }
+
       logger.debug('Auto-sandbox: Docker not available, falling back to direct execution');
       auditLogger.log({
         action: 'sandbox_execute',

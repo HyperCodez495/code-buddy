@@ -23,7 +23,10 @@ describe('Settings API local providers dashboard', () => {
     const source = fs.readFileSync(localProvidersPath, 'utf8');
     expect(source).toContain("id: 'ollama'");
     expect(source).toContain("id: 'lmstudio'");
+    expect(source).toContain('window.electronAPI.config.modelInventory');
     expect(source).toContain("window.electronAPI.config.discoverLocal()");
     expect(source).toContain("window.electronAPI.config.discoverLocalLmStudio()");
+    expect(source).toContain('Machine');
+    expect(source).toContain('Benchmark');
   });
 });
