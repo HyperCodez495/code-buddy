@@ -147,8 +147,8 @@ async fn main() {
     {
         let tx = sense_tx.clone();
         let source = std::env::var("BUDDY_SENSE_MIC_SOURCE").unwrap_or_else(|_| "default".to_string());
-        let threshold = std::env::var("BUDDY_SENSE_MIC_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.05);
-        let endpoint_ms = std::env::var("BUDDY_SENSE_MIC_ENDPOINT_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(700);
+        let threshold = std::env::var("BUDDY_SENSE_MIC_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(senses::live_audio::DEFAULT_MIC_THRESHOLD);
+        let endpoint_ms = std::env::var("BUDDY_SENSE_MIC_ENDPOINT_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(senses::live_audio::DEFAULT_MIC_ENDPOINT_MS);
         eprintln!("[buddy-sense] live-audio sense active (pulse:{source}, threshold {threshold}, endpoint {endpoint_ms}ms)");
         tokio::spawn(async move { senses::live_audio::run(tx, source, threshold, endpoint_ms).await });
     }

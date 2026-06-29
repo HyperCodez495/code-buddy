@@ -27,6 +27,14 @@ use tokio::sync::mpsc;
 const SPEECH_SALIENCE: u8 = 200; // a final transcript is salient → never coalesced
 const SAMPLE_RATE: u32 = 16_000;
 const FRAME_MS: u64 = 20; // 20 ms frames → 320 samples @ 16 kHz
+/// Default energy-VAD threshold (normalized RMS) to OPEN an utterance. Biased low
+/// on purpose: a false positive costs one wasted ~120 ms decode (empty text →
+/// skipped), a false negative makes the robot deaf. Conversational mic speech sits
+/// well under a studio recording, so we open easily and let the decode gate noise.
+/// The shared const ties the runtime default and the real-WAV test together.
+pub const DEFAULT_MIC_THRESHOLD: f64 = 0.02;
+/// Default trailing silence that closes an utterance.
+pub const DEFAULT_MIC_ENDPOINT_MS: u64 = 700;
 /// Lead-in kept before speech is detected, so we don't clip the first phoneme.
 const PREROLL_MS: u64 = 300;
 /// Ignore "utterances" with less than this much voiced audio (clicks, coughs).
@@ -89,10 +97,12 @@ impl Segmenter {
                 self.silence_run = 0;
                 self.voiced_frames = 1;
                 self.buf.clear();
+                // `frame` is already the newest element of the pre-roll (pushed
+                // just above), so draining the pre-roll covers it — don't append
+                // it again or the first 20 ms is doubled.
                 for f in self.preroll.drain(..) {
                     self.buf.extend_from_slice(&f);
                 }
-                self.buf.extend_from_slice(frame);
             }
             return None;
         }
@@ -304,7 +314,9 @@ mod tests {
             return;
         }
         let n = frame_samples();
-        let mut seg = Segmenter::new(0.02, FRAME_MS, 300);
+        // Use the SHIPPED runtime default, not a hand-tuned value — this test must
+        // prove the daemon's real config segments real speech, or it proves nothing.
+        let mut seg = Segmenter::new(DEFAULT_MIC_THRESHOLD, FRAME_MS, DEFAULT_MIC_ENDPOINT_MS);
         let mut utts: Vec<Vec<i16>> = Vec::new();
         for frame in samples.chunks(n) {
             if let Some(u) = seg.push(frame) {

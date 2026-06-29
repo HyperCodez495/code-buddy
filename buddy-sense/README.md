@@ -116,7 +116,8 @@ LD_LIBRARY_PATH=target/release \
 
 Env: `BUDDY_SENSE_MIC_SOURCE` (PulseAudio source, default `default`; e.g. the BRIO's
 `alsa_input.usb-046d_Logitech_BRIO…`), `BUDDY_SENSE_MIC_THRESHOLD` (energy VAD, default
-`0.05`), `BUDDY_SENSE_MIC_ENDPOINT_MS` (silence to close an utterance, default `700`),
+`0.02` — biased low so quiet conversational speech still opens an utterance; raise it
+in a noisy room), `BUDDY_SENSE_MIC_ENDPOINT_MS` (silence to close an utterance, default `700`),
 `BUDDY_SENSE_MIC_DEBUG=1` (echo each final to stderr), `BUDDY_SENSE_FFMPEG` (ffmpeg path).
 
 Built with tokio + tokio-tungstenite (+ optional xcap / atspi / vad-rs / sherpa-rs;
