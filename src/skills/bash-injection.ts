@@ -4,12 +4,13 @@
  * Parses !`command` syntax in skill templates and replaces with command stdout.
  * Used for dynamic skill content that depends on environment state.
  *
- * Security: Commands are executed via child_process.execSync with a 10s timeout.
- * Only available in skill templates, not in user-facing content.
+ * Security: Commands are validated before execution and blocked if they use
+ * shell-bypass patterns or other dangerous forms.
  */
 
 import { execSync } from 'child_process';
 import { logger } from '../utils/logger.js';
+import { validateCommand } from '../tools/bash/command-validator.js';
 
 /** Regex to match !`command` bash injection syntax */
 const BASH_INJECTION_REGEX = /!`([^`]+)`/g;
@@ -34,6 +35,12 @@ const MAX_OUTPUT_SIZE = 4_000;
 export function resolveBashInjections(content: string, cwd?: string): string {
   return content.replace(BASH_INJECTION_REGEX, (_match, command: string) => {
     try {
+      const validation = validateCommand(command.trim());
+      if (!validation.valid) {
+        logger.debug(`Bash injection blocked: ${validation.reason}`);
+        return `<!-- bash blocked: ${command} -->`;
+      }
+
       const output = execSync(command.trim(), {
         timeout: BASH_INJECTION_TIMEOUT,
         cwd: cwd || process.cwd(),
@@ -58,5 +65,6 @@ export function resolveBashInjections(content: string, cwd?: string): string {
  * Check if content contains any bash injection patterns.
  */
 export function hasBashInjections(content: string): boolean {
+  BASH_INJECTION_REGEX.lastIndex = 0;
   return BASH_INJECTION_REGEX.test(content);
 }

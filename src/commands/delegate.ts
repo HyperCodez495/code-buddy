@@ -11,11 +11,81 @@
  * Usage: /delegate Fix all TypeScript errors
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+interface CommandResult {
+  stdout: string;
+  stderr: string;
+}
+
+function normalizeCommandResult(result: unknown): CommandResult {
+  if (typeof result === 'object' && result !== null && 'stdout' in result) {
+    const value = result as { stdout?: unknown; stderr?: unknown };
+    return {
+      stdout: typeof value.stdout === 'string' ? value.stdout : String(value.stdout ?? ''),
+      stderr: typeof value.stderr === 'string' ? value.stderr : String(value.stderr ?? ''),
+    };
+  }
+
+  return {
+    stdout: typeof result === 'string' ? result : String(result ?? ''),
+    stderr: '',
+  };
+}
+
+async function runCommand(file: string, args: string[]): Promise<CommandResult> {
+  const result = await execFileAsync(file, args, { windowsHide: true });
+  return normalizeCommandResult(result);
+}
+
+function assertPositivePrNumber(prNumber: number): void {
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error(`Invalid pull request number: ${prNumber}`);
+  }
+}
+
+function assertSafeBranchName(branchName: string): void {
+  const isSafe =
+    branchName.length > 0 &&
+    branchName.length <= 255 &&
+    !branchName.startsWith('-') &&
+    !branchName.endsWith('/') &&
+    !branchName.includes('..') &&
+    !branchName.includes('//') &&
+    // eslint-disable-next-line no-control-regex
+    !/[~^:?*[\]\\\s\x00-\x1f\x7f]/.test(branchName) &&
+    /^[A-Za-z0-9._/-]+$/.test(branchName);
+
+  if (!isSafe) {
+    throw new Error(`Invalid git branch name: ${branchName}`);
+  }
+}
+
+function assertSafeLabel(label: string): void {
+  const isSafe =
+    label.length > 0 &&
+    label.length <= 100 &&
+    !label.includes(',') &&
+    // eslint-disable-next-line no-control-regex
+    !/[\x00-\x1f\x7f]/.test(label);
+
+  if (!isSafe) {
+    throw new Error(`Invalid GitHub label: ${label}`);
+  }
+}
+
+function assertSafeReviewer(reviewer: string): void {
+  const login = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?';
+  const reviewerPattern = new RegExp(`^(?:${login}/)?${login}$`);
+
+  if (!reviewerPattern.test(reviewer)) {
+    throw new Error(`Invalid GitHub reviewer: ${reviewer}`);
+  }
+}
 
 /**
  * Configuration for a delegation task.
@@ -76,7 +146,7 @@ export function generateBranchName(task: string): string {
  */
 export async function isGitRepo(): Promise<boolean> {
   try {
-    await execAsync('git rev-parse --is-inside-work-tree');
+    await runCommand('git', ['rev-parse', '--is-inside-work-tree']);
     return true;
   } catch {
     return false;
@@ -89,7 +159,7 @@ export async function isGitRepo(): Promise<boolean> {
  * @returns The current branch name.
  */
 export async function getCurrentBranch(): Promise<string> {
-  const { stdout } = await execAsync('git branch --show-current');
+  const { stdout } = await runCommand('git', ['branch', '--show-current']);
   return stdout.trim();
 }
 
@@ -99,7 +169,7 @@ export async function getCurrentBranch(): Promise<string> {
  * @returns True if changes exist.
  */
 export async function hasUncommittedChanges(): Promise<boolean> {
-  const { stdout } = await execAsync('git status --porcelain');
+  const { stdout } = await runCommand('git', ['status', '--porcelain']);
   return stdout.trim().length > 0;
 }
 
@@ -109,7 +179,8 @@ export async function hasUncommittedChanges(): Promise<boolean> {
  * @param branchName - Name of the new branch.
  */
 export async function createBranch(branchName: string): Promise<void> {
-  await execAsync(`git checkout -b ${branchName}`);
+  assertSafeBranchName(branchName);
+  await runCommand('git', ['checkout', '-b', branchName]);
 }
 
 /**
@@ -118,10 +189,8 @@ export async function createBranch(branchName: string): Promise<void> {
  * @param message - The commit message.
  */
 export async function commitChanges(message: string): Promise<void> {
-  await execAsync('git add -A');
-  // Escape double quotes in message for shell safety
-  const safeMessage = message.replace(/"/g, '\\"');
-  await execAsync(`git commit -m "${safeMessage}"`);
+  await runCommand('git', ['add', '-A']);
+  await runCommand('git', ['commit', '-m', message]);
 }
 
 /**
@@ -130,7 +199,8 @@ export async function commitChanges(message: string): Promise<void> {
  * @param branchName - The branch to push.
  */
 export async function pushBranch(branchName: string): Promise<void> {
-  await execAsync(`git push -u origin ${branchName}`);
+  assertSafeBranchName(branchName);
+  await runCommand('git', ['push', '-u', 'origin', branchName]);
 }
 
 /**
@@ -140,7 +210,7 @@ export async function pushBranch(branchName: string): Promise<void> {
  */
 export async function hasGhCli(): Promise<boolean> {
   try {
-    await execAsync('gh --version');
+    await runCommand('gh', ['--version']);
     return true;
   } catch {
     return false;
@@ -166,25 +236,24 @@ export async function createPullRequest(
   labels: string[] = [],
   reviewers: string[] = []
 ): Promise<{ url: string; number: number }> {
-  // Escape inputs for shell safety
-  const safeTitle = title.replace(/"/g, '\\"');
-  const safeBody = body.replace(/"/g, '\\"');
-  
-  let cmd = `gh pr create --title "${safeTitle}" --body "${safeBody}" --base ${baseBranch}`;
+  assertSafeBranchName(baseBranch);
+  labels.forEach(assertSafeLabel);
+  reviewers.forEach(assertSafeReviewer);
 
+  const args = ['pr', 'create', '--title', title, '--body', body, '--base', baseBranch];
   if (draft) {
-    cmd += ' --draft';
+    args.push('--draft');
   }
 
   if (labels.length > 0) {
-    cmd += ` --label "${labels.join(',')}"`;
+    args.push('--label', labels.join(','));
   }
 
   if (reviewers.length > 0) {
-    cmd += ` --reviewer "${reviewers.join(',')}"`;
+    args.push('--reviewer', reviewers.join(','));
   }
 
-  const { stdout } = await execAsync(cmd);
+  const { stdout } = await runCommand('gh', args);
 
   // Parse PR URL and number from output
   const urlMatch = stdout.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/);
@@ -205,8 +274,8 @@ export async function createPullRequest(
  * @param comment - The comment text.
  */
 export async function addPRComment(prNumber: number, comment: string): Promise<void> {
-  const safeComment = comment.replace(/"/g, '\\"');
-  await execAsync(`gh pr comment ${prNumber} --body "${safeComment}"`);
+  assertPositivePrNumber(prNumber);
+  await runCommand('gh', ['pr', 'comment', String(prNumber), '--body', comment]);
 }
 
 /**
@@ -216,8 +285,11 @@ export async function addPRComment(prNumber: number, comment: string): Promise<v
  * @param reviewers - Array of GitHub usernames.
  */
 export async function requestReview(prNumber: number, reviewers: string[]): Promise<void> {
+  assertPositivePrNumber(prNumber);
+  reviewers.forEach(assertSafeReviewer);
+
   if (reviewers.length > 0) {
-    await execAsync(`gh pr edit ${prNumber} --add-reviewer "${reviewers.join(',')}"`);
+    await runCommand('gh', ['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')]);
   }
 }
 
@@ -227,7 +299,8 @@ export async function requestReview(prNumber: number, reviewers: string[]): Prom
  * @param prNumber - The PR number.
  */
 export async function markReady(prNumber: number): Promise<void> {
-  await execAsync(`gh pr ready ${prNumber}`);
+  assertPositivePrNumber(prNumber);
+  await runCommand('gh', ['pr', 'ready', String(prNumber)]);
 }
 
 /**
@@ -355,5 +428,6 @@ export async function abortDelegate(
 
 ${reason}`);
 
-  await execAsync(`gh pr close ${prNumber} --delete-branch`);
+  assertPositivePrNumber(prNumber);
+  await runCommand('gh', ['pr', 'close', String(prNumber), '--delete-branch']);
 }

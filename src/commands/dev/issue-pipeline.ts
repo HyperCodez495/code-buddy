@@ -69,7 +69,7 @@ export async function runIssuePipeline(
   agent: CodeBuddyAgent,
   options: IssuePipelineOptions = {},
 ): Promise<IssuePipelineResult> {
-  const { execSync } = await import('child_process');
+  const { execSync, execFileSync } = await import('child_process');
 
   // ── Step 1: Fetch issue ──────────────────────────────────────
   const issue = await fetchIssue(issueRef, execSync);
@@ -82,12 +82,12 @@ export async function runIssuePipeline(
   const branch = `feat/${issue.number}-${slug}`;
 
   try {
-    execSync(`git checkout -b ${branch}`, { stdio: 'pipe' });
+    execFileSync('git', ['checkout', '-b', branch], { stdio: 'pipe' });
     console.log(`Created branch: ${branch}`);
   } catch {
     // Branch might already exist
     try {
-      execSync(`git checkout ${branch}`, { stdio: 'pipe' });
+      execFileSync('git', ['checkout', branch], { stdio: 'pipe' });
       console.log(`Switched to existing branch: ${branch}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -143,13 +143,13 @@ export async function runIssuePipeline(
 
   try {
     // Stage and commit changes
-    execSync('git add -A', { stdio: 'pipe' });
+    execFileSync('git', ['add', '-A'], { stdio: 'pipe' });
 
     const commitMsg = `feat: resolve #${issue.number} — ${issue.title}`;
-    execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', commitMsg], { stdio: 'pipe' });
 
     // Push branch
-    execSync(`git push -u origin ${branch}`, { stdio: 'pipe' });
+    execFileSync('git', ['push', '-u', 'origin', branch], { stdio: 'pipe' });
 
     // Create PR
     const prBody = [
@@ -165,8 +165,9 @@ export async function runIssuePipeline(
     ].join('\n');
 
     const prTitle = `feat: ${issue.title}`.slice(0, 70);
-    const prOutput = execSync(
-      `gh pr create --title "${prTitle.replace(/"/g, '\\"')}" --body "${prBody.replace(/"/g, '\\"')}"`,
+    const prOutput = execFileSync(
+      'gh',
+      ['pr', 'create', '--title', prTitle, '--body', prBody],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
 

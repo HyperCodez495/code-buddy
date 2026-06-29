@@ -10,13 +10,6 @@ import {
   formatShellResult,
   isInteractiveCommand,
 } from '../../src/commands/shell-prefix';
-import { exec, spawn } from 'child_process';
-
-// Mock child_process
-jest.mock('child_process', () => ({
-  exec: jest.fn(),
-  spawn: jest.fn(),
-}));
 
 describe('ShellPrefix', () => {
   beforeEach(() => {
@@ -43,64 +36,18 @@ describe('ShellPrefix', () => {
   });
 
   describe('executeShellCommand()', () => {
-    it('should execute command and return success', async () => {
-      (exec as unknown as jest.Mock).mockImplementation((cmd, options, cb) => {
-        cb(null, { stdout: 'output', stderr: '' });
-      });
-
-      const result = await executeShellCommand('ls');
-
-      expect(result.success).toBe(true);
-      expect(result.stdout).toBe('output');
-      expect(exec).toHaveBeenCalled();
-    });
-
-    it('should return failure on error', async () => {
-      (exec as unknown as jest.Mock).mockImplementation((cmd, options, cb) => {
-        const error = new Error('fail');
-        (error as any).code = 1;
-        (error as any).stderr = 'error msg';
-        cb(error, '', 'error msg');
-      });
-
-      const result = await executeShellCommand('false');
-
-      expect(result.success).toBe(false);
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toBe('error msg');
-    });
-
-    it('should handle timeout', async () => {
-      (exec as unknown as jest.Mock).mockImplementation((cmd, options, cb) => {
-        const error = new Error('timeout');
-        (error as any).killed = true;
-        cb(error, { stdout: 'partial', stderr: '' });
-      });
-
-      const result = await executeShellCommand('sleep 100', process.cwd(), 10);
-
-      expect(result.success).toBe(false);
-      expect(result.exitCode).toBe(124);
-      expect(result.stderr).toContain('timed out');
+    it('should reject direct execution', async () => {
+      await expect(executeShellCommand('ls')).rejects.toThrow(
+        'Direct shell execution via shell-prefix is disabled'
+      );
     });
   });
 
   describe('executeInteractiveCommand()', () => {
-    it('should spawn process and return exit code', async () => {
-      const mockChild = {
-        on: jest.fn((event, cb) => {
-          if (event === 'close') setTimeout(() => cb(0), 10);
-        }),
-      };
-      (spawn as jest.Mock).mockReturnValue(mockChild);
-
-      const code = await executeInteractiveCommand('vim');
-
-      expect(code).toBe(0);
-      expect(spawn).toHaveBeenCalledWith('vim', [], expect.objectContaining({
-        shell: true,
-        stdio: 'inherit',
-      }));
+    it('should reject interactive execution', async () => {
+      await expect(executeInteractiveCommand('vim')).rejects.toThrow(
+        'Interactive shell execution via shell-prefix is disabled'
+      );
     });
   });
 

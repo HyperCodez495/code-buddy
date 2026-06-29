@@ -13,7 +13,7 @@
 
 import { ChatEntry } from '../../agent/codebuddy-agent.js';
 import fs from 'fs';
-import { execSync, spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import path from 'path';
 
 export interface CommandHandlerResult {
@@ -121,7 +121,7 @@ export async function handleDiff(_args: string[]): Promise<CommandHandlerResult>
 
     // Check if we're in a git repository
     try {
-      execSync('git rev-parse --is-inside-work-tree', { cwd, stdio: 'pipe' });
+      execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: 'pipe' });
     } catch {
       return {
         handled: true,
@@ -136,7 +136,7 @@ export async function handleDiff(_args: string[]): Promise<CommandHandlerResult>
     // Get unstaged changes
     let unstagedDiff = '';
     try {
-      unstagedDiff = execSync('git diff', { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+      unstagedDiff = execFileSync('git', ['diff'], { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
     } catch {
       // Ignore errors
     }
@@ -144,7 +144,7 @@ export async function handleDiff(_args: string[]): Promise<CommandHandlerResult>
     // Get staged changes
     let stagedDiff = '';
     try {
-      stagedDiff = execSync('git diff --cached', { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+      stagedDiff = execFileSync('git', ['diff', '--cached'], { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
     } catch {
       // Ignore errors
     }
@@ -173,8 +173,8 @@ export async function handleDiff(_args: string[]): Promise<CommandHandlerResult>
     // Get summary stats
     let statsSummary = '';
     try {
-      const shortStat = execSync('git diff --stat', { cwd, encoding: 'utf-8' });
-      const cachedStat = execSync('git diff --cached --stat', { cwd, encoding: 'utf-8' });
+      const shortStat = execFileSync('git', ['diff', '--stat'], { cwd, encoding: 'utf-8' });
+      const cachedStat = execFileSync('git', ['diff', '--cached', '--stat'], { cwd, encoding: 'utf-8' });
       if (shortStat.trim() || cachedStat.trim()) {
         const statsLines: string[] = [];
         if (cachedStat.trim()) statsLines.push('Staged:\n' + cachedStat.trim());
@@ -500,24 +500,24 @@ export async function handleTest(args: string[]): Promise<CommandHandlerResult> 
     const cwd = process.cwd();
 
     // Detect test framework
-    let command = 'npm test';
-    if (file) {
-      command = `npm test -- ${file}`;
-    }
-
     let output = '';
-    try {
-      output = execSync(command, {
-        cwd,
-        encoding: 'utf-8',
-        maxBuffer: 5 * 1024 * 1024,
-        timeout: 120000, // 2 minute timeout
-        env: { ...process.env, FORCE_COLOR: '0', CI: 'true' },
-      });
-    } catch (error) {
-      // Test failures return non-zero exit code but still have useful output
-      const execError = error as { stdout?: string; stderr?: string; status?: number };
-      output = (execError.stdout || '') + '\n' + (execError.stderr || '');
+    const testArgs = file ? ['test', '--', file] : ['test'];
+    const result = spawnSync('npm', testArgs, {
+      cwd,
+      encoding: 'utf-8',
+      maxBuffer: 5 * 1024 * 1024,
+      timeout: 120000, // 2 minute timeout
+      env: { ...process.env, FORCE_COLOR: '0', CI: 'true' },
+    });
+
+    if (result.stdout) {
+      output += result.stdout;
+    }
+    if (result.stderr) {
+      output += `${output ? '\n' : ''}${result.stderr}`;
+    }
+    if (!output && result.error) {
+      output = result.error.message;
     }
 
     const truncated = truncateOutput(output.trim(), 5000);
@@ -631,7 +631,7 @@ export async function handleReview(_args: string[]): Promise<CommandHandlerResul
     let diffSource = '';
 
     try {
-      diff = execSync('git diff --cached', { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+      diff = execFileSync('git', ['diff', '--cached'], { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
       if (diff.trim()) {
         diffSource = 'staged changes';
       }
@@ -641,7 +641,7 @@ export async function handleReview(_args: string[]): Promise<CommandHandlerResul
 
     if (!diff.trim()) {
       try {
-        diff = execSync('git diff', { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+        diff = execFileSync('git', ['diff'], { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
         if (diff.trim()) {
           diffSource = 'unstaged changes';
         }

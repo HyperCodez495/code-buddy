@@ -79,6 +79,35 @@ describe('TelegramChannel', () => {
       expect(channel.getStatus().info?.botUsername).toBe('test_bot');
     });
 
+    it('should initialize enhanced commands under ESM', async () => {
+      channel = new TelegramChannel({
+        ...mockConfig,
+        enhancedCommands: true,
+      });
+      channel.on('error', () => {});
+
+      mockFetch.mockResolvedValueOnce({
+        json: () =>
+          Promise.resolve({
+            ok: true,
+            result: { id: 123, is_bot: true, first_name: 'Bot', username: 'bot' },
+          }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        json: () => Promise.resolve({ ok: true }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        json: () => Promise.resolve({ ok: true }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        json: () => Promise.resolve({ ok: true, result: [] }),
+      });
+
+      await channel.connect();
+
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/setMyCommands'))).toBe(true);
+    });
+
     it('should emit connected event', async () => {
       const connectedSpy = jest.fn();
       channel.on('connected', connectedSpy);

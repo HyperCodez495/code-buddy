@@ -66,7 +66,7 @@
 | `/tts provider <name>` | Switch TTS provider |
 | `/tts voice <voice>` | Set voice |
 | `/voice-code` | Voice-to-code pipeline |
-| `/companion status\|setup` | Configure/check Buddy as a ChatGPT-backed voice companion |
+| `/companion status\|setup\|live` | Configure/check Buddy as a ChatGPT-backed voice companion and build a live-session preflight |
 | `/companion evaluate` | Score Buddy's companion readiness and record self-improvement suggestions |
 | `/companion radar` | Compare Buddy against Hermes, OpenClaw, Lisa, and open companion systems |
 | `/companion impulses` | Build proactive companion impulses from readiness, senses, missions, and safety state |
@@ -169,6 +169,10 @@ The REST endpoint mirrors that shape with
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
 buddy goal "<goal>" [--max-turns N] [--judge-model <model>] [-m <model>]   # headless Ralph loop: full agent + judge until done (exit 0) or paused (exit 1)
+buddy llm
+buddy llm ensemble "<question>"
+buddy council "<task>" [-n 3] [--models gpt,ollama] [--judge <model>] [--task-type code|reasoning|french|vision|general] [--fleet] [--no-conductor] [--no-synthesis] [--no-consensus]
+buddy council --scoreboard
 buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy hermes status [dispatchProfile] [--json]
 buddy hermes smoke [--json]
@@ -188,6 +192,19 @@ buddy hermes runtime-smoke local [--json]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
 ```
+
+`buddy council` is the multi-AI collective path. It routes the task to capable
+models, assigns complementary conductor roles for complex work (architect,
+implementer, reviewer, verifier, skeptic, etc.), runs the answers in parallel,
+uses a neutral judge, synthesizes the role-specialized answers into one final
+answer, reports lexical agreement plus a confidence signal, and updates the
+model scoreboard by task type. `--fleet` adds connected Code Buddy peers as more council members;
+`--no-conductor` restores the old direct fan-out where every model receives the
+exact same prompt, and `--no-synthesis` keeps only the judge-selected best
+answer. `buddy council --scoreboard` also shows role specialists when the ledger
+has role history, so future runs can put stronger models on reviewer, verifier,
+architect, and related roles. The research notes live in
+[`docs/research/council-scientific-notes.md`](research/council-scientific-notes.md).
 
 `buddy hermes plan` prints a short Hermes integration checklist for a
 selected Fleet dispatch profile. The JSON form includes schema version,
@@ -403,6 +420,7 @@ buddy doctor [--fix]   # Environment diagnostics (--fix for auto-migration)
 buddy speak [text] [--voice <name>] [--list-voices] [--speed <n>]
 buddy companion setup [--force] [--no-voice] [--no-set-model]
 buddy companion status
+buddy companion live [--no-record]
 buddy companion self
 buddy companion evaluate [--no-record]
 buddy companion radar [--no-record]
@@ -433,6 +451,27 @@ model to the ChatGPT companion default when `buddy login` credentials are presen
 files, voice input, text-to-speech, the local camera bridge, and the
 companion percept journal.
 
+`buddy companion live` is the MySoulmate-inspired preflight: it checks the
+already-built companion layers as one integrated path instead of treating them
+as isolated demos. It scores the required live-session checks (identity, ChatGPT
+brain, camera, sensory server flags, voice-assistant behavior
+(`ear.py` live microphone → `speech_end` → faster-whisper STT → response gate →
+think/agent → speak, with voice actions kept in
+`CODEBUDDY_SENSORY_SPEAK_PERMISSION_MODE=plan` by default), token-gated camera
+auth (`CODEBUDDY_SENSORY_TOKEN` must match `BUDDY_SENSE_TOKEN`), webcam/USB
+microphone autodetection (`BUDDY_EAR_DEVICE=auto` via `arecord -l`), and the
+Python `buddy-vision/watch.py` sidecar with `websocket-client` plus its
+MediaPipe/YOLO backend), lists optional layers (presence, idle work, reminders,
+Telegram voice, YOLO model, Fleet tools), gives the exact `buddy server`,
+microphone sidecar, and `buddy-vision` commands to run, and records a `self`
+percept unless `--no-record` is passed. STT comprehension defaults are tuned for
+the French companion path and can be overridden with `CODEBUDDY_SPEECH_LANG`,
+`CODEBUDDY_SPEECH_BEAM_SIZE`, `CODEBUDDY_SPEECH_VAD_FILTER`, and
+`CODEBUDDY_SPEECH_INITIAL_PROMPT`. In live sensory mode, faster-whisper is kept
+warm in a persistent worker to avoid reloading the model on every utterance;
+override with `CODEBUDDY_SPEECH_WORKER=false`, `CODEBUDDY_SPEECH_MODEL=tiny|base|small`,
+or the worker timeout variables when tuning for lower latency.
+
 `buddy companion evaluate` turns that state into a small self-improvement loop:
 Buddy scores brain/auth, identity, voice, TTS, camera, vision/hearing/screen/self
 percepts, local memory, wake word readiness, and explicit safety boundaries. By
@@ -454,7 +493,11 @@ current readiness, recent sensory percepts, mission board, and safety ledger,
 then returns a short "next useful move" prompt plus prioritized impulses such as
 connect ChatGPT, refresh camera context, continue the active mission, or review
 a safety event. By default it records the top impulses as `suggestion` percepts;
-pass `--no-record` for a read-only brief.
+pass `--no-record` for a read-only brief. Hearing percepts now carry voice-loop
+timings (`sttMs`, `decisionMs`, `actionMs`, `totalMs`) and capture details
+(`device`, `peakRms`, `avgRms`, VAD thresholds); if STT or the full loop is too
+slow, impulses raises `Reduce voice latency`, and if the signal is too close to
+the VAD threshold it raises `Improve voice capture`.
 
 `buddy companion missions sync` converts the radar gaps into
 `.codebuddy/companion/missions.json`, a local mission board with P0/P1/P2
@@ -487,8 +530,10 @@ build a stable sense-memory over what was seen.
 `buddy companion percepts recent` prints the newest local sensory events, with
 optional `--modality vision|hearing|screen|self|memory|tool|suggestion`.
 `buddy companion percepts stats` shows the append-only store path and modality
-counts. This is the Lisa-inspired backbone for future continuous voice, screen
-share, proactive suggestions, and self-state panels.
+counts. `hearing` percepts include the selected capture device, RMS signal
+quality, and latency breakdown so real-time voice regressions can be diagnosed
+from the journal. This is the Lisa-inspired backbone for future continuous voice, screen share,
+proactive suggestions, and self-state panels.
 `buddy companion self` writes Buddy's current model/auth/voice/camera readiness
 as a `self` percept, giving the companion a small, inspectable proprioception
 trail.

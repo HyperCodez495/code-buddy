@@ -36,11 +36,42 @@ jest.mock('../../src/providers/codex-oauth', () => ({
   hasCodexCredentials: jest.fn(() => true),
 }));
 
+jest.mock('../../src/fleet/model-inventory.js', () => ({
+  buildModelInventory: jest.fn(async () => ({
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    machineLabel: 'test-machine',
+    entries: [
+      {
+        provider: 'lm-studio',
+        runtimeProvider: 'lmstudio',
+        model: 'local-model',
+        baseURL: 'http://localhost:1234/v1',
+        machineLabel: 'test-machine',
+        executionLocation: 'local',
+        launchHint: 'On test-machine: open LM Studio, enable the local server, then select local-model',
+        contextWindow: 8192,
+        maxOutputTokens: 8192,
+        supportsReasoning: false,
+        supportsToolCalls: true,
+        supportsVision: false,
+        strengths: ['tool-calling'],
+        benchmarkScore: 42,
+        bestFor: ['coding'],
+        source: 'local-capability',
+      },
+    ],
+  })),
+}));
+
 describe('Provider Command', () => {
   let command: Command;
   let consoleLogSpy: jest.SpyInstance;
   let consoleErrorSpy: jest.SpyInstance;
   let processExitSpy: jest.SpyInstance;
+
+  const run = async (args: string[]) => {
+    await command.parseAsync(args, { from: 'user' });
+  };
 
   beforeEach(() => {
     command = createProviderCommand();
@@ -71,13 +102,14 @@ describe('Provider Command', () => {
       expect(subcommands).toContain('current');
       expect(subcommands).toContain('set');
       expect(subcommands).toContain('models');
+      expect(subcommands).toContain('inventory');
       expect(subcommands).toContain('model');
     });
   });
 
   describe('list command', () => {
-    it('should list all providers', () => {
-      command.parse(['list'], { from: 'user' });
+    it('should list all providers', async () => {
+      await run(['list']);
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
@@ -90,8 +122,8 @@ describe('Provider Command', () => {
       expect(output).toContain('Hugging Face');
     });
 
-    it('should show environment variable names', () => {
-      command.parse(['list'], { from: 'user' });
+    it('should show environment variable names', async () => {
+      await run(['list']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -104,8 +136,8 @@ describe('Provider Command', () => {
       expect(output).toContain('HF_TOKEN');
     });
 
-    it('should list plugin-native providers separately', () => {
-      command.parse(['list'], { from: 'user' });
+    it('should list plugin-native providers separately', async () => {
+      await run(['list']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -120,8 +152,8 @@ describe('Provider Command', () => {
   });
 
   describe('current command', () => {
-    it('should show current provider', () => {
-      command.parse(['current'], { from: 'user' });
+    it('should show current provider', async () => {
+      await run(['current']);
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
@@ -129,8 +161,8 @@ describe('Provider Command', () => {
       expect(output).toContain('Active Provider');
     });
 
-    it('should show current model', () => {
-      command.parse(['current'], { from: 'user' });
+    it('should show current model', async () => {
+      await run(['current']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -139,41 +171,37 @@ describe('Provider Command', () => {
   });
 
   describe('set command', () => {
-    it('should reject unknown provider', () => {
-      expect(() => {
-        command.parse(['set', 'unknown-provider'], { from: 'user' });
-      }).toThrow();
+    it('should reject unknown provider', async () => {
+      await expect(run(['set', 'unknown-provider'])).rejects.toThrow();
 
       expect(loggerErrorSpy).toHaveBeenCalled();
       const errorOutput = loggerErrorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(errorOutput).toContain('Unknown provider');
     });
 
-    it('should accept valid provider', () => {
-      command.parse(['set', 'claude'], { from: 'user' });
+    it('should accept valid provider', async () => {
+      await run(['set', 'claude']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(output).toContain('Active provider set to');
     });
 
-    it('should handle case insensitivity', () => {
-      command.parse(['set', 'CLAUDE'], { from: 'user' });
+    it('should handle case insensitivity', async () => {
+      await run(['set', 'CLAUDE']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(output).toContain('Active provider set to');
     });
 
-    it('should accept Hermes-style provider aliases', () => {
-      command.parse(['set', 'kimi'], { from: 'user' });
+    it('should accept Hermes-style provider aliases', async () => {
+      await run(['set', 'kimi']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(output).toContain('Active provider set to: Kimi');
     });
 
-    it('should reject plugin-native providers in the direct provider setter', () => {
-      expect(() => {
-        command.parse(['set', 'azure'], { from: 'user' });
-      }).toThrow();
+    it('should reject plugin-native providers in the direct provider setter', async () => {
+      await expect(run(['set', 'azure'])).rejects.toThrow();
 
       expect(loggerErrorSpy).toHaveBeenCalled();
       const errorOutput = loggerErrorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
@@ -182,8 +210,8 @@ describe('Provider Command', () => {
   });
 
   describe('models command', () => {
-    it('should list models for current provider', () => {
-      command.parse(['models'], { from: 'user' });
+    it('should list models for current provider', async () => {
+      await run(['models']);
 
       expect(consoleLogSpy).toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
@@ -191,8 +219,8 @@ describe('Provider Command', () => {
       expect(output).toContain('Models for');
     });
 
-    it('should list models for specific provider', () => {
-      command.parse(['models', 'claude'], { from: 'user' });
+    it('should list models for specific provider', async () => {
+      await run(['models', 'claude']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -200,8 +228,8 @@ describe('Provider Command', () => {
       expect(output).toContain('claude-sonnet-4');
     });
 
-    it('should list ChatGPT OAuth models', () => {
-      command.parse(['models', 'chatgpt'], { from: 'user' });
+    it('should list ChatGPT OAuth models', async () => {
+      await run(['models', 'chatgpt']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -209,8 +237,8 @@ describe('Provider Command', () => {
       expect(output).toContain('gpt-5.5');
     });
 
-    it('should list models for Hermes-style provider aliases', () => {
-      command.parse(['models', 'glm'], { from: 'user' });
+    it('should list models for Hermes-style provider aliases', async () => {
+      await run(['models', 'glm']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
@@ -218,21 +246,39 @@ describe('Provider Command', () => {
       expect(output).toContain('glm-5');
     });
 
-    it('should reject unknown provider', () => {
-      expect(() => {
-        command.parse(['models', 'unknown'], { from: 'user' });
-      }).toThrow();
+    it('should reject unknown provider', async () => {
+      await expect(run(['models', 'unknown'])).rejects.toThrow();
 
       expect(loggerErrorSpy).toHaveBeenCalled();
     });
   });
 
   describe('model command', () => {
-    it('should set model', () => {
-      command.parse(['model', 'gpt-4o'], { from: 'user' });
+    it('should set model', async () => {
+      await run(['model', 'gpt-4o']);
 
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(output).toContain('Model set to: gpt-4o');
+    });
+  });
+
+  describe('inventory command', () => {
+    it('lists runtime-discovered models with machine and launch hints', async () => {
+      await run(['inventory']);
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(output).toContain('Runtime model inventory');
+      expect(output).toContain('local-model');
+      expect(output).toContain('test-machine');
+      expect(output).toContain('launch:');
+    });
+
+    it('filters runtime inventory by best-for tag', async () => {
+      await run(['inventory', '--best-for', 'coding']);
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(output).toContain('local-model');
+      expect(output).toContain('best: coding');
     });
   });
 });

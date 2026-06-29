@@ -45,14 +45,6 @@ export {
   type CompressResult,
 } from "./compress.js";
 
-export {
-  isShellCommand,
-  extractCommand,
-  executeShellCommand,
-  executeInteractiveCommand,
-  type ShellResult,
-} from "./shell-prefix.js";
-
 // Aider inspired
 export {
   WatchModeManager,

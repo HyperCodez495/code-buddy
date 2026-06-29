@@ -8,8 +8,10 @@ import { runIssuePipeline } from '../../../src/commands/dev/issue-pipeline.js';
 
 // Mock child_process
 const mockExecSync = jest.fn();
+const mockExecFileSync = jest.fn();
 jest.mock('child_process', () => ({
   execSync: (...args: unknown[]) => mockExecSync(...args),
+  execFileSync: (...args: unknown[]) => mockExecFileSync(...args),
 }));
 
 // Mock workflows
@@ -36,6 +38,12 @@ function createMockAgent() {
 describe('runIssuePipeline', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'gh' && args[0] === 'pr') {
+        return 'https://github.com/test/repo/pull/1';
+      }
+      return '';
+    });
     // Suppress console output during tests
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
@@ -54,12 +62,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))  // gh issue view
-      .mockReturnValueOnce('')                           // git checkout -b
-      .mockReturnValueOnce('')                           // git add
-      .mockReturnValueOnce('')                           // git commit
-      .mockReturnValueOnce('')                           // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/1');  // gh pr create
+      .mockReturnValueOnce(JSON.stringify(issueData));  // gh issue view
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-123',
@@ -84,12 +87,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('')   // git checkout -b
-      .mockReturnValueOnce('')   // git add
-      .mockReturnValueOnce('')   // git commit
-      .mockReturnValueOnce('')   // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/2');
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-456',
@@ -117,12 +115,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('')   // git checkout -b
-      .mockReturnValueOnce('')   // git add
-      .mockReturnValueOnce('')   // git commit
-      .mockReturnValueOnce('')   // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/3');
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-789',
@@ -150,12 +143,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('')   // git checkout -b
-      .mockReturnValueOnce('')   // git add
-      .mockReturnValueOnce('')   // git commit
-      .mockReturnValueOnce('')   // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/4');
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-101',
@@ -183,8 +171,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('');  // git checkout -b
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-fail',
@@ -217,12 +204,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('')   // git checkout -b
-      .mockReturnValueOnce('')   // git add
-      .mockReturnValueOnce('')   // git commit
-      .mockReturnValueOnce('')   // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/5');
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-url',
@@ -248,13 +230,14 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))     // gh issue view
-      .mockImplementationOnce(() => { throw new Error('branch exists'); })  // git checkout -b fails
-      .mockReturnValueOnce('')                              // git checkout (existing)
-      .mockReturnValueOnce('')                              // git add
-      .mockReturnValueOnce('')                              // git commit
-      .mockReturnValueOnce('')                              // git push
-      .mockReturnValueOnce('https://github.com/test/repo/pull/6');
+      .mockReturnValueOnce(JSON.stringify(issueData));     // gh issue view
+
+    mockExecFileSync.mockImplementationOnce((command: string, args: string[]) => {
+      if (command === 'git' && args[0] === 'checkout') {
+        throw new Error('branch exists');
+      }
+      return '';
+    });
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-existing',
@@ -277,12 +260,7 @@ describe('runIssuePipeline', () => {
     };
 
     mockExecSync
-      .mockReturnValueOnce(JSON.stringify(issueData))
-      .mockReturnValueOnce('')   // git checkout -b
-      .mockReturnValueOnce('')   // git add
-      .mockReturnValueOnce('')   // git commit
-      .mockReturnValueOnce('')   // git push
-      .mockReturnValueOnce('');
+      .mockReturnValueOnce(JSON.stringify(issueData));
 
     mockRunWorkflow.mockResolvedValue({
       runId: 'run-slug',
@@ -294,5 +272,36 @@ describe('runIssuePipeline', () => {
     const result = await runIssuePipeline('88', agent);
 
     expect(result.branch).toBe('feat/88-add-support-for-special-chars-more');
+  });
+
+  it('invokes git and gh with structured argv arrays', async () => {
+    const issueData = {
+      number: 101,
+      title: 'Fix && rm -rf / shell risk',
+      body: 'Test',
+      labels: [],
+    };
+
+    mockExecSync.mockReturnValueOnce(JSON.stringify(issueData));
+    mockRunWorkflow.mockResolvedValue({
+      runId: 'run-argv',
+      status: 'completed',
+      artifactPaths: [],
+    });
+
+    const agent = createMockAgent() as any;
+    const result = await runIssuePipeline('101', agent);
+
+    expect(result.branch).toBe('feat/101-fix-rm-rf-shell-risk');
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'git',
+      ['checkout', '-b', 'feat/101-fix-rm-rf-shell-risk'],
+      expect.any(Object),
+    );
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      ['pr', 'create', '--title', 'feat: Fix && rm -rf / shell risk', '--body', expect.stringContaining('Closes #101')],
+      expect.any(Object),
+    );
   });
 });

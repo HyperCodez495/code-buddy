@@ -8,7 +8,7 @@
  * - Supports --draft flag
  */
 
-import { execSync, spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { logger } from '../../utils/logger.js';
 
 export interface CommandHandlerResult {
@@ -51,7 +51,7 @@ function detectPRCli(): 'gh' | 'glab' | null {
  */
 function getCurrentBranch(cwd: string): string | null {
   try {
-    return execSync('git rev-parse --abbrev-ref HEAD', {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
       encoding: 'utf-8',
       timeout: 5000,
@@ -104,7 +104,7 @@ function detectBaseBranch(cwd: string): string {
  */
 function getDiffSummary(cwd: string, baseBranch: string): string {
   try {
-    const stat = execSync(`git diff ${baseBranch}...HEAD --stat`, {
+    const stat = execFileSync('git', ['diff', `${baseBranch}...HEAD`, '--stat'], {
       cwd,
       encoding: 'utf-8',
       timeout: 10000,
@@ -121,7 +121,7 @@ function getDiffSummary(cwd: string, baseBranch: string): string {
  */
 function getCommitMessages(cwd: string, baseBranch: string): string[] {
   try {
-    const log = execSync(`git log ${baseBranch}..HEAD --oneline --max-count=20`, {
+    const log = execFileSync('git', ['log', `${baseBranch}..HEAD`, '--oneline', '--max-count=20'], {
       cwd,
       encoding: 'utf-8',
       timeout: 5000,
@@ -164,7 +164,7 @@ export async function handlePR(args: string[]): Promise<CommandHandlerResult> {
 
   // Verify we're in a git repo
   try {
-    execSync('git rev-parse --is-inside-work-tree', { cwd, stdio: 'pipe', timeout: 5000 });
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: 'pipe', timeout: 5000 });
   } catch {
     return {
       handled: true,
@@ -254,18 +254,20 @@ export async function handlePR(args: string[]): Promise<CommandHandlerResult> {
   }
 
   // Build CLI command
-  let command: string;
+  let cliArgs: string[];
   if (cli === 'gh') {
-    const draftFlag = draft ? ' --draft' : '';
-    command = `gh pr create --base "${baseBranch}" --title "${escapeShellArg(title)}"${draftFlag} --body "${escapeShellArg(description)}"`;
+    cliArgs = ['pr', 'create', '--base', baseBranch, '--title', title];
+    if (draft) cliArgs.push('--draft');
+    cliArgs.push('--body', description);
   } else {
-    const draftFlag = draft ? ' --draft' : '';
-    command = `glab mr create --target-branch "${baseBranch}" --title "${escapeShellArg(title)}"${draftFlag} --description "${escapeShellArg(description)}"`;
+    cliArgs = ['mr', 'create', '--target-branch', baseBranch, '--title', title];
+    if (draft) cliArgs.push('--draft');
+    cliArgs.push('--description', description);
   }
 
   // Execute the command
   try {
-    const result = execSync(command, {
+    const result = execFileSync(cli, cliArgs, {
       cwd,
       encoding: 'utf-8',
       timeout: 30000,
@@ -374,11 +376,4 @@ function buildDescription(commits: string[], diffSummary: string): string {
   }
 
   return sections.join('\n');
-}
-
-/**
- * Escape a string for safe use inside double-quoted shell arguments.
- */
-function escapeShellArg(str: string): string {
-  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
 }

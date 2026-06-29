@@ -1,6 +1,10 @@
 import type { ChatEntry } from '../../agent/codebuddy-agent.js';
 import type { CommandHandlerResult } from './branch-handlers.js';
 import {
+  buildCompanionLiveBrief,
+  buildCompanionListenCheck,
+  formatCompanionLiveBrief,
+  formatCompanionListenCheck,
   formatCompanionStatus,
   getCompanionStatus,
   recordCompanionSelfState,
@@ -68,11 +72,36 @@ function entry(content: string): ChatEntry {
   };
 }
 
-function flagValue(args: string[], name: string): string | undefined {
-  const equals = args.find(arg => arg.startsWith(`${name}=`));
-  if (equals) return equals.slice(name.length + 1);
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+function collectFlagValue(
+  args: string[],
+  startIndex: number,
+  firstValue: string | undefined,
+  consumeRest: boolean,
+): string | undefined {
+  const values = firstValue && !firstValue.startsWith('--') ? [firstValue] : [];
+  if (consumeRest) {
+    for (let i = startIndex; i < args.length; i++) {
+      const value = args[i];
+      if (!value || value.startsWith('--')) break;
+      values.push(value);
+    }
+  }
+  const value = values.join(' ').trim();
+  return value || undefined;
+}
+
+function flagValue(args: string[], name: string, options: { consumeRest?: boolean } = {}): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg) continue;
+    if (arg.startsWith(`${name}=`)) {
+      return collectFlagValue(args, i + 1, arg.slice(name.length + 1), Boolean(options.consumeRest));
+    }
+    if (arg === name) {
+      return collectFlagValue(args, i + 2, args[i + 1], Boolean(options.consumeRest));
+    }
+  }
+  return undefined;
 }
 
 export async function handleCompanion(args: string[]): Promise<CommandHandlerResult> {
@@ -104,6 +133,8 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       entry: entry([
         'Usage: /companion percepts recent [--limit <n>] [--modality <vision|hearing|screen|self|memory|tool|suggestion>]',
         '       /companion percepts stats',
+        '       /companion live [--no-record]',
+        '       /companion listen-check [--wav <path>]',
         '       /companion evaluate [--no-record]',
         '       /companion improve [--dry-run] [--no-record] [--no-run-mission]',
         '       /companion radar [--no-record]',
@@ -115,6 +146,14 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
     };
   }
 
+  if (action === 'listen-check' || action === 'heard') {
+    const wav = flagValue(args, '--wav');
+    return {
+      handled: true,
+      entry: entry(formatCompanionListenCheck(await buildCompanionListenCheck({ wav }))),
+    };
+  }
+
   if (action === 'self' || action === 'proprioception') {
     const percept = await recordCompanionSelfState();
     return {
@@ -123,6 +162,16 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
         `Self-state percept recorded: ${percept.id}`,
         percept.summary,
       ].join('\n')),
+    };
+  }
+
+  if (action === 'live' || action === 'evening' || action === 'boot') {
+    const brief = await buildCompanionLiveBrief({
+      record: !args.includes('--no-record'),
+    });
+    return {
+      handled: true,
+      entry: entry(formatCompanionLiveBrief(brief)),
     };
   }
 
@@ -160,7 +209,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
 
   if (action === 'check-in' || action === 'say') {
     const preview = args.includes('--preview') || args.includes('--no-record');
-    const userText = flagValue(args, '--text');
+    const userText = flagValue(args, '--text', { consumeRest: true });
     const cue = await buildCompanionCheckIn({
       userText,
       recordPercept: !preview,
@@ -395,6 +444,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
     entry: entry([
       'Usage: /companion status',
       '       /companion setup [--force] [--no-voice] [--no-set-model]',
+      '       /companion live [--no-record]',
       '       /companion self',
       '       /companion evaluate [--no-record]',
       '       /companion improve [--dry-run] [--no-record] [--no-run-mission]',
@@ -409,7 +459,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion percepts recent [--limit <n>] [--modality <name>]',
       '       /companion percepts stats',
       '',
-      'This configures Buddy as a ChatGPT-backed project companion with voice-first and camera-aware defaults.',
+      'This configures Buddy as a ChatGPT-backed project companion with voice-first, camera-aware, and live-session defaults.',
     ].join('\n')),
   };
 }

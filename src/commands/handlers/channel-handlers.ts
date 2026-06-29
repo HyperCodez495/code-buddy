@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'node:crypto';
 import type { ChatEntry } from '../../agent/types.js';
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import { logger } from '../../utils/logger.js';
@@ -394,10 +395,14 @@ export async function handleChannels(action: string, options: ChannelOptions): P
         for (const f of result.failed) {
           console.log(`[FAIL] ${f.type}: ${f.error}`);
         }
+        if (result.failed.length > 0 && result.registered.length === 0) {
+          process.exitCode = 1;
+        }
       } else {
         const result = await startConfiguredChannels(options.config, channelType);
         if (result.noConfig) {
           console.log(`No configuration found for channel type: ${channelType}`);
+          process.exitCode = 1;
           return;
         }
         for (const t of result.registered) {
@@ -408,6 +413,9 @@ export async function handleChannels(action: string, options: ChannelOptions): P
         }
         for (const f of result.failed) {
           console.log(`[FAIL] ${f.type}: ${f.error}`);
+        }
+        if (result.failed.length > 0 && result.registered.length === 0) {
+          process.exitCode = 1;
         }
       }
       break;
@@ -464,6 +472,11 @@ interface CachedChannelAgent {
 const channelAgentCache = new Map<string, CachedChannelAgent>();
 const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
 const CHANNEL_AGENT_MAX = 50;
+
+function hashForLog(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
+}
 
 /**
  * Per-bot persona for multi-bot channels: each bot (keyed by its id) can run its
@@ -627,6 +640,18 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
+      const sessionKey = message.sessionKey || 'default-global';
+      const botId = message.channel?.botId;
+      logger.info('Channel inbound message', {
+        channelType: channel.type,
+        sessionHash: hashForLog(sessionKey),
+        botHash: hashForLog(botId),
+        messageHash: hashForLog(message.id),
+        contentType: message.contentType || 'text',
+        contentLength: message.content.length,
+        attachmentCount: message.attachments?.length ?? 0,
+      });
+
       // /council <task> — convene the multi-LLM council (ask several capable
       // LLMs, an impartial judge keeps the best, and it learns which model is
       // best per task type over time). `/council` alone shows the scoreboard.
@@ -735,18 +760,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
       const { getRouteAgentConfig } = await import('../../channels/core.js');
       const agentConfig = getRouteAgentConfig(message);
-      const sessionKey = message.sessionKey || 'default-global';
-
       // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
       // persists in-memory across messages; restored from disk on a cold start.
       // botId selects the per-bot persona and is already baked into sessionKey,
       // so different bots keep separate agents + histories.
-      const botId = message.channel?.botId;
       const agent = await getOrCreateChannelAgent(sessionKey, resolved, agentConfig, botId);
 
       const entries = await agent.processUserMessage(message.content);
       const lastEntry = entries[entries.length - 1];
       const response = lastEntry ? String(lastEntry.content) : '';
+      let deliveryMode = response.trim() ? 'native' : 'empty';
+      let deliveredChunks = 0;
 
       // 6. Deliver the reply. On Telegram, render the agent's markdown to the
       //    robust HTML subset (bold / code / tables / links) so it doesn't show
@@ -767,10 +791,15 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
             ok = false;
             break;
           }
+          deliveredChunks++;
         }
         if (!ok) {
           // HTML rejected → send clean stripped plain text (not raw markdown).
           await channel.send({ channelId: message.channel.id, content: renderPlain(response), replyTo: message.id });
+          deliveryMode = 'plain-fallback';
+          deliveredChunks++;
+        } else {
+          deliveryMode = 'telegram-html';
         }
       } else {
         await channel.send({
@@ -778,7 +807,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           content: response,
           replyTo: message.id,
         });
+        deliveredChunks = response.trim() ? 1 : 0;
       }
+      logger.info('Channel response delivered', {
+        channelType: channel.type,
+        sessionHash: hashForLog(sessionKey),
+        botHash: hashForLog(botId),
+        messageHash: hashForLog(message.id),
+        responseLength: response.length,
+        deliveryMode,
+        deliveredChunks,
+      });
 
       // 7. If the user SPOKE (voice note), answer by voice too — mirror the
       //    modality. Best-effort: the text reply already landed, so a TTS/upload

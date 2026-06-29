@@ -23,6 +23,8 @@ const hoisted = vi.hoisted(() => {
     saveSession: vi.fn(),
     resumeSession: vi.fn(),
     convertMessagesToChatEntries: vi.fn(),
+    setChannelBotId: vi.fn(),
+    getChatHistory: vi.fn(),
   };
 });
 
@@ -49,6 +51,8 @@ vi.mock('../../src/agent/codebuddy-agent.js', () => {
       };
     }
     processUserMessage = hoisted.processUserMessage;
+    setChannelBotId = hoisted.setChannelBotId;
+    getChatHistory = hoisted.getChatHistory;
   }
   return { CodeBuddyAgent };
 });
@@ -97,6 +101,10 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     hoisted.saveSession.mockImplementation(async (s: any) => { hoisted.sessions.set(s.id, s); });
     hoisted.resumeSession.mockResolvedValue(undefined);
     hoisted.convertMessagesToChatEntries.mockImplementation((msgs: any[]) => msgs.map((m) => ({ ...m, chat: true })));
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'latest question', timestamp: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'assistant', content: 'Here is your answer.', timestamp: new Date('2026-01-01T00:00:01.000Z') },
+    ]);
   });
 
   it('runs message → pairing → route → agent → reply and delivers the response', async () => {
@@ -140,16 +148,16 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
     // First inbound message creates and persists the session.
     await manager.emit(makeMessage('first', 'sess-shared'), { send });
-    // Follow-up on the same sessionKey must load the persisted session, not re-create it.
+    // Follow-up on the same sessionKey must reuse the cached agent, not re-create it.
     await manager.emit(makeMessage('follow-up', 'sess-shared'), { send });
 
-    expect(hoisted.loadSession).toHaveBeenCalledTimes(2);
+    expect(hoisted.loadSession).toHaveBeenCalledTimes(3);
     expect(hoisted.loadSession).toHaveBeenNthCalledWith(1, 'sess-shared');
     expect(hoisted.loadSession).toHaveBeenNthCalledWith(2, 'sess-shared');
-    // saveSession only on the first turn (session did not exist yet).
-    expect(hoisted.saveSession).toHaveBeenCalledTimes(1);
-    // resumeSession every turn; agent processed both messages.
-    expect(hoisted.resumeSession).toHaveBeenCalledTimes(2);
+    expect(hoisted.loadSession).toHaveBeenNthCalledWith(3, 'sess-shared');
+    // The cached agent handles both turns, and each completed turn is persisted.
+    expect(hoisted.saveSession).toHaveBeenCalledTimes(2);
+    expect(hoisted.resumeSession).not.toHaveBeenCalled();
     expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(1, 'first');
     expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(2, 'follow-up');
   });
@@ -175,8 +183,8 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     await manager.emit(makeMessage('next', 'sess-resume'), { send });
 
-    // Session already existed → not re-saved at load time.
-    expect(hoisted.saveSession).not.toHaveBeenCalled();
+    // Session is restored before the turn and persisted again after the reply.
+    expect(hoisted.saveSession).toHaveBeenCalledTimes(1);
     // Prior history was restored into the agent before the new turn.
     expect(hoisted.convertMessagesToChatEntries).toHaveBeenCalledWith(priorMessages);
     expect(hoisted.setMessages).toHaveBeenCalledWith([

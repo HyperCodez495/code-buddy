@@ -291,6 +291,12 @@ export class BashTool implements Disposable {
         const { getAutoSandboxRouter } = await import('../../sandbox/auto-sandbox.js');
         const router = getAutoSandboxRouter();
         const routing = await router.route(command);
+        if (routing.mode === 'blocked') {
+          return {
+            success: false,
+            error: `Command blocked by auto-sandbox: ${routing.reason}`,
+          };
+        }
         if (routing.mode === 'sandbox') {
           try {
             const { DockerSandbox } = await import('../../sandbox/docker-sandbox.js');
@@ -317,7 +323,13 @@ export class BashTool implements Disposable {
               output: sbResult.output || undefined,
               error: errorMsg,
             };
-          } catch {
+          } catch (error) {
+            if (router.getConfig().failClosedOnUnavailable) {
+              return {
+                success: false,
+                error: `Command blocked by auto-sandbox: sandbox execution failed (${error instanceof Error ? error.message : String(error)})`,
+              };
+            }
             // Docker sandbox unavailable, fall through to direct execution
           }
         }

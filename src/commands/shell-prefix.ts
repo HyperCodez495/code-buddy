@@ -1,16 +1,10 @@
 /**
- * Shell Prefix Handler - Direct Shell Execution (Gemini CLI inspired)
+ * Shell Prefix Helpers
  *
- * Allows users to execute shell commands directly by prefixing with `!`
- * Example: !git status, !npm test, !ls -la
- *
- * This bypasses the AI and executes the command immediately.
+ * This module keeps the `!` prefix parsing helpers for compatibility, but
+ * direct shell execution is intentionally disabled. Callers should route shell
+ * work through the validated BashTool path instead of spawning processes here.
  */
-
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 /**
  * Result of a shell command execution.
@@ -49,87 +43,26 @@ export function extractCommand(input: string): string {
   return input.trim().slice(1).trim();
 }
 
-/**
- * Executes a shell command directly.
- * Captures stdout and stderr.
- *
- * @param command - The shell command to execute.
- * @param cwd - Working directory (defaults to process.cwd()).
- * @param timeout - Timeout in milliseconds (default: 30000).
- * @returns Promise resolving to ShellResult.
- */
 export async function executeShellCommand(
   command: string,
   cwd: string = process.cwd(),
   timeout: number = 30000
 ): Promise<ShellResult> {
-  const startTime = Date.now();
-
-  try {
-    const { stdout, stderr } = await execAsync(command, {
-      cwd,
-      timeout,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
-      env: { ...process.env, FORCE_COLOR: '1' },
-    });
-
-    return {
-      success: true,
-      stdout: stdout.toString(),
-      stderr: stderr.toString(),
-      exitCode: 0,
-      duration: Date.now() - startTime,
-    };
-  } catch (error: unknown) {
-    const execError = error as { stdout?: string; stderr?: string; code?: number; killed?: boolean };
-
-    if (execError.killed) {
-      return {
-        success: false,
-        stdout: execError.stdout || '',
-        stderr: `Command timed out after ${timeout}ms`,
-        exitCode: 124,
-        duration: Date.now() - startTime,
-      };
-    }
-
-    return {
-      success: false,
-      stdout: execError.stdout || '',
-      stderr: execError.stderr || String(error),
-      exitCode: execError.code || 1,
-      duration: Date.now() - startTime,
-    };
-  }
+  void command;
+  void cwd;
+  void timeout;
+  throw new Error('Direct shell execution via shell-prefix is disabled. Use BashTool for validated command execution.');
 }
 
-/**
- * Executes an interactive shell command (for commands like vim, top, etc.).
- * Spawns a child process inheriting stdio.
- *
- * @param command - The command to execute.
- * @param cwd - Working directory.
- * @returns Promise resolving to exit code.
- */
 export function executeInteractiveCommand(
   command: string,
   cwd: string = process.cwd()
 ): Promise<number> {
-  return new Promise((resolve) => {
-    const child = spawn(command, [], {
-      cwd,
-      shell: true,
-      stdio: 'inherit',
-    });
-
-    child.on('close', (code) => {
-      resolve(code ?? 0);
-    });
-
-    child.on('error', () => {
-      resolve(1);
-    });
-  });
+  void command;
+  void cwd;
+  return Promise.reject(
+    new Error('Interactive shell execution via shell-prefix is disabled. Use the existing interactive command flow instead.')
+  );
 }
 
 /**

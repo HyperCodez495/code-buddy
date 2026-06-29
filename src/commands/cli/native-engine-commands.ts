@@ -1418,6 +1418,71 @@ export function registerCompanionCommands(program: Command): void {
     });
 
   companion
+    .command('live')
+    .description('Build a live-session preflight brief for voice, vision, memory, and fleet')
+    .option('--no-record', 'Do not write the live brief into the companion percept journal')
+    .action(async (opts: { record?: boolean }) => {
+      const {
+        buildCompanionLiveBrief,
+        formatCompanionLiveBrief,
+      } = await import('../../companion/companion-mode.js');
+      const brief = await buildCompanionLiveBrief({
+        record: opts.record !== false,
+      });
+      console.log(formatCompanionLiveBrief(brief));
+    });
+
+  companion
+    .command('listen-check')
+    .alias('heard')
+    .description('Transcribe the latest real companion WAV and show whether the voice gate would answer')
+    .option('--wav <path>', 'Inspect a specific WAV instead of the newest companion utterance')
+    .action(async (opts: { wav?: string }) => {
+      const {
+        buildCompanionListenCheck,
+        formatCompanionListenCheck,
+      } = await import('../../companion/companion-mode.js');
+      console.log(formatCompanionListenCheck(await buildCompanionListenCheck({ wav: opts.wav })));
+    });
+
+  companion
+    .command('interactions')
+    .description('List the built-in voice interaction shortcuts used before the LLM path')
+    .option('--category <name>', 'Filter by category')
+    .option('--json', 'Print machine-readable JSON')
+    .action(async (opts: { category?: string; json?: boolean }) => {
+      const { VOICE_INTERACTIONS } = await import('../../sensory/voice-interactions.js');
+      const category = opts.category?.trim().toLowerCase();
+      const interactions = VOICE_INTERACTIONS
+        .filter(interaction => !category || interaction.category === category)
+        .map(interaction => ({
+          id: interaction.id,
+          category: interaction.category,
+          examples: interaction.examples,
+          reply: interaction.reply,
+        }));
+      if (opts.json) {
+        console.log(JSON.stringify(interactions, null, 2));
+        return;
+      }
+      const lines = [
+        'Voice Interactions',
+        '='.repeat(50),
+        `Count: ${interactions.length}`,
+      ];
+      let currentCategory = '';
+      for (const interaction of interactions) {
+        if (interaction.category !== currentCategory) {
+          currentCategory = interaction.category;
+          lines.push('', `[${currentCategory}]`);
+        }
+        lines.push(`- ${interaction.id}: ${interaction.examples.join(' | ')}`);
+        lines.push(`  → ${interaction.reply}`);
+      }
+      console.log(lines.join('\n'));
+    });
+
+  companion
     .command('self')
     .description('Record Buddy companion self-state into the local percept journal')
     .action(async () => {
@@ -1890,22 +1955,80 @@ export function registerCompanionCommands(program: Command): void {
     .description('Show recent companion percepts')
     .option('--limit <n>', 'Maximum percepts to print', '10')
     .option('--modality <name>', 'Filter by modality: vision, hearing, screen, self, memory, tool, suggestion')
-    .action(async (opts: { limit: string; modality?: string }) => {
+    .option('--workspace-target <path>', 'Workspace whose .codebuddy/companion/percepts.jsonl should be read (default: cwd)')
+    .option('--store-path <path>', 'Explicit percept store JSONL path')
+    .action(async (opts: { limit: string; modality?: string; workspaceTarget?: string; storePath?: string }) => {
       const { readRecentCompanionPercepts, formatCompanionPercepts } = await import('../../companion/percepts.js');
       const modality = opts.modality as 'vision' | 'hearing' | 'screen' | 'self' | 'memory' | 'tool' | 'suggestion' | undefined;
-      const recent = await readRecentCompanionPercepts({
+      const query = {
         limit: parseInt(opts.limit, 10),
         modality,
-      });
+        ...(opts.workspaceTarget ? { cwd: opts.workspaceTarget } : {}),
+        ...(opts.storePath ? { storePath: opts.storePath } : {}),
+      };
+      const recent = await readRecentCompanionPercepts(query);
       console.log(formatCompanionPercepts(recent));
     });
 
   percepts
     .command('stats')
     .description('Show companion percept store statistics')
-    .action(async () => {
+    .option('--workspace-target <path>', 'Workspace whose .codebuddy/companion/percepts.jsonl should be read (default: cwd)')
+    .option('--store-path <path>', 'Explicit percept store JSONL path')
+    .action(async (opts: { workspaceTarget?: string; storePath?: string }) => {
       const { getCompanionPerceptStats, formatCompanionPerceptStats } = await import('../../companion/percepts.js');
-      console.log(formatCompanionPerceptStats(await getCompanionPerceptStats()));
+      console.log(formatCompanionPerceptStats(await getCompanionPerceptStats({
+        ...(opts.workspaceTarget ? { cwd: opts.workspaceTarget } : {}),
+        ...(opts.storePath ? { storePath: opts.storePath } : {}),
+      })));
+    });
+
+  const ttsCache = companion
+    .command('tts-cache')
+    .description('Inspect the local Piper/TTS synthesis cache used by the voice assistant');
+
+  ttsCache
+    .command('stats')
+    .description('Show cached spoken phrases sorted by reuse count')
+    .option('--limit <n>', 'Maximum entries to print', '10')
+    .action(async (opts: { limit: string }) => {
+      const { getTtsCache } = await import('../../sensory/tts-cache.js');
+      const limit = Math.max(1, Math.min(100, parseInt(opts.limit, 10) || 10));
+      const entries = getTtsCache().stats().slice(0, limit);
+      if (entries.length === 0) {
+        console.log('TTS cache is empty.');
+        return;
+      }
+      const totalBytes = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
+      const lines = [
+        'TTS Cache',
+        '='.repeat(50),
+        `Shown: ${entries.length}`,
+        `Shown size: ${Math.round(totalBytes / 1024)} KB`,
+      ];
+      for (const entry of entries) {
+        const preview = entry.text.length > 80 ? `${entry.text.slice(0, 77)}...` : entry.text;
+        lines.push(
+          '',
+          `${entry.key} hits=${entry.hits} size=${Math.round(entry.sizeBytes / 1024)}KB`,
+          `  ${preview}`,
+          `  lastUsed=${entry.lastUsedAt}${entry.voice ? ` voice=${entry.voice}` : ''}`,
+        );
+      }
+      console.log(lines.join('\n'));
+    });
+
+  ttsCache
+    .command('prewarm')
+    .description('Pre-generate common voice assistant replies into the local TTS cache without playing audio')
+    .option('--limit <n>', 'Maximum default phrases to pre-generate')
+    .option('--phrase <text...>', 'Specific phrase to pre-generate instead of the default corpus')
+    .action(async (opts: { limit?: string; phrase?: string[] }) => {
+      const { prewarmVoiceReplyCache } = await import('../../sensory/voice-loop.js');
+      const phrases = opts.phrase && opts.phrase.length > 0 ? [opts.phrase.join(' ')] : undefined;
+      const limit = opts.limit ? Math.max(1, parseInt(opts.limit, 10) || 1) : undefined;
+      const result = await prewarmVoiceReplyCache({ ...(phrases ? { phrases } : {}), ...(limit ? { limit } : {}) });
+      console.log(`TTS cache prewarmed: ${result.cached}/${result.attempted} phrase(s).`);
     });
 }
 

@@ -30,8 +30,9 @@ import type {
 import { BaseChannel, getSessionKey, checkDMPairing } from '../core.js';
 import { ReconnectionManager } from '../reconnection-manager.js';
 import { logger } from '../../utils/logger.js';
-import type { ProFeatures } from '../pro/pro-features.js';
+import { ProFeatures } from '../pro/pro-features.js';
 import type { MessageButton as ProMessageButton } from '../pro/types.js';
+import { TelegramProFormatter } from './pro-formatter.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
@@ -87,11 +88,9 @@ export class TelegramChannel extends BaseChannel {
   /** Lazy getter for ProFeatures bundle with TelegramProFormatter */
   get pro(): ProFeatures {
     if (!this._pro) {
-      const { ProFeatures: PF } = require('../pro/pro-features.js');
-      const { TelegramProFormatter: TPF } = require('./pro-formatter.js');
-      this._pro = new PF({
+      this._pro = new ProFeatures({
         adminUsers: this.telegramConfig.adminUsers || [],
-        formatter: new TPF(),
+        formatter: new TelegramProFormatter(),
         diffFirst: this.telegramConfig.diffFirst,
         ciWatch: this.telegramConfig.ciWatch
           ? { ...this.telegramConfig.ciWatch, mutedPatterns: this.telegramConfig.ciWatch.mutedPatterns || [] }

@@ -1,25 +1,16 @@
 /**
  * Unit Tests for PR Handlers
- *
- * Tests cover:
- * - /pr command basic flow
- * - Base branch detection
- * - Draft flag parsing
- * - CLI detection (gh/glab)
- * - Error handling
- * - Title generation from branch name
  */
 
 import { handlePR } from '../../src/commands/handlers/pr-handlers';
-import { execSync, spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
-// Mock child_process
 jest.mock('child_process', () => ({
-  execSync: jest.fn(),
+  execFileSync: jest.fn(),
   spawnSync: jest.fn(),
 }));
 
-const mockExecSync = execSync as jest.Mock;
+const mockExecFileSync = execFileSync as jest.Mock;
 const mockSpawnSync = spawnSync as jest.Mock;
 
 describe('PR Handlers', () => {
@@ -27,215 +18,172 @@ describe('PR Handlers', () => {
     jest.clearAllMocks();
   });
 
-  describe('handlePR', () => {
-    it('should return error when not in a git repo', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) {
-          throw new Error('not a git repo');
-        }
-        return '';
-      });
+  function mockGitRepo(branch = 'feature-branch', baseExists = true) {
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return branch;
+      if (cmd === 'git' && args[0] === 'diff') return '';
+      if (cmd === 'git' && args[0] === 'log') return '';
+      if (cmd === 'git' && args.includes('--verify') && args.includes('main')) {
+        return baseExists ? 'abc123' : '';
+      }
+      return '';
+    });
+  }
 
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('Not inside a git repository');
+  function mockCli(kind: 'gh' | 'glab' | null, developExists = false) {
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args?.[0] === 'gh') return kind === 'gh' ? { status: 0, stdout: '/usr/bin/gh\n', stderr: '' } : { status: 1, stdout: '', stderr: '' };
+      if (args?.[0] === 'glab') return kind === 'glab' ? { status: 0, stdout: '/usr/bin/glab\n', stderr: '' } : { status: 1, stdout: '', stderr: '' };
+      if (args?.includes('--verify') && args.includes('develop')) {
+        return developExists ? { status: 0, stdout: 'abc123\n', stderr: '' } : { status: 1, stdout: '', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    });
+  }
+
+  it('should return error when not in a git repo', async () => {
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) throw new Error('not a git repo');
+      return '';
     });
 
-    it('should return error when on base branch', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'main\n';
-        return '';
-      });
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('Not inside a git repository');
+  });
 
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        // detectPRCli: not found
-        if (args?.[0] === 'gh' || args?.[0] === 'glab') {
-          return { status: 1, stdout: '', stderr: '' };
-        }
-        // detectBaseBranch: main exists
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
+  it('should return error when on base branch', async () => {
+    mockGitRepo('main', true);
+    mockCli(null);
 
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('Cannot create PR');
-      expect(result.entry?.content).toContain('base branch');
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('Cannot create PR');
+    expect(result.entry?.content).toContain('base branch');
+  });
+
+  it('should show manual instructions when no CLI is available', async () => {
+    mockGitRepo('feature/my-feature', true);
+    mockCli(null);
+
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('Neither `gh`');
+    expect(result.entry?.content).toContain('gh pr create');
+    expect(result.entry?.content).toContain('glab mr create');
+  });
+
+  it('should create PR with gh when available', async () => {
+    mockGitRepo('feature/add-login', true);
+    mockCli('gh');
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return 'feature/add-login';
+      if (cmd === 'git' && args[0] === 'diff') return '3 files changed\n';
+      if (cmd === 'git' && args[0] === 'log') return 'abc1234 feat: add login page\n';
+      if (cmd === 'gh' && args[0] === 'pr') return 'https://github.com/owner/repo/pull/42\n';
+      if (cmd === 'git' && args.includes('--verify') && args.includes('main')) return 'abc123';
+      return '';
     });
 
-    it('should show manual instructions when no CLI is available', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'feature/my-feature\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '2 files changed\n';
-        if (cmd.includes('log')) return '';
-        return '';
-      });
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('Pull request created');
+    expect(result.entry?.content).toContain('https://github.com/owner/repo/pull/42');
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      ['pr', 'create', '--base', 'main', '--title', 'feat: add login page', '--body', expect.any(String)],
+      expect.objectContaining({ cwd: process.cwd() }),
+    );
+  });
 
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        // detectPRCli: neither gh nor glab found
-        if (args?.[0] === 'gh' || args?.[0] === 'glab') {
-          return { status: 1, stdout: '', stderr: '' };
-        }
-        // detectBaseBranch: main exists
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('Neither `gh`');
-      expect(result.entry?.content).toContain('gh pr create');
-      expect(result.entry?.content).toContain('glab mr create');
+  it('should support --draft flag', async () => {
+    mockGitRepo('fix/bug-123', true);
+    mockCli('gh');
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return 'fix/bug-123';
+      if (cmd === 'git' && args[0] === 'diff') return '1 file changed\n';
+      if (cmd === 'git' && args[0] === 'log') return 'def5678 fix: resolve null pointer\n';
+      if (cmd === 'gh' && args[0] === 'pr') {
+        expect(args).toContain('--draft');
+        return 'https://github.com/owner/repo/pull/43\n';
+      }
+      if (cmd === 'git' && args.includes('--verify') && args.includes('main')) return 'abc123';
+      return '';
     });
 
-    it('should create PR with gh when available', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'feature/add-login\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '3 files changed\n';
-        if (cmd.includes('log') && cmd.includes('--oneline')) return 'abc1234 feat: add login page\n';
-        if (cmd.includes('gh pr create')) return 'https://github.com/owner/repo/pull/42\n';
-        return '';
-      });
+    const result = await handlePR(['--draft']);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('(draft)');
+  });
 
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        // detectPRCli: gh found
-        if (args?.[0] === 'gh') {
-          return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
-        }
-        // detectBaseBranch: main exists
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('Pull request created');
-      expect(result.entry?.content).toContain('https://github.com/owner/repo/pull/42');
+  it('should use custom title when provided', async () => {
+    let capturedArgs: string[] = [];
+    mockGitRepo('feature/stuff', true);
+    mockCli('gh');
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return 'feature/stuff';
+      if (cmd === 'git' && args[0] === 'diff') return '1 file changed\n';
+      if (cmd === 'git' && args[0] === 'log') return '';
+      if (cmd === 'gh' && args[0] === 'pr') {
+        capturedArgs = args;
+        return 'https://github.com/owner/repo/pull/44\n';
+      }
+      if (cmd === 'git' && args.includes('--verify') && args.includes('main')) return 'abc123';
+      return '';
     });
 
-    it('should support --draft flag', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'fix/bug-123\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '1 file changed\n';
-        if (cmd.includes('log') && cmd.includes('--oneline')) return 'def5678 fix: resolve null pointer\n';
-        if (cmd.includes('gh pr create')) {
-          // Verify --draft is in the command
-          expect(cmd).toContain('--draft');
-          return 'https://github.com/owner/repo/pull/43\n';
-        }
-        return '';
-      });
+    const result = await handlePR(['My', 'Custom', 'Title']);
+    expect(result.handled).toBe(true);
+    expect(capturedArgs).toContain('My Custom Title');
+  });
 
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        if (args?.[0] === 'gh') return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR(['--draft']);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('(draft)');
+  it('should handle PR creation failure gracefully', async () => {
+    mockGitRepo('feature/x', true);
+    mockCli('gh');
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return 'feature/x';
+      if (cmd === 'git' && args[0] === 'diff') return '';
+      if (cmd === 'git' && args[0] === 'log') return '';
+      if (cmd === 'gh' && args[0] === 'pr') {
+        const err = new Error('Not authenticated') as Error & { stdout: string; stderr: string };
+        err.stdout = '';
+        err.stderr = 'gh: Not logged in';
+        throw err;
+      }
+      if (cmd === 'git' && args.includes('--verify') && args.includes('main')) return 'abc123';
+      return '';
     });
 
-    it('should use custom title when provided', async () => {
-      let capturedCmd = '';
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'feature/stuff\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '1 file changed\n';
-        if (cmd.includes('log') && cmd.includes('--oneline')) return '';
-        if (cmd.includes('gh pr create')) {
-          capturedCmd = cmd;
-          return 'https://github.com/owner/repo/pull/44\n';
-        }
-        return '';
-      });
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('PR creation failed');
+    expect(result.entry?.content).toContain('gh auth login');
+  });
 
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        if (args?.[0] === 'gh') return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR(['My', 'Custom', 'Title']);
-      expect(result.handled).toBe(true);
-      expect(capturedCmd).toContain('My Custom Title');
+  it('should detect develop as base branch when main/master missing', async () => {
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args.includes('--is-inside-work-tree')) return 'true';
+      if (cmd === 'git' && args.includes('--abbrev-ref')) return 'feature/y';
+      if (cmd === 'git' && args[0] === 'diff') return '';
+      if (cmd === 'git' && args[0] === 'log') return '';
+      return '';
     });
 
-    it('should handle PR creation failure gracefully', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'feature/x\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '';
-        if (cmd.includes('log') && cmd.includes('--oneline')) return '';
-        if (cmd.includes('gh pr create')) {
-          const err = new Error('Not authenticated') as Error & { stdout: string; stderr: string };
-          err.stdout = '';
-          err.stderr = 'gh: Not logged in';
-          throw err;
-        }
-        return '';
-      });
-
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        if (args?.[0] === 'gh') return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('PR creation failed');
-      expect(result.entry?.content).toContain('gh auth login');
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args?.[0] === 'gh') return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
+      if (args?.includes('--verify') && args.includes('main')) return { status: 1, stdout: '', stderr: '' };
+      if (args?.includes('--verify') && args.includes('master')) return { status: 1, stdout: '', stderr: '' };
+      if (args?.includes('--verify') && args.includes('develop')) return { status: 0, stdout: 'abc123\n', stderr: '' };
+      return { status: 1, stdout: '', stderr: '' };
     });
 
-    it('should detect develop as base branch when main/master missing', async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('rev-parse --is-inside-work-tree')) return 'true';
-        if (cmd.includes('rev-parse --abbrev-ref HEAD')) return 'feature/y\n';
-        if (cmd.includes('diff') && cmd.includes('--stat')) return '';
-        if (cmd.includes('log') && cmd.includes('--oneline')) return '';
-        if (cmd.includes('gh pr create')) {
-          expect(cmd).toContain('develop');
-          return 'https://github.com/owner/repo/pull/45\n';
-        }
-        return '';
-      });
-
-      mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
-        if (args?.[0] === 'gh') return { status: 0, stdout: '/usr/bin/gh\n', stderr: '' };
-        // main and master don't exist, develop does
-        if (args?.includes('--verify') && args?.includes('main')) {
-          return { status: 1, stdout: '', stderr: '' };
-        }
-        if (args?.includes('--verify') && args?.includes('master')) {
-          return { status: 1, stdout: '', stderr: '' };
-        }
-        if (args?.includes('--verify') && args?.includes('develop')) {
-          return { status: 0, stdout: 'abc123\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: '' };
-      });
-
-      const result = await handlePR([]);
-      expect(result.handled).toBe(true);
-      expect(result.entry?.content).toContain('Pull request created');
-    });
+    const result = await handlePR([]);
+    expect(result.handled).toBe(true);
+    expect(result.entry?.content).toContain('Pull request created');
   });
 });

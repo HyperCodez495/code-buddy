@@ -122,6 +122,10 @@ jest.mock('../../src/identity/identity-manager.js', () => ({
 const mockSetupCompanionMode = jest.fn();
 const mockGetCompanionStatus = jest.fn();
 const mockFormatCompanionStatus = jest.fn((status: unknown) => `formatted:${JSON.stringify(status)}`);
+const mockBuildCompanionLiveBrief = jest.fn();
+const mockFormatCompanionLiveBrief = jest.fn((brief: unknown) => `live:${JSON.stringify(brief)}`);
+const mockBuildCompanionListenCheck = jest.fn();
+const mockFormatCompanionListenCheck = jest.fn((check: unknown) => `listen:${JSON.stringify(check)}`);
 const mockRecordCompanionSelfState = jest.fn();
 const mockCheckCameraAvailability = jest.fn();
 const mockFormatCameraStatus = jest.fn((status: unknown) => `camera:${JSON.stringify(status)}`);
@@ -151,6 +155,10 @@ jest.mock('../../src/companion/companion-mode.js', () => ({
   setupCompanionMode: mockSetupCompanionMode,
   getCompanionStatus: mockGetCompanionStatus,
   formatCompanionStatus: mockFormatCompanionStatus,
+  buildCompanionLiveBrief: mockBuildCompanionLiveBrief,
+  formatCompanionLiveBrief: mockFormatCompanionLiveBrief,
+  buildCompanionListenCheck: mockBuildCompanionListenCheck,
+  formatCompanionListenCheck: mockFormatCompanionListenCheck,
   recordCompanionSelfState: mockRecordCompanionSelfState,
 }));
 
@@ -1495,6 +1503,11 @@ describe('Native Engine CLI Commands', () => {
         status: { ok: true },
       });
       mockGetCompanionStatus.mockResolvedValue({ ok: true });
+      mockBuildCompanionLiveBrief.mockResolvedValue({
+        readinessScore: 83,
+        requiredReady: 5,
+        requiredTotal: 6,
+      });
       mockRecordCompanionSelfState.mockResolvedValue({
         id: 'percept-self-1',
         summary: 'Buddy self-state recorded',
@@ -1607,6 +1620,60 @@ describe('Native Engine CLI Commands', () => {
         expect(mockGetCompanionStatus).toHaveBeenCalled();
         expect(mockFormatCompanionStatus).toHaveBeenCalledWith({ ok: true });
         expect(getLogOutput()).toContain('formatted:{"ok":true}');
+      });
+    });
+
+    describe('companion live', () => {
+      it('prints a live-session preflight brief and can skip recording', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'live', '--no-record']);
+
+        expect(mockBuildCompanionLiveBrief).toHaveBeenCalledWith({ record: false });
+        expect(mockFormatCompanionLiveBrief).toHaveBeenCalledWith({
+          readinessScore: 83,
+          requiredReady: 5,
+          requiredTotal: 6,
+        });
+        expect(getLogOutput()).toContain('live:');
+      });
+    });
+
+    describe('companion listen-check', () => {
+      it('prints a real-audio listening diagnostic for a selected WAV', async () => {
+        mockBuildCompanionListenCheck.mockResolvedValue({
+          ok: true,
+          wav: '/tmp/utt.wav',
+          transcript: 'Lisa, tu m entends ?',
+        });
+
+        await program.parseAsync(['node', 'test', 'companion', 'listen-check', '--wav', '/tmp/utt.wav']);
+
+        expect(mockBuildCompanionListenCheck).toHaveBeenCalledWith({ wav: '/tmp/utt.wav' });
+        expect(mockFormatCompanionListenCheck).toHaveBeenCalledWith({
+          ok: true,
+          wav: '/tmp/utt.wav',
+          transcript: 'Lisa, tu m entends ?',
+        });
+        expect(getLogOutput()).toContain('listen:');
+      });
+    });
+
+    describe('companion interactions', () => {
+      it('prints the built-in voice interaction catalog', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'interactions']);
+
+        const output = getLogOutput();
+        expect(output).toContain('Voice Interactions');
+        expect(output).toContain('lisa-presence');
+        expect(output).toContain('departure-friends');
+      });
+
+      it('can filter and print JSON', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'interactions', '--category', 'support', '--json']);
+
+        const rows = JSON.parse(getLogOutput()) as Array<{ category: string; id: string }>;
+        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.every(row => row.category === 'support')).toBe(true);
+        expect(rows.map(row => row.id)).toContain('tired');
       });
     });
 

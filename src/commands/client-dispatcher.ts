@@ -35,24 +35,50 @@ export class ClientCommandDispatcher {
   ): Promise<boolean> {
     const trimmedInput = input.trim();
 
-    // 1. Handle Slash Commands
-    if (trimmedInput.startsWith("/")) {
-      return await this.handleSlashCommand(trimmedInput, context);
-    }
+    try {
+      // 1. Handle Slash Commands
+      if (trimmedInput.startsWith("/")) {
+        return await this.handleSlashCommand(trimmedInput, context);
+      }
 
-    // 2. Handle Shell Bypass
-    if (trimmedInput.startsWith("!")) {
-      await this.handleShellBypass(trimmedInput.slice(1).trim(), context);
-      return true;
-    }
+      // 2. Handle Shell Bypass
+      if (trimmedInput.startsWith("!")) {
+        await this.handleShellBypass(trimmedInput.slice(1).trim(), context);
+        return true;
+      }
 
-    // 3. Handle Direct Bash Commands (Legacy/Quick Access)
-    if (this.isDirectBashCommand(trimmedInput)) {
-      await this.handleDirectBashCommand(trimmedInput, context);
+      // 3. Handle Direct Bash Commands (Legacy/Quick Access)
+      if (this.isDirectBashCommand(trimmedInput)) {
+        await this.handleDirectBashCommand(trimmedInput, context);
+        return true;
+      }
+    } catch (error) {
+      this.finishCommandWithMessage(
+        context,
+        `Command failed: ${getErrorMessage(error)}`,
+      );
       return true;
     }
 
     return false;
+  }
+
+  private static finishCommandWithMessage(
+    context: ClientCommandContext,
+    content: string,
+  ): void {
+    const entry: ChatEntry = {
+      type: "assistant",
+      content,
+      timestamp: new Date(),
+    };
+    context.setChatHistory((prev) => [...prev, entry]);
+    context.setIsProcessing(false);
+    context.setIsStreaming(false);
+    context.setTokenCount(0);
+    context.setProcessingTime(0);
+    context.processingStartTime.current = 0;
+    context.clearInput();
   }
 
   private static async handleSlashCommand(
@@ -101,14 +127,7 @@ export class ClientCommandDispatcher {
           process.exit(0);
       }
 
-      // Show error if it was an unknown slash command
-      const entry: ChatEntry = {
-        type: "assistant",
-        content: result.error || "Unknown command",
-        timestamp: new Date(),
-      };
-      context.setChatHistory((prev) => [...prev, entry]);
-      context.clearInput();
+      this.finishCommandWithMessage(context, result.error || "Unknown command");
       return true;
     }
 
@@ -211,7 +230,12 @@ export class ClientCommandDispatcher {
       return true;
     }
 
-    return false;
+    const commandName = originalInput.trim().split(/\s+/)[0] || token;
+    this.finishCommandWithMessage(
+      context,
+      `Command ${commandName} is registered but has no conversation-loop handler yet. Use /help to see working commands.`,
+    );
+    return true;
   }
 
   private static async handleEnhancedCommand(

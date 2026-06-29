@@ -18,6 +18,7 @@ import {
   type RuntimeProviderCatalogEntry,
   type RuntimeProviderId,
 } from '../providers/provider-catalog.js';
+import { buildModelInventory } from '../fleet/model-inventory.js';
 
 interface ProviderInfo {
   name: string;
@@ -260,7 +261,7 @@ export function createProviderCommand(): Command {
   provider
     .command('models [provider]')
     .description('List available models for a provider')
-    .action((providerKey?: string) => {
+    .action(async (providerKey?: string) => {
       const key = resolveProviderCommandKey(providerKey || getCurrentProvider());
 
       if (!key || !PROVIDERS[key]) {
@@ -270,18 +271,87 @@ export function createProviderCommand(): Command {
 
       const info = PROVIDERS[key];
       const currentModel = getCurrentModel();
+      const inventoryProvider = key === 'lmstudio' ? 'lm-studio' : key;
+      const inventory = key === 'ollama' || key === 'lmstudio'
+        ? await buildModelInventory({ includeTailnetPeers: key === 'ollama' })
+        : null;
+      const discoveredModels = inventory?.entries.filter((entry) => entry.provider === inventoryProvider) ?? [];
+      const models = discoveredModels.length > 0
+        ? discoveredModels.map((entry) => ({
+          id: entry.model,
+          label: entry.machineLabel,
+          baseURL: entry.baseURL,
+          bestFor: entry.bestFor,
+          launchHint: entry.launchHint,
+        }))
+        : info.models.map((model) => ({
+          id: model,
+          label: '',
+          baseURL: info.baseURL,
+          bestFor: [],
+          launchHint: '',
+        }));
 
       console.log(`\nModels for ${info.name}:\n`);
 
-      for (const model of info.models) {
-        const isDefault = model === info.defaultModel;
-        const isCurrent = model === currentModel;
+      for (const model of models) {
+        const isDefault = model.id === info.defaultModel;
+        const isCurrent = model.id === currentModel;
         const markers: string[] = [];
         if (isDefault) markers.push('default');
         if (isCurrent) markers.push('active');
 
         const suffix = markers.length > 0 ? ` (${markers.join(', ')})` : '';
-        console.log(`  • ${model}${suffix}`);
+        const discovery = model.label
+          ? ` [${model.label}${model.baseURL ? ` · ${model.baseURL}` : ''}]`
+          : '';
+        const bestFor = model.bestFor.length > 0 ? ` {${model.bestFor.join(', ')}}` : '';
+        console.log(`  • ${model.id}${suffix}${discovery}${bestFor}`);
+        if (model.launchHint) {
+          console.log(`      launch: ${model.launchHint}`);
+        }
+      }
+    });
+
+  provider
+    .command('inventory')
+    .description('Show runtime-discovered models across local and network machines')
+    .option('--json', 'Output JSON')
+    .option('--best-for <tag>', 'Filter by usage tag, e.g. voice, coding, council, review')
+    .action(async (options: { json?: boolean; bestFor?: string }) => {
+      const snapshot = await buildModelInventory({
+        includeTailnetPeers: true,
+        forceCapabilityRefresh: true,
+      });
+      const bestFor = options.bestFor?.trim().toLowerCase();
+      const entries = bestFor
+        ? snapshot.entries.filter((entry) => entry.bestFor.some((tag) => tag.toLowerCase() === bestFor))
+        : snapshot.entries;
+
+      if (options.json) {
+        console.log(JSON.stringify({ ...snapshot, entries }, null, 2));
+        return;
+      }
+
+      console.log(`\nRuntime model inventory (${entries.length} model${entries.length === 1 ? '' : 's'}):\n`);
+      if (entries.length === 0) {
+        console.log(bestFor
+          ? `  No discovered models tagged for ${bestFor}.`
+          : '  No runtime-discovered models found.');
+        return;
+      }
+
+      for (const entry of entries) {
+        const providerName = entry.runtimeProvider || entry.provider;
+        const benchmark = typeof entry.benchmarkScore === 'number'
+          ? ` | score ${Math.round(entry.benchmarkScore)}`
+          : '';
+        const best = entry.bestFor.length > 0 ? ` | best: ${entry.bestFor.join(', ')}` : '';
+        console.log(`  • ${entry.model} [${providerName}/${entry.executionLocation}] on ${entry.machineLabel}${benchmark}${best}`);
+        if (entry.baseURL) {
+          console.log(`      url: ${entry.baseURL}`);
+        }
+        console.log(`      launch: ${entry.launchHint}`);
       }
     });
 

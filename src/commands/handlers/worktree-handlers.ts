@@ -9,7 +9,7 @@
  */
 
 import { ChatEntry } from "../../agent/codebuddy-agent.js";
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -130,7 +130,7 @@ Remove it first or choose a different path.`;
   if (branch) {
     // Check if branch exists
     try {
-      execSync(`git rev-parse --verify ${branch}`, { stdio: 'pipe' });
+      execFileSync('git', ['rev-parse', '--verify', branch], { stdio: 'pipe' });
       // Branch exists, just add worktree
       cmd = `git worktree add "${resolvedPath}" ${branch}`;
       branchName = branch;
@@ -146,7 +146,16 @@ Remove it first or choose a different path.`;
   }
 
   try {
-    execSync(cmd, { stdio: 'pipe' });
+    if (branch) {
+      try {
+        execFileSync('git', ['rev-parse', '--verify', branch], { stdio: 'pipe' });
+        execFileSync('git', ['worktree', 'add', resolvedPath, branch], { stdio: 'pipe' });
+      } catch {
+        execFileSync('git', ['worktree', 'add', '-b', branch, resolvedPath], { stdio: 'pipe' });
+      }
+    } else {
+      execFileSync('git', ['worktree', 'add', '-b', branchName, resolvedPath], { stdio: 'pipe' });
+    }
 
     return `✅ Worktree created successfully!
 
@@ -212,11 +221,11 @@ Change to a different directory first:
   }
 
   const cmd = force
-    ? `git worktree remove --force "${resolvedPath}"`
-    : `git worktree remove "${resolvedPath}"`;
+    ? ['worktree', 'remove', '--force', resolvedPath]
+    : ['worktree', 'remove', resolvedPath];
 
   try {
-    execSync(cmd, { stdio: 'pipe' });
+    execFileSync('git', cmd, { stdio: 'pipe' });
     return `✅ Worktree removed: ${resolvedPath}`;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -284,14 +293,14 @@ function listWorktrees(): string {
 function pruneWorktrees(): string {
   try {
     // First, do a dry run
-    const dryRun = execSync('git worktree prune --dry-run', { encoding: 'utf-8' });
+    const dryRun = execFileSync('git', ['worktree', 'prune', '--dry-run'], { encoding: 'utf-8' });
 
     if (!dryRun.trim()) {
       return `✅ No stale worktrees to prune`;
     }
 
     // Actually prune
-    execSync('git worktree prune', { stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'prune'], { stdio: 'pipe' });
 
     return `✅ Pruned stale worktrees:
 
@@ -312,7 +321,7 @@ function lockWorktree(worktreePath?: string): string {
   const resolvedPath = path.resolve(worktreePath);
 
   try {
-    execSync(`git worktree lock "${resolvedPath}"`, { stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'lock', resolvedPath], { stdio: 'pipe' });
     return `🔒 Worktree locked: ${resolvedPath}
 
 This worktree will not be pruned automatically.
@@ -333,7 +342,7 @@ function unlockWorktree(worktreePath?: string): string {
   const resolvedPath = path.resolve(worktreePath);
 
   try {
-    execSync(`git worktree unlock "${resolvedPath}"`, { stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'unlock', resolvedPath], { stdio: 'pipe' });
     return `🔓 Worktree unlocked: ${resolvedPath}`;
   } catch (error) {
     throw new Error(`Failed to unlock worktree: ${error instanceof Error ? error.message : String(error)}`);
@@ -352,7 +361,7 @@ function moveWorktree(oldPath?: string, newPath?: string): string {
   const resolvedNew = path.resolve(newPath);
 
   try {
-    execSync(`git worktree move "${resolvedOld}" "${resolvedNew}"`, { stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'move', resolvedOld, resolvedNew], { stdio: 'pipe' });
     return `✅ Worktree moved: ${resolvedOld} → ${resolvedNew}`;
   } catch (error) {
     throw new Error(`Failed to move worktree: ${error instanceof Error ? error.message : String(error)}`);
@@ -364,7 +373,7 @@ function moveWorktree(oldPath?: string, newPath?: string): string {
  */
 function getWorktrees(): WorktreeInfo[] {
   try {
-    const output = execSync('git worktree list --porcelain', { encoding: 'utf-8' });
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], { encoding: 'utf-8' });
     const worktrees: WorktreeInfo[] = [];
     let current: Partial<WorktreeInfo> = {};
 

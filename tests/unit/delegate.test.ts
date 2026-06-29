@@ -10,12 +10,12 @@
  */
 
 import * as delegate from '../../src/commands/delegate';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import crypto from 'crypto';
 
 // Mock child_process
 jest.mock('child_process', () => ({
-  exec: jest.fn(),
+  execFile: jest.fn(),
 }));
 
 // Mock crypto
@@ -28,17 +28,38 @@ jest.mock('crypto', () => {
   return { ...impl, default: impl };
 });
 
-// const { exec } = require('child_process'); -- replaced by import
+// const { execFile } = require('child_process'); -- replaced by import
 // const crypto = require('crypto'); -- replaced by import
 
 // Helper to create mock exec implementation
 function mockExec(responses: Record<string, { stdout?: string; stderr?: string; error?: Error }>) {
-  exec.mockImplementation((
-    cmd: string,
-    callback: (error: Error | null, result: { stdout: string; stderr: string }) => void
+  const mock = execFile as unknown as {
+    mockImplementation: (implementation: (...args: unknown[]) => void) => void;
+  };
+
+  mock.mockImplementation((
+    file: unknown,
+    args: unknown,
+    optionsOrCallback: unknown,
+    maybeCallback?: unknown
   ) => {
+    const command = [
+      String(file),
+      ...(Array.isArray(args) ? args.map((arg) => String(arg)) : []),
+    ].join(' ');
+    const callback =
+      typeof maybeCallback === 'function'
+        ? maybeCallback
+        : typeof optionsOrCallback === 'function'
+          ? optionsOrCallback
+          : undefined;
+
+    if (!callback) {
+      throw new Error('execFile callback missing');
+    }
+
     for (const [pattern, response] of Object.entries(responses)) {
-      if (cmd.includes(pattern)) {
+      if (command.includes(pattern)) {
         if (response.error) {
           callback(response.error, { stdout: '', stderr: response.stderr || '' });
         } else {
@@ -50,6 +71,20 @@ function mockExec(responses: Record<string, { stdout?: string; stderr?: string; 
     // Default success
     callback(null, { stdout: '', stderr: '' });
   });
+}
+
+function execFileCalls(): Array<[string, string[]]> {
+  const mock = execFile as unknown as { mock: { calls: unknown[][] } };
+  return mock.mock.calls.map((call) => [String(call[0]), Array.isArray(call[1]) ? call[1].map(String) : []]);
+}
+
+function expectCommand(file: string, args: string[]): void {
+  expect(execFile).toHaveBeenCalledWith(
+    file,
+    args,
+    expect.objectContaining({ windowsHide: true }),
+    expect.any(Function)
+  );
 }
 
 describe('Delegate Command', () => {
@@ -186,10 +221,7 @@ describe('Delegate Command', () => {
 
       await delegate.createBranch('feature/new-branch');
 
-      expect(exec).toHaveBeenCalledWith(
-        'git checkout -b feature/new-branch',
-        expect.any(Function)
-      );
+      expectCommand('git', ['checkout', '-b', 'feature/new-branch']);
     });
   });
 
@@ -202,25 +234,20 @@ describe('Delegate Command', () => {
 
       await delegate.commitChanges('Test commit message');
 
-      expect(exec).toHaveBeenCalledWith('git add -A', expect.any(Function));
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('git commit -m'),
-        expect.any(Function)
-      );
+      expectCommand('git', ['add', '-A']);
+      expectCommand('git', ['commit', '-m', 'Test commit message']);
     });
 
-    test('should escape quotes in commit message', async () => {
+    test('should pass commit message as a single argument', async () => {
       mockExec({
         'git add -A': { stdout: '' },
         'git commit': { stdout: '' },
       });
 
-      await delegate.commitChanges('Fix "bug" in parser');
+      const message = 'Fix "bug" in parser $(touch /tmp/pwned)';
+      await delegate.commitChanges(message);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('\\"bug\\"'),
-        expect.any(Function)
-      );
+      expectCommand('git', ['commit', '-m', message]);
     });
   });
 
@@ -232,10 +259,7 @@ describe('Delegate Command', () => {
 
       await delegate.pushBranch('feature/test');
 
-      expect(exec).toHaveBeenCalledWith(
-        'git push -u origin feature/test',
-        expect.any(Function)
-      );
+      expectCommand('git', ['push', '-u', 'origin', 'feature/test']);
     });
   });
 
@@ -287,10 +311,10 @@ describe('Delegate Command', () => {
 
       await delegate.createPullRequest('Title', 'Body', 'main', true);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--draft'),
-        expect.any(Function)
-      );
+      expect(execFileCalls()).toContainEqual([
+        'gh',
+        ['pr', 'create', '--title', 'Title', '--body', 'Body', '--base', 'main', '--draft'],
+      ]);
     });
 
     test('should not include draft flag when draft is false', async () => {
@@ -300,8 +324,8 @@ describe('Delegate Command', () => {
 
       await delegate.createPullRequest('Title', 'Body', 'main', false);
 
-      const call = exec.mock.calls.find((c: string[]) => c[0].includes('gh pr create'));
-      expect(call[0]).not.toContain('--draft');
+      const call = execFileCalls().find(([file, args]) => file === 'gh' && args.join(' ').includes('pr create'));
+      expect(call?.[1]).not.toContain('--draft');
     });
 
     test('should include labels when provided', async () => {
@@ -311,10 +335,10 @@ describe('Delegate Command', () => {
 
       await delegate.createPullRequest('Title', 'Body', 'main', false, ['bug', 'urgent']);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--label'),
-        expect.any(Function)
-      );
+      expect(execFileCalls()).toContainEqual([
+        'gh',
+        ['pr', 'create', '--title', 'Title', '--body', 'Body', '--base', 'main', '--label', 'bug,urgent'],
+      ]);
     });
 
     test('should include reviewers when provided', async () => {
@@ -324,10 +348,10 @@ describe('Delegate Command', () => {
 
       await delegate.createPullRequest('Title', 'Body', 'main', false, [], ['user1']);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--reviewer'),
-        expect.any(Function)
-      );
+      expect(execFileCalls()).toContainEqual([
+        'gh',
+        ['pr', 'create', '--title', 'Title', '--body', 'Body', '--base', 'main', '--reviewer', 'user1'],
+      ]);
     });
 
     test('should throw error when PR URL cannot be parsed', async () => {
@@ -340,17 +364,19 @@ describe('Delegate Command', () => {
       ).rejects.toThrow('Failed to parse PR URL');
     });
 
-    test('should escape quotes in title and body', async () => {
+    test('should pass title and body as single arguments', async () => {
       mockExec({
         'gh pr create': { stdout: 'https://github.com/owner/repo/pull/1\n' },
       });
 
-      await delegate.createPullRequest('Fix "bug"', 'Body with "quotes"', 'main');
+      const title = 'Fix "bug" $(touch /tmp/pwned)';
+      const body = 'Body with "quotes" and `touch /tmp/pwned`';
+      await delegate.createPullRequest(title, body, 'main');
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('\\"bug\\"'),
-        expect.any(Function)
-      );
+      expect(execFileCalls()).toContainEqual([
+        'gh',
+        ['pr', 'create', '--title', title, '--body', body, '--base', 'main', '--draft'],
+      ]);
     });
   });
 
@@ -362,23 +388,18 @@ describe('Delegate Command', () => {
 
       await delegate.addPRComment(123, 'Test comment');
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('gh pr comment 123'),
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'comment', '123', '--body', 'Test comment']);
     });
 
-    test('should escape quotes in comment', async () => {
+    test('should pass comment as a single argument', async () => {
       mockExec({
         'gh pr comment': { stdout: '' },
       });
 
-      await delegate.addPRComment(123, 'Comment with "quotes"');
+      const comment = 'Comment with "quotes" and $(touch /tmp/pwned)';
+      await delegate.addPRComment(123, comment);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('\\"quotes\\"'),
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'comment', '123', '--body', comment]);
     });
   });
 
@@ -390,16 +411,13 @@ describe('Delegate Command', () => {
 
       await delegate.requestReview(123, ['user1', 'user2']);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--add-reviewer'),
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'edit', '123', '--add-reviewer', 'user1,user2']);
     });
 
     test('should not make request when reviewers list is empty', async () => {
       await delegate.requestReview(123, []);
 
-      expect(exec).not.toHaveBeenCalled();
+      expect(execFile).not.toHaveBeenCalled();
     });
   });
 
@@ -411,10 +429,7 @@ describe('Delegate Command', () => {
 
       await delegate.markReady(123);
 
-      expect(exec).toHaveBeenCalledWith(
-        'gh pr ready 123',
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'ready', '123']);
     });
   });
 
@@ -477,7 +492,7 @@ describe('Delegate Command', () => {
       const result = await delegate.delegate({ task: 'Test task' });
 
       expect(result.success).toBe(true);
-      expect(exec).toHaveBeenCalledWith('git add -A', expect.any(Function));
+      expectCommand('git', ['add', '-A']);
     });
 
     test('should use custom base branch when provided', async () => {
@@ -493,10 +508,7 @@ describe('Delegate Command', () => {
 
       await delegate.delegate({ task: 'Test', baseBranch: 'develop' });
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--base develop'),
-        expect.any(Function)
-      );
+      expect(execFileCalls().some(([file, args]) => file === 'gh' && args.includes('--base') && args.includes('develop'))).toBe(true);
     });
 
     test('should pass labels to PR creation', async () => {
@@ -515,10 +527,7 @@ describe('Delegate Command', () => {
         labels: ['custom-label'],
       });
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--label'),
-        expect.any(Function)
-      );
+      expect(execFileCalls().some(([file, args]) => file === 'gh' && args.includes('--label') && args.includes('custom-label'))).toBe(true);
     });
 
     test('should handle errors gracefully', async () => {
@@ -546,14 +555,14 @@ describe('Delegate Command', () => {
 
       await delegate.completeDelegate(123, 'Task completed successfully');
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('gh pr comment 123'),
-        expect.any(Function)
-      );
-      expect(exec).toHaveBeenCalledWith(
-        'gh pr ready 123',
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'comment', '123', '--body', `## Task Completed
+
+Task completed successfully
+
+---
+
+Ready for review.`]);
+      expectCommand('gh', ['pr', 'ready', '123']);
     });
 
     test('should request review when reviewers provided', async () => {
@@ -565,10 +574,7 @@ describe('Delegate Command', () => {
 
       await delegate.completeDelegate(123, 'Done', ['reviewer1']);
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('--add-reviewer'),
-        expect.any(Function)
-      );
+      expectCommand('gh', ['pr', 'edit', '123', '--add-reviewer', 'reviewer1']);
     });
   });
 
@@ -581,14 +587,8 @@ describe('Delegate Command', () => {
 
       await delegate.abortDelegate(123, 'Task could not be completed');
 
-      expect(exec).toHaveBeenCalledWith(
-        expect.stringContaining('Task Aborted'),
-        expect.any(Function)
-      );
-      expect(exec).toHaveBeenCalledWith(
-        'gh pr close 123 --delete-branch',
-        expect.any(Function)
-      );
+      expect(execFileCalls().some(([file, args]) => file === 'gh' && args.some((arg) => arg.includes('Task Aborted')))).toBe(true);
+      expectCommand('gh', ['pr', 'close', '123', '--delete-branch']);
     });
   });
 });
