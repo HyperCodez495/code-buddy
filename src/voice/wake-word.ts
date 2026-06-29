@@ -11,6 +11,7 @@ import type {
   WakeWordDetection,
 } from './types.js';
 import { DEFAULT_WAKE_WORD_CONFIG } from './types.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Wake word detector interface
@@ -71,6 +72,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
   private lastDetection: Date | null = null;
   private cooldownMs = 1000;
   private keywordLabels: string[] = [];
+  private porcupineBuffer = Buffer.alloc(0);
 
   constructor(config: Partial<WakeWordConfig> = {}) {
     super();
@@ -86,7 +88,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
     if (requestedEngine === 'text-match' || !accessKey) {
       this.engine = 'text-match';
       if (!accessKey && requestedEngine !== 'text-match') {
-        console.warn('[WakeWord] No PICOVOICE_ACCESS_KEY found, falling back to text-match mode');
+        logger.warn('[WakeWord] No PICOVOICE_ACCESS_KEY found, falling back to text-match mode');
       }
     } else {
       try {
@@ -94,7 +96,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
         this.engine = 'porcupine';
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        console.warn(`[WakeWord] Porcupine init failed (${msg}), falling back to text-match mode`);
+        logger.warn(`[WakeWord] Porcupine init failed (${msg}), falling back to text-match mode`);
         this.engine = 'text-match';
       }
     }
@@ -156,6 +158,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
       this.porcupine.release();
       this.porcupine = null;
     }
+    this.porcupineBuffer = Buffer.alloc(0);
 
     this.emit('stopped');
   }
@@ -169,7 +172,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
     }
 
     if (this.engine === 'porcupine' && this.porcupine) {
-      return this.processPorcupineFrame(frame);
+      return this.processPorcupineInput(frame);
     }
 
     // text-match mode: no-op for raw audio frames
@@ -177,16 +180,32 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
     return null;
   }
 
-  private processPorcupineFrame(frame: Buffer | Int16Array): WakeWordDetection | null {
+  private processPorcupineInput(frame: Buffer | Int16Array): WakeWordDetection | null {
     if (!this.porcupine) return null;
 
-    let int16Frame: Int16Array;
     if (frame instanceof Int16Array) {
-      int16Frame = frame;
-    } else {
-      // Convert Buffer to Int16Array
-      int16Frame = new Int16Array(frame.buffer, frame.byteOffset, frame.length / 2);
+      for (let offset = 0; offset + this.porcupine.frameLength <= frame.length; offset += this.porcupine.frameLength) {
+        const detection = this.processPorcupineFrame(frame.subarray(offset, offset + this.porcupine.frameLength));
+        if (detection) return detection;
+      }
+      return null;
     }
+
+    const frameBytes = this.porcupine.frameLength * 2;
+    this.porcupineBuffer = Buffer.concat([this.porcupineBuffer, frame]);
+    while (this.porcupineBuffer.length >= frameBytes) {
+      const chunk = this.porcupineBuffer.subarray(0, frameBytes);
+      this.porcupineBuffer = this.porcupineBuffer.subarray(frameBytes);
+      const int16Frame = new Int16Array(chunk.buffer, chunk.byteOffset, this.porcupine.frameLength);
+      const detection = this.processPorcupineFrame(int16Frame);
+      if (detection) return detection;
+    }
+    return null;
+  }
+
+  private processPorcupineFrame(int16Frame: Int16Array): WakeWordDetection | null {
+    if (!this.porcupine) return null;
+    if (int16Frame.length !== this.porcupine.frameLength) return null;
 
     const keywordIndex = this.porcupine.process(int16Frame);
 
@@ -307,7 +326,7 @@ export class WakeWordDetector extends EventEmitter implements IWakeWordDetector 
    * Clear audio buffer (no-op, kept for API compatibility)
    */
   clearBuffer(): void {
-    // Porcupine processes frames individually, no buffer to clear
+    this.porcupineBuffer = Buffer.alloc(0);
   }
 }
 

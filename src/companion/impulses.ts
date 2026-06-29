@@ -68,6 +68,9 @@ const RECENT_LIMIT = 60;
 const VISION_STALE_HOURS = 24;
 const HEARING_STALE_HOURS = 12;
 const SELF_STALE_HOURS = 8;
+const VOICE_STT_SLOW_MS = 2_500;
+const VOICE_LOOP_SLOW_MS = 5_000;
+const VOICE_SIGNAL_MARGIN = 1.35;
 
 function resolveCwd(cwd?: string): string {
   return cwd || process.cwd();
@@ -129,6 +132,129 @@ function formatAge(timestamp: string | undefined, now: Date): string {
   if (age < 1) return `${Math.round(age * 60)}m ago`;
   if (age < 48) return `${Math.round(age)}h ago`;
   return `${Math.round(age / 24)}d ago`;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function finiteNumberValue(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function formatMs(value: number | undefined): string {
+  return typeof value === 'number' ? `${Math.round(value)}ms` : 'unknown';
+}
+
+interface VoiceLoopMetrics {
+  sttMs?: number;
+  totalMs?: number;
+  decisionMs?: number;
+  actionMs?: number;
+  captureMs?: number;
+  writeMs?: number;
+  sampleRate?: number;
+  peakRms?: number;
+  avgRms?: number;
+  rmsOn?: number;
+  rmsOff?: number;
+  device?: string;
+}
+
+function extractVoiceLoopMetrics(percept: CompanionPercept | undefined): VoiceLoopMetrics | null {
+  const payload = objectValue(percept?.payload);
+  if (!payload) return null;
+  const latency = objectValue(payload.latency);
+  const capture = objectValue(payload.capture);
+  if (!latency && !capture) return null;
+
+  const metrics: VoiceLoopMetrics = {
+    sttMs: finiteNumberValue(latency?.sttMs),
+    totalMs: finiteNumberValue(latency?.totalMs),
+    decisionMs: finiteNumberValue(latency?.decisionMs),
+    actionMs: finiteNumberValue(latency?.actionMs),
+    captureMs: finiteNumberValue(capture?.ms),
+    writeMs: finiteNumberValue(capture?.writeMs),
+    sampleRate: finiteNumberValue(capture?.sampleRate),
+    peakRms: finiteNumberValue(capture?.peakRms) ?? finiteNumberValue(capture?.rms),
+    avgRms: finiteNumberValue(capture?.avgRms),
+    rmsOn: finiteNumberValue(capture?.rmsOn),
+    rmsOff: finiteNumberValue(capture?.rmsOff),
+    device: stringValue(capture?.device),
+  };
+  if (
+    metrics.sttMs === undefined
+    && metrics.totalMs === undefined
+    && metrics.captureMs === undefined
+    && metrics.writeMs === undefined
+    && metrics.peakRms === undefined
+  ) {
+    return null;
+  }
+  return metrics;
+}
+
+function buildVoiceLatencyImpulse(
+  impulses: CompanionImpulse[],
+  latestHearing: CompanionPercept | undefined,
+): void {
+  const metrics = extractVoiceLoopMetrics(latestHearing);
+  if (!metrics) return;
+  const slowStt = typeof metrics.sttMs === 'number' && metrics.sttMs >= VOICE_STT_SLOW_MS;
+  const slowLoop = typeof metrics.totalMs === 'number' && metrics.totalMs >= VOICE_LOOP_SLOW_MS;
+  if (!slowStt && !slowLoop) return;
+
+  const priority: CompanionImpulsePriority =
+    (metrics.totalMs || 0) >= VOICE_LOOP_SLOW_MS * 1.6
+    || (metrics.sttMs || 0) >= VOICE_STT_SLOW_MS * 1.6
+      ? 'high'
+      : 'medium';
+
+  addImpulse(impulses, {
+    kind: 'sense',
+    priority,
+    title: 'Reduce voice latency',
+    message: 'Tune the voice loop: prefer the webcam or USB microphone, use a smaller faster-whisper model if needed, and keep VAD filtering enabled.',
+    command: 'buddy companion percepts recent --limit 5 --modality hearing',
+    evidence: [
+      { label: 'stt', value: formatMs(metrics.sttMs) },
+      { label: 'loop', value: formatMs(metrics.totalMs) },
+      { label: 'capture', value: formatMs(metrics.captureMs) },
+      { label: 'device', value: metrics.device || 'unknown' },
+    ],
+    tags: ['voice', 'hearing', 'latency', 'realtime'],
+  });
+}
+
+function buildVoiceCaptureQualityImpulse(
+  impulses: CompanionImpulse[],
+  latestHearing: CompanionPercept | undefined,
+): void {
+  const metrics = extractVoiceLoopMetrics(latestHearing);
+  if (!metrics?.peakRms || !metrics.rmsOn) return;
+  const weakSignal = metrics.peakRms < metrics.rmsOn * VOICE_SIGNAL_MARGIN;
+  if (!weakSignal) return;
+
+  addImpulse(impulses, {
+    kind: 'sense',
+    priority: metrics.peakRms < metrics.rmsOn * 1.1 ? 'high' : 'medium',
+    title: 'Improve voice capture',
+    message: 'Improve microphone gain or placement; the latest speech signal was too close to the VAD threshold.',
+    command: 'buddy companion percepts recent --limit 5 --modality hearing',
+    evidence: [
+      { label: 'peak rms', value: metrics.peakRms.toFixed(4) },
+      { label: 'avg rms', value: metrics.avgRms !== undefined ? metrics.avgRms.toFixed(4) : 'unknown' },
+      { label: 'vad on', value: metrics.rmsOn.toFixed(4) },
+      { label: 'device', value: metrics.device || 'unknown' },
+    ],
+    tags: ['voice', 'hearing', 'capture', 'quality'],
+  });
 }
 
 function selectActiveMission(missions: CompanionMission[]): CompanionMission | undefined {
@@ -256,6 +382,11 @@ function buildSenseImpulses(
       evidence: [{ label: 'last hearing', value: formatAge(latestHearing?.timestamp, now) }],
       tags: ['voice', 'hearing', 'check-in'],
     });
+  }
+
+  if (status.voice.enabled && status.voice.available) {
+    buildVoiceLatencyImpulse(impulses, latestHearing);
+    buildVoiceCaptureQualityImpulse(impulses, latestHearing);
   }
 
   if (isStale(latestSelf?.timestamp, now, SELF_STALE_HOURS)) {

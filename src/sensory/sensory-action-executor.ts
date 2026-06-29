@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { logger } from '../utils/logger.js';
 import { isDangerousCommand, matchAllDangerousPatterns } from '../security/dangerous-patterns.js';
 import { sendTelegramAlert } from './alert.js';
+import { buildFilteredSubprocessEnv } from '../utils/subprocess-env.js';
 
 export interface SensoryEventContext {
   modality?: string;
@@ -38,15 +39,16 @@ export interface ActionResult {
 
 /** Injection-safe context exposed to a shell/agent action (env, not interpolation). */
 function actionEnv(ctx: SensoryEventContext): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    VISION_KIND: ctx.kind ?? '',
-    VISION_MODALITY: ctx.modality ?? '',
-    VISION_CAMERA: ctx.camera ?? '',
-    VISION_DESC: ctx.description ?? '',
-    VISION_IMAGE: ctx.imagePath ?? '',
-    VISION_SALIENCE: String(ctx.salience ?? ''),
-  };
+  return buildFilteredSubprocessEnv({
+    extraEnv: {
+      VISION_KIND: ctx.kind ?? '',
+      VISION_MODALITY: ctx.modality ?? '',
+      VISION_CAMERA: ctx.camera ?? '',
+      VISION_DESC: ctx.description ?? '',
+      VISION_IMAGE: ctx.imagePath ?? '',
+      VISION_SALIENCE: String(ctx.salience ?? ''),
+    },
+  });
 }
 
 /** Refuse a command that contains a destructive pattern (guardrail even for user rules). */

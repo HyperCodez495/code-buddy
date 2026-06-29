@@ -202,6 +202,101 @@ describe('companion impulses', () => {
     expect(brief.context.inProgressMissions).toBe(1);
   });
 
+  it('raises a voice latency impulse from recent hearing metrics', async () => {
+    mocks.readRecentCompanionPercepts.mockResolvedValue([
+      { id: 'vision-1', modality: 'vision', timestamp: '2026-05-24T09:00:00.000Z', source: 'camera', confidence: 1, summary: '', payload: {}, tags: [] },
+      {
+        id: 'hearing-1',
+        modality: 'hearing',
+        timestamp: '2026-05-24T09:10:00.000Z',
+        source: 'voice',
+        confidence: 1,
+        summary: 'heard: bonjour buddy',
+        payload: {
+          latency: {
+            sttMs: 3_200,
+            decisionMs: 40,
+            actionMs: 3_160,
+            totalMs: 6_400,
+          },
+          capture: {
+            device: 'plughw:CARD=BRIO,DEV=0',
+            ms: 1_100,
+            writeMs: 8,
+            sampleRate: 16_000,
+          },
+        },
+        tags: ['speech', 'stt', 'latency'],
+      },
+      { id: 'self-1', modality: 'self', timestamp: '2026-05-24T09:20:00.000Z', source: 'self', confidence: 1, summary: '', payload: {}, tags: [] },
+    ]);
+
+    const brief = await buildCompanionImpulseBrief({
+      now: new Date('2026-05-24T10:00:00.000Z'),
+      recordSuggestions: false,
+    });
+
+    const latencyImpulse = brief.impulses.find(impulse => impulse.id === 'sense-reduce-voice-latency');
+    expect(latencyImpulse).toMatchObject({
+      kind: 'sense',
+      priority: 'medium',
+      command: 'buddy companion percepts recent --limit 5 --modality hearing',
+    });
+    expect(latencyImpulse?.tags).toEqual(expect.arrayContaining(['voice', 'latency', 'realtime']));
+    expect(latencyImpulse?.evidence).toEqual(expect.arrayContaining([
+      { label: 'stt', value: '3200ms' },
+      { label: 'loop', value: '6400ms' },
+      { label: 'device', value: 'plughw:CARD=BRIO,DEV=0' },
+    ]));
+  });
+
+  it('raises a voice capture quality impulse from weak RMS margins', async () => {
+    mocks.readRecentCompanionPercepts.mockResolvedValue([
+      {
+        id: 'hearing-1',
+        modality: 'hearing',
+        timestamp: '2026-05-24T09:10:00.000Z',
+        source: 'voice',
+        confidence: 1,
+        summary: 'heard: buddy',
+        payload: {
+          latency: {
+            sttMs: 300,
+            totalMs: 500,
+          },
+          capture: {
+            device: 'default',
+            peakRms: 0.024,
+            avgRms: 0.014,
+            rmsOn: 0.02,
+            rmsOff: 0.012,
+            sampleRate: 16_000,
+          },
+        },
+        tags: ['speech', 'stt', 'latency'],
+      },
+      { id: 'self-1', modality: 'self', timestamp: '2026-05-24T09:20:00.000Z', source: 'self', confidence: 1, summary: '', payload: {}, tags: [] },
+    ]);
+
+    const brief = await buildCompanionImpulseBrief({
+      now: new Date('2026-05-24T10:00:00.000Z'),
+      recordSuggestions: false,
+    });
+
+    const captureImpulse = brief.impulses.find(impulse => impulse.id === 'sense-improve-voice-capture');
+    expect(captureImpulse).toMatchObject({
+      kind: 'sense',
+      priority: 'medium',
+      command: 'buddy companion percepts recent --limit 5 --modality hearing',
+    });
+    expect(captureImpulse?.tags).toEqual(expect.arrayContaining(['voice', 'capture', 'quality']));
+    expect(captureImpulse?.evidence).toEqual(expect.arrayContaining([
+      { label: 'peak rms', value: '0.0240' },
+      { label: 'avg rms', value: '0.0140' },
+      { label: 'vad on', value: '0.0200' },
+    ]));
+  });
+
   it('records top impulses as suggestion percepts by default', async () => {
     mocks.readRecentCompanionPercepts.mockResolvedValue([]);
 

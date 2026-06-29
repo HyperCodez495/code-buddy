@@ -71,8 +71,8 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
         if (t - lastGreetAt < greetCooldownMs) return;
         lastGreetAt = t;
         try {
-          const { getActivePersonaVoice } = await import('../personas/persona-manager.js');
-          const greeting = getActivePersonaVoice().greeting || 'Bonjour ! Je suis là si tu as besoin.';
+          const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
+          const greeting = (await getActivePersonaVoiceAsync()).greeting || 'Bonjour ! Je suis là si tu as besoin.';
           const greet =
             options.greet ??
             (async (text: string) => {

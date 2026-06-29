@@ -59,26 +59,59 @@ ou dans le panneau **Automatisations** de Cowork. Les règles se **rechargent à
 
 ### 🛰️ Collaborer avec mes autres machines (Fleet)
 Plusieurs Code Buddy sur ton réseau peuvent réfléchir ensemble : `buddy council --fleet` pose une question à
-toutes les machines connectées et réconcilie les réponses. Auth par token : `buddy fleet token`.
+toutes les machines connectées, répartit des rôles complémentaires avec le conductor, puis réconcilie
+les réponses. Auth par token : `buddy fleet token`.
 `fleet/…`, `commands/council.ts` · recette : `docs/fleet-guide.md`.
 
 ---
 
 ## Me réveiller (tout en même temps)
+Avant de lancer une vraie session, fais le pré-vol inspiré de MySoulmate :
+```bash
+buddy companion live
+```
+Il vérifie que les briques déjà codées sont réellement câblées ensemble
+(identité, cerveau ChatGPT, voix entrante/sortante, caméra, flags sensoriels,
+comportement d'assistant vocal `ear.py → speech_end → STT faster-whisper →
+décision de réponse → pensée/agent → parole`, auth caméra avec
+`CODEBUDDY_SENSORY_TOKEN` = `BUDDY_SENSE_TOKEN`, sidecars Python
+`buddy-vision/ear.py` et `buddy-vision/watch.py`, `websocket-client`, backend
+MediaPipe ou YOLO, présence, idle, rappels, Telegram, Fleet) et écrit une trace
+locale dans le journal perceptuel. Ajoute `--no-record` pour un diagnostic sans
+écriture.
+
 ```bash
 JWT_SECRET=… \
-CODEBUDDY_SENSORY=true CODEBUDDY_SENSORY_SPEECH=true CODEBUDDY_SENSORY_SPEAK=true \
+CODEBUDDY_SENSORY_TOKEN=<secret> \
+CODEBUDDY_SENSORY=true CODEBUDDY_SENSORY_CAMERA=true CODEBUDDY_SENSORY_SPEECH=true CODEBUDDY_SENSORY_SPEAK=true \
+CODEBUDDY_ROBOT_NAME=Buddy CODEBUDDY_SENSORY_CHIME_IN=true \
+CODEBUDDY_SENSORY_SPEAK_MODEL=auto CODEBUDDY_SENSORY_SPEAK_ACT=true CODEBUDDY_SENSORY_SPEAK_PERMISSION_MODE=plan \
+CODEBUDDY_SPEECH_PYTHON=/home/patrice/DEV/ai-stack/voice/.venv/bin/python \
 CODEBUDDY_TTS_VOICE=/home/patrice/DEV/ai-stack/voice/voices/fr_FR-siwis-medium.onnx \
 CODEBUDDY_SENSORY_GREET=true CODEBUDDY_COMPANION_PRESENCE=true CODEBUDDY_COMPANION_IDLE=true \
 CODEBUDDY_REMINDERS=true \
 buddy server
-# + buddy-vision (la caméra) pour qu'il te voie. Sortie son = haut-parleurs intégrés (groupe `audio`).
+BUDDY_SENSE_TOKEN=<secret> BUDDY_EAR_DEVICE=auto ~/vision_tests/venv/bin/python buddy-vision/ear.py
+BUDDY_SENSE_TOKEN=<secret> ~/vision_tests/venv/bin/python buddy-vision/watch.py
+# Sortie son = haut-parleurs intégrés (groupe `audio`).
 ```
 Réglages utiles : `CODEBUDDY_COMPANION_QUIET=22-8` (heures calmes), `CODEBUDDY_COMPANION_PRESENCE_HOURLY_CAP`,
 `CODEBUDDY_COMPANION_IDLE_HOURLY_CAP`, `CODEBUDDY_ROBOT_NAME`, `CODEBUDDY_SENSORY_ALERT_TOKEN`/`_CHAT` (Telegram).
+`BUDDY_EAR_DEVICE=auto` privilégie les micros de webcam/USB visibles dans
+`arecord -l` (BRIO, Logitech, C920/C922, camera/webcam). Mets un device ALSA
+précis seulement si tu veux forcer une entrée.
+Chaque percept `hearing` garde aussi la qualité de capture et la latence de
+boucle (`peakRms`, `avgRms`, seuils VAD, `sttMs`, `decisionMs`, `actionMs`,
+`totalMs`, device ALSA). Si la voix s'éloigne du temps réel,
+`buddy companion impulses` remonte `Reduce voice latency`; si le signal micro
+est trop proche du seuil de détection, il remonte `Improve voice capture`.
+Quand `CODEBUDDY_SENSORY_SPEECH=true`, faster-whisper reste chargé dans un
+worker chaud pour éviter le coût de chargement du modèle à chaque phrase.
+Désactive-le avec `CODEBUDDY_SPEECH_WORKER=false` ou baisse le modèle avec
+`CODEBUDDY_SPEECH_MODEL=tiny` si la machine privilégie la latence.
 
 ## Ce que je ne sais pas encore faire (honnête)
-- **Écoute micro live** : `buddy-sense` lit du WAV, la capture micro continue (cpal/VAD) reste à brancher
+- **Écoute micro live** : `buddy-vision/ear.py` capture via ALSA `arecord`, choisit d'abord les micros webcam/USB, émet `speech_end`, puis Code Buddy transcrit et répond.
   (le DMIC intégré de la machine la débloque).
 - **Idle, couche riche** : digest d'actualités aux repas, brouillons de blog, lancer les tests + proposer des
   fixes — différés (zone coût/ressources/action sortante).

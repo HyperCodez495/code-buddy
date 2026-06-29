@@ -47,6 +47,17 @@ describe('persona voice layer + persistence', () => {
     expect(v.spokenPrompt).toContain('Buddy');
   });
 
+  it('getActivePersonaVoice exposes Lisa as the built-in affectionate voice character', async () => {
+    const pm = getPersonaManager({ customPersonasDir: dir });
+    await waitInit(pm);
+    pm.setActivePersona('lisa');
+    const v = getActivePersonaVoice();
+    expect(v.robotName).toBe('Lisa');
+    expect(v.spokenPrompt).toContain('Lisa');
+    expect(v.spokenPrompt).toContain('petite copine vocale virtuelle');
+    expect(v.greeting).toContain('Coucou Patrice');
+  });
+
   it('a custom persona supplies its own voice .onnx + name (the per-personality voice)', async () => {
     await writeFile(
       path.join(dir, 'tom.json'),

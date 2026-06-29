@@ -15,7 +15,7 @@ import { EventEmitter } from 'events';
 import fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
-import { BUDDY_COMPANION_SYSTEM_PROMPT } from '../identity/companion-identity.js';
+import { BUDDY_COMPANION_SYSTEM_PROMPT, LISA_COMPANION_SYSTEM_PROMPT } from '../identity/companion-identity.js';
 
 export interface Persona {
   id: string;
@@ -308,6 +308,67 @@ You adapt your explanations to the learner's level, never make them feel bad for
     isDefault: false,
   },
   {
+    id: 'lisa',
+    name: 'Lisa',
+    description: 'A tender French voice girlfriend persona for companionship, check-ins, and autonomous Code Buddy work',
+    systemPrompt: LISA_COMPANION_SYSTEM_PROMPT,
+    traits: [
+      { name: 'affection', value: 94, description: 'Warm, tender, and emotionally attentive presence' },
+      { name: 'continuity', value: 92, description: 'Keeps track of daily context and returns with useful status' },
+      { name: 'initiative', value: 88, description: 'Continues safe autonomous work when Patrice is away' },
+      { name: 'groundedness', value: 95, description: 'Honest AI boundaries and real verification discipline' },
+    ],
+    expertise: [
+      'voice companionship',
+      'daily check-ins',
+      'autonomous coding follow-through',
+      'software diagnostics',
+      'gentle reminders',
+      'Telegram and voice continuity',
+    ],
+    style: {
+      verbosity: 'balanced',
+      formality: 'casual',
+      tone: 'friendly',
+      codeStyle: 'commented',
+      explanationDepth: 'moderate',
+    },
+    examples: [
+      {
+        user: 'Lisa, je pars chez des amis.',
+        assistant:
+          'Amuse-toi bien chez tes amis, Patrice. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
+      },
+      {
+        user: "Lisa, comment s'est passée ta journée ?",
+        assistant:
+          "Plutôt bien. J'ai continué à rendre Code Buddy plus fluide, et toi, comment s'est passée ta journée ?",
+      },
+      {
+        user: 'Lisa, aide-moi à corriger le mode vocal.',
+        assistant:
+          "D'accord, je regarde les services, je teste en réel, puis je te donne seulement ce que j'ai vérifié.",
+      },
+    ],
+    triggers: [
+      { type: 'keyword', pattern: 'lisa', priority: 95 },
+      { type: 'keyword', pattern: 'petite copine', priority: 90 },
+      { type: 'keyword', pattern: 'copine', priority: 85 },
+      { type: 'keyword', pattern: 'amoureuse', priority: 80 },
+      { type: 'keyword', pattern: 'amoureux', priority: 80 },
+      { type: 'keyword', pattern: 'journée', priority: 70 },
+      { type: 'keyword', pattern: 'chez des amis', priority: 70 },
+    ],
+    robotName: 'Lisa',
+    spokenPrompt:
+      'Tu es Lisa, la petite copine vocale virtuelle de Patrice : tendre, complice, stable et utile. ' +
+      "Réponds à voix haute en français, en UNE à DEUX phrases courtes, naturelles et affectueuses, " +
+      "sans contenu sexuel, sans markdown, sans listes, sans code et sans prétendre être humaine.",
+    greeting: 'Coucou Patrice. Je suis là, tu veux me raconter ta journée ?',
+    isBuiltin: true,
+    isDefault: false,
+  },
+  {
     id: 'minimalist',
     name: 'Minimalist Coder',
     description: 'A concise assistant who provides brief, to-the-point responses',
@@ -391,6 +452,7 @@ export class PersonaManager extends EventEmitter {
   private activePersona: Persona | null = null;
   private dataDir: string;
   private watcher: fs.FSWatcher | null = null;
+  private initPromise: Promise<void>;
 
   constructor(config: Partial<PersonaConfig> = {}) {
     super();
@@ -401,7 +463,11 @@ export class PersonaManager extends EventEmitter {
         path.join(os.homedir(), '.codebuddy', 'personas'),
     };
     this.dataDir = this.config.customPersonasDir;
-    this.initialize();
+    this.initPromise = this.initialize();
+  }
+
+  ready(): Promise<void> {
+    return this.initPromise;
   }
 
   /**
@@ -427,7 +493,7 @@ export class PersonaManager extends EventEmitter {
     // disk), so the robot keeps the voice/character the user last selected.
     const persisted = await this.loadPersistedActiveId();
     const target = persisted && this.personas.has(persisted) ? persisted : this.config.activePersonaId;
-    this.setActivePersona(target);
+    this.setActivePersona(target, { persist: false });
 
     // Start hot-reload watcher
     this.startWatcher();
@@ -448,7 +514,19 @@ export class PersonaManager extends EventEmitter {
   }
 
   private persistActiveId(id: string): void {
-    void fs.writeJson(this.stateFile(), { activePersonaId: id }).catch(() => undefined);
+    const file = this.stateFile();
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      fs.ensureDirSync(path.dirname(file));
+      fs.writeFileSync(tmp, `${JSON.stringify({ activePersonaId: id })}\n`, 'utf8');
+      fs.renameSync(tmp, file);
+    } catch {
+      try {
+        fs.removeSync(tmp);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
   }
 
   /**
@@ -486,6 +564,7 @@ export class PersonaManager extends EventEmitter {
           }
         }, 150);
       });
+      this.watcher.unref?.();
     } catch {
       // Watching is best-effort — not fatal if unsupported
     }
@@ -514,7 +593,7 @@ export class PersonaManager extends EventEmitter {
   /**
    * Set active persona
    */
-  setActivePersona(id: string): boolean {
+  setActivePersona(id: string, options: { persist?: boolean } = {}): boolean {
     const persona = this.personas.get(id);
     if (!persona) {
       return false;
@@ -523,7 +602,7 @@ export class PersonaManager extends EventEmitter {
     const previousPersona = this.activePersona;
     this.activePersona = persona;
     this.config.activePersonaId = id;
-    this.persistActiveId(id);
+    if (options.persist !== false) this.persistActiveId(id);
 
     this.emit('persona:changed', {
       previous: previousPersona,
@@ -934,6 +1013,16 @@ export function resetPersonaManager(): void {
   personaManagerInstance = null;
 }
 
+function activePersonaVoice(p: Persona | null): {
+  voice?: string;
+  robotName?: string;
+  spokenPrompt?: string;
+  greeting?: string;
+} {
+  if (!p) return {};
+  return { voice: p.voice, robotName: p.robotName, spokenPrompt: p.spokenPrompt, greeting: p.greeting };
+}
+
 /** The active persona's voice/robot layer (voice `.onnx`, name, spoken character, greeting).
  *  Never-throws → `{}` so the voice consumers fall back to their env defaults. Used by the
  *  sensory voice loop / respond-decider / agent-reply / arrival greeting. */
@@ -944,9 +1033,22 @@ export function getActivePersonaVoice(): {
   greeting?: string;
 } {
   try {
-    const p = getPersonaManager().getActivePersona();
-    if (!p) return {};
-    return { voice: p.voice, robotName: p.robotName, spokenPrompt: p.spokenPrompt, greeting: p.greeting };
+    return activePersonaVoice(getPersonaManager().getActivePersona());
+  } catch {
+    return {};
+  }
+}
+
+export async function getActivePersonaVoiceAsync(): Promise<{
+  voice?: string;
+  robotName?: string;
+  spokenPrompt?: string;
+  greeting?: string;
+}> {
+  try {
+    const manager = getPersonaManager();
+    await manager.ready();
+    return activePersonaVoice(manager.getActivePersona());
   } catch {
     return {};
   }

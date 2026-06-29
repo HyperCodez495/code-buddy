@@ -72,6 +72,7 @@ describe('PersonaManager', () => {
       expect(names).toContain('debugger');
       expect(names).toContain('teacher');
       expect(names).toContain('companion');
+      expect(names).toContain('lisa');
     });
 
     it('should include the Buddy companion persona for voice-first collaboration', () => {
@@ -80,6 +81,16 @@ describe('PersonaManager', () => {
       expect(companion?.systemPrompt).toContain('coding partner');
       expect(companion?.systemPrompt).toContain('voice-first conversation');
       expect(companion?.systemPrompt).toContain('do not claim literal consciousness');
+    });
+
+    it('should include Lisa as a grounded affectionate voice persona', () => {
+      const lisa = manager.getPersona('lisa');
+      expect(lisa).toBeDefined();
+      expect(lisa?.robotName).toBe('Lisa');
+      expect(lisa?.systemPrompt).toContain('digital girlfriend');
+      expect(lisa?.systemPrompt).toContain('no sexual roleplay');
+      expect(lisa?.spokenPrompt).toContain('petite copine vocale virtuelle');
+      expect(lisa?.greeting).toContain('Coucou Patrice');
     });
   });
 

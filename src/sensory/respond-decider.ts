@@ -7,10 +7,11 @@
  * Tiered, cheap-first (mirrors human pre-attentive filtering — we do NOT run an LLM on every
  * utterance):
  *   0. addressed   — the robot's name appears (FUZZY, to survive STT mangling) → respond
- *   1. engaged     — a reply happened within the engagement window → follow-ups respond
- *   2. (chime-in off) → silent. No LLM call.
- *   3. cue         — only with chime-in ON: a question/imperative/keyword cue → escalate
- *   4. judge       — a rare fast-LLM yes/no, HIGH bar; any error/uncertainty → silent
+ *   1. greeting    — a short direct greeting ("bonjour", "salut", ...) → respond
+ *   2. engaged     — a reply happened within the engagement window → follow-ups respond
+ *   3. (chime-in off) → silent. No LLM call.
+ *   4. cue         — only with chime-in ON: a question/imperative/keyword cue → escalate
+ *   5. judge       — a rare fast-LLM yes/no, HIGH bar; any error/uncertainty → silent
  *   else → silent.
  *
  * Conservative by design: butting into a human-human conversation is the failure that kills
@@ -32,12 +33,14 @@ export interface ResponseDecision {
 export type JudgeFn = (transcript: string, context: string[]) => Promise<boolean>;
 
 export interface ResponseDeciderOptions {
-  /** Name that counts as being addressed. Default CODEBUDDY_ROBOT_NAME || 'Buddy'. */
+  /** Name that counts as being addressed. Default explicit option || CODEBUDDY_ROBOT_NAME || active persona robotName || 'Buddy'. */
   robotName?: string;
   /** Post-reply window (ms) where follow-ups are treated as addressed. Default 30000. */
   engageWindowMs?: number;
   /** Enable spontaneous chime-in (tiers 3-4). Default CODEBUDDY_SENSORY_CHIME_IN === 'true'. */
   chimeIn?: boolean;
+  /** Reply to short direct greetings even without the robot name. Default true. */
+  respondToGreeting?: boolean;
   now?: () => number;
   /** Injectable fuzzy name matcher. Default: word-level Levenshtein-tolerant. */
   nameMatch?: (text: string, name: string) => boolean;
@@ -104,6 +107,24 @@ function hasResponseCue(text: string): boolean {
   );
 }
 
+function normalizeForCheapSpeechRules(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[?!.,;:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isDirectGreeting(text: string): boolean {
+  const t = normalizeForCheapSpeechRules(text);
+  if (!t) return false;
+  const words = t.split(' ');
+  if (words.length > 3) return false;
+  return /^(bonjour|bonsoir|salut|coucou|hello|hey|yo)$/.test(t)
+    || /^(bonjour|bonsoir|salut|coucou|hello|hey|yo) (ça|ca) va$/.test(t);
+}
+
 // ── default judge (rare, only on a cue with chime-in on) ──────────────
 
 function makeDefaultJudge(): JudgeFn {
@@ -151,10 +172,11 @@ async function defaultRecentContext(): Promise<string[]> {
  */
 export function createResponseDecider(opts: ResponseDeciderOptions = {}): ResponseDecider {
   const env = process.env;
-  const robotName = opts.robotName ?? env.CODEBUDDY_ROBOT_NAME ?? 'Buddy';
+  const explicitRobotName = opts.robotName?.trim();
   const engageWindowMs =
     opts.engageWindowMs ?? Number(env.CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS ?? 30000);
   const chimeIn = opts.chimeIn ?? env.CODEBUDDY_SENSORY_CHIME_IN === 'true';
+  const respondToGreeting = opts.respondToGreeting ?? env.CODEBUDDY_SENSORY_RESPOND_TO_GREETING !== 'false';
   const now = opts.now ?? (() => Date.now());
   const nameMatch = opts.nameMatch ?? fuzzyNameMatch;
   const judge = opts.judge ?? makeDefaultJudge();
@@ -164,6 +186,19 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
   const markEngaged = (): void => {
     lastEngagedAt = now();
   };
+  async function resolveRobotNameForTurn(): Promise<string> {
+    if (explicitRobotName) return explicitRobotName;
+    const envRobotName = env.CODEBUDDY_ROBOT_NAME?.trim();
+    if (envRobotName) return envRobotName;
+    try {
+      const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
+      const personaName = (await getActivePersonaVoiceAsync()).robotName?.trim();
+      if (personaName) return personaName;
+    } catch {
+      /* fall back to env/default */
+    }
+    return 'Buddy';
+  }
 
   async function decide(transcript: string): Promise<ResponseDecision> {
     try {
@@ -172,9 +207,18 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
 
       // Tier 0 — addressed by name (fuzzy, no LLM). ONLY an explicit address anchors the
       // engagement window — so it decays from the address, NOT from whatever was said next.
+      const robotName = await resolveRobotNameForTurn();
       if (nameMatch(text, robotName)) {
         markEngaged();
         return { respond: true, reason: 'addressed' };
+      }
+
+      // Voice-assistant affordance: a short standalone greeting is directed at the assistant
+      // when the mic loop is active. Keep it narrow so human-to-human greetings such as
+      // "bonjour Patrice" or a longer sentence do not wake the robot.
+      if (respondToGreeting && isDirectGreeting(text)) {
+        markEngaged();
+        return { respond: true, reason: 'greeting' };
       }
 
       // Tier 1 — inside the engagement window (continuity, no LLM). Reply to the follow-up

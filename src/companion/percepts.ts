@@ -50,6 +50,51 @@ export interface CompanionPerceptStats {
   total: number;
   byModality: Partial<Record<CompanionPerceptModality, number>>;
   latestTimestamp?: string;
+  voice?: CompanionVoiceLoopStats;
+}
+
+export interface CompanionNumericStats {
+  count: number;
+  min: number;
+  p50: number;
+  p95: number;
+  max: number;
+  avg: number;
+}
+
+export interface CompanionVoiceLoopStats {
+  windowSize: number;
+  hearingCount: number;
+  latest?: {
+    timestamp: string;
+    device?: string;
+    sttMs?: number;
+    totalMs?: number;
+    peakRms?: number;
+    rmsOn?: number;
+    signalMargin?: number;
+  };
+  latency: {
+    sttMs?: CompanionNumericStats;
+    totalMs?: CompanionNumericStats;
+    decisionMs?: CompanionNumericStats;
+    actionMs?: CompanionNumericStats;
+    eventToSttStartMs?: CompanionNumericStats;
+  };
+  capture: {
+    captureMs?: CompanionNumericStats;
+    writeMs?: CompanionNumericStats;
+    peakRms?: CompanionNumericStats;
+    avgRms?: CompanionNumericStats;
+    signalMargin?: CompanionNumericStats;
+  };
+  health: {
+    realtimeBudgetMs: number;
+    sttBudgetMs: number;
+    slowLoopCount: number;
+    slowSttCount: number;
+    weakSignalCount: number;
+  };
 }
 
 interface EncryptedCompanionPerceptPayload {
@@ -63,6 +108,10 @@ interface EncryptedCompanionPerceptPayload {
 const DEFAULT_RECENT_LIMIT = 10;
 const MAX_RECENT_LIMIT = 100;
 const ENCRYPTED_SUMMARY = '[encrypted companion percept]';
+const VOICE_STATS_WINDOW = 100;
+const VOICE_LOOP_BUDGET_MS = 5_000;
+const VOICE_STT_BUDGET_MS = 2_500;
+const VOICE_SIGNAL_MARGIN = 1.35;
 
 function resolveCwd(cwd?: string): string {
   return cwd || process.cwd();
@@ -196,6 +245,142 @@ function parsePercept(line: string): CompanionPercept | null {
   }
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function finiteNumberValue(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function numericStats(values: number[]): CompanionNumericStats | undefined {
+  const clean = values.filter(value => Number.isFinite(value)).sort((a, b) => a - b);
+  if (clean.length === 0) return undefined;
+  const percentile = (p: number): number => {
+    const index = Math.max(0, Math.min(clean.length - 1, Math.ceil(p * clean.length) - 1));
+    return clean[index]!;
+  };
+  return {
+    count: clean.length,
+    min: clean[0]!,
+    p50: percentile(0.5),
+    p95: percentile(0.95),
+    max: clean[clean.length - 1]!,
+    avg: clean.reduce((sum, value) => sum + value, 0) / clean.length,
+  };
+}
+
+function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopStats | undefined {
+  const hearing = percepts
+    .filter(percept => percept.modality === 'hearing')
+    .slice(-VOICE_STATS_WINDOW);
+  if (hearing.length === 0) return undefined;
+
+  const sttMs: number[] = [];
+  const totalMs: number[] = [];
+  const decisionMs: number[] = [];
+  const actionMs: number[] = [];
+  const eventToSttStartMs: number[] = [];
+  const captureMs: number[] = [];
+  const writeMs: number[] = [];
+  const peakRms: number[] = [];
+  const avgRms: number[] = [];
+  const signalMargin: number[] = [];
+  let slowLoopCount = 0;
+  let slowSttCount = 0;
+  let weakSignalCount = 0;
+
+  for (const percept of hearing) {
+    const payload = objectValue(percept.payload);
+    const latency = objectValue(payload?.latency);
+    const capture = objectValue(payload?.capture);
+    const stt = finiteNumberValue(latency?.sttMs);
+    const total = finiteNumberValue(latency?.totalMs);
+    const decision = finiteNumberValue(latency?.decisionMs);
+    const action = finiteNumberValue(latency?.actionMs);
+    const eventDelay = finiteNumberValue(latency?.eventToSttStartMs);
+    const captureDuration = finiteNumberValue(capture?.ms);
+    const writeDuration = finiteNumberValue(capture?.writeMs);
+    const peak = finiteNumberValue(capture?.peakRms) ?? finiteNumberValue(capture?.rms);
+    const avg = finiteNumberValue(capture?.avgRms);
+    const rmsOn = finiteNumberValue(capture?.rmsOn);
+
+    if (stt !== undefined) {
+      sttMs.push(stt);
+      if (stt >= VOICE_STT_BUDGET_MS) slowSttCount++;
+    }
+    if (total !== undefined) {
+      totalMs.push(total);
+      if (total >= VOICE_LOOP_BUDGET_MS) slowLoopCount++;
+    }
+    if (decision !== undefined) decisionMs.push(decision);
+    if (action !== undefined) actionMs.push(action);
+    if (eventDelay !== undefined) eventToSttStartMs.push(eventDelay);
+    if (captureDuration !== undefined) captureMs.push(captureDuration);
+    if (writeDuration !== undefined) writeMs.push(writeDuration);
+    if (peak !== undefined) peakRms.push(peak);
+    if (avg !== undefined) avgRms.push(avg);
+    if (peak !== undefined && rmsOn !== undefined && rmsOn > 0) {
+      const margin = peak / rmsOn;
+      signalMargin.push(margin);
+      if (margin < VOICE_SIGNAL_MARGIN) weakSignalCount++;
+    }
+  }
+
+  const latest = hearing.at(-1);
+  const latestPayload = objectValue(latest?.payload);
+  const latestLatency = objectValue(latestPayload?.latency);
+  const latestCapture = objectValue(latestPayload?.capture);
+  const latestPeakRms = finiteNumberValue(latestCapture?.peakRms) ?? finiteNumberValue(latestCapture?.rms);
+  const latestRmsOn = finiteNumberValue(latestCapture?.rmsOn);
+  const latestSignalMargin = latestPeakRms !== undefined && latestRmsOn !== undefined && latestRmsOn > 0
+    ? latestPeakRms / latestRmsOn
+    : undefined;
+
+  return {
+    windowSize: VOICE_STATS_WINDOW,
+    hearingCount: hearing.length,
+    latest: latest
+      ? {
+          timestamp: latest.timestamp,
+          device: stringValue(latestCapture?.device),
+          sttMs: finiteNumberValue(latestLatency?.sttMs),
+          totalMs: finiteNumberValue(latestLatency?.totalMs),
+          peakRms: latestPeakRms,
+          rmsOn: latestRmsOn,
+          signalMargin: latestSignalMargin,
+        }
+      : undefined,
+    latency: {
+      sttMs: numericStats(sttMs),
+      totalMs: numericStats(totalMs),
+      decisionMs: numericStats(decisionMs),
+      actionMs: numericStats(actionMs),
+      eventToSttStartMs: numericStats(eventToSttStartMs),
+    },
+    capture: {
+      captureMs: numericStats(captureMs),
+      writeMs: numericStats(writeMs),
+      peakRms: numericStats(peakRms),
+      avgRms: numericStats(avgRms),
+      signalMargin: numericStats(signalMargin),
+    },
+    health: {
+      realtimeBudgetMs: VOICE_LOOP_BUDGET_MS,
+      sttBudgetMs: VOICE_STT_BUDGET_MS,
+      slowLoopCount,
+      slowSttCount,
+      weakSignalCount,
+    },
+  };
+}
+
 export async function recordCompanionPercept<TPayload extends Record<string, unknown>>(
   input: CompanionPerceptInput<TPayload>,
   options: CompanionPerceptStoreOptions = {},
@@ -288,6 +473,7 @@ export async function getCompanionPerceptStats(
     total: percepts.length,
     byModality,
     latestTimestamp: percepts.at(-1)?.timestamp,
+    voice: buildVoiceLoopStats(percepts),
   };
 }
 
@@ -327,6 +513,35 @@ export function formatCompanionPerceptStats(stats: CompanionPerceptStats): strin
   }
   if (stats.latestTimestamp) {
     lines.push(`Latest: ${stats.latestTimestamp}`);
+  }
+  if (stats.voice) {
+    const fmtMs = (series: CompanionNumericStats | undefined): string =>
+      series
+        ? `count=${series.count} p50=${Math.round(series.p50)}ms p95=${Math.round(series.p95)}ms avg=${Math.round(series.avg)}ms max=${Math.round(series.max)}ms`
+        : 'n/a';
+    const fmtRatio = (series: CompanionNumericStats | undefined): string =>
+      series
+        ? `count=${series.count} p50=${series.p50.toFixed(2)} p95=${series.p95.toFixed(2)} min=${series.min.toFixed(2)}`
+        : 'n/a';
+    lines.push(
+      '',
+      `Voice loop (last ${stats.voice.hearingCount}/${stats.voice.windowSize} hearing percepts):`,
+      `- total: ${fmtMs(stats.voice.latency.totalMs)}`,
+      `- stt: ${fmtMs(stats.voice.latency.sttMs)}`,
+      `- event->stt: ${fmtMs(stats.voice.latency.eventToSttStartMs)}`,
+      `- capture: ${fmtMs(stats.voice.capture.captureMs)}`,
+      `- signal margin: ${fmtRatio(stats.voice.capture.signalMargin)}`,
+      `- health: slowLoop=${stats.voice.health.slowLoopCount}, slowStt=${stats.voice.health.slowSttCount}, weakSignal=${stats.voice.health.weakSignalCount}`,
+    );
+    if (stats.voice.latest) {
+      lines.push(
+        `- latest: ${stats.voice.latest.timestamp}`
+          + (stats.voice.latest.device ? ` device=${stats.voice.latest.device}` : '')
+          + (stats.voice.latest.totalMs !== undefined ? ` total=${Math.round(stats.voice.latest.totalMs)}ms` : '')
+          + (stats.voice.latest.sttMs !== undefined ? ` stt=${Math.round(stats.voice.latest.sttMs)}ms` : '')
+          + (stats.voice.latest.signalMargin !== undefined ? ` margin=${stats.voice.latest.signalMargin.toFixed(2)}` : ''),
+      );
+    }
   }
 
   return lines.join('\n');

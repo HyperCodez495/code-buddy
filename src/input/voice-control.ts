@@ -217,6 +217,15 @@ export class VoiceControl extends EventEmitter {
     this.initialize();
   }
 
+  private emitError(error: unknown): void {
+    const err = error instanceof Error ? error : new Error(String(error));
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', err);
+      return;
+    }
+    logger.warn(`[voice-control] ${err.message}`);
+  }
+
   /**
    * Initialize voice control system
    */
@@ -373,7 +382,7 @@ export class VoiceControl extends EventEmitter {
 
     const availability = await this.isAvailable();
     if (!availability.available) {
-      this.emit('error', new Error(availability.reason || 'Voice control not available'));
+      this.emitError(new Error(availability.reason || 'Voice control not available'));
       return;
     }
 
@@ -430,7 +439,12 @@ export class VoiceControl extends EventEmitter {
     vadProcess.stdout.on('data', (data: Buffer) => {
       // Feed raw audio to Porcupine wake word detector if active
       if (this.wakeWordDetector && this.wakeWordDetector.getEngine() === 'porcupine' && !this.state.isWakeWordActive) {
-        this.wakeWordDetector.processFrame(data);
+        try {
+          this.wakeWordDetector.processFrame(data);
+        } catch (error) {
+          this.state.errorCount++;
+          this.emitError(error);
+        }
       }
 
       if (this.state.isWakeWordActive || !this.config.wakeWordEnabled) {
@@ -459,7 +473,7 @@ export class VoiceControl extends EventEmitter {
 
     vadProcess.on('error', (error) => {
       this.state.errorCount++;
-      this.emit('error', error);
+      this.emitError(error);
     });
   }
 
@@ -490,7 +504,7 @@ export class VoiceControl extends EventEmitter {
     this.recordingProcess.on('error', (error) => {
       this.state.isListening = false;
       this.state.errorCount++;
-      this.emit('error', error);
+      this.emitError(error);
     });
   }
 
@@ -578,7 +592,7 @@ export class VoiceControl extends EventEmitter {
       }
     } catch (error) {
       this.state.errorCount++;
-      this.emit('error', error);
+      this.emitError(error);
     } finally {
       this.state.isProcessing = false;
       this.emit('processing:stop');

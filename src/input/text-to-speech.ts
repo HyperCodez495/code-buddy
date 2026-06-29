@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { commandExists } from '../utils/command-exists.js';
+import { logger } from '../utils/logger.js';
 
 export interface TTSConfig {
   enabled: boolean;
@@ -74,6 +75,41 @@ export class TextToSpeechManager extends EventEmitter {
     this.loadConfig();
   }
 
+  private emitError(error: unknown): void {
+    const err = error instanceof Error ? error : new Error(String(error));
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', err);
+      return;
+    }
+    logger.warn(`[tts] ${err.message}`);
+  }
+
+  private resolvePiperVoiceModel(): string | undefined {
+    const configured =
+      process.env.COWORK_PIPER_VOICE ||
+      process.env.CODEBUDDY_TTS_VOICE ||
+      process.env.CODEBUDDY_TTS_PIPER_MODEL ||
+      process.env.CODEBUDDY_PIPER_VOICE ||
+      (this.config.voice && this.config.voice.endsWith('.onnx')
+        ? this.config.voice
+        : undefined);
+    if (configured) return configured;
+
+    const roots = [
+      path.join(os.homedir(), 'DEV', 'ai-stack', 'voice'),
+      path.join(os.homedir(), 'ai-stack', 'voice'),
+      path.join(os.homedir(), '.codebuddy', 'voice'),
+    ];
+    const names = ['fr_FR-siwis-medium.onnx', 'fr_FR-tom-medium.onnx'];
+    for (const root of roots) {
+      for (const name of names) {
+        const candidate = path.join(root, 'voices', name);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+    }
+    return undefined;
+  }
+
   private ensureTempDir(): void {
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true });
@@ -120,10 +156,31 @@ export class TextToSpeechManager extends EventEmitter {
       }
     }
 
+    if (this.config.provider === 'piper') {
+      const piperBin =
+        process.env.COWORK_PIPER_BIN || process.env.CODEBUDDY_PIPER_BIN || 'piper';
+      const configuredVoice = this.resolvePiperVoiceModel();
+      const binAvailable = path.isAbsolute(piperBin) || piperBin.includes(path.sep)
+        ? fs.existsSync(piperBin)
+        : await commandExists(piperBin);
+      if (!binAvailable) {
+        return {
+          available: false,
+          reason: `${piperBin} not found. Set COWORK_PIPER_BIN or CODEBUDDY_PIPER_BIN, or install piper on PATH.`,
+        };
+      }
+      if (configuredVoice && !fs.existsSync(configuredVoice)) {
+        return {
+          available: false,
+          reason: `Piper voice model not found: ${configuredVoice}`,
+        };
+      }
+      return { available: true };
+    }
+
     const command = this.config.provider === 'edge-tts' ? 'edge-tts' :
                     this.config.provider === 'espeak' ? 'espeak' :
-                    this.config.provider === 'say' ? 'say' :
-                    this.config.provider === 'piper' ? 'piper' : 'edge-tts';
+                    this.config.provider === 'say' ? 'say' : 'edge-tts';
 
     if (await commandExists(command)) {
       return { available: true };
@@ -170,7 +227,7 @@ export class TextToSpeechManager extends EventEmitter {
     try {
       const availability = await this.isAvailable();
       if (!availability.available) {
-        this.emit('error', new Error(availability.reason));
+        this.emitError(new Error(availability.reason));
         return;
       }
 
@@ -205,7 +262,7 @@ export class TextToSpeechManager extends EventEmitter {
       }
     } catch (error) {
       // Emit error event but don't throw - prevents unhandled rejections
-      this.emit('error', error);
+      this.emitError(error);
     } finally {
       this.state.isSpeaking = false;
       this.state.currentText = undefined;
@@ -320,12 +377,7 @@ export class TextToSpeechManager extends EventEmitter {
       // CODEBUDDY_* aliases, or a `.onnx` path set as the configured voice).
       const piperBin =
         process.env.COWORK_PIPER_BIN || process.env.CODEBUDDY_PIPER_BIN || 'piper';
-      const voiceModel =
-        process.env.COWORK_PIPER_VOICE ||
-        process.env.CODEBUDDY_PIPER_VOICE ||
-        (this.config.voice && this.config.voice.endsWith('.onnx')
-          ? this.config.voice
-          : undefined);
+      const voiceModel = this.resolvePiperVoiceModel();
       const piperArgs = ['--output_file', audioFile];
       if (voiceModel) {
         piperArgs.push('--model', voiceModel);

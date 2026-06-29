@@ -89,6 +89,80 @@ describe('companion percept store', () => {
     expect(formatCompanionPercepts(recentVision)).toContain('vision/camera_snapshot');
   });
 
+  it('reports voice loop latency and capture quality stats from real percept journal data', async () => {
+    await recordCompanionPercept({
+      modality: 'hearing',
+      source: 'sensory_speech_reaction',
+      summary: 'Heard a fast turn',
+      payload: {
+        latency: {
+          sttMs: 420,
+          totalMs: 900,
+          decisionMs: 30,
+          actionMs: 120,
+          eventToSttStartMs: 45,
+        },
+        capture: {
+          device: 'hw:Webcam,0',
+          ms: 1200,
+          writeMs: 28,
+          peakRms: 0.12,
+          avgRms: 0.05,
+          rmsOn: 0.04,
+        },
+      },
+      tags: ['speech', 'stt', 'latency'],
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T10:00:00Z'),
+    });
+    await recordCompanionPercept({
+      modality: 'hearing',
+      source: 'sensory_speech_reaction',
+      summary: 'Heard a slow turn',
+      payload: {
+        latency: {
+          sttMs: 3_100,
+          totalMs: 6_200,
+          decisionMs: 80,
+          actionMs: 1_900,
+          eventToSttStartMs: 75,
+        },
+        capture: {
+          device: 'hw:Webcam,0',
+          ms: 1400,
+          writeMs: 31,
+          peakRms: 0.05,
+          avgRms: 0.025,
+          rmsOn: 0.04,
+        },
+      },
+      tags: ['speech', 'stt', 'latency'],
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T10:01:00Z'),
+    });
+
+    const raw = await readFile(getCompanionPerceptsPath(tempDir), 'utf8');
+    expect(raw.trim().split(/\r?\n/)).toHaveLength(2);
+
+    const stats = await getCompanionPerceptStats({ cwd: tempDir });
+    expect(stats.voice?.hearingCount).toBe(2);
+    expect(stats.voice?.latency.sttMs?.p50).toBe(420);
+    expect(stats.voice?.latency.sttMs?.p95).toBe(3100);
+    expect(stats.voice?.latency.totalMs?.p95).toBe(6200);
+    expect(stats.voice?.capture.signalMargin?.min).toBeCloseTo(1.25, 2);
+    expect(stats.voice?.health.slowSttCount).toBe(1);
+    expect(stats.voice?.health.slowLoopCount).toBe(1);
+    expect(stats.voice?.health.weakSignalCount).toBe(1);
+
+    const formatted = formatCompanionPerceptStats(stats);
+    expect(formatted).toContain('Voice loop');
+    expect(formatted).toContain('p95=3100ms');
+    expect(formatted).toContain('weakSignal=1');
+    expect(formatted).toContain('device=hw:Webcam,0');
+  });
+
   it('returns empty state for a workspace with no percept journal', async () => {
     await expect(readRecentCompanionPercepts({ cwd: tempDir })).resolves.toEqual([]);
 

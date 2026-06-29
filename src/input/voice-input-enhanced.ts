@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import { getErrorMessage } from '../types/index.js';
 import { commandExists } from '../utils/command-exists.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Axios-like error response structure
@@ -94,6 +95,15 @@ export class VoiceInputManager extends EventEmitter {
     this.loadConfig();
   }
 
+  private emitError(error: unknown): void {
+    const err = error instanceof Error ? error : new Error(String(error));
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', err);
+      return;
+    }
+    logger.warn(`[voice-input] ${err.message}`);
+  }
+
   /**
    * Ensure temp directory exists
    */
@@ -127,10 +137,13 @@ export class VoiceInputManager extends EventEmitter {
     const configPath = path.join(configDir, 'voice-config.json');
 
     if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
+      fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+    } else {
+      fs.chmodSync(configDir, 0o700);
     }
 
-    fs.writeFileSync(configPath, JSON.stringify(this.config, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(this.config, null, 2), { mode: 0o600 });
+    fs.chmodSync(configPath, 0o600);
   }
 
   /**
@@ -169,10 +182,17 @@ export class VoiceInputManager extends EventEmitter {
     }
 
     // Check for API key if using whisper-api
-    if (this.config.provider === 'whisper-api' && !this.config.apiKey) {
+    if (this.config.provider === 'whisper-api' && !this.config.apiKey && !process.env.OPENAI_API_KEY) {
       return {
         available: false,
         reason: 'OpenAI API key required for Whisper API. Set in voice config or OPENAI_API_KEY env var.'
+      };
+    }
+
+    if (this.config.provider === 'system') {
+      return {
+        available: false,
+        reason: 'System speech recognition is not implemented. Use whisper-local or whisper-api provider.'
       };
     }
 
@@ -200,7 +220,7 @@ export class VoiceInputManager extends EventEmitter {
 
     const availability = await this.isAvailable();
     if (!availability.available) {
-      this.emit('error', new Error(availability.reason));
+      this.emitError(new Error(availability.reason));
       return;
     }
 
@@ -255,7 +275,7 @@ export class VoiceInputManager extends EventEmitter {
       if (this.levelInterval) { clearInterval(this.levelInterval); this.levelInterval = null; }
       this.state.isRecording = false;
       this.state.errorCount++;
-      this.emit('error', error);
+      this.emitError(error);
     });
   }
 
@@ -302,11 +322,11 @@ export class VoiceInputManager extends EventEmitter {
         this.state.lastTranscription = result.text;
         this.emit('transcription', result);
       } else {
-        this.emit('error', new Error(result.error || 'Transcription failed'));
+        this.emitError(new Error(result.error || 'Transcription failed'));
       }
     } catch (error) {
       this.state.errorCount++;
-      this.emit('error', error);
+      this.emitError(error);
     } finally {
       this.state.isProcessing = false;
       this.emit('processing-finished');
@@ -353,6 +373,9 @@ export class VoiceInputManager extends EventEmitter {
         } else {
           resolve({ success: false, error: stderr || 'Whisper failed' });
         }
+      });
+      whisper.on('error', (error) => {
+        resolve({ success: false, error: getErrorMessage(error) });
       });
     });
   }

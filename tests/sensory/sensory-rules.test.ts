@@ -70,4 +70,24 @@ describe('shell action safety', () => {
     expect(res.ok).toBe(true);
     expect(res.detail).toBe('; rm -rf ~ #'); // echoed verbatim, NOT executed
   });
+
+  it('does not leak provider secrets into shell action env', async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test-secret-that-must-not-leak';
+    try {
+      const env = exec.actionEnv({ kind: 'person_entered' });
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+
+      const res = await executeSensoryAction(
+        { type: 'shell', command: 'env' },
+        { kind: 'person_entered' },
+      );
+      expect(res.ok).toBe(true);
+      expect(res.detail).not.toContain('OPENAI_API_KEY');
+      expect(res.detail).not.toContain('sk-test-secret-that-must-not-leak');
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
+  });
 });

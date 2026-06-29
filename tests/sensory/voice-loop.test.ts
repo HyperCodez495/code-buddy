@@ -2,6 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   makeVoiceReply,
   describeVoiceReadiness,
+  DEFAULT_TTS_PREWARM_PHRASES,
+  fastCompanionReply,
+  getDefaultVoicePrewarmPhrases,
   resolveVoiceModel,
   resetVoiceModelCache,
   sayNow,
@@ -63,6 +66,46 @@ describe('voice loop — model resolution (env authoritative)', () => {
     expect(r.baseURL).toBe('http://localhost:9999/v1');
     expect(r.apiKey).toBe('secret');
     expect(r.reason).toContain('pinned');
+  });
+});
+
+describe('voice loop — fast companion replies', () => {
+  it('answers safe phatic exchanges without invoking the LLM path', () => {
+    expect(fastCompanionReply('Bonjour !')).toBe("Bonjour ! Je t'écoute.");
+    expect(fastCompanionReply('merci beaucoup')).toBe('Avec plaisir.');
+    expect(fastCompanionReply('tu es là ?')).toBe('Oui, je suis là.');
+    expect(fastCompanionReply('Lisa ?')).toBe('Coucou Patrice. Je suis là.');
+    expect(fastCompanionReply('Lisa comment ça va ?')).toBe('Oui Patrice. Je suis contente de t’entendre.');
+    expect(fastCompanionReply('Lisa je pars chez des amis')).toBe(
+      'Amuse-toi bien chez tes amis. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
+    );
+    expect(fastCompanionReply('Lisa, je parchais des amis.')).toBe(
+      'Amuse-toi bien chez tes amis. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
+    );
+    expect(fastCompanionReply('Bonne nuit Lisa')).toBe(
+      'Bonne nuit Patrice. Repose-toi bien, je veille tranquillement.',
+    );
+    expect(fastCompanionReply('Lisa je suis fatigué')).toBe(
+      'Je suis là avec toi. On peut ralentir et faire les choses doucement.',
+    );
+  });
+
+  it('does not shortcut real requests', () => {
+    expect(fastCompanionReply('bonjour peux-tu auditer le micro ?')).toBeNull();
+    expect(fastCompanionReply('cherche les erreurs dans les logs')).toBeNull();
+    expect(fastCompanionReply('Lisa corrige le mode vocal')).toBeNull();
+  });
+});
+
+describe('voice loop — TTS prewarm corpus', () => {
+  it('includes proactive and kind assistant messages', () => {
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain("Comment s'est passée ta journée ?");
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Je suis content de t’aider.');
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Tu peux compter sur moi.');
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Coucou Patrice. Je suis là.');
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Amuse-toi bien chez tes amis.');
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Bonne nuit Patrice. Repose-toi bien, je veille tranquillement.');
+    expect(getDefaultVoicePrewarmPhrases(2)).toHaveLength(2);
   });
 });
 

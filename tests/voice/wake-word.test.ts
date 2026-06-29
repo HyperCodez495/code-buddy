@@ -187,6 +187,31 @@ describe('WakeWordDetector', () => {
       await det.stop();
     });
 
+    it('should buffer arbitrary audio chunks before calling Porcupine', async () => {
+      const det = new WakeWordDetector({ accessKey: 'test-key' });
+      await det.start();
+
+      mockProcess.mockReturnValue(-1);
+      det.processFrame(Buffer.alloc(100));
+      expect(mockProcess).not.toHaveBeenCalled();
+
+      det.processFrame(Buffer.alloc(924)); // 100 + 924 = one 512-sample int16 frame
+      expect(mockProcess).toHaveBeenCalledTimes(1);
+
+      await det.stop();
+    });
+
+    it('should process multiple complete frames from one Buffer chunk', async () => {
+      const det = new WakeWordDetector({ accessKey: 'test-key' });
+      await det.start();
+
+      mockProcess.mockReturnValue(-1);
+      det.processFrame(Buffer.alloc(2048)); // two 512-sample int16 frames
+      expect(mockProcess).toHaveBeenCalledTimes(2);
+
+      await det.stop();
+    });
+
     it('should use custom keywordPaths when provided', async () => {
       const det = new WakeWordDetector({
         accessKey: 'test-key',
