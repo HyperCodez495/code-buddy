@@ -151,17 +151,18 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
 
     // Mock client:
     // Chat call will return a correct edit proposal on the second round
-    const mockClient = {
-      chat: vi.fn().mockResolvedValue({
-        choices: [
-          {
-            message: {
-              role: 'assistant',
-              content: '```json\n{\n  "summary": "Fix correctly",\n  "edits": [\n    {\n      "type": "replace_text",\n      "path": "docs/example.md",\n      "find": "Hello Wrong",\n      "replace": "Hello Correct",\n      "expectedOccurrences": 1\n    }\n  ],\n  "risks": [],\n  "verificationNotes": []\n}\n```',
-            },
+    const chat = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: '```json\n{\n  "summary": "Fix correctly",\n  "edits": [\n    {\n      "type": "replace_text",\n      "path": "docs/example.md",\n      "find": "Hello Wrong",\n      "replace": "Hello Correct",\n      "expectedOccurrences": 1\n    }\n  ],\n  "risks": [],\n  "verificationNotes": []\n}\n```',
           },
-        ],
-      }),
+        },
+      ],
+    });
+    const mockClient = {
+      chat,
       getCurrentModel: () => 'gpt-4o',
     } as unknown as CodeBuddyClient;
 
@@ -176,6 +177,9 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
     expect(result.status).toBe('verified');
     expect(result.iterations).toBe(1);
     expect(result.verification[0].status).toBe('passed');
+    const chatMessages = chat.mock.calls[0]?.[0] as Array<{ content: string; role: string }>;
+    expect(chatMessages.some((message) => message.content.includes('Mode: self-correction'))).toBe(true);
+    expect(chatMessages.some((message) => message.content.includes('Protect user work'))).toBe(true);
 
     const updatedContent = await fs.readFile(testFile, 'utf8');
     expect(updatedContent).toBe('Hello Correct content');

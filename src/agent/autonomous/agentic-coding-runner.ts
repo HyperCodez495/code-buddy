@@ -25,6 +25,12 @@ import {
   isPathAllowedByContract,
   resolveRepoPath,
 } from './agentic-coding-paths.js';
+import { renderCodexAutonomyDirective } from './codex-autonomy-directive.js';
+import {
+  buildRecursiveImprovementDecision,
+  DEFAULT_MAX_RECURSIVE_IMPROVEMENT_DEPTH,
+  type AgenticCodingRecursiveImprovementDecision,
+} from './recursive-improvement.js';
 // Re-export the extracted path helpers for backward compatibility — they used
 // to be defined in this module and are imported from here elsewhere.
 export { normalizeGitPath, isPathAllowedByContract, resolveRepoPath };
@@ -107,6 +113,9 @@ export interface AgenticCodingRunOptions {
   maxCostUsd?: number;
   maxIterations?: number;
   recordObservability?: boolean;
+  recursiveDepth?: number;
+  recursiveMaxDepth?: number;
+  recursiveParentRunId?: string;
 }
 
 export interface AgenticCodingRulesFile {
@@ -1731,6 +1740,11 @@ export interface AgenticCodingFleetCollaborationPlan {
   safety: string[];
 }
 
+export interface AgenticCodingEditProposalProducerMessage {
+  content: string;
+  role: 'assistant' | 'system' | 'user';
+}
+
 export interface AgenticCodingEditProposalProducerDispatch {
   allowedTools: string[];
   currentState: {
@@ -1747,10 +1761,7 @@ export interface AgenticCodingEditProposalProducerDispatch {
   };
   fleet?: AgenticCodingFleetCollaborationPlan;
   kind: 'agentic-coding-edit-proposal-producer-dispatch';
-  messages: Array<{
-    content: string;
-    role: 'system' | 'user';
-  }>;
+  messages: AgenticCodingEditProposalProducerMessage[];
   output: {
     editProposalFile: string;
     reviewCommand: AgenticCodingProposalLoopCommand;
@@ -1807,6 +1818,10 @@ export interface AgenticCodingRunReport {
   repo: string;
   rulesFiles: AgenticCodingRulesFile[];
   plan: AgenticCodingPlanStep[];
+  recursiveDepth?: number;
+  recursiveImprovement?: AgenticCodingRecursiveImprovementDecision;
+  recursiveMaxDepth?: number;
+  recursiveParentRunId?: string;
   observability?: AgenticCodingObservabilityReport;
   status: AgenticCodingRunStatus;
   taskFile: string;
@@ -1866,6 +1881,52 @@ function buildRunStoreEventsPath(store: RunStore, runId: string): string {
   return path.join(store.getRunsDir(), runId, 'events.jsonl');
 }
 
+function normalizeRecursiveInteger(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, value));
+}
+
+function withRecursiveImprovement(
+  report: AgenticCodingRunReport,
+  options: Pick<AgenticCodingRunOptions, 'recursiveDepth' | 'recursiveMaxDepth' | 'recursiveParentRunId'> = {},
+): AgenticCodingRunReport {
+  if (report.recursiveImprovement) {
+    return report;
+  }
+
+  const recursiveMaxDepth = normalizeRecursiveInteger(
+    options.recursiveMaxDepth ?? report.recursiveMaxDepth,
+    DEFAULT_MAX_RECURSIVE_IMPROVEMENT_DEPTH,
+    0,
+    12,
+  );
+  const recursiveDepth = normalizeRecursiveInteger(
+    options.recursiveDepth ?? report.recursiveDepth,
+    0,
+    0,
+    recursiveMaxDepth,
+  );
+  const enrichedReport: AgenticCodingRunReport = {
+    ...report,
+    recursiveDepth,
+    recursiveMaxDepth,
+    ...(options.recursiveParentRunId ?? report.recursiveParentRunId
+      ? { recursiveParentRunId: options.recursiveParentRunId ?? report.recursiveParentRunId }
+      : {}),
+  };
+
+  return {
+    ...enrichedReport,
+    recursiveImprovement: buildRecursiveImprovementDecision(enrichedReport, {
+      currentDepth: recursiveDepth,
+      maxDepth: recursiveMaxDepth,
+    }),
+  };
+}
+
 function startAgenticCodingObservability(
   options: AgenticCodingRunOptions,
   taskFile: string,
@@ -1873,7 +1934,7 @@ function startAgenticCodingObservability(
 ): AgenticCodingObservabilitySession {
   if (options.recordObservability === false) {
     return {
-      end: (report) => report,
+      end: (report) => withRecursiveImprovement(report, options),
       fail: () => {},
       runId: '',
       stepEnd: () => {},
@@ -1909,27 +1970,36 @@ function startAgenticCodingObservability(
 
   return {
     end(report: AgenticCodingRunReport): AgenticCodingRunReport {
-      const progress = buildAgenticCodingWorkflowProgressSnapshot(report);
-      artifacts.report = store.saveArtifact(runId, 'agentic-coding-report.json', `${JSON.stringify(report, null, 2)}\n`);
+      const reportWithRecursiveImprovement = withRecursiveImprovement(report, options);
+      const progress = buildAgenticCodingWorkflowProgressSnapshot(reportWithRecursiveImprovement);
+      artifacts.report = store.saveArtifact(
+        runId,
+        'agentic-coding-report.json',
+        `${JSON.stringify(reportWithRecursiveImprovement, null, 2)}\n`,
+      );
       artifacts.progress = store.saveArtifact(runId, 'workflow-progress.json', `${JSON.stringify(progress, null, 2)}\n`);
       store.emit(runId, {
         type: 'decision',
         data: {
           kind: 'agentic_coding_finished',
-          activeNodeId: report.workflow.activeNodeId,
-          autoExecutable: report.autoExecutable,
-          blockedReasons: report.blockedReasons,
-          status: report.status,
+          activeNodeId: reportWithRecursiveImprovement.workflow.activeNodeId,
+          autoExecutable: reportWithRecursiveImprovement.autoExecutable,
+          blockedReasons: reportWithRecursiveImprovement.blockedReasons,
+          recursiveImprovementStatus: reportWithRecursiveImprovement.recursiveImprovement?.status,
+          status: reportWithRecursiveImprovement.status,
         },
       });
       if (ownsRun) {
-        store.endRun(runId, report.status === 'verified' || report.status === 'edited' || report.status === 'previewed' || report.status === 'ready'
+        store.endRun(runId, reportWithRecursiveImprovement.status === 'verified'
+          || reportWithRecursiveImprovement.status === 'edited'
+          || reportWithRecursiveImprovement.status === 'previewed'
+          || reportWithRecursiveImprovement.status === 'ready'
           ? 'completed'
           : 'failed');
       }
 
       return {
-        ...report,
+        ...reportWithRecursiveImprovement,
         observability: {
           artifacts,
           eventsPath: buildRunStoreEventsPath(store, runId),
@@ -4639,6 +4709,10 @@ export function buildAgenticCodingEditProposalProducerDispatch(
           'You are Code Buddy\'s edit-proposal producer.',
           'Read the user prompt, inspect only the bounded repository context needed, and return data only.',
           'Do not modify files, run broad shell commands, push, deploy, or approve your own output.',
+          ...(report.contract ? [
+            '',
+            renderCodexAutonomyDirective(report.contract, { mode: 'edit-proposal' }),
+          ] : []),
           ...(fleet.mode !== 'disabled' ? [
             '',
             '=== Fleet collaboration policy ===',
@@ -5086,7 +5160,7 @@ export function aggregateReports(
     verificationRequested: Boolean(options.runVerification),
   });
 
-  return {
+  const report: AgenticCodingRunReport = {
     approval: buildApprovalReport({
       approvalDecision: undefined,
       blockedReasons: uniqueBlockedReasons,
@@ -5124,6 +5198,19 @@ export function aggregateReports(
     codeexplorerEvidence,
     worldModelInvariants,
   };
+
+  return withRecursiveImprovement(report, options);
+}
+
+export function deriveAggregateRunStatus(statuses: readonly AgenticCodingRunStatus[]): AgenticCodingRunStatus {
+  if (statuses.includes('validation_failed')) return 'validation_failed';
+  if (statuses.includes('verification_failed')) return 'verification_failed';
+  if (statuses.includes('blocked')) return 'blocked';
+  if (statuses.length > 0 && statuses.every((status) => status === 'verified')) return 'verified';
+  if (statuses.includes('edited')) return 'edited';
+  if (statuses.includes('previewed')) return 'previewed';
+  if (statuses.includes('ready')) return 'ready';
+  return 'ready';
 }
 
 export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCodingRunReport {
@@ -5137,7 +5224,12 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
     : [];
 
   if (checkpoint.reports && checkpoint.reports.length > 0) {
-    return aggregateReports(checkpoint.reports, contract, options, isBlockedCheckpoint ? 'blocked' : 'verified');
+    return aggregateReports(
+      checkpoint.reports,
+      contract,
+      options,
+      isBlockedCheckpoint ? 'blocked' : deriveAggregateRunStatus(checkpoint.reports.map((report) => report.status)),
+    );
   }
 
   const verification = checkpoint.verification ?? [];
@@ -5162,7 +5254,7 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
     verificationRequested: Boolean(options.runVerification),
   });
 
-  return {
+  const report: AgenticCodingRunReport = {
     approval: buildApprovalReport({
       approvalDecision: undefined,
       blockedReasons,
@@ -5199,6 +5291,8 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
     codeexplorerEvidence: checkpoint.codeexplorerEvidence,
     worldModelInvariants: checkpoint.worldModelInvariants,
   };
+
+  return withRecursiveImprovement(report, options);
 }
 
 export async function runDecomposedSubtasks(
@@ -5254,7 +5348,12 @@ export async function runDecomposedSubtasks(
     }
   }
 
-  const finalReport = aggregateReports(reports, contract, options, 'verified');
+  const finalReport = aggregateReports(
+    reports,
+    contract,
+    options,
+    deriveAggregateRunStatus(reports.map((report) => report.status)),
+  );
   await saveCheckpoint({
     runId,
     options: checkpointOptions,
@@ -6104,6 +6203,19 @@ export function renderAgenticCodingRunReport(report: AgenticCodingRunReport): st
     lines.push(`Risk: ${report.contract.riskLevel}`);
     lines.push(`Allowed paths: ${report.contract.allowedPaths.join(', ')}`);
     lines.push(`Verification: ${report.contract.verification.join(' | ')}`);
+  }
+
+  if (report.recursiveImprovement) {
+    lines.push('\nRecursive improvement:');
+    lines.push(`- Status: ${report.recursiveImprovement.status}`);
+    lines.push(
+      `- Depth: ${report.recursiveImprovement.depth.current}/${report.recursiveImprovement.depth.max} `
+      + `(${report.recursiveImprovement.depth.remaining} remaining)`,
+    );
+    lines.push(`- Reason: ${report.recursiveImprovement.reason}`);
+    if (report.recursiveImprovement.nextTask) {
+      lines.push(`- Next task: ${report.recursiveImprovement.nextTask.task}`);
+    }
   }
 
   lines.push(`Fleet: ${report.fleet.policy} (${report.fleet.mode})`);
@@ -8384,6 +8496,8 @@ export function renderAgenticCodingEditProposalPrompt(
     `- Allowed paths: ${report.contract.allowedPaths.join(', ')}`,
     `- Verification commands: ${report.contract.verification.join(' | ')}`,
     `- Max files changed: ${report.contract.maxFilesChanged}`,
+    '',
+    renderCodexAutonomyDirective(report.contract, { mode: 'edit-proposal' }),
     '',
     'Safety rules:',
     '- Propose replace_text edits only.',

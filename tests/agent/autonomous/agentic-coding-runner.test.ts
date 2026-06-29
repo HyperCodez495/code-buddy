@@ -21,6 +21,7 @@ import {
   buildAgenticCodingWorkflowCanvas,
   buildAgenticCodingWorkflowEventsSnapshot,
   buildAgenticCodingWorkflowProgressSnapshot,
+  deriveAggregateRunStatus,
   renderAgenticCodingApprovalDecisionPrompt,
   renderAgenticCodingEditProposalPrompt,
   renderAgenticCodingWorkflowBuilderPrompt,
@@ -215,6 +216,25 @@ describe('runAgenticCodingCell', () => {
       }),
       expect.objectContaining({ type: 'run_end' }),
     ]));
+  });
+
+  it('propagates recursive depth options into the run report', async () => {
+    const repo = await createTempGitRepo();
+    const taskFile = await writeTaskFile(taskFor(repo));
+
+    const report = await runAgenticCodingCell({
+      generatedAt: '2026-05-19T00:00:00.000Z',
+      recursiveDepth: 2,
+      recursiveMaxDepth: 2,
+      recursiveParentRunId: 'parent-run',
+      taskFile,
+    });
+
+    expect(report.recursiveDepth).toBe(2);
+    expect(report.recursiveMaxDepth).toBe(2);
+    expect(report.recursiveParentRunId).toBe('parent-run');
+    expect(report.recursiveImprovement?.depth).toEqual({ current: 2, max: 2, remaining: 0 });
+    expect(report.recursiveImprovement?.status).toBe('stopped');
   });
 
   it('blocks when the worktree has dirty files outside allowedPaths', async () => {
@@ -3842,6 +3862,9 @@ describe('runAgenticCodingCell', () => {
     expect(prompt).toContain('Update one docs sentence.');
     expect(prompt).toContain('Allowed paths: docs/...');
     expect(prompt).toContain('"type": "replace_text"');
+    expect(prompt).toContain('Codex-style autonomous coding directive');
+    expect(prompt).toContain('Keep an explicit plan');
+    expect(prompt).toContain('Protect user work');
     expect(prompt).toContain('Before applying any proposal');
   });
 
@@ -3891,7 +3914,10 @@ describe('runAgenticCodingCell', () => {
       }),
     }));
     expect(saved.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: 'system' }),
+      expect.objectContaining({
+        content: expect.stringContaining('Codex-style autonomous coding directive'),
+        role: 'system',
+      }),
       expect.objectContaining({
         content: expect.stringContaining('Propose a focused docs edit.'),
         role: 'user',
@@ -4158,5 +4184,20 @@ describe('runAgenticCodingCell', () => {
     ]);
     expect(writtenPath).toBe(canvasFile);
     expect(saved).toEqual(canvas);
+  });
+});
+
+describe('deriveAggregateRunStatus', () => {
+  it('returns verified only when every subtask report is verified', () => {
+    expect(deriveAggregateRunStatus(['verified', 'verified'])).toBe('verified');
+    expect(deriveAggregateRunStatus(['verified', 'edited'])).toBe('edited');
+    expect(deriveAggregateRunStatus(['verified', 'previewed'])).toBe('previewed');
+    expect(deriveAggregateRunStatus(['verified', 'ready'])).toBe('ready');
+  });
+
+  it('keeps failure and blocked statuses dominant', () => {
+    expect(deriveAggregateRunStatus(['verified', 'verification_failed'])).toBe('verification_failed');
+    expect(deriveAggregateRunStatus(['edited', 'validation_failed'])).toBe('validation_failed');
+    expect(deriveAggregateRunStatus(['previewed', 'blocked'])).toBe('blocked');
   });
 });

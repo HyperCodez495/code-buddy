@@ -1,4 +1,3 @@
-import * as fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
@@ -15,9 +14,11 @@ import {
   previewDeclaredEdits,
   runVerificationCommands,
 } from './agentic-coding-edits.js';
+import { renderCodexAutonomyDirective } from './codex-autonomy-directive.js';
 import { generateEditProposal } from './edit-proposal-producer.js';
 import { CodeBuddyClient } from '../../codebuddy/client.js';
 import type { CodeBuddyMessage, CodeBuddyTool } from '../../codebuddy/client.js';
+import type { ChatOptions, SearchOptions } from '../../codebuddy/client.js';
 import { saveCheckpoint, loadCheckpoint } from './checkpoint-manager.js';
 
 const execFileAsync = promisify(execFile);
@@ -27,7 +28,7 @@ async function rollbackFiles(repo: string, relativePaths: string[]): Promise<voi
     try {
       await execFileAsync('git', ['checkout', '--', relPath], { cwd: repo, windowsHide: true });
       await execFileAsync('git', ['clean', '-f', '--', relPath], { cwd: repo, windowsHide: true });
-    } catch (err) {
+    } catch {
       // Ignore rollback failures for untracked/uncommitted files or non-git environments
     }
   }
@@ -127,8 +128,8 @@ export async function runVerificationAndSelfCorrectionLoop(
         return async function (
           messages: CodeBuddyMessage[],
           tools?: CodeBuddyTool[],
-          chatOpts?: any,
-          searchOpts?: any
+          chatOpts?: string | ChatOptions,
+          searchOpts?: SearchOptions
         ) {
           if (cumulativeCostUsd >= costLimit) {
             throw new Error(`Cost budget of $${costLimit.toFixed(2)} exceeded. Blocking further LLM calls.`);
@@ -245,7 +246,7 @@ export async function runVerificationAndSelfCorrectionLoop(
   }
 
   // Keep a copy of the messages history for self-correction turns
-  const messagesHistory: CodeBuddyMessage[] = [...dispatch.messages] as CodeBuddyMessage[];
+  const messagesHistory: AgenticCodingEditProposalProducerDispatch['messages'] = [...dispatch.messages];
 
   let lastProposalFailedValidation = false;
   let lastValidationError = '';
@@ -377,6 +378,7 @@ ${diff}
 \`\`\`
 
 Please analyze the failure and generate a new, corrected edit proposal to resolve the errors. Make sure the proposed changes fix the failing tests/checks and do not introduce new issues.`;
+      const correctionDirective = renderCodexAutonomyDirective(currentContract, { mode: 'self-correction' });
 
       // 3. Construct message turns: previous assistant proposal + user feedback
       const previousProposal = {
@@ -392,7 +394,7 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
 
       messagesHistory.push({
         role: 'user',
-        content: promptContent,
+        content: `${promptContent}\n\n${correctionDirective}`,
       });
     }
 
@@ -403,7 +405,7 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
     // 5. Generate a new proposal using the producer
     const nextDispatch: AgenticCodingEditProposalProducerDispatch = {
       ...dispatch,
-      messages: messagesHistory as any,
+      messages: messagesHistory,
     };
 
     let newProposal;

@@ -39,6 +39,37 @@ User intent
 - No physical-world action.
 - No self-improvement loop without human review.
 
+## Recursive Improvement Loop
+
+Each final run report now carries a `recursiveImprovement` decision. This is a
+control-plane hint, not a hidden executor. It lets Code Buddy self-improve in a
+recursive cycle only when the previous cell is fully verified and still inside
+the same safety envelope.
+
+The decision has three outcomes:
+
+- `next_ready`: the previous iteration is `verified`, low-risk, has no blockers
+  or validation errors, and all verification evidence passed. The report embeds
+  a next low-risk `task` contract that keeps the same `repo`, `allowedPaths`,
+  `verification`, memory policy, and Fleet policy, with empty `edits`.
+- `stopped`: the run is healthy but should not continue, for example because it
+  is only `ready`, `previewed`, or the configured depth limit is reached.
+- `blocked`: validation, preflight, approval, edit application, verification, or
+  risk policy must be repaired before another recursive pass is allowed.
+
+The generated next task asks the next pass to inspect the verified result and
+choose the smallest useful improvement across reliability, tests,
+documentation, maintainability, latency, or autonomous coding quality. It also
+names the development techniques to reuse: workspace rules, git preflight,
+bounded contracts, planning, scoped edit proposals, preview/approval gates,
+verification/self-correction, observability artifacts, memory handoff, and any
+available CodeExplorer or Fleet evidence.
+
+The default recursion budget is three decisions. A future orchestrator can feed
+`recursiveImprovement.nextTask` into another normal Agentic Coding Cell run, but
+the next run must still pass the same contract validation, scope checks,
+approval gates, edit preview/application rules, and verification loop.
+
 ## Task Contract
 
 The first version should accept a JSON task file rather than a free-form command
@@ -117,7 +148,10 @@ buddy autonomous-code --task-file task.json --proposal-prompt-file proposal-prom
 That prompt includes the task, allowed paths, verification commands, preflight
 status, and the exact JSON shape expected for a controlled edit proposal. It is
 non-writing: the agent still has to return a proposal file, and the runner still
-validates, previews, and applies it separately.
+validates, previews, and applies it separately. The prompt now also carries a
+Codex-style autonomous coding directive: investigate before editing, keep an
+explicit plan, protect user work in a dirty tree, propose exact bounded edits,
+and name the verification evidence before handoff.
 
 Cowork can wrap that prompt in a data-only producer dispatch:
 
@@ -130,7 +164,9 @@ Inspired by PostCommander's workflow builder contract, it carries system/user
 messages, the current workflow state, read-only tool hints, forbidden actions,
 the target `edit-proposal.json`, and the review command that must run after a
 producer writes JSON. It is an invocation boundary only: it does not run an
-agent and does not grant permission for direct file edits.
+agent and does not grant permission for direct file edits. The same Codex-style
+directive is embedded in the producer system message so external agents follow
+the method without receiving extra authority.
 
 For autonomous producer execution, the runner can invoke that same data-only
 boundary and persist the controlled JSON proposal:
@@ -857,6 +893,8 @@ buddy autonomous-code --task-file task.json
 
 It currently:
 - parse and validate the task contract;
+- inject a Codex-style autonomous coding directive into proposal prompts and
+  self-correction turns;
 - optionally load a controlled edit proposal with
   `--edit-proposal-file <path>`;
 - optionally write a constrained prompt for producing a proposal with
