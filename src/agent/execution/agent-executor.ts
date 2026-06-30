@@ -49,6 +49,7 @@ import type { LaneQueue } from "../../concurrency/lane-queue.js";
 import type { MiddlewarePipeline, MiddlewareContext } from "../middleware/index.js";
 import type { MessageQueue } from "../message-queue.js";
 import { semanticTruncate } from "../../utils/head-tail-truncation.js";
+import { compressWithLmResizer, isLmResizerEnabled } from "../../context/lm-resizer-compressor.js";
 import { getRestorableCompressor } from "../../context/restorable-compression.js";
 import { recordCompactionFork } from "../../context/compaction-fork.js";
 import { getActiveRunStore } from "../../observability/run-store.js";
@@ -1147,21 +1148,39 @@ export class AgentExecutor {
               return;
             }
 
-            // Apply semantic truncation if tool output is very large (> 20k chars)
+            // Persist the FULL raw output for recovery (restore_context) BEFORE any
+            // truncation/compression, so the original is always recoverable, not the shrunk copy.
+            const rawForRecovery = sanitizeToolResult(result?.success ? result.output || "Success" : result?.error || "Error");
+            persistToolResult(toolCall.id, rawForRecovery);
+
+            // Shrink very large tool output (> 20k chars) before it reaches the LLM. Prefer
+            // lm-resizer (signal-preserving, keeps errors/paths, recoverable) when enabled
+            // (CODEBUDDY_LM_RESIZER=true); otherwise fall back to semantic truncation. Both are
+            // best-effort; off by default → unchanged behaviour.
             const RAW_OUTPUT_LIMIT = 20_000;
             if (result?.output && result.output.length > RAW_OUTPUT_LIMIT) {
-              const truncResult = semanticTruncate(result.output, { maxChars: RAW_OUTPUT_LIMIT });
-              if (truncResult.truncated) {
-                result = {
-                  ...result,
-                  output: truncResult.output,
-                };
+              let shrunk: string | null = null;
+              if (isLmResizerEnabled()) {
+                const r = await compressWithLmResizer(result.output, message ?? "");
+                if (r && r.compressed.length < result.output.length) {
+                  const note = r.hash
+                    ? `\n[lm-resizer: ~${r.bytesSaved} bytes saved — full output via restore_context (or \`lm-resizer retrieve ${r.hash}\`)]`
+                    : "";
+                  shrunk = r.compressed + note;
+                }
+              }
+              if (shrunk === null) {
+                const truncResult = semanticTruncate(result.output, { maxChars: RAW_OUTPUT_LIMIT });
+                if (truncResult.truncated) shrunk = truncResult.output;
+              }
+              if (shrunk !== null) {
+                result = { ...result, output: shrunk };
               }
             }
 
-            // --- Disk-backed tool result (Manus AI #19) ---
+            // --- Disk-backed tool result (Manus AI #19): the content sent to the LLM
+            // (already-shrunk above; the full original was persisted at rawForRecovery). ---
             const rawStreamContent = sanitizeToolResult(result?.success ? result.output || "Success" : result?.error || "Error");
-            persistToolResult(toolCall.id, rawStreamContent);
 
             // --- Observation Variator (Manus AI #17) ---
             const variedStreamContent = applyObservationVariator(toolCall.function.name, rawStreamContent);
