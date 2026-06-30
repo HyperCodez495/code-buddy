@@ -159,7 +159,18 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
     .option('--repo <path>', 'Repo path/id (else the default indexed repo)')
     .option('--classify', 'Tag neighbour links as supports/contradicts (slower)', false)
     .action(async (opts: { repo?: string; classify?: boolean }) => {
-      await runIngestCode(opts, await depsFactory());
+      try {
+        await runIngestCode(opts, await depsFactory());
+      } finally {
+        // ingest-code spawns the Code Explorer MCP server; shut it down so this one-shot CLI
+        // process exits instead of hanging on the open child-process handle.
+        try {
+          const { getMCPManager } = await import('../../codebuddy/tools.js');
+          await getMCPManager().shutdown();
+        } catch {
+          /* best effort */
+        }
+      }
     });
 
   cmd
