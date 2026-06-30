@@ -94,6 +94,21 @@ export class CodeExplorerTool {
     const redactedQuery = redactSecrets(query);
     logger.debug(`CodeExplorer.ask called with query: ${redactedQuery}`);
 
+    // Prefer the LIVE MCP code-graph (Code Explorer / gitnexus) when connected — real answers
+    // from the indexed graph. Falls through to the (legacy) HTTP endpoint otherwise.
+    try {
+      const { getCodeExplorerClient } = await import('../plugins/code-explorer/code-explorer-client.js');
+      const client = getCodeExplorerClient();
+      if (await client.available()) {
+        const answer = await client.query(query);
+        if (answer) {
+          return { likelyFiles: [], dependentSymbols: [], testsToWatch: [], notes: answer };
+        }
+      }
+    } catch {
+      /* MCP path unavailable — fall through to the HTTP endpoint */
+    }
+
     if (!this.endpoint) {
       return {
         likelyFiles: [],
