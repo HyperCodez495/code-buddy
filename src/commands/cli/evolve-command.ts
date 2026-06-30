@@ -19,6 +19,8 @@ import { CodeVariantStore, type VariantRecord } from '../../agent/self-improveme
 
 interface EvolveOptions {
   goal?: string;
+  auto?: boolean;
+  source?: string;
   rounds?: string;
   concurrency?: string;
   baseline?: string;
@@ -107,8 +109,10 @@ export function registerEvolveCommands(program: Command): void {
   evolve
     .command('run')
     .description('Author + evaluate candidate variant(s) toward a weakness (gated by CODEBUDDY_EVOLVE=true)')
-    .requiredOption('--goal <text>', 'The weakness/goal to improve toward')
-    .option('--rounds <n>', 'Number of candidate variants to evaluate (fan-out)', '1')
+    .option('--goal <text>', 'The weakness/goal to improve toward (manual)')
+    .option('--auto', 'Pick the weakness automatically (failing eval tasks / self-model hotspots)')
+    .option('--source <src>', 'Auto source: eval | hotspots | both', 'hotspots')
+    .option('--rounds <n>', 'Candidates per goal (fan-out), or max auto-weaknesses', '1')
     .option('--concurrency <n>', 'How many candidates to evaluate at once', '2')
     .option('--baseline <ref>', 'Baseline ref to branch from + rank against', 'main')
     .option('--model <model>', 'Model for the mutator agent')
@@ -118,36 +122,71 @@ export function registerEvolveCommands(program: Command): void {
         process.exitCode = 1;
         return;
       }
+      if (!options.goal && !options.auto) {
+        logger.error('Provide --goal "<text>" or --auto (auto-select a weakness).');
+        process.exitCode = 1;
+        return;
+      }
       const { runEvolutionRound, agentMutator } = await import('../../agent/self-improvement/evolution/evolution-engine.js');
       const { computeFitness, defaultDeterministicComponents } = await import('../../agent/self-improvement/evolution/variant-fitness.js');
       const baselineRef = options.baseline ?? 'main';
       const rounds = Math.max(1, Number(options.rounds ?? '1') || 1);
       const concurrency = Math.max(1, Number(options.concurrency ?? '2') || 2);
       const components = defaultDeterministicComponents();
+      const mutate = agentMutator(options.model ? { model: options.model } : {});
+      const store = new CodeVariantStore();
+
+      // Resolve the weakness/goals.
+      let weaknesses: Array<{ id: string; goal: string; kind: 'manual' | 'eval-failure' | 'hotspot' }>;
+      if (options.goal) {
+        weaknesses = [{ id: 'goal', goal: options.goal, kind: 'manual' }];
+      } else {
+        const { selectWeaknesses } = await import('../../agent/self-improvement/evolution/weakness-selector.js');
+        const src = options.source ?? 'hotspots';
+        logger.info(`Auto-selecting weaknesses (source: ${src})…`);
+        weaknesses = await selectWeaknesses({
+          basePath: process.cwd(),
+          limit: rounds,
+          includeEvalFailures: src !== 'hotspots',
+          includeHotspots: src !== 'eval',
+          env: process.env,
+        });
+        if (weaknesses.length === 0) {
+          logger.info('No weakness found (Code Explorer not indexed / no failing eval task). Try --goal or --source eval.');
+          return;
+        }
+        logger.info(`Selected ${weaknesses.length} weakness(es): ${weaknesses.map((w) => w.goal.slice(0, 60)).join(' | ')}`);
+      }
 
       logger.info(`Scoring baseline (${baselineRef})…`);
       const baseline = await computeFitness({ checkoutDir: process.cwd() }, components);
       logger.info(`  baseline fitness=${baseline.score.toFixed(3)}`);
-      logger.info(`Evolving ${rounds} candidate(s), ${concurrency} at a time, toward: ${options.goal}`);
 
-      const results = await runEvolutionRound({
-        rounds,
-        concurrency,
-        baselineRef,
-        weakness: { id: 'goal', goal: options.goal as string, kind: 'manual' },
-        mutate: agentMutator(options.model ? { model: options.model } : {}),
-        components,
-        baseline,
-        store: new CodeVariantStore(),
-      });
-      for (const r of results) {
-        logger.info(`  ${r.variantId}: fitness=${r.report.score.toFixed(3)} beats=${r.beatsBaseline} kept=${r.kept}`);
+      // Manual goal → fan out `rounds` candidates for it. Auto → one round per selected weakness.
+      const allResults = [];
+      for (const w of weaknesses) {
+        logger.info(`\nEvolving toward: ${w.goal}`);
+        const results = await runEvolutionRound({
+          rounds: options.goal ? rounds : 1,
+          concurrency,
+          baselineRef,
+          weakness: w,
+          mutate,
+          components,
+          baseline,
+          store,
+        });
+        for (const r of results) {
+          logger.info(`  ${r.variantId}: fitness=${r.report.score.toFixed(3)} beats=${r.beatsBaseline} kept=${r.kept}`);
+        }
+        allResults.push(...results);
       }
-      const winner = results.find((r) => r.beatsBaseline);
+
+      const winner = allResults.filter((r) => r.beatsBaseline).sort((a, b) => b.report.score - a.report.score)[0];
       logger.info(
         winner
           ? `\nBest: ${winner.variantId} (fitness ${winner.report.score.toFixed(3)}). Review: \`buddy evolve review ${winner.variantId}\`; keep: \`buddy evolve keep ${winner.variantId} --confirm\`.`
-          : '\nNo candidate beat the baseline. Try more rounds, a sharper --goal, or a stronger --model.',
+          : '\nNo candidate beat the baseline. Try more rounds, a sharper goal, or a stronger --model.',
       );
     });
 }
