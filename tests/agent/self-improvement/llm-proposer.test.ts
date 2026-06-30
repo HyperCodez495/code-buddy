@@ -50,6 +50,18 @@ describe('LlmProposer (creative generation, deterministic empirical gate)', () =
     expect(prompt).toContain('ONLY the lesson text');
   });
 
+  it('grounds the draft in the collective AI knowledge base when knowledge is provided', () => {
+    const withKnowledge = buildLessonDraftPrompt(ONE[0]!, [], [
+      'Les inhibiteurs de checkpoint réactivent les lymphocytes T.',
+      'L’attention multi-têtes améliore la modélisation du contexte long.',
+    ]);
+    expect(withKnowledge).toContain('collective AI knowledge base');
+    expect(withKnowledge).toContain('attention multi-têtes');
+    // Empty knowledge → no section (behaviour unchanged when the CKG is not fed).
+    const without = buildLessonDraftPrompt(ONE[0]!, []);
+    expect(without).not.toContain('collective AI knowledge base');
+  });
+
   it('applies an LLM draft that empirically improves the benchmark', async () => {
     const port = fakePort();
     const drafter: LessonDrafter = async () => ({

@@ -68,6 +68,14 @@ export type SelfImproveHook = () => Promise<{ applied: boolean; detail: string }
  * CODEBUDDY_SELF_IMPROVE + cooldown.
  */
 async function defaultSelfImproveHook(): Promise<{ applied: boolean; detail: string }> {
+  // Research first: when CODEBUDDY_RESEARCH_TOPICS is set, study scientific publications into
+  // the collective knowledge graph (one topic per idle cycle). The self-improvement drafters
+  // then recall this knowledge — "with an AI knowledge base, Code Buddy self-improves more
+  // easily". Opt-in, bounded, never-throws.
+  const { defaultAutoResearchIngest } = await import('../research/auto-ingest.js');
+  const research = await defaultAutoResearchIngest();
+  if (research.applied) return research;
+
   const { EvolutionaryArchive } = await import('../agent/self-improvement/evolutionary-archive.js');
   const archived = new Set(new EvolutionaryArchive().list().map((e) => e.targetScenarioId));
 

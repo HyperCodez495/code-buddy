@@ -28,13 +28,21 @@
       "enabled": false,
       "description": "GitHub integration MCP server"
     },
-    "gitnexus": {
-      "name": "gitnexus",
+    "code-explorer": {
+      "name": "code-explorer",
       "type": "stdio",
       "command": "/home/patrice/DEV/gitnexus-rs/target/release/gitnexus",
       "args": ["mcp"],
       "enabled": true,
-      "description": "Code Explorer (gitnexus) — optional proprietary add-on. Graph-powered code intelligence: query, impact/blast-radius, callers, hotspots, complexity over a pre-indexed knowledge graph. Local Linux binary points to /home/patrice/DEV/gitnexus-rs/target/release/gitnexus; /home/patrice/code-buddy/src is indexed. https://github.com/phuetz/code-explorer"
+      "description": "Code Explorer (gitnexus binary) — graph-powered code intelligence: query, impact/blast-radius, callers, hotspots, complexity over a pre-indexed knowledge graph. Canonical name `code-explorer` so it de-dups with a user-level entry of the same name (avoids loading 31 tools twice). Local path /home/patrice/DEV/gitnexus-rs/target/release/gitnexus; /home/patrice/code-buddy/src is indexed. https://github.com/phuetz/code-explorer"
+    },
+    "lm-resizer": {
+      "name": "lm-resizer",
+      "type": "stdio",
+      "command": "lm-resizer",
+      "args": ["mcp"],
+      "enabled": false,
+      "description": "lm-resizer — context compression for agents (compress noisy tool output, retrieve originals by hash, stats). Build https://github.com/phuetz/lm-resizer and enable. Code Buddy also auto-compresses tool output before the LLM when CODEBUDDY_LM_RESIZER=true."
     }
   }
 }

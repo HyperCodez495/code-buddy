@@ -253,17 +253,42 @@ export function getMCPManager(): MCPManager {
   return mcpManager;
 }
 
+/** The Code Explorer engine ships under two MCP server names — `code-explorer` (user config)
+ *  and `gitnexus` (the committed repo template). Match BOTH so detection/steering work
+ *  regardless of which name the user wired (previously only `code-explorer` was recognized,
+ *  silently un-steering anyone using the committed `gitnexus` entry). */
+const CODE_EXPLORER_TOOL_RE = /^(mcp__(?:code-explorer|gitnexus)__)/;
+
+/** Pure: the Code Explorer tool prefix present in a list of tool names, or null. Testable
+ *  without a live MCP manager. */
+export function matchCodeExplorerPrefix(toolNames: string[]): string | null {
+  for (const name of toolNames) {
+    const m = name.match(CODE_EXPLORER_TOOL_RE);
+    if (m) return m[1]!;
+  }
+  return null;
+}
+
 /**
- * True when the Code Explorer (code-explorer) MCP tools are connected — i.e. at least
- * one `mcp__code-explorer__*` tool is registered. Used to conditionally steer the
- * agent toward Code Explorer for relationship/impact questions. Returns false
- * (no behavior change) whenever Code Explorer is not installed.
+ * True when the Code Explorer MCP tools are connected (server named `code-explorer` OR
+ * `gitnexus`). Used to conditionally steer the agent toward Code Explorer for
+ * relationship/impact questions. Returns false (no behavior change) when not installed.
  */
 export function isCodeExplorerAvailable(): boolean {
   try {
-    return getMCPManager().getTools().some((t) => t.name.startsWith('mcp__code-explorer__'));
+    return matchCodeExplorerPrefix(getMCPManager().getTools().map((t) => t.name)) !== null;
   } catch {
     return false;
+  }
+}
+
+/** The live Code Explorer tool prefix (`mcp__code-explorer__` or `mcp__gitnexus__`), or null
+ *  when not connected. Lets callers build the right `mcp__<server>__<op>` tool name. */
+export function codeExplorerToolPrefix(): string | null {
+  try {
+    return matchCodeExplorerPrefix(getMCPManager().getTools().map((t) => t.name));
+  } catch {
+    return null;
   }
 }
 
@@ -523,11 +548,12 @@ export async function getAllCodeBuddyTools(): Promise<CodeBuddyTool[]> {
   // defer to it at the decision point — its graph is broader / more complete.
   // Conditional & non-mutating: returns fresh objects only for code_graph /
   // codebase_map, and only when a code-explorer tool is present (no change otherwise).
-  if (allTools.some((t) => t.function.name.startsWith('mcp__code-explorer__'))) {
+  const cexPrefix = codeExplorerToolPrefix(); // 'mcp__code-explorer__' | 'mcp__gitnexus__' | null
+  if (cexPrefix) {
     const DEFER =
-      ' NOTE: Code Explorer (code-explorer) is available — for code-relationship, blast-radius/impact, ' +
-      'dead-code and cycle questions PREFER its MCP tools (`mcp__code-explorer__impact` / `context` / ' +
-      '`query` / `find_cycles`); use this built-in only as a fallback if a code-explorer tool errors.';
+      ` NOTE: Code Explorer is available — for code-relationship, blast-radius/impact, ` +
+      `dead-code and cycle questions PREFER its MCP tools (\`${cexPrefix}impact\` / \`${cexPrefix}context\` / ` +
+      `\`${cexPrefix}query\` / \`${cexPrefix}find_cycles\`); use this built-in only as a fallback if it errors.`;
     allTools = allTools.map((t) =>
       t.function.name === 'code_graph' || t.function.name === 'codebase_map'
         ? { ...t, function: { ...t.function, description: (t.function.description ?? '') + DEFER } }

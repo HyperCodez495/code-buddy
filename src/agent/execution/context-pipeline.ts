@@ -115,6 +115,19 @@ export async function injectInitialContext(
     } catch { /* knowledge graph is optional */ }
   }
 
+  // Collective Knowledge Graph — shared cross-agent memory (Phase 0, opt-in & off by default
+  // via CODEBUDDY_COLLECTIVE_MEMORY so behavior is unchanged until enabled). Runs in PARALLEL
+  // with the per-process graph above; once validated it folds the fragmented blocks into one.
+  if (deps.ctxLevel.collectiveGraph && process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true') {
+    try {
+      const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
+      const ckgBlock = await getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
+      if (ckgBlock) {
+        preparedMessages.push({ role: 'system', content: ckgBlock });
+      }
+    } catch { /* collective graph is optional */ }
+  }
+
   if (deps.ctxLevel.decisionMemory && deps.decisionContextProvider) {
     try {
       const decisionsBlock = await withTimeout(
