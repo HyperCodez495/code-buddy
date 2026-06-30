@@ -41,7 +41,17 @@ export function createLlmDrafter(): LessonDrafter {
     const client = await getClient();
     if (!client) return null;
     try {
-      const prompt = buildLessonDraftPrompt(scenario, experiences);
+      // Ground the draft in the collective AI knowledge base (CKG) when it has been fed —
+      // ingested AI research makes self-improvement easier and better-founded. Optional/empty-safe.
+      let knowledge: string[] = [];
+      try {
+        const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
+        const q = `${scenario.query ?? ''} ${scenario.description ?? ''}`.trim();
+        knowledge = getCollectiveKnowledgeGraph().recall(q, { limit: 3 }).map((r) => r.text);
+      } catch {
+        /* CKG optional — proceed with no external knowledge */
+      }
+      const prompt = buildLessonDraftPrompt(scenario, experiences, knowledge);
       const response = await client.chat([{ role: 'user', content: prompt }], []);
       const text = response?.choices?.[0]?.message?.content?.trim();
       if (!text) return null;

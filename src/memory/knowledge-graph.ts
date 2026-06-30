@@ -34,12 +34,22 @@ import { shouldWriteProjectRuntimeFiles } from '../utils/runtime-flags.js';
 
 export type EntityType =
   | 'user' | 'project' | 'person' | 'tool' | 'concept'
-  | 'preference' | 'habit' | 'file' | 'technology' | 'organization';
+  | 'preference' | 'habit' | 'file' | 'technology' | 'organization'
+  // Collective Knowledge Graph (CKG) vocabulary — the agent collective's shared memory.
+  | 'agent' | 'task' | 'lesson' | 'decision' | 'fact'
+  // Scientific-discovery memory: a finding ingested from a publication, auto-linked to its
+  // nearest neighbours (Patrice's vision — "relier les découvertes aux plus proches").
+  | 'discovery';
 
 export type RelationType =
   | 'prefers' | 'dislikes' | 'uses' | 'works_on' | 'knows'
   | 'related_to' | 'created_by' | 'depends_on' | 'temporal_pattern'
-  | 'has_style' | 'avoids' | 'collaborates_with' | 'owns';
+  | 'has_style' | 'avoids' | 'collaborates_with' | 'owns'
+  // CKG relations.
+  | 'decided_by' | 'blocks' | 'learned_from' | 'supersedes' | 'verified_by'
+  // Domain-NEUTRAL research relations (any field: AI, physics, biology, medicine…) — to
+  // link discoveries and capture "what works / doesn't" without hardcoding any domain.
+  | 'supports' | 'contradicts' | 'builds_on';
 
 export interface Entity {
   id: string;
@@ -52,6 +62,17 @@ export interface Entity {
   mentions: number;
   createdAt: Date;
   updatedAt: Date;
+  // --- CKG bi-temporal + attribution (all optional → existing user-graph JSON still loads) ---
+  /** Valid-time start: when the fact became true (Zep bi-temporal). */
+  validFrom?: Date;
+  /** Valid-time end: when it stopped being true; `null`/absent = currently true. */
+  validTo?: Date | null;
+  /** Transaction-time: when the system recorded it (drives cross-machine merge). */
+  recordedAt?: Date;
+  /** Which agent contributed this (`<host>/<repo>`, defaultFleetAgentId). */
+  agentId?: string;
+  /** Provenance label (e.g. 'chat', 'council', 'worklog', 'dream'). */
+  source?: string;
 }
 
 export interface Relation {
@@ -68,6 +89,17 @@ export interface Relation {
   mentions: number;
   createdAt: Date;
   updatedAt: Date;
+  // --- CKG bi-temporal + attribution (all optional → existing relations still load) ---
+  /** Valid-time start: when the relation became true. */
+  validFrom?: Date;
+  /** Valid-time end: when it stopped being true; `null`/absent = currently true. */
+  validTo?: Date | null;
+  /** Transaction-time: when the system recorded it. */
+  recordedAt?: Date;
+  /** Which agent contributed this. */
+  agentId?: string;
+  /** Provenance label. */
+  source?: string;
 }
 
 export interface GraphQuery {

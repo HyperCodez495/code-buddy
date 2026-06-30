@@ -91,10 +91,18 @@ export class LlmProposer implements ImprovementProposer {
 export function buildLessonDraftPrompt(
   scenario: BenchmarkScenario,
   experiences: Experience[],
+  knowledge: string[] = [],
 ): string {
   const evidence = experiences
     .slice(0, 5)
     .map((e) => `- [${e.kind}] ${e.detail} (${e.context})`)
+    .join('\n');
+  // Relevant findings from the collective knowledge base (e.g. ingested AI research) — this is
+  // how a knowledge base on AI lets the agent self-improve more easily: drafts are grounded in
+  // real, retrieved knowledge rather than the model's memory alone. Empty until the CKG is fed.
+  const research = knowledge
+    .slice(0, 3)
+    .map((k) => `- ${k}`)
     .join('\n');
   return [
     'You maintain an AI coding agent\'s lesson library.',
@@ -105,6 +113,7 @@ export function buildLessonDraftPrompt(
       : '',
     `It should be retrievable when searching for: "${scenario.query}".`,
     evidence ? `Observed friction:\n${evidence}` : '',
+    research ? `Relevant findings from the collective AI knowledge base:\n${research}` : '',
     'Reply with ONLY the lesson text — no preamble, no markdown, no secrets.',
   ]
     .filter(Boolean)

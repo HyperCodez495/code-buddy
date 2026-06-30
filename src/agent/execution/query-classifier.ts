@@ -16,6 +16,8 @@ export interface ContextInjectionLevel {
   codeGraph: boolean;
   docs: boolean;
   todo: boolean;
+  /** Collective Knowledge Graph (shared cross-agent memory). Optional → opt-in (Phase 0). */
+  collectiveGraph?: boolean;
 }
 
 const INJECTION_LEVELS: Record<QueryComplexity, ContextInjectionLevel> = {
@@ -26,10 +28,12 @@ const INJECTION_LEVELS: Record<QueryComplexity, ContextInjectionLevel> = {
   simple: {
     workspace: false, lessons: true, knowledgeGraph: true,
     decisionMemory: false, icmMemory: false, codeGraph: false, docs: false, todo: true,
+    collectiveGraph: true,
   },
   complex: {
     workspace: true, lessons: true, knowledgeGraph: true,
     decisionMemory: true, icmMemory: true, codeGraph: true, docs: true, todo: true,
+    collectiveGraph: true,
   },
 };
 
