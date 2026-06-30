@@ -12,9 +12,15 @@ import {
 function findBin(): string | null {
   const env = process.env.CODEBUDDY_BUDDY_MEMORY_BIN;
   if (env && existsSync(env)) return env;
-  for (const sub of ['release', 'debug']) {
-    const p = join(homedir(), 'DEV', 'buddy-memory', 'target', sub, 'buddy-memory');
-    if (existsSync(p)) return p;
+  const roots = [
+    join(process.cwd(), 'buddy-memory', 'target'), // in-tree sidecar
+    join(homedir(), 'DEV', 'buddy-memory', 'target'), // standalone fallback
+  ];
+  for (const root of roots) {
+    for (const sub of ['release', 'debug']) {
+      const p = join(root, sub, 'buddy-memory');
+      if (existsSync(p)) return p;
+    }
   }
   return null;
 }

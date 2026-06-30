@@ -16,19 +16,37 @@ import type { Readable, Writable } from 'stream';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { createInterface, type Interface } from 'readline';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
 import { scanForSecrets, redactSecrets } from '../fleet/privacy-lint.js';
 
 /** Methods whose `text` field must be secret-redacted before reaching the engine store. */
 const WRITE_METHODS = new Set(['remember', 'ingest', 'ingestPublication']);
 
+/** Repo root derived from this module (<root>/src/memory or <root>/dist/memory → <root>). */
+function repoRoot(): string {
+  try {
+    return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  } catch {
+    return process.cwd();
+  }
+}
+
 function resolveBin(): string | null {
   const env = process.env.CODEBUDDY_BUDDY_MEMORY_BIN;
   if (env && existsSync(env)) return env;
-  for (const sub of ['release', 'debug']) {
-    const p = join(homedir(), 'DEV', 'buddy-memory', 'target', sub, 'buddy-memory');
-    if (existsSync(p)) return p;
+  // Prefer the in-tree sidecar (like buddy-sense); fall back to a standalone ~/DEV checkout.
+  const roots = [
+    join(repoRoot(), 'buddy-memory', 'target'),
+    join(process.cwd(), 'buddy-memory', 'target'),
+    join(homedir(), 'DEV', 'buddy-memory', 'target'),
+  ];
+  for (const root of roots) {
+    for (const sub of ['release', 'debug']) {
+      const p = join(root, sub, 'buddy-memory');
+      if (existsSync(p)) return p;
+    }
   }
   return 'buddy-memory'; // PATH; spawn error → unavailable (graceful)
 }
