@@ -1187,17 +1187,31 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               for (const w of readiness.warnings) logger.warn(`[voice] ${w}`);
               // ACT (opt-in): a spoken command drives a REAL agent turn (can edit/run) under a
               // permission posture. Default off → today's chatty companion reply.
+              // Both paths use the hybrid for conversational MEMORY + persona warmth + phatic
+              // short-circuit. With ACT on, a real question/command escalates to a GROUNDED agent
+              // turn (reads/searches under the posture); with ACT off, everything stays a fast warm
+              // reply (no heavy agent) — the same memory, none of the latency.
+              const { makeHybridReply } = await import('../sensory/hybrid-reply.js');
               let replyFn;
               if (readiness.act) {
-                const { makeAgentReply } = await import('../sensory/agent-reply.js');
-                replyFn = makeAgentReply({
+                // Grounded turn can take a few seconds → speak a short ack first so a real
+                // question isn't met with silence. Optional repo cwd so it grounds on real files.
+                const { sayNow } = await import('../sensory/voice-loop.js');
+                const speakCwd = process.env.CODEBUDDY_SENSORY_SPEAK_CWD;
+                replyFn = makeHybridReply({
                   permissionMode: (readiness.permissionMode as
                     | 'plan'
                     | 'dontAsk'
                     | 'bypassPermissions') || 'plan',
+                  ...(speakCwd ? { cwd: speakCwd } : {}),
+                  ack: async () => {
+                    await sayNow("D'accord, je regarde ça.");
+                  },
                 });
+              } else {
+                replyFn = makeHybridReply({ classify: () => false, agentReply: async () => '' });
               }
-              const reply = makeVoiceReply(replyFn ? { replyFn } : {});
+              const reply = makeVoiceReply({ replyFn });
               // Human-like response gate: listen to everything, speak only when addressed or
               // (opt-in) when the conversation warrants it. ALWAYS_RESPOND reverts to replying
               // to every utterance. The engagement window is anchored to the last ADDRESS (the

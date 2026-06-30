@@ -49,9 +49,26 @@ export interface AgentReplyOptions {
 
 const DEFAULT_APOLOGY = "Désolé, je n'ai pas réussi à traiter ta demande.";
 const DEFAULT_DONE = "C'est fait.";
+/** Read-only posture can't act, so empty output means "couldn't answer", NOT "did it silently". */
+const DEFAULT_PLAN_NOANSWER = "Je n'ai pas réussi à vérifier ça, désolée.";
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Mirrors `isChatGptSubscriptionModel` in commands/llm-provider-resolution.ts (kept local to
+ *  avoid sensory→commands coupling). A pinned voice agent model in this set routes to the fast,
+ *  $0 ChatGPT OAuth / Codex Responses backend instead of the local Ollama endpoint. */
+function isChatGptSubscriptionModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return (
+    m === 'gpt-5.2' ||
+    m === 'gpt-5.5' ||
+    m.startsWith('gpt-5.5-') ||
+    m.includes('-codex') ||
+    m === 'codex-1' ||
+    m.startsWith('codex-mini')
+  );
 }
 
 /** Default agent turn: a headless CodeBuddyAgent.
@@ -65,7 +82,22 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
     const { resolveVoiceModel } = await import('./voice-loop.js');
     const pinned = process.env.CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL;
     let route: { model: string; apiKey: string; baseURL?: string };
-    if (pinned) {
+    if (pinned && isChatGptSubscriptionModel(pinned)) {
+      // Fast + correct + $0: route the grounded turn to the ChatGPT OAuth / Codex Responses
+      // backend (the same brain as the Telegram companion), NOT the slow local Ollama path.
+      const { hasCodexCredentials } = await import('../providers/codex-oauth.js');
+      const { CHATGPT_RESPONSES_BASE_URL } = await import('../codebuddy/client.js');
+      if (hasCodexCredentials()) {
+        route = { model: pinned, apiKey: 'oauth-chatgpt', baseURL: CHATGPT_RESPONSES_BASE_URL };
+      } else {
+        const fallback = await resolveVoiceModel(transcript);
+        route = { model: pinned, apiKey: fallback.apiKey, baseURL: fallback.baseURL };
+        logger.warn(
+          `[voice-act] '${pinned}' is a ChatGPT model but no OAuth creds (~/.codebuddy/codex-auth.json) — ` +
+            'run `buddy login`; falling back to the local route (likely wrong/slow).',
+        );
+      }
+    } else if (pinned) {
       const fallback = await resolveVoiceModel(transcript);
       route = { model: pinned, apiKey: fallback.apiKey, baseURL: fallback.baseURL };
     } else {
@@ -157,7 +189,9 @@ export function makeAgentReply(options: AgentReplyOptions = {}): ReplyFn {
         }
       }
       const output = await agentRunner(heard);
-      if (!output.trim()) return DEFAULT_DONE; // acted but said nothing
+      // Empty output: in an acting posture it means "did it silently" → "C'est fait."; in read-only
+      // 'plan' it can't have acted, so claiming success would be a lie → say it honestly.
+      if (!output.trim()) return mode === 'plan' ? DEFAULT_PLAN_NOANSWER : DEFAULT_DONE;
       try {
         const spoken = (await summarize(output, heard)).trim();
         if (spoken) return spoken;

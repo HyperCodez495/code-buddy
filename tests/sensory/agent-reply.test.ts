@@ -37,12 +37,22 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
     await expect(reply('fais un truc')).resolves.toBe('OOPS');
   });
 
-  it('speaks a short confirmation when the turn acted but produced no text', async () => {
+  it('speaks a short confirmation when an ACTING posture produced no text', async () => {
     const reply = makeAgentReply({
+      permissionMode: 'dontAsk', // can act → empty output means "did it silently"
       agentRunner: async () => '   ',
       summarize: async () => 'unused',
     });
     await expect(reply('lance les tests')).resolves.toBe("C'est fait.");
+  });
+
+  it("is honest in read-only 'plan' posture: empty output → couldn't-verify, not a false success", async () => {
+    const reply = makeAgentReply({
+      // permissionMode defaults to 'plan' (read-only): it can't have acted, so "C'est fait." would lie.
+      agentRunner: async () => '   ',
+      summarize: async () => 'unused',
+    });
+    await expect(reply('lance les tests')).resolves.toBe("Je n'ai pas réussi à vérifier ça, désolée.");
   });
 
   it('falls back to a truncated first line when summarize fails', async () => {

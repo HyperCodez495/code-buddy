@@ -521,9 +521,17 @@ export async function resolveVoiceModel(heard: string): Promise<VoiceModelRoute>
   return { model: override || 'llama3.2', apiKey, baseURL, reason: 'fallback default' };
 }
 
+/** One prior spoken exchange, oldest-first, fed back as conversational memory. */
+export interface VoiceHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 /** Default think: a short companion reply from the fastest capable LLM ($0 when local).
- *  Mirrors the local-inference pattern of vision-reaction.ts. Best-effort: any failure → '' (silence). */
-async function defaultReply(heard: string): Promise<string> {
+ *  Mirrors the local-inference pattern of vision-reaction.ts. Best-effort: any failure → '' (silence).
+ *  `history` (optional) carries recent spoken turns so follow-ups have context. Exported so the
+ *  hybrid reply can reuse the exact same persona-voiced warm path for small talk. */
+export async function defaultReply(heard: string, history: VoiceHistoryTurn[] = []): Promise<string> {
   const fast = fastCompanionReply(heard);
   if (fast) {
     logger.info(`[voice] fast reply → ${fast}`);
@@ -540,6 +548,7 @@ async function defaultReply(heard: string): Promise<string> {
     const resp = await client.chat(
       [
         { role: 'system', content: systemPrompt },
+        ...history,
         { role: 'user', content: heard },
       ] as never,
       [],
