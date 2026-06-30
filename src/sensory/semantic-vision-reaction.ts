@@ -12,6 +12,7 @@ import { logger } from '../utils/logger.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
 import { sendTelegramAlert } from './alert.js';
+import { buildArrivalOpener, loadArrivalState, saveArrivalState, pushRecent } from './arrival-opener.js';
 
 /** Human-readable alert per semantic event kind (extend as detectors are added). */
 const MESSAGES: Record<string, string> = {
@@ -72,7 +73,17 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
         lastGreetAt = t;
         try {
           const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
-          const greeting = (await getActivePersonaVoiceAsync()).greeting || 'Bonjour ! Je suis là si tu as besoin.';
+          const persona = await getActivePersonaVoiceAsync();
+          // Varied, context-aware opener (time of day / gap since last seen) with anti-repetition,
+          // instead of the single fixed persona.greeting that made it say the same line every time.
+          const state = loadArrivalState();
+          const opener = buildArrivalOpener({
+            now: t,
+            lastSeenAt: state.lastSeenAt ?? null,
+            recent: state.recent,
+            ...(process.env.CODEBUDDY_USER_NAME ? { name: process.env.CODEBUDDY_USER_NAME } : {}),
+          });
+          const greeting = opener.text || persona.greeting || 'Bonjour ! Je suis là si tu as besoin.';
           const greet =
             options.greet ??
             (async (text: string) => {
@@ -80,8 +91,9 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
               await sayNow(text);
             });
           await greet(greeting);
+          saveArrivalState({ lastSeenAt: t, recent: pushRecent(state.recent, opener.template) });
           options.onEngage?.(); // open the conversation window — follow-ups are now treated as addressed
-          logger.info(`[vision] greeted arrival → ${greeting}`);
+          logger.info(`[vision] greeted arrival (${opener.trigger}) → ${greeting}`);
         } catch (err) {
           logger.warn(`[vision] arrival greeting failed: ${err instanceof Error ? err.message : String(err)}`);
         }
