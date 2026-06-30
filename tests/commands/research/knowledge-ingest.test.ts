@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import {
   runIngest,
   runRecall,
+  runIngestCode,
   addKnowledgeSubcommands,
   type KnowledgeIngestDeps,
 } from '../../../src/commands/research/knowledge-ingest.js';
@@ -49,6 +50,22 @@ describe('research knowledge-ingest — handlers', () => {
     const { deps, logs } = stubDeps({ recallHybrid: async () => [] });
     expect(await runRecall('x', {}, deps)).toBe(0);
     expect(logs.join('\n')).toContain('ingest');
+  });
+
+  it('runIngestCode ingests Code Explorer insights as discoveries', async () => {
+    const { deps } = stubDeps({
+      fetchCodeInsights: async () => [
+        { id: 'codeexplorer:hotspots', title: 'Analyse de code — hotspots', abstract: 'foo.ts risky', source: 'code-explorer' },
+        { id: 'codeexplorer:find_cycles', title: 'Analyse de code — find_cycles', abstract: 'A→B→A', source: 'code-explorer' },
+      ],
+    });
+    const r = await runIngestCode({}, deps);
+    expect(r.ingested).toBe(2);
+  });
+
+  it('runIngestCode is graceful when Code Explorer yields nothing', async () => {
+    const { deps } = stubDeps({ fetchCodeInsights: async () => [] });
+    expect(await runIngestCode({}, deps)).toEqual({ ingested: 0, linksCreated: 0 });
   });
 });
 

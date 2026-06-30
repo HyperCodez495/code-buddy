@@ -24,6 +24,8 @@ export interface KnowledgeIngestDeps {
   getStats: () => { entities: number; relations: number; ledgerPath: string };
   /** Build the NLI relation classifier (for --classify). Absent → links stay `related_to`. */
   makeClassifier?: () => RelationClassifier;
+  /** Pull Code Explorer code-graph insights as discoveries (for `ingest-code`). */
+  fetchCodeInsights?: (opts: { repo?: string }) => Promise<Publication[]>;
   log: (msg: string) => void;
 }
 
@@ -31,6 +33,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
   const { fetchPublications } = await import('../../research/publication-sources.js');
   const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
   const { makeLlmRelationClassifier } = await import('../../research/relation-classifier.js');
+  const { fetchCodeExplorerInsights } = await import('../../research/code-explorer-source.js');
   const ckg = getCollectiveKnowledgeGraph();
   return {
     fetchPublications,
@@ -38,6 +41,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
     recallHybrid: (query, opts) => ckg.recallHybrid(query, opts),
     getStats: () => ckg.getStats(),
     makeClassifier: () => makeLlmRelationClassifier(),
+    fetchCodeInsights: (opts) => fetchCodeExplorerInsights(opts),
     log: (msg) => console.log(msg),
   };
 }
@@ -84,6 +88,38 @@ export async function runIngest(
   return { ingested, linksCreated, supports, contradicts };
 }
 
+/** Ingest Code Explorer code-graph insights into the CKG as auto-linked discoveries. */
+export async function runIngestCode(
+  opts: { repo?: string; classify?: boolean },
+  deps: KnowledgeIngestDeps,
+): Promise<{ ingested: number; linksCreated: number }> {
+  if (!deps.fetchCodeInsights) {
+    deps.log('Code Explorer source indisponible.');
+    return { ingested: 0, linksCreated: 0 };
+  }
+  deps.log(`🔎 Insights Code Explorer${opts.repo ? ` (${opts.repo})` : ''}…`);
+  const pubs = await deps.fetchCodeInsights(opts.repo ? { repo: opts.repo } : {});
+  if (pubs.length === 0) {
+    deps.log('Aucun insight (Code Explorer non connecté ? lance `buddy server` ou vérifie mcp.json).');
+    return { ingested: 0, linksCreated: 0 };
+  }
+  const classifier = opts.classify && deps.makeClassifier ? deps.makeClassifier() : undefined;
+  deps.log(`📈 ${pubs.length} insight(s) de code → ingestion + auto-liage dans le graphe…\n`);
+  let ingested = 0;
+  let linksCreated = 0;
+  for (const p of pubs) {
+    const r = await deps.ingestPublication(p, classifier ? { relationClassifier: classifier } : {});
+    if (!r) continue;
+    ingested++;
+    const links = r.relations.filter((x) => ['related_to', 'supports', 'contradicts'].includes(x.predicate)).length;
+    linksCreated += links;
+    deps.log(`  • ${p.title}${links ? `  ↔ ${links} lien(s)` : ''}`);
+  }
+  const s = deps.getStats();
+  deps.log(`\n✅ Graphe : ${s.entities} découvertes, ${s.relations} liens.`);
+  return { ingested, linksCreated };
+}
+
 /** Hybrid query the CKG. Returns the hit count (for tests). */
 export async function runRecall(
   query: string,
@@ -115,6 +151,15 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
     .option('--classify', 'Use the LLM to tag neighbour links as supports/contradicts (slower)', false)
     .action(async (topic: string, opts: { limit?: string; source?: string; classify?: boolean }) => {
       await runIngest(topic, opts, await depsFactory());
+    });
+
+  cmd
+    .command('ingest-code')
+    .description('Ingest Code Explorer code-graph insights (hotspots, cycles, …) into the knowledge graph')
+    .option('--repo <path>', 'Repo path/id (else the default indexed repo)')
+    .option('--classify', 'Tag neighbour links as supports/contradicts (slower)', false)
+    .action(async (opts: { repo?: string; classify?: boolean }) => {
+      await runIngestCode(opts, await depsFactory());
     });
 
   cmd

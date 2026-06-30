@@ -1,0 +1,94 @@
+/**
+ * Code Explorer as a SOURCE for the Collective Knowledge Graph — the B↔C synergy. Pulls
+ * insights from the code-knowledge-graph (hotspots, cycles, general insights) via the live MCP
+ * client and turns each into a `discovery`, so the CKG holds BOTH scientific research AND
+ * findings about the codebase, auto-linked together.
+ *
+ * Best-effort & NEVER-THROWS: returns [] when Code Explorer isn't connected or errors. The
+ * client is injectable for tests (no MCP needed).
+ *
+ * @module research/code-explorer-source
+ */
+
+import { logger } from '../utils/logger.js';
+import type { Publication } from './publication-sources.js';
+import type { CodeExplorerClient } from '../plugins/code-explorer/code-explorer-client.js';
+
+/** Insight ops to pull by default (each → one discovery). All read-only Code Explorer tools. */
+const DEFAULT_OPS = ['hotspots', 'find_cycles', 'get_insights'] as const;
+
+export interface CodeInsightOptions {
+  /** Repo path/id (else the default indexed repo). */
+  repo?: string;
+  /** Override the insight ops. */
+  ops?: string[];
+  /** Injected client (tests). Default: the live MCP-backed Code Explorer client. */
+  client?: CodeExplorerClient;
+  /** Injected MCP bootstrap (tests). Default: initializeMCPServers(). */
+  ensureMcp?: () => Promise<void>;
+}
+
+/**
+ * Fetch Code Explorer insights as publication-shaped discoveries. Ensures MCP servers are
+ * initialized first (the CLI doesn't connect MCP by default). Returns [] if Code Explorer is
+ * not connected.
+ */
+export async function fetchCodeExplorerInsights(opts: CodeInsightOptions = {}): Promise<Publication[]> {
+  let client = opts.client;
+  if (!client) {
+    try {
+      if (opts.ensureMcp) await opts.ensureMcp();
+      else {
+        const { initializeMCPServers } = await import('../codebuddy/tools.js');
+        await initializeMCPServers();
+      }
+      const { getCodeExplorerClient } = await import('../plugins/code-explorer/code-explorer-client.js');
+      client = getCodeExplorerClient();
+    } catch (err) {
+      logger.debug(`[code-explorer-source] init failed: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+  if (!(await client.available())) {
+    logger.debug('[code-explorer-source] Code Explorer not connected — no insights');
+    return [];
+  }
+  // The insight ops return EMPTY without a `repo` arg — resolve it (explicit → list_repos
+  // best-match on cwd → first indexed repo).
+  const repo = await resolveRepo(client, opts.repo);
+  const ops = opts.ops ?? [...DEFAULT_OPS];
+  const repoArgs = repo ? { repo } : {};
+  const pubs: Publication[] = [];
+  for (const op of ops) {
+    const text = await client.call(op, repoArgs);
+    if (text && text.trim()) {
+      pubs.push({
+        id: `codeexplorer:${op}${repo ? `:${repo}` : ''}`,
+        title: `Analyse de code — ${op}${repo ? ` (${repo})` : ''}`,
+        abstract: text.trim().slice(0, 1500),
+        source: 'code-explorer',
+      });
+    }
+  }
+  return pubs;
+}
+
+/** Resolve the repo path to pass to insight ops: explicit, else best cwd-match from list_repos,
+ *  else the first indexed repo. Returns undefined when none can be determined. */
+async function resolveRepo(client: CodeExplorerClient, explicit?: string): Promise<string | undefined> {
+  if (explicit) return explicit;
+  try {
+    const txt = await client.listRepos();
+    if (!txt.trim()) return undefined;
+    const arr = JSON.parse(txt) as Array<{ path?: string; id?: string }>;
+    if (!Array.isArray(arr) || arr.length === 0) return undefined;
+    const cwd = process.cwd();
+    const match =
+      arr.find((r) => typeof r.path === 'string' && cwd.startsWith(r.path)) ??
+      arr.find((r) => r.path) ??
+      arr[0];
+    return match?.path ?? match?.id;
+  } catch {
+    return undefined;
+  }
+}
