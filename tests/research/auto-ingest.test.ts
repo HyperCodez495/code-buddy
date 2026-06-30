@@ -50,6 +50,37 @@ describe('auto-ingest — autonomous research into the CKG', () => {
     expect(seen).toEqual(['a', 'b', 'c', 'a']); // wraps around
   });
 
+  it('forwards the relationClassifier to ingestPublication when set (autonomous supports/contradicts)', async () => {
+    const seenOpts: Array<unknown> = [];
+    const classifier = async () => 'contradicts' as const;
+    const r = await runAutoResearchIngest({
+      topics: ['x'],
+      fetchPublications: async () => [PUB],
+      ingestPublication: async (_p, opts) => {
+        seenOpts.push(opts);
+        return {};
+      },
+      pickIndex: () => 0,
+      relationClassifier: classifier,
+    });
+    expect(r.applied).toBe(true);
+    expect(seenOpts[0]).toEqual({ relationClassifier: classifier });
+  });
+
+  it('passes no classifier opts when relationClassifier is absent', async () => {
+    let receivedOpts: unknown = 'unset';
+    await runAutoResearchIngest({
+      topics: ['x'],
+      fetchPublications: async () => [PUB],
+      ingestPublication: async (_p, opts) => {
+        receivedOpts = opts;
+        return {};
+      },
+      pickIndex: () => 0,
+    });
+    expect(receivedOpts).toBeUndefined();
+  });
+
   it('never-throws when the source fails', async () => {
     const r = await runAutoResearchIngest({
       topics: ['x'],

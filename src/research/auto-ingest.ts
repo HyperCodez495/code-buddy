@@ -12,16 +12,19 @@
 
 import { logger } from '../utils/logger.js';
 import type { Publication, PublicationSource } from './publication-sources.js';
+import type { RelationClassifier } from '../memory/collective-knowledge-graph.js';
 
 export interface AutoIngestDeps {
   /** Topics to rotate through (from CODEBUDDY_RESEARCH_TOPICS). */
   topics: string[];
   fetchPublications: (topic: string, opts: { source?: PublicationSource; limit?: number }) => Promise<Publication[]>;
-  ingestPublication: (pub: Publication) => Promise<unknown>;
+  ingestPublication: (pub: Publication, opts?: { relationClassifier?: RelationClassifier }) => Promise<unknown>;
   /** Round-robin index source (module counter by default; injected in tests). */
   pickIndex: () => number;
   source?: PublicationSource;
   limit?: number;
+  /** When set, neighbour links are tagged supports/contradicts (costs an LLM call per neighbour). */
+  relationClassifier?: RelationClassifier;
 }
 
 /** Ingest one topic's worth of publications. Never-throws; returns what happened. */
@@ -32,8 +35,9 @@ export async function runAutoResearchIngest(deps: AutoIngestDeps): Promise<{ app
   try {
     const pubs = await deps.fetchPublications(topic, { ...(deps.source ? { source: deps.source } : {}), limit: deps.limit ?? 4 });
     let n = 0;
+    const opts = deps.relationClassifier ? { relationClassifier: deps.relationClassifier } : undefined;
     for (const p of pubs) {
-      if (await deps.ingestPublication(p)) n++;
+      if (await deps.ingestPublication(p, opts)) n++;
     }
     return n > 0
       ? { applied: true, detail: `ingested ${n} publication(s) on "${topic}"` }
@@ -71,13 +75,21 @@ export async function defaultAutoResearchIngest(): Promise<{ applied: boolean; d
       | PublicationSource
       | undefined;
     const limit = Number(process.env.CODEBUDDY_RESEARCH_LIMIT) || 4;
+    // Opt-in supports/contradicts tagging on the autonomous path (costs one LLM call per
+    // neighbour, hence gated separately from ingestion itself).
+    let relationClassifier;
+    if (process.env.CODEBUDDY_RESEARCH_CLASSIFY === 'true') {
+      const { makeLlmRelationClassifier } = await import('./relation-classifier.js');
+      relationClassifier = makeLlmRelationClassifier();
+    }
     const result = await runAutoResearchIngest({
       topics,
       fetchPublications,
-      ingestPublication: (pub) => ckg.ingestPublication(pub),
+      ingestPublication: (pub, opts) => ckg.ingestPublication(pub, opts ?? {}),
       pickIndex: () => cursor++,
       ...(source ? { source } : {}),
       limit,
+      ...(relationClassifier ? { relationClassifier } : {}),
     });
     if (result.applied) logger.info(`[auto-research] ${result.detail}`);
     return result;

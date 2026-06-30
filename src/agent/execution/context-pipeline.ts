@@ -121,7 +121,7 @@ export async function injectInitialContext(
   if (deps.ctxLevel.collectiveGraph && process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true') {
     try {
       const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
-      const ckgBlock = getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
+      const ckgBlock = await getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
       if (ckgBlock) {
         preparedMessages.push({ role: 'system', content: ckgBlock });
       }

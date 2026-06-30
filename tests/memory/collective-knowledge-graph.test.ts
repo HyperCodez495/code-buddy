@@ -92,14 +92,14 @@ describe('CollectiveKnowledgeGraph (Phase 0)', () => {
     expect(hits[0]!.text.toLowerCase()).toContain('token'); // surrounding knowledge preserved
   });
 
-  it('formats a <collective_knowledge> prompt block', () => {
+  it('formats a <collective_knowledge> prompt block', async () => {
     const ckg = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'host/repo' });
     ckg.remember(lesson);
-    const block = ckg.formatCollectiveContext('mode vocal devstral');
+    const block = await ckg.formatCollectiveContext('mode vocal devstral');
     expect(block).toContain('<collective_knowledge>');
     expect(block).toContain('devstral');
     expect(block).toContain('host/repo');
-  });
+  }, 60000);
 
   it('filters by type', () => {
     const ckg = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'host/repo' });

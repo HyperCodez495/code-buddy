@@ -47,7 +47,8 @@ export function createLlmDrafter(): LessonDrafter {
       try {
         const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
         const q = `${scenario.query ?? ''} ${scenario.description ?? ''}`.trim();
-        knowledge = getCollectiveKnowledgeGraph().recall(q, { limit: 3 }).map((r) => r.text);
+        // Hybrid (semantic+keyword) retrieval — degrades to keyword if embeddings are unavailable.
+        knowledge = (await getCollectiveKnowledgeGraph().recallHybrid(q, { limit: 3 })).map((r) => r.text);
       } catch {
         /* CKG optional — proceed with no external knowledge */
       }

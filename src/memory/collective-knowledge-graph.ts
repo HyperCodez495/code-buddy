@@ -444,9 +444,10 @@ export class CollectiveKnowledgeGraph {
     return picked.map(({ e, rel, sem }) => ({ ...this.toResult(e, rel), similarity: sem }));
   }
 
-  /** A `<collective_knowledge>` system block for prompt injection (token-budgeted). */
-  formatCollectiveContext(query: string, maxChars = 600): string {
-    const hits = this.recall(query, { limit: 8 });
+  /** A `<collective_knowledge>` system block for prompt injection (token-budgeted).
+   *  Uses hybrid (semantic+keyword) retrieval; degrades to keyword if embeddings are unavailable. */
+  async formatCollectiveContext(query: string, maxChars = 600): Promise<string> {
+    const hits = await this.recallHybrid(query, { limit: 8 });
     if (hits.length === 0) return '';
     const lines: string[] = [];
     let used = 0;
