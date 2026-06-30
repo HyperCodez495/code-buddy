@@ -25,7 +25,8 @@ export interface Publication {
 
 export type PublicationSource = 'arxiv' | 'europepmc' | 'both';
 
-const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_TIMEOUT_MS = 30_000;
+const FETCH_RETRIES = 2;
 
 function decodeEntities(s: string): string {
   return s
@@ -78,17 +79,25 @@ export function parseEuropePmc(json: unknown, limit: number): Publication[] {
 }
 
 async function fetchText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!res.ok) {
-      logger.warn(`[research] ${new URL(url).host} returned HTTP ${res.status}`);
-      return null;
+  const host = new URL(url).host;
+  // arXiv/Europe PMC can be slow; retry transient failures (timeouts/network) before giving up.
+  for (let attempt = 1; attempt <= FETCH_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (!res.ok) {
+        logger.warn(`[research] ${host} returned HTTP ${res.status}`);
+        return null; // HTTP error → don't retry
+      }
+      return await res.text();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const last = attempt === FETCH_RETRIES;
+      logger.warn(`[research] fetch ${last ? 'failed' : `retry ${attempt}/${FETCH_RETRIES}`} (${host}): ${msg}`);
+      if (last) return null;
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
-    return await res.text();
-  } catch (err) {
-    logger.warn(`[research] fetch failed (${new URL(url).host}): ${err instanceof Error ? err.message : String(err)}`);
-    return null;
   }
+  return null;
 }
 
 async function fetchArxiv(topic: string, limit: number): Promise<Publication[]> {

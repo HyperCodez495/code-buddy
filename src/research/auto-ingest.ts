@@ -43,7 +43,9 @@ export async function runAutoResearchIngest(deps: AutoIngestDeps): Promise<{ app
   }
 }
 
-let cursor = 0;
+// Seed from the clock so a daemon restart doesn't always re-pick topic[0] (the rotation keeps
+// advancing across restarts instead of re-ingesting — and dedup-dropping — the same first topic).
+let cursor = Math.floor(Date.now() / 60_000);
 
 /** Parse CODEBUDDY_RESEARCH_TOPICS into a topic list. */
 export function readResearchTopics(env: NodeJS.ProcessEnv = process.env): string[] {
