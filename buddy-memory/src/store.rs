@@ -7,7 +7,7 @@
 use crate::model::*;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -74,6 +74,9 @@ pub struct Store {
     current: HashMap<String, MemEntity>,
     superseded: HashMap<String, MemEntity>,
     relations: HashMap<String, MemRelation>,
+    /// Inverted index token → currently-valid entity ids. Makes keyword recall sub-linear
+    /// (score only candidates sharing ≥1 query token, instead of scanning all entities).
+    index: HashMap<String, HashSet<String>>,
     offset: u64,
     events_since_snapshot: u64,
     default_agent: String,
@@ -140,6 +143,13 @@ fn fold_for_token(ch: char) -> char {
     }
 }
 
+/// Tokens to index/recall an entity by (name + text), matching what `recall` tokenizes.
+fn index_tokens_of(name: &str, text: &str) -> BTreeSet<String> {
+    let mut t = tokenize(name);
+    t.extend(tokenize(text));
+    t
+}
+
 /// fraction of query tokens present in `text` (recall-oriented). Mirrors TS `keywordOverlap`.
 fn keyword_overlap(q: &BTreeSet<String>, text: &str) -> f64 {
     if q.is_empty() {
@@ -159,6 +169,7 @@ impl Store {
             current: HashMap::new(),
             superseded: HashMap::new(),
             relations: HashMap::new(),
+            index: HashMap::new(),
             offset: 0,
             events_since_snapshot: 0,
             default_agent,
@@ -170,7 +181,8 @@ impl Store {
             emb_cache: HashMap::new(),
         };
         s.load_snapshot(); // fast cold start (sets offset to the snapshot's coverage)
-        s.load_incremental(); // replay only the ledger tail beyond the snapshot
+        s.rebuild_index(); // snapshot bulk-restores `current` without apply_entity → index it
+        s.load_incremental(); // replay only the ledger tail beyond the snapshot (maintains index)
         s
     }
 
@@ -296,8 +308,10 @@ impl Store {
             let mut old = self.current.remove(&id).unwrap();
             let old_hash = old.content_hash.clone();
             old.valid_to = Some(ev.recorded_at.clone());
+            self.index_remove(&id, &old.name, &old.text); // un-index the old version
             self.superseded.insert(format!("{}@{}", id, old_hash), old);
             let fresh = self.make_entity(ev, &id, &node_type, &name);
+            self.index_add(&id, &fresh.name, &fresh.text); // index the new version
             self.current.insert(id.clone(), fresh);
             let target = format!("{}@{}", id, old_hash);
             let rel_id = content_hash(
@@ -315,7 +329,33 @@ impl Store {
             return;
         }
         let e = self.make_entity(ev, &id, &node_type, &name);
+        self.index_add(&id, &e.name, &e.text);
         self.current.insert(id, e);
+    }
+
+    /// Inverted-index helpers: postings keyed by the same tokens `recall` uses (name + text).
+    fn index_add(&mut self, id: &str, name: &str, text: &str) {
+        for tok in index_tokens_of(name, text) {
+            self.index.entry(tok).or_default().insert(id.to_string());
+        }
+    }
+    fn index_remove(&mut self, id: &str, name: &str, text: &str) {
+        for tok in index_tokens_of(name, text) {
+            if let Some(set) = self.index.get_mut(&tok) {
+                set.remove(id);
+                if set.is_empty() {
+                    self.index.remove(&tok);
+                }
+            }
+        }
+    }
+    fn rebuild_index(&mut self) {
+        self.index.clear();
+        let entries: Vec<(String, String, String)> =
+            self.current.values().map(|e| (e.id.clone(), e.name.clone(), e.text.clone())).collect();
+        for (id, name, text) in entries {
+            self.index_add(&id, &name, &text);
+        }
     }
 
     fn make_entity(&self, ev: &LedgerEvent, id: &str, node_type: &str, name: &str) -> MemEntity {
@@ -432,19 +472,40 @@ impl Store {
         self.load_incremental();
         let q = tokenize(query);
         let mut scored: Vec<(f64, &MemEntity)> = Vec::new();
-        for e in self.current.values() {
-            if let Some(ts) = types {
-                if !ts.iter().any(|t| t == &e.node_type) {
-                    continue;
+        let score_entity = |e: &MemEntity, kw: f64| -> f64 {
+            let salience = compute_salience(e.mentions, days_since(&e.updated_at), 60.0, 1.0);
+            (if kw == 0.0 { 1.0 } else { kw }) * salience * corroboration_boost(e.contributors.len())
+        };
+        let passes_type = |e: &MemEntity| types.map(|ts| ts.iter().any(|t| t == &e.node_type)).unwrap_or(true);
+
+        if q.is_empty() {
+            // No query terms → rank everything by salience (rare; e.g. "what's salient lately").
+            for e in self.current.values() {
+                if passes_type(e) {
+                    scored.push((score_entity(e, 0.0), e));
                 }
             }
-            let kw = keyword_overlap(&q, &format!("{} {}", e.name, e.text));
-            if !q.is_empty() && kw == 0.0 {
-                continue;
+        } else {
+            // Sub-linear: gather candidate ids from the inverted index (union of query-token
+            // postings), score ONLY those — instead of scanning every entity.
+            let mut cand_ids: HashSet<String> = HashSet::new();
+            for tok in &q {
+                if let Some(ids) = self.index.get(tok) {
+                    cand_ids.extend(ids.iter().cloned());
+                }
             }
-            let salience = compute_salience(e.mentions, days_since(&e.updated_at), 60.0, 1.0);
-            let score = (if q.is_empty() { 1.0 } else { kw }) * salience * corroboration_boost(e.contributors.len());
-            scored.push((score, e));
+            for id in &cand_ids {
+                if let Some(e) = self.current.get(id) {
+                    if !passes_type(e) {
+                        continue;
+                    }
+                    let kw = keyword_overlap(&q, &format!("{} {}", e.name, e.text));
+                    if kw == 0.0 {
+                        continue;
+                    }
+                    scored.push((score_entity(e, kw), e));
+                }
+            }
         }
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().take(limit).map(|(s, e)| self.to_result(e, Some(s), None)).collect()
