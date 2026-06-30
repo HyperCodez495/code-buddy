@@ -12,24 +12,32 @@
 
 import type { Command } from 'commander';
 import type { Publication, PublicationSource } from '../../research/publication-sources.js';
+import type { RelationClassifier } from '../../memory/collective-knowledge-graph.js';
 
 export interface KnowledgeIngestDeps {
   fetchPublications: (topic: string, opts: { source?: PublicationSource; limit?: number }) => Promise<Publication[]>;
-  ingestPublication: (pub: Publication) => Promise<{ relations: Array<{ predicate: string }> } | null>;
+  ingestPublication: (
+    pub: Publication,
+    opts?: { relationClassifier?: RelationClassifier },
+  ) => Promise<{ relations: Array<{ predicate: string }> } | null>;
   recallHybrid: (query: string, opts: { limit?: number }) => Promise<Array<{ text: string; similarity?: number; relations: Array<{ predicate: string }> }>>;
   getStats: () => { entities: number; relations: number; ledgerPath: string };
+  /** Build the NLI relation classifier (for --classify). Absent → links stay `related_to`. */
+  makeClassifier?: () => RelationClassifier;
   log: (msg: string) => void;
 }
 
 async function defaultDeps(): Promise<KnowledgeIngestDeps> {
   const { fetchPublications } = await import('../../research/publication-sources.js');
   const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
+  const { makeLlmRelationClassifier } = await import('../../research/relation-classifier.js');
   const ckg = getCollectiveKnowledgeGraph();
   return {
     fetchPublications,
-    ingestPublication: (pub) => ckg.ingestPublication(pub),
+    ingestPublication: (pub, opts) => ckg.ingestPublication(pub, opts ?? {}),
     recallHybrid: (query, opts) => ckg.recallHybrid(query, opts),
     getStats: () => ckg.getStats(),
+    makeClassifier: () => makeLlmRelationClassifier(),
     log: (msg) => console.log(msg),
   };
 }
@@ -42,32 +50,38 @@ function clampInt(value: string | undefined, def: number, min: number, max: numb
 /** Ingest publications on a topic into the CKG (auto-linked). Returns counts (for tests). */
 export async function runIngest(
   topic: string,
-  opts: { limit?: string; source?: string },
+  opts: { limit?: string; source?: string; classify?: boolean },
   deps: KnowledgeIngestDeps,
-): Promise<{ ingested: number; linksCreated: number }> {
+): Promise<{ ingested: number; linksCreated: number; supports: number; contradicts: number }> {
   const limit = clampInt(opts.limit, 6, 1, 50);
   const source = (['arxiv', 'europepmc', 'both'].includes(opts.source ?? '') ? opts.source : 'both') as PublicationSource;
   deps.log(`🔎 Publications sur « ${topic} » (${source}, max ${limit}/source)…`);
   const pubs = await deps.fetchPublications(topic, { source, limit });
   if (pubs.length === 0) {
     deps.log('Aucune publication récupérée (source injoignable, ou aucun résultat).');
-    return { ingested: 0, linksCreated: 0 };
+    return { ingested: 0, linksCreated: 0, supports: 0, contradicts: 0 };
   }
-  deps.log(`📚 ${pubs.length} publications → ingestion + auto-liage…\n`);
+  const classifier = opts.classify && deps.makeClassifier ? deps.makeClassifier() : undefined;
+  deps.log(`📚 ${pubs.length} publications → ingestion + auto-liage${classifier ? ' + classification supports/contredit' : ''}…\n`);
   let linksCreated = 0;
+  let supports = 0;
+  let contradicts = 0;
   let ingested = 0;
   for (const p of pubs) {
-    const r = await deps.ingestPublication(p);
+    const r = await deps.ingestPublication(p, classifier ? { relationClassifier: classifier } : {});
     if (!r) continue;
     ingested++;
-    const links = r.relations.filter((x) => x.predicate === 'related_to').length;
-    linksCreated += links;
-    deps.log(`  • ${p.title.slice(0, 78)}${links ? `  ↔ ${links} lien(s)` : ''}`);
+    const neighbours = r.relations.filter((x) => ['related_to', 'supports', 'contradicts'].includes(x.predicate));
+    linksCreated += neighbours.length;
+    supports += neighbours.filter((x) => x.predicate === 'supports').length;
+    contradicts += neighbours.filter((x) => x.predicate === 'contradicts').length;
+    const tag = neighbours.length ? `  ↔ ${neighbours.length} lien(s)` : '';
+    deps.log(`  • ${p.title.slice(0, 78)}${tag}`);
   }
   const s = deps.getStats();
-  deps.log(`\n✅ Graphe : ${s.entities} découvertes, ${s.relations} liens.`);
+  deps.log(`\n✅ Graphe : ${s.entities} découvertes, ${s.relations} liens${classifier ? ` (${supports} confirment, ${contradicts} contredisent)` : ''}.`);
   deps.log('   Interroge-le : buddy research recall "<question>"');
-  return { ingested, linksCreated };
+  return { ingested, linksCreated, supports, contradicts };
 }
 
 /** Hybrid query the CKG. Returns the hit count (for tests). */
@@ -98,7 +112,8 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
     .description('Fetch scientific publications on a topic and ingest them into the collective knowledge graph (auto-linked)')
     .option('-n, --limit <n>', 'Max publications per source', '6')
     .option('-s, --source <src>', 'Source: arxiv | europepmc | both', 'both')
-    .action(async (topic: string, opts: { limit?: string; source?: string }) => {
+    .option('--classify', 'Use the LLM to tag neighbour links as supports/contradicts (slower)', false)
+    .action(async (topic: string, opts: { limit?: string; source?: string; classify?: boolean }) => {
       await runIngest(topic, opts, await depsFactory());
     });
 

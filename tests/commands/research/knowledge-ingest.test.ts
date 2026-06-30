@@ -35,7 +35,7 @@ describe('research knowledge-ingest — handlers', () => {
   it('runIngest handles no results gracefully', async () => {
     const { deps } = stubDeps({ fetchPublications: async () => [] });
     const res = await runIngest('nothing', {}, deps);
-    expect(res).toEqual({ ingested: 0, linksCreated: 0 });
+    expect(res).toEqual({ ingested: 0, linksCreated: 0, supports: 0, contradicts: 0 });
   });
 
   it('runRecall returns hit count and prints', async () => {

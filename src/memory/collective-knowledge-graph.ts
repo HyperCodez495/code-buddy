@@ -84,6 +84,13 @@ export interface CkgRecallResult {
   relations: Array<{ predicate: RelationType; target: string; reason?: string }>;
 }
 
+/** Decide the relationship between a new discovery and a topical neighbour (NLI-style):
+ *  `supports` (corroborates), `contradicts` (conflicting finding), or `related_to`. */
+export type RelationClassifier = (
+  subjectText: string,
+  neighborText: string,
+) => Promise<'supports' | 'contradicts' | 'related_to'>;
+
 interface CkgEntity {
   id: string;
   type: EntityType;
@@ -283,7 +290,14 @@ export class CollectiveKnowledgeGraph {
    * node). This is how a corpus of scientific publications self-organises into a graph.
    */
   async ingest(
-    input: CkgRememberInput & { autoLinkK?: number; autoLinkThreshold?: number },
+    input: CkgRememberInput & {
+      autoLinkK?: number;
+      autoLinkThreshold?: number;
+      /** Optional NLI-style classifier: decide if the new discovery SUPPORTS / CONTRADICTS /
+       *  is merely RELATED to a near neighbour. Embeddings find topical neighbours; only a
+       *  judge can tell "works" from "doesn't work". Absent → all links are `related_to`. */
+      relationClassifier?: RelationClassifier;
+    },
   ): Promise<CkgRecallResult | null> {
     const stored = this.remember({ type: 'discovery', ...input });
     if (!stored) return null;
@@ -309,7 +323,15 @@ export class CollectiveKnowledgeGraph {
       const threshold = input.autoLinkThreshold ?? 0.5;
       for (const { e, sim } of sims.slice(0, k)) {
         if (sim < threshold) break;
-        this.linkRelated(self.id, e.id, sim, stored.agentId);
+        let relType: RelationType = 'related_to';
+        if (input.relationClassifier) {
+          try {
+            relType = await input.relationClassifier(self.text, e.text);
+          } catch {
+            relType = 'related_to';
+          }
+        }
+        this.linkRelated(self.id, e.id, sim, stored.agentId, relType);
       }
     } catch (err) {
       logger.debug(`[ckg] auto-link skipped: ${err instanceof Error ? err.message : String(err)}`);
@@ -317,14 +339,12 @@ export class CollectiveKnowledgeGraph {
     return this.toResult(this.current.get(stored.id)!);
   }
 
-  /** Ingest a scientific publication as an auto-linked discovery (title + abstract). */
-  async ingestPublication(pub: {
-    id?: string;
-    title: string;
-    abstract?: string;
-    source?: string;
-    agentId?: string;
-  }): Promise<CkgRecallResult | null> {
+  /** Ingest a scientific publication as an auto-linked discovery (title + abstract).
+   *  Pass `relationClassifier` to tag neighbour links as supports/contradicts. */
+  async ingestPublication(
+    pub: { id?: string; title: string; abstract?: string; source?: string; agentId?: string },
+    opts: { relationClassifier?: RelationClassifier; autoLinkK?: number; autoLinkThreshold?: number } = {},
+  ): Promise<CkgRecallResult | null> {
     const text = pub.abstract ? `${pub.title}. ${pub.abstract}` : pub.title;
     return this.ingest({
       type: 'discovery',
@@ -332,6 +352,9 @@ export class CollectiveKnowledgeGraph {
       text,
       source: pub.source ?? 'publication',
       ...(pub.agentId ? { agentId: pub.agentId } : {}),
+      ...(opts.relationClassifier ? { relationClassifier: opts.relationClassifier } : {}),
+      ...(opts.autoLinkK !== undefined ? { autoLinkK: opts.autoLinkK } : {}),
+      ...(opts.autoLinkThreshold !== undefined ? { autoLinkThreshold: opts.autoLinkThreshold } : {}),
     });
   }
 
@@ -533,14 +556,21 @@ export class CollectiveKnowledgeGraph {
     };
   }
 
-  /** Append + apply a `related_to` edge between two discoveries (semantic neighbour link). */
-  private linkRelated(sourceId: string, targetId: string, sim: number, agentId?: string): void {
-    const relCh = contentHash('relation', `${sourceId}|related_to|${targetId}`);
-    if (this.relations.has(relCh)) return; // already linked
+  /** Append + apply a typed neighbour edge between two discoveries (default `related_to`;
+   *  `supports`/`contradicts` when a classifier judged the pair). */
+  private linkRelated(
+    sourceId: string,
+    targetId: string,
+    sim: number,
+    agentId?: string,
+    relType: RelationType = 'related_to',
+  ): void {
+    const relCh = contentHash('relation', `${sourceId}|${relType}|${targetId}`);
+    if (this.relations.has(relCh)) return; // already linked with this relation
     const event: LedgerEvent = {
       v: 1, kind: 'relation', recordedAt: new Date().toISOString(),
       agentId: agentId ?? this.agentId, contentHash: relCh,
-      sourceId, targetId, relType: 'related_to', reason: `semantic neighbour (${sim.toFixed(2)})`,
+      sourceId, targetId, relType, reason: `semantic neighbour (${sim.toFixed(2)})`,
     };
     this.append(event);
     this.applyRelation(event);

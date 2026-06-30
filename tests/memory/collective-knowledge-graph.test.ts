@@ -281,6 +281,23 @@ describe('CollectiveKnowledgeGraph — scientific discovery ingestion + auto-lin
     expect(d3links).not.toContain('discovery:collective:d2');
   }, 90000);
 
+  it('tags neighbour links as supports/contradicts via a classifier (the "what works/doesn\'t" signal)', async () => {
+    const ckg = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'host/repo' });
+    // Stub NLI classifier: a finding that says "ne marche pas" contradicts its neighbour.
+    const classifier = async (subject: string): Promise<'supports' | 'contradicts' | 'related_to'> =>
+      subject.includes('ne marche pas') ? 'contradicts' : 'supports';
+    await ckg.ingest({ name: 'a', text: 'Le traitement X réduit fortement la maladie Y.', autoLinkThreshold: 0.3 });
+    const b = await ckg.ingest({
+      name: 'b',
+      text: 'Le traitement X ne marche pas contre la maladie Y.',
+      autoLinkThreshold: 0.3,
+      relationClassifier: classifier,
+    });
+    const preds = b!.relations.map((r) => r.predicate);
+    expect(preds).toContain('contradicts'); // conflicting finding detected, not just "related"
+    expect(preds).not.toContain('related_to');
+  }, 90000);
+
   it('ingestPublication stores a discovery recallable by paraphrase', async () => {
     const ckg = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'host/repo' });
     await ckg.ingestPublication({
