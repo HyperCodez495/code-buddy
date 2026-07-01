@@ -1,3 +1,21 @@
+## [1.8.0](https://github.com/phuetz/code-buddy/compare/v1.7.0...v1.8.0) (2026-07-01)
+
+### Features
+
+* **evolve:** evolutionary self-improvement lands on `main` — `buddy evolve run|list|review|keep`: generate code variants in throwaway git worktrees, score them against an empirical fitness baseline, keep the best (human-gated `keep --confirm`, opt-in `CODEBUDDY_EVOLVE`, never auto-merges).
+* **evolve:** research-grounded goals — `evolve run --source research` matches ingested scientific articles (from the collective knowledge graph) to the concerned Code Buddy feature and synthesizes ambitious, targeted improvement goals. Closes the loop: article → CKG → goal → variant.
+* **evolve:** deliberate planning step — a real structured plan (approach + titled steps + rationale) drives each generation and is stored for audit; the planner is grounded in the CKG (`recallHybrid`).
+* **evolve:** genealogy — parent/generation lineage on each variant, `evolve tree` + `evolve list --json`; the plan that produced a version is stored and shown.
+* **evolve:** compounding (`--compound`, guarded) + fresh self-model (`--refresh-model`).
+* **research:** administer the collective knowledge graph — `buddy research list` (indexed documents) and `buddy research topics list|add|remove|clear` (persistent auto-ingest subjects, unioned with the env).
+* **cowork:** opt-in redesigned shell (`COWORK_NEW_SHELL`) — one calm nav (Chat · Plan · Activity · Files · Advanced/Labs), plan-then-act, embedded activity log with one-click undo + reviewable inline diffs, and an Evolution panel listing the generated versions.
+* **companion:** relationship-aware presence (reunion after an absence + tenure milestones) and event follow-ups (mention a dated event → Lisa asks how it went), captured only on addressed turns.
+
+### Bug Fixes
+
+* **sensory:** sanitize text before TTS — mute leaked model tokens and foreign-script (CJK) garbage the voice can't pronounce; fix 5 real bugs in the voice/vision loop (respond-decider tier order, multi-word name matching, `resolveVoiceModel` fallback, permanent-deafness guard, prototype-chain guard).
+* **cowork:** unbreak `vite build` (load model-inventory via `loadCoreModule` instead of a static core import); revive `/export` and `/save`; delete dead `Sidebar.tsx`.
+
 ## [1.7.0](https://github.com/phuetz/code-buddy/compare/v1.6.1...v1.7.0) (2026-06-26)
 
 ### Features
