@@ -34,8 +34,15 @@ export interface OutcomeRecord {
   role?: string;
   /** Did this model win the judge's vote this run? */
   won: boolean;
-  /** Judge quality score for this answer, 0-1. */
+  /** Judge TASK-fit score for this answer, 0-1. */
   quality: number;
+  /**
+   * Judge ROLE-fit score, 0-1 — did the answer hold its council role? Feeds
+   * `roleScore` so specialised roles (critic, verifier) are no longer punished
+   * for doing their job instead of answering the task directly. Absent on
+   * legacy records — `roleScore` falls back to `quality`.
+   */
+  roleQuality?: number;
   /** Wall-clock latency of this model's answer (ms). */
   latencyMs: number;
   /** Marginal cost of this answer in USD (0 for local / flat-fee). */
@@ -230,7 +237,13 @@ export class ModelScoreboard {
     return Math.max(-1, Math.min(1, bias));
   }
 
-  /** Historical role-specific score for assigning future council roles. 0 when never seen. */
+  /**
+   * Historical role-specific score for assigning future council roles. 0 when
+   * never seen. Weighted toward the judge's ROLE-fit quality (not the task
+   * win): a critic that consistently holds its role must rank high for the
+   * critic seat even though critics rarely win the task vote — the old
+   * win-rate-dominant formula was training role erosion.
+   */
   roleScore(taskType: string, role: string, model: string): number {
     const wanted = normalizeRole(role);
     this.maybeReload();
@@ -241,8 +254,26 @@ export class ModelScoreboard {
     if (runs.length === 0) return 0;
     const wins = runs.filter((r) => r.won).length;
     const winRate = wins / runs.length;
-    const avgQuality = runs.reduce((acc, r) => acc + r.quality, 0) / runs.length;
-    return 0.7 * winRate + 0.3 * avgQuality;
+    const avgRoleQuality = runs.reduce((acc, r) => acc + (r.roleQuality ?? r.quality), 0) / runs.length;
+    return 0.7 * avgRoleQuality + 0.3 * winRate;
+  }
+
+  /**
+   * Trailing consecutive failures for a model ACROSS task types (most recent
+   * records first). Used to exclude dead models from the judge seat — a
+   * retired catalog model kept being re-picked as judge, aborting every
+   * deliberation, because failure penalties only applied to panel seats.
+   */
+  consecutiveRecentFailures(model: string): number {
+    this.maybeReload();
+    let count = 0;
+    for (let i = this.records.length - 1; i >= 0; i--) {
+      const r = this.records[i]!;
+      if (r.model !== model) continue;
+      if (!r.failed) break;
+      count++;
+    }
+    return count;
   }
 
   roleRanking(taskType?: string, role?: string): RoleModelStat[] {

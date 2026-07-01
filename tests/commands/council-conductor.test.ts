@@ -70,6 +70,18 @@ describe('council conductor', () => {
     expect(prompt).toContain('assumptions');
   });
 
+  it('imposes the falsifiable-output contract on collective prompts only', () => {
+    const plan = buildCouncilConductorPlan('audite ce module', 'code', 3);
+    const prompt = buildCouncilPrompt('audite ce module', plan, 2); // reviewer
+
+    expect(prompt).toContain('VERDICT:');
+    expect(prompt).toContain('CONDITIONAL');
+    expect(prompt).toContain('WOULD CHANGE MY MIND');
+    // Direct mode stays the bare task (no contract on simple questions).
+    const direct = buildCouncilConductorPlan('bonjour', 'general', 3);
+    expect(buildCouncilPrompt('bonjour', direct, 0)).toBe('bonjour');
+  });
+
   it('can specialize fleet peer prompts without breaking peer answer collection', async () => {
     const seen: string[] = [];
     const peers = [peer('a', seen), peer('b', seen)];

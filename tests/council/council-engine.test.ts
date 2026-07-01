@@ -146,6 +146,104 @@ describe('runCouncilPipeline', () => {
 
     expect(events.some((e) => e.type === 'panel')).toBe(true);
     expect(events.some((e) => e.type === 'conductor')).toBe(true);
+
+    // Deliberation health computed and handed to the sink.
+    expect(result.health.judgeAlive).toBe(1);
+    expect(result.health.seatSurvival).toBe(1);
+    expect(result.health.stanceDivergence).toBeGreaterThan(0.5); // different wordings
+    expect(result.health.dhi).toBeGreaterThan(0);
+  });
+
+  it('hands the health record to the injected sink', async () => {
+    const candidates = [candidate('prov-a', 'coder-a'), candidate('prov-b', 'coder-b'), candidate('prov-j', 'gpt-5-arbiter')];
+    const clients = {
+      'coder-a': fakeClient('coder-a', { answer: 'answer A' }),
+      'coder-b': fakeClient('coder-b', { answer: 'answer B' }),
+      'gpt-5-arbiter': fakeClient('gpt-5-arbiter', {
+        judgeJson: '{"scores":{"A":0.9,"B":0.4},"winner":"A","why":"ok"}',
+        synthesis: 'MERGED',
+      }),
+    };
+    const sink: unknown[] = [];
+    const deps = makeDeps(candidates, clients, { healthSink: (h) => sink.push(h) });
+
+    const result = await runCouncilPipeline(TASK, { count: 2 }, deps);
+    expect(sink).toHaveLength(1);
+    expect(sink[0]).toEqual(result.health);
+  });
+
+  it('penalises a judge whose CALL fails — the dead judge stops being re-seated', async () => {
+    const candidates = [candidate('prov-a', 'coder-a'), candidate('prov-b', 'coder-b'), candidate('prov-j', 'gpt-5-arbiter')];
+    const clients = {
+      'coder-a': fakeClient('coder-a', { answer: 'answer A' }),
+      'coder-b': fakeClient('coder-b', { answer: 'answer B' }),
+      // No judgeJson configured → the judge call throws (transport-like failure).
+      'gpt-5-arbiter': fakeClient('gpt-5-arbiter', {}),
+    };
+    const deps = makeDeps(candidates, clients);
+
+    const result = await runCouncilPipeline(TASK, { count: 2 }, deps);
+
+    expect(result.verdict.kind).toBe('abstained');
+    expect(result.verdict.judgeCallFailed).toBe(true);
+    expect(result.health.judgeAlive).toBe(0);
+    expect(result.health.dhi).toBe(0);
+    const sb = new ModelScoreboard(ledger);
+    expect(sb.consecutiveRecentFailures('gpt-5-arbiter')).toBe(1);
+    expect(sb.ranking('code')).toHaveLength(0); // failure invisible in quality stats
+  });
+
+  it('replaces a dead judge within the same run — the deliberation is not wasted', async () => {
+    const candidates = [
+      candidate('prov-a', 'coder-a'),
+      candidate('prov-b', 'coder-b'),
+      candidate('prov-j', 'gpt-5-arbiter'), // dies on the judge call
+      candidate('prov-k', 'gpt-5-backup'), // healthy second neutral judge
+    ];
+    const clients = {
+      'coder-a': fakeClient('coder-a', { answer: 'answer A' }),
+      'coder-b': fakeClient('coder-b', { answer: 'answer B' }),
+      'gpt-5-arbiter': fakeClient('gpt-5-arbiter', {}), // judge call throws
+      'gpt-5-backup': fakeClient('gpt-5-backup', {
+        judgeJson: '{"scores":{"A":0.9,"B":0.4},"winner":"A","why":"ok"}',
+        synthesis: 'MERGED BY BACKUP',
+      }),
+    };
+    const deps = makeDeps(candidates, clients);
+
+    const result = await runCouncilPipeline(TASK, { count: 2 }, deps);
+
+    expect(result.verdict.kind).toBe('judged');
+    expect(result.verdict.judgeModel).toBe('gpt-5-backup');
+    expect(result.synthesis).toBe('MERGED BY BACKUP');
+    expect(result.health.judgeAlive).toBe(1);
+    // The dead judge was still penalised on its way out.
+    expect(new ModelScoreboard(ledger).consecutiveRecentFailures('gpt-5-arbiter')).toBeGreaterThanOrEqual(1);
+  });
+
+  it('records role quality so specialised roles are not punished for holding their role', async () => {
+    const candidates = [candidate('prov-a', 'coder-a'), candidate('prov-b', 'coder-b'), candidate('prov-j', 'gpt-5-arbiter')];
+    const clients = {
+      'coder-a': fakeClient('coder-a', { answer: 'direct proposal' }),
+      'coder-b': fakeClient('coder-b', { answer: 'conditional critique with breaking conditions' }),
+      'gpt-5-arbiter': fakeClient('gpt-5-arbiter', {
+        // The critic (B) loses the task vote but holds its role perfectly.
+        judgeJson:
+          '{"scores":{"A":{"task":0.9,"role":0.8},"B":{"task":0.3,"role":0.95}},"winner":"A","verified":"","why":"A answers the task"}',
+        synthesis: 'MERGED',
+      }),
+    };
+    const deps = makeDeps(candidates, clients);
+
+    const result = await runCouncilPipeline(TASK, { count: 2 }, deps);
+
+    expect(result.learned).toBe(true);
+    expect(result.verdict.roleScores).toEqual([0.8, 0.95]);
+    const sb = new ModelScoreboard(ledger);
+    // roleScore is role-quality-dominant: the losing critic still ranks high
+    // for the implementer seat it held (role id from the conductor plan).
+    const criticRole = result.answers[1]!.role!.id;
+    expect(sb.roleScore('code', criticRole, 'coder-b')).toBeCloseTo(0.7 * 0.95 + 0.3 * 0, 5);
   });
 
   it('uses a panel member as display-only judge when no neutral judge exists — and never learns from it', async () => {

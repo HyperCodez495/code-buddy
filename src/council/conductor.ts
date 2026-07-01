@@ -128,13 +128,15 @@ const ROLE_SETS: Record<string, CouncilRole[]> = {
     {
       id: 'reviewer',
       label: 'Reviewer',
-      mission: 'Attack the proposal as a code reviewer and find regressions.',
+      mission:
+        'Predict the consensus answer three generic AIs would give to this task, then attack it: find where it fails in production. Your conditional verdict must state under which conditions the consensus is wrong.',
       focus: ['bugs', 'security', 'missing tests'],
     },
     {
       id: 'verifier',
       label: 'Verifier',
-      mission: 'Define how to prove the answer or change is correct.',
+      mission:
+        'Do not judge elegance: establish what is VERIFIABLE here and verify it yourself (step-by-step computation, counting, mental execution). Flag any claim nobody can verify.',
       focus: ['test plan', 'observability', 'rollback'],
     },
   ],
@@ -148,13 +150,15 @@ const ROLE_SETS: Record<string, CouncilRole[]> = {
     {
       id: 'skeptic',
       label: 'Skeptic',
-      mission: 'Look for flawed assumptions and counterexamples.',
+      mission:
+        'Predict the consensus answer three generic AIs would give, then look for the flawed assumption or counterexample that breaks it. Your conditional verdict must state when the consensus is wrong.',
       focus: ['failure modes', 'hidden constraints', 'overconfidence'],
     },
     {
       id: 'verifier',
       label: 'Verifier',
-      mission: 'Check the reasoning and propose validation steps.',
+      mission:
+        'Do not judge elegance: establish what is VERIFIABLE in this reasoning and verify it yourself (step-by-step computation, counting, mental execution). Flag any claim nobody can verify.',
       focus: ['evidence', 'consistency', 'what would falsify this'],
     },
   ],
@@ -168,7 +172,8 @@ const ROLE_SETS: Record<string, CouncilRole[]> = {
     {
       id: 'critique',
       label: 'Critique',
-      mission: 'Repérer les ambiguïtés et les risques d’interprétation.',
+      mission:
+        'Prédire la réponse consensuelle que donneraient trois IA génériques, puis l’attaquer : repérer les ambiguïtés, contresens et risques qui la font échouer. Ton verdict conditionnel doit dire quand le consensus a tort.',
       focus: ['contresens', 'hypothèses', 'points à demander'],
     },
     {
@@ -266,6 +271,11 @@ export function buildCouncilPrompt(task: string, plan: CouncilConductorPlan, rol
   const role = plan.roles[roleIndex] ?? DIRECT_ROLE;
   if (plan.mode === 'direct' || role.id === DIRECT_ROLE.id) return task;
 
+  // Output contract: forces a judgeable stance out of every role (a pure
+  // critique used to be scored 0.25 by the judge for "refusing to decide" —
+  // conditional verdicts make critics judgeable WITHOUT betraying their
+  // mission), makes claims falsifiable, and surfaces the reversal conditions
+  // the synthesizer must aggregate.
   return [
     `You are the ${role.label} in Code Buddy Council.`,
     role.mission,
@@ -276,6 +286,15 @@ export function buildCouncilPrompt(task: string, plan: CouncilConductorPlan, rol
     'Original user task:',
     task,
     '',
-    'Return an independent answer from this role. Be concrete. Name assumptions and risks. Do not imitate a generic consensus answer.',
+    'MANDATORY output contract:',
+    '1. First line: "VERDICT: <your position in one sentence>". If your mission is',
+    '   critique/verification, give a CONDITIONAL verdict ("yes if X / no if Y") —',
+    '   pure abstention is forbidden; your conditions ARE your added value.',
+    '2. Then 2-5 numbered CLAIMS, each falsifiable, each with your confidence',
+    '   (high/medium/low) and what would refute it. State your assumptions and risks.',
+    '3. End with "WOULD CHANGE MY MIND: <the data or answer that would flip you>".',
+    'Forbidden: restating the question beyond two sentences, hedged filler, and',
+    'imitating a generic consensus answer. Your value comes from what the other',
+    'members will NOT say.',
   ].join('\n');
 }

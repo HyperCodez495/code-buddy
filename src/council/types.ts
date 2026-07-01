@@ -13,6 +13,7 @@
 import type { ModelStrength } from '../fleet/types.js';
 import type { ConsensusSummary } from '../fleet/result-aggregator.js';
 import type { ModelScoreboard } from '../fleet/model-scoreboard.js';
+import type { DeliberationHealth } from './deliberation-health.js';
 
 /** One usable LLM as exposed by the active-LLM registry. */
 export interface CouncilCandidate {
@@ -111,11 +112,24 @@ export interface JudgeVerdict {
   /** 'abstained' = no reliable verdict (non-JSON, timeout, no judge) — never a fabricated winner. */
   kind: 'judged' | 'abstained';
   winnerIdx: number | null;
+  /** Task-fit scores (0-1) — the winner is chosen on these. */
   scores: number[];
+  /**
+   * Role-fit scores (0-1) — did each answer hold its announced role (a critic
+   * exposing precise breaking conditions holds its role even without a full
+   * answer)? Feeds the scoreboard's role learning so specialised roles are no
+   * longer punished for doing their job. Falls back to `scores` when the
+   * judge only returned single scores.
+   */
+  roleScores: number[];
   rationale: string;
+  /** What the judge re-verified itself (counts, computations) — '' when nothing. */
+  verified: string;
   judgeModel: string | null;
   /** False when the judge is itself a panel member — display-only, never trains the scoreboard. */
   neutral: boolean;
+  /** True when the judge CALL failed (timeout/transport) — the judge model itself is penalised. */
+  judgeCallFailed?: boolean;
 }
 
 // --- signals / synthesis ---
@@ -198,6 +212,12 @@ export interface CouncilEngineDeps {
   exploreEpsilon?: number;
   /** Injectable clock for deterministic outcome timestamps. */
   now?: () => Date;
+  /**
+   * Where to persist the per-run deliberation-health record (DHI). The engine
+   * only computes and hands it over — file IO is host policy (the CLI
+   * presenter appends to ~/.codebuddy/council-deliberation-health.jsonl).
+   */
+  healthSink?: (health: DeliberationHealth) => void;
 }
 
 export interface CouncilRunResult {
@@ -214,6 +234,8 @@ export interface CouncilRunResult {
   /** True when this run's outcomes were recorded to the scoreboard. */
   learned: boolean;
   learnSkipReason?: string;
+  /** Per-run deliberation-health metrics (DHI) — see council/deliberation-health.ts. */
+  health: DeliberationHealth;
 }
 
 export class CouncilError extends Error {

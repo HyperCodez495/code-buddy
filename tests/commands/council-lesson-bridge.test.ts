@@ -51,7 +51,16 @@ function cannedResult(): CouncilRunResult {
       },
     ],
     failures: [],
-    verdict: { kind: 'judged', winnerIdx: 0, scores: [0.9, 0.4], rationale: 'ok', judgeModel: 'j', neutral: true },
+    verdict: {
+      kind: 'judged',
+      winnerIdx: 0,
+      scores: [0.9, 0.4],
+      roleScores: [0.9, 0.4],
+      rationale: 'ok',
+      verified: '',
+      judgeModel: 'j',
+      neutral: true,
+    },
     consensus: {
       score: 0.1,
       reached: false,
@@ -72,6 +81,20 @@ function cannedResult(): CouncilRunResult {
     synthesis: null,
     finalText: 'réponse un',
     learned: true,
+    health: {
+      at: '2026-07-01T00:00:00.000Z',
+      taskType: 'general',
+      planMode: 'direct',
+      seats: 2,
+      answers: 2,
+      seatSurvival: 1,
+      judgeAlive: 1,
+      stanceDivergence: 0.9,
+      judgeDiscrimination: 0.5,
+      dissentRetention: null,
+      anchorRatio: null,
+      dhi: 0.7,
+    },
   };
 }
 

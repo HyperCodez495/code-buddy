@@ -12,6 +12,7 @@ import { CodeBuddyClient } from '../codebuddy/client.js';
 import { getModelScoreboard } from '../fleet/model-scoreboard.js';
 import { runCouncilPipeline } from '../council/council-engine.js';
 import { buildCouncilVerificationHint } from '../council/signals.js';
+import { appendDeliberationHealth } from '../council/deliberation-health.js';
 import {
   CouncilError,
   type CouncilCandidate,
@@ -162,6 +163,17 @@ function renderResult(result: CouncilRunResult, opts: CouncilOptions, out: Emit)
       `(marge juge ${signals.margin.toFixed(2)}, accord ${Math.round(signals.consensusScore * 100)}% — ` +
       `${signals.reasons.join('; ')})`,
   );
+  if (verdict.verified) {
+    out(`🔬 Vérifié par le juge : ${verdict.verified}`);
+  }
+  const h = result.health;
+  const healthDetails = [
+    `divergence ${Math.round(h.stanceDivergence * 100)}%`,
+    `discrimination juge ${h.judgeDiscrimination.toFixed(2)}`,
+    ...(h.dissentRetention !== null ? [`rétention dissent ${Math.round(h.dissentRetention * 100)}%`] : []),
+    ...(h.anchorRatio !== null ? [`ancrage gagnant ×${h.anchorRatio.toFixed(1)}`] : []),
+  ];
+  out(`🩺 Santé délibération : DHI ${h.dhi.toFixed(2)} (${healthDetails.join(', ')})`);
   const verificationHint = buildCouncilVerificationHint(signals, result.taskType);
   if (verificationHint) {
     out(`🔎 ${verificationHint}`);
@@ -201,6 +213,7 @@ export async function runCouncil(task: string, opts: CouncilOptions, out: Emit):
         scoreboard,
         clientFactory: toCouncilClient,
         peers,
+        healthSink: appendDeliberationHealth,
       },
       (event) => renderProgress(event, out),
     );

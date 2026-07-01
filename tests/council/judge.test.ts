@@ -94,6 +94,49 @@ describe('judgeAnswers — hardened verdicts', () => {
     expect(verdict.kind).toBe('abstained');
   });
 
+  it('parses dual task/role scores and discloses announced roles to the judge', async () => {
+    const seen: string[] = [];
+    const client = fakeClient(
+      '{"scores":{"A":{"task":0.3,"role":0.9},"B":{"task":0.8,"role":0.6}},"winner":"B","verified":"recounted: 3","why":"ok"}',
+      seen,
+    );
+    const verdict = await judgeAnswers(
+      client,
+      'task',
+      [
+        { content: 'conditional critique', roleLabel: 'Critique' },
+        { content: 'direct answer', roleLabel: 'Synthèse' },
+      ],
+      CONFIG,
+      identityRng,
+    );
+
+    expect(verdict.kind).toBe('judged');
+    expect(verdict.winnerIdx).toBe(1); // winner chosen on TASK scores
+    expect(verdict.scores).toEqual([0.3, 0.8]);
+    expect(verdict.roleScores).toEqual([0.9, 0.6]); // the critic holds its role
+    expect(verdict.verified).toBe('recounted: 3');
+    expect(seen[0]).toContain('rôle annoncé: Critique');
+  });
+
+  it('flags a failed judge CALL so the engine can penalise the judge model', async () => {
+    const client: CouncilChatClient = {
+      async chat() {
+        throw new Error('backend 404');
+      },
+    };
+    const verdict = await judgeAnswers(client, 'task', [{ content: 'a' }], CONFIG, identityRng);
+    expect(verdict.kind).toBe('abstained');
+    expect(verdict.judgeCallFailed).toBe(true);
+  });
+
+  it('does NOT flag non-JSON abstention as a call failure (model alive, just non-compliant)', async () => {
+    const client = fakeClient('I cannot produce JSON, sorry.');
+    const verdict = await judgeAnswers(client, 'task', [{ content: 'a' }], CONFIG, identityRng);
+    expect(verdict.kind).toBe('abstained');
+    expect(verdict.judgeCallFailed).toBeUndefined();
+  });
+
   it('truncates oversized candidate answers in the judge prompt', async () => {
     const seen: string[] = [];
     const client = fakeClient('{"scores":{"A":0.5},"winner":"A"}', seen);
@@ -140,6 +183,18 @@ describe('selectNeutralJudge — strict neutrality', () => {
     const all = [c('chatgpt', 'gpt-5.5', ''), c('grok', 'grok-4')];
     const sel = selectNeutralJudge(all, new Set());
     expect(sel!.candidate.model).toBe('grok-4');
+  });
+
+  it('skips dead models (trailing consecutive failures) — a retired judge stops aborting deliberations', () => {
+    const all = [c('chatgpt', 'gpt-5.1-codex'), c('grok', 'grok-3-fast')];
+    const history = { consecutiveRecentFailures: (m: string) => (m === 'gpt-5.1-codex' ? 2 : 0) };
+
+    const sel = selectNeutralJudge(all, new Set(), undefined, history);
+    expect(sel!.candidate.model).toBe('grok-3-fast');
+
+    // A single recent failure is not death.
+    const lenient = { consecutiveRecentFailures: (m: string) => (m === 'gpt-5.1-codex' ? 1 : 0) };
+    expect(selectNeutralJudge(all, new Set(), undefined, lenient)!.candidate.model).toBe('gpt-5.1-codex');
   });
 });
 

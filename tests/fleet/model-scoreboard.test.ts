@@ -78,7 +78,11 @@ describe('ModelScoreboard', () => {
     sb.recordOutcome(rec({ model: 'gpt-5.5', provider: 'chatgpt', role: 'reviewer', won: false, quality: 0.9 }));
     sb.recordOutcome(rec({ model: 'gpt-5.5', provider: 'chatgpt', role: 'architect', won: true, quality: 1 }));
 
-    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
+    // roleScore is role-quality-dominant (0.7×avgRoleQuality + 0.3×winRate):
+    // a critic that holds its role must rank high for the critic seat even
+    // though critics rarely win the task vote. No roleQuality on these
+    // records → falls back to quality.
+    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.6 + 0.3 * 0.5, 5);
     expect(sb.roleScore('code', 'reviewer', 'unknown')).toBe(0);
 
     const reviewerRanking = sb.roleRanking('code', 'reviewer');
@@ -156,6 +160,28 @@ describe('ModelScoreboard v2 — smoothed selection bias', () => {
   });
 });
 
+describe('ModelScoreboard — role quality (judge dual scores)', () => {
+  it('uses roleQuality over task quality when present', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    // A critic: loses the task vote (won:false, low task quality) but holds
+    // its role perfectly — roleScore must reward the role fit.
+    sb.recordOutcome(rec({ role: 'reviewer', won: false, quality: 0.25, roleQuality: 0.95 }));
+    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.95 + 0.3 * 0, 5);
+  });
+
+  it('tracks trailing consecutive failures across task types (dead-judge detection)', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ taskType: 'french', model: 'dead-judge', won: false, quality: 0, failed: true }));
+    sb.recordOutcome(rec({ taskType: 'code', model: 'dead-judge', won: false, quality: 0, failed: true }));
+    expect(sb.consecutiveRecentFailures('dead-judge')).toBe(2);
+
+    // A success resets the trailing streak.
+    sb.recordOutcome(rec({ taskType: 'code', model: 'dead-judge', won: true, quality: 0.8 }));
+    expect(sb.consecutiveRecentFailures('dead-judge')).toBe(0);
+    expect(sb.consecutiveRecentFailures('never-seen')).toBe(0);
+  });
+});
+
 describe('ModelScoreboard v2 — failed records (dead-model penalty)', () => {
   it('counts failures as losses for selection but excludes them from quality stats', () => {
     const sb = new ModelScoreboard(tmpFile);
@@ -190,8 +216,8 @@ describe('ModelScoreboard v2 — role normalization', () => {
     sb.recordOutcome(rec({ role: 'reviewer-4', won: true, quality: 0.8 }));
     sb.recordOutcome(rec({ role: 'reviewer', won: false, quality: 0.4 }));
 
-    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
-    expect(sb.roleScore('code', 'reviewer-7', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
+    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.6 + 0.3 * 0.5, 5);
+    expect(sb.roleScore('code', 'reviewer-7', 'grok-3')).toBeCloseTo(0.7 * 0.6 + 0.3 * 0.5, 5);
     const ranking = sb.roleRanking('code', 'reviewer');
     expect(ranking).toHaveLength(1);
     expect(ranking[0]!.runs).toBe(2);

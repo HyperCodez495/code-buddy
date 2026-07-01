@@ -37,6 +37,8 @@ import {
 } from './signals.js';
 import { gatherPeerAnswers } from './peers.js';
 import { withTimeout } from './with-timeout.js';
+import { computeDeliberationHealth } from './deliberation-health.js';
+import { sanitizeModelOutput } from '../utils/output-sanitizer.js';
 import {
   CouncilError,
   type CouncilAnswer,
@@ -101,7 +103,7 @@ async function synthesizeCouncilAnswer(
       timeoutMs,
       'synthesis',
     );
-    const text = resp.content.trim();
+    const text = sanitizeModelOutput(resp.content).trim();
     return text || null;
   } catch {
     return null;
@@ -191,12 +193,15 @@ export async function runCouncilPipeline(
       const t0 = Date.now();
       const prompt = buildCouncilPrompt(task, plan, index);
       const resp = await withTimeout(client.chat([{ role: 'user', content: prompt }]), timeoutMs, p.c.model);
-      if (!resp.content.trim()) throw new Error('réponse vide');
+      // Council answers bypass the agent-executor, so leakage tokens
+      // (<think>, CJK artifacts, zero-width chars) must be stripped here.
+      const content = sanitizeModelOutput(resp.content);
+      if (!content.trim()) throw new Error('réponse vide');
       return {
         source: { kind: 'local', provider: p.c.provider, model: p.c.model },
         displayName: p.c.model,
         ...(plan.roles[index] ? { role: plan.roles[index] } : {}),
-        content: resp.content,
+        content,
         latencyMs: Date.now() - t0,
         tokensUsed: resp.totalTokens,
         costUsd: (resp.promptTokens / 1_000_000) * p.c.costInputUsdPerMtok,
@@ -276,31 +281,77 @@ export async function runCouncilPipeline(
 
   // 5. judge — strict neutrality for learning, availability for display: when
   // no neutral judge exists we still judge with the top panel member, but the
-  // verdict is flagged non-neutral and never trains the scoreboard.
+  // verdict is flagged non-neutral and never trains the scoreboard. Models
+  // whose recent history is consecutive failures are excluded from the seat,
+  // and a judge whose CALL fails is penalised then REPLACED within the same
+  // run — a dead judge must not cost a whole deliberation.
   const pickedModels = new Set(picked.map((p) => p.c.model));
-  let judgeSelection = selectNeutralJudge(candidates, pickedModels, opts.judge);
-  if (!judgeSelection && picked[0]) {
-    judgeSelection = { candidate: picked[0].c, neutral: false };
-  }
-  const judgeClient = judgeSelection ? safeClient(deps, judgeSelection.candidate) : null;
+  const answersForJudge = answers.map((a) => ({
+    content: a.content,
+    ...(a.role?.label ? { roleLabel: a.role.label } : {}),
+  }));
+  const excludedJudges = new Set<string>();
+  let verdict: JudgeVerdict = {
+    kind: 'abstained',
+    winnerIdx: null,
+    scores: answers.map(() => 0),
+    roleScores: answers.map(() => 0),
+    rationale: '(aucun juge disponible)',
+    verified: '',
+    judgeModel: null,
+    neutral: false,
+  };
+  let judgeClient: CouncilChatClient | null = null;
 
-  const verdict: JudgeVerdict =
-    judgeClient && judgeSelection
-      ? await judgeAnswers(
-          judgeClient,
-          task,
-          answers,
-          { timeoutMs, judgeModel: judgeSelection.candidate.model, neutral: judgeSelection.neutral },
-          rng,
-        )
-      : {
-          kind: 'abstained',
-          winnerIdx: null,
-          scores: answers.map(() => 0),
-          rationale: '(aucun juge disponible)',
-          judgeModel: null,
-          neutral: false,
-        };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let selection = selectNeutralJudge(
+      candidates.filter((c) => !excludedJudges.has(c.model)),
+      pickedModels,
+      attempt === 0 ? opts.judge : undefined,
+      scoreboard,
+    );
+    if (!selection && attempt === 0 && picked[0]) {
+      selection = { candidate: picked[0].c, neutral: false };
+    }
+    if (!selection) break;
+
+    const client = safeClient(deps, selection.candidate);
+    if (!client) {
+      excludedJudges.add(selection.candidate.model);
+      continue;
+    }
+    const attemptVerdict = await judgeAnswers(
+      client,
+      task,
+      answersForJudge,
+      { timeoutMs, judgeModel: selection.candidate.model, neutral: selection.neutral },
+      rng,
+    );
+    if (attemptVerdict.judgeCallFailed) {
+      // Dead judge: penalise it (so future selections skip it) and retry once.
+      try {
+        scoreboard.recordOutcome({
+          at: (deps.now?.() ?? new Date()).toISOString(),
+          taskType,
+          model: selection.candidate.model,
+          provider: selection.candidate.provider,
+          won: false,
+          quality: 0,
+          latencyMs: 0,
+          costUsd: 0,
+          failed: true,
+        });
+      } catch {
+        /* the ledger must never block the council */
+      }
+      excludedJudges.add(selection.candidate.model);
+      verdict = attemptVerdict; // kept if the retry finds no judge either
+      continue;
+    }
+    verdict = attemptVerdict;
+    judgeClient = client;
+    break;
+  }
 
   // 7. lexical consensus (weak, informational signal)
   const sources: ConsensusSource[] = answers.map((a) => ({ peerId: sourceId(a), model: a.displayName, text: a.content }));
@@ -337,6 +388,7 @@ export async function runCouncilPipeline(
         ...(answer.role?.id ? { role: answer.role.id } : {}),
         won: i === verdict.winnerIdx,
         quality: verdict.scores[i] ?? 0,
+        roleQuality: verdict.roleScores[i] ?? verdict.scores[i] ?? 0,
         latencyMs: answer.latencyMs,
         costUsd: answer.costUsd,
       });
@@ -353,6 +405,26 @@ export async function runCouncilPipeline(
   const winner = verdict.winnerIdx !== null ? answers[verdict.winnerIdx] : undefined;
   const finalText = synthesis ?? winner?.content.trim() ?? labelledConcat(answers);
 
+  // Deliberation Health Index — measures the QUALITY of this deliberation
+  // (panel survival, judge aliveness, stance divergence, dissent retention,
+  // winner anchoring). Pure computation; persistence is the host's sink.
+  const health = computeDeliberationHealth({
+    at: (deps.now?.() ?? new Date()).toISOString(),
+    taskType,
+    planMode: plan.mode,
+    seats: picked.length + peers.length,
+    answers: answers.map((a, i) => ({ content: a.content, winner: i === verdict.winnerIdx })),
+    judgeAlive: verdict.kind === 'judged' && verdict.neutral,
+    scores: verdict.scores,
+    consensusScore: consensus.score,
+    synthesis,
+  });
+  try {
+    deps.healthSink?.(health);
+  } catch {
+    /* the health ledger must never block the council */
+  }
+
   return {
     taskType,
     plan,
@@ -365,5 +437,6 @@ export async function runCouncilPipeline(
     finalText,
     learned,
     ...(learnSkipReason ? { learnSkipReason } : {}),
+    health,
   };
 }
