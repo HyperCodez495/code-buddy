@@ -79,6 +79,9 @@ pids/
 *.seed
 *.pid.lock
 
+# Evolutionary self-improvement: throwaway git worktrees for scoring candidate variants
+.worktrees/
+
 # Coverage directory used by tools like istanbul
 coverage/
 .nyc_output/
