@@ -1,0 +1,227 @@
+/**
+ * Council types — the data contracts of the 8-step deliberation pipeline.
+ *
+ * The pipeline itself lives in `council-engine.ts` (host-agnostic: takes
+ * injected dependencies, returns a `CouncilRunResult`); the CLI presenter in
+ * `src/commands/council.ts` only renders these types. Keeping the contracts
+ * here lets any host (server, Cowork, voice loop, sagas) consume a council
+ * run as data without importing CLI code.
+ *
+ * @module council/types
+ */
+
+import type { ModelStrength } from '../fleet/types.js';
+import type { ConsensusSummary } from '../fleet/result-aggregator.js';
+import type { ModelScoreboard } from '../fleet/model-scoreboard.js';
+
+/** One usable LLM as exposed by the active-LLM registry. */
+export interface CouncilCandidate {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  baseURL?: string;
+  costInputUsdPerMtok: number;
+}
+
+export interface RankedCandidate {
+  c: CouncilCandidate;
+  strengths: ModelStrength[];
+  score: number;
+  /** Raw historical win rate (0-1), display only — selection uses selectionBias. */
+  hist: number;
+}
+
+export interface CouncilOptions {
+  /** How many models to consult (default 3). */
+  count?: number;
+  /** Comma list of provider/model substrings to restrict candidates. */
+  models?: string;
+  /** Provider/model substring to use as the judge (default: a neutral strong model). */
+  judge?: string;
+  /** Override the inferred task type. */
+  taskType?: string;
+  /** commander sets this false on --no-consensus. */
+  consensus?: boolean;
+  /** Just print the learned scoreboard and exit. */
+  scoreboard?: boolean;
+  /** Also consult connected fleet peers (other machines' Code Buddy) via peer.chat. */
+  fleet?: boolean;
+  /** Use adaptive conductor roles instead of asking every model the exact same prompt. Default true. */
+  conductor?: boolean;
+  /** Use a final synthesis pass for collective conductor runs. Default true. */
+  synthesis?: boolean;
+  /** Inject peer connections (tests/scripts); else read getFleetRegistry().list(). */
+  fleetPeers?: CouncilPeer[];
+  /** Per-peer timeout for the fleet round-trip (default = council timeout). */
+  peerTimeoutMs?: number;
+}
+
+// --- conductor roles ---
+
+export interface CouncilRole {
+  id: string;
+  label: string;
+  mission: string;
+  focus: string[];
+}
+
+export interface CouncilConductorPlan {
+  mode: 'direct' | 'collective';
+  reason: string;
+  roles: CouncilRole[];
+}
+
+// --- chat surface ---
+
+/** Normalised chat result the council needs from any LLM client. */
+export interface CouncilChatResult {
+  content: string;
+  promptTokens: number;
+  totalTokens: number;
+}
+
+/**
+ * Minimal chat surface consumed by the engine. `CodeBuddyClient` is adapted
+ * to this in the presenter; tests inject plain objects.
+ */
+export interface CouncilChatClient {
+  chat(messages: Array<{ role: 'system' | 'user'; content: string }>): Promise<CouncilChatResult>;
+}
+
+// --- answers ---
+
+export type CouncilAnswerSource =
+  | { kind: 'local'; provider: string; model: string }
+  | { kind: 'peer'; peerId: string; model: string };
+
+export interface CouncilAnswer {
+  source: CouncilAnswerSource;
+  /** Model id locally, `peerId:model` for fleet peers — the judged display name. */
+  displayName: string;
+  role?: CouncilRole;
+  content: string;
+  latencyMs: number;
+  tokensUsed: number;
+  costUsd: number;
+}
+
+// --- judge ---
+
+export interface JudgeVerdict {
+  /** 'abstained' = no reliable verdict (non-JSON, timeout, no judge) — never a fabricated winner. */
+  kind: 'judged' | 'abstained';
+  winnerIdx: number | null;
+  scores: number[];
+  rationale: string;
+  judgeModel: string | null;
+  /** False when the judge is itself a panel member — display-only, never trains the scoreboard. */
+  neutral: boolean;
+}
+
+// --- signals / synthesis ---
+
+export interface CouncilDecisionSignals {
+  confidence: 'high' | 'medium' | 'low';
+  winnerScore: number;
+  runnerUpScore: number;
+  margin: number;
+  consensusScore: number;
+  reasons: string[];
+}
+
+export interface CouncilSynthesisCandidate {
+  modelName: string;
+  roleLabel?: string;
+  score: number;
+  winner: boolean;
+  content: string;
+}
+
+export interface CouncilSynthesisPrompt {
+  system: string;
+  user: string;
+}
+
+// --- fleet peers ---
+
+export interface CouncilPeer {
+  id: string;
+  listener: {
+    request: (method: string, params?: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<unknown>;
+  };
+}
+
+export interface PeerAnswer {
+  modelId: string;
+  modelName: string;
+  content: string;
+  latency: number;
+  tokensUsed: number;
+  cost: number;
+  role?: CouncilRole;
+}
+
+export interface GatherPeerAnswersOptions {
+  promptForPeer?: (peer: CouncilPeer, index: number) => string;
+  roleForPeer?: (peer: CouncilPeer, index: number) => CouncilRole | undefined;
+}
+
+// --- engine ---
+
+export type CouncilProgressEvent =
+  | {
+      type: 'panel';
+      taskType: string;
+      entries: Array<{ model: string; histWinRate: number }>;
+      peerCount: number;
+      /** Model granted the ε-exploration seat this run, if any. */
+      explored?: string;
+    }
+  | { type: 'conductor'; roles: string[] }
+  | { type: 'fleet_no_peers' }
+  | { type: 'fleet_consulting'; peerCount: number }
+  | { type: 'answer_failed'; source: string; error: string };
+
+export interface CouncilEngineDeps {
+  /** Thunk (not a value) so hosts keep the lazy registry import until a run actually starts. */
+  loadRegistry: () => Promise<CouncilCandidate[]>;
+  scoreboard: ModelScoreboard;
+  clientFactory: (c: CouncilCandidate) => CouncilChatClient;
+  /** Fleet peers to consult when opts.fleet is set (empty array = none connected). */
+  peers: CouncilPeer[];
+  /** Injectable randomness (judge shuffle + exploration seat) for deterministic tests. */
+  rng?: () => number;
+  /** Per-model wall-clock cap; default CODEBUDDY_COUNCIL_TIMEOUT_MS or 45s. */
+  timeoutMs?: number;
+  peerTimeoutMs?: number;
+  /** ε for the exploration seat; default CODEBUDDY_COUNCIL_EXPLORE or 0.1. */
+  exploreEpsilon?: number;
+  /** Injectable clock for deterministic outcome timestamps. */
+  now?: () => Date;
+}
+
+export interface CouncilRunResult {
+  taskType: string;
+  plan: CouncilConductorPlan;
+  answers: CouncilAnswer[];
+  failures: Array<{ source: string; error: string }>;
+  verdict: JudgeVerdict;
+  consensus: ConsensusSummary;
+  signals: CouncilDecisionSignals;
+  synthesis: string | null;
+  /** synthesis ?? judged winner ?? labelled concatenation of all answers. */
+  finalText: string;
+  /** True when this run's outcomes were recorded to the scoreboard. */
+  learned: boolean;
+  learnSkipReason?: string;
+}
+
+export class CouncilError extends Error {
+  constructor(
+    readonly code: 'no-candidates' | 'all-failed',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CouncilError';
+  }
+}

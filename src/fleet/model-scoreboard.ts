@@ -2,13 +2,18 @@
  * Model Scoreboard — the learning layer for the multi-LLM council.
  *
  * Records, per (taskType × model), the outcome of each council run (won?,
- * optional role, judge quality 0-1, latency, cost) to an append-only JSON ledger under
- * ~/.codebuddy/fleet-model-performance.json (same spirit as cost-tracker.ts).
+ * optional role, judge quality 0-1, latency, cost) to an append-only JSONL
+ * ledger under ~/.codebuddy/fleet-model-performance.jsonl (one record per
+ * line — O(1) appends, and concurrent writers — CLI + voice loop + server —
+ * interleave lines instead of overwriting each other). A legacy pretty-JSON
+ * array ledger (the pre-v2 format) is migrated in place on first load.
  *
- * The council reads `winRate(taskType, model)` to bias model selection toward
- * the historically-best AI for that kind of task, and `ranking(taskType)` to
- * show what it has learned. This is the piece the Fleet was missing: dispatch +
- * ensemble + consensus existed; *learning which model is best over time* did not.
+ * The council reads `selectionBias(taskType, model)` to bias model selection
+ * toward the historically-best AI for that kind of task: it is Laplace-
+ * smoothed and confidence-weighted so a model with 1 win in 1 run does NOT
+ * outrank one with 9 wins in 10, and unseen models sit at a neutral 0 instead
+ * of being locked out by early winners. `ranking(taskType)` shows what it has
+ * learned (raw wins/runs, human-readable).
  */
 
 import * as fs from 'node:fs';
@@ -35,6 +40,14 @@ export interface OutcomeRecord {
   latencyMs: number;
   /** Marginal cost of this answer in USD (0 for local / flat-fee). */
   costUsd: number;
+  /**
+   * True when the model FAILED to answer (timeout, 404, empty reply) rather
+   * than losing on quality. Failed records count as losses in
+   * `smoothedWinRate`/`runCount` (so `selectionBias` stops re-seating dead
+   * models and ε-exploration stops treating them as unseen), but are EXCLUDED
+   * from `winRate`/`ranking`/`print` — a 404 is not a quality defeat.
+   */
+  failed?: boolean;
 }
 
 export interface ModelStat {
@@ -60,23 +73,83 @@ export interface RoleModelStat {
 }
 
 function defaultLedgerPath(): string {
-  return path.join(os.homedir(), '.codebuddy', 'fleet-model-performance.json');
+  return path.join(os.homedir(), '.codebuddy', 'fleet-model-performance.jsonl');
 }
+
+/**
+ * Conductor panels repeat roles on extra seats; historically those seats got
+ * suffixed ids ('reviewer-4') that fragmented role history by panel position.
+ * Normalising here also heals any such legacy records at query time.
+ */
+function normalizeRole(role: string): string {
+  return role.replace(/-\d+$/, '');
+}
+
+/** History weight saturation: with K=5, 5 runs ≈ half-trust, 20 runs ≈ 0.8. */
+const HISTORY_WEIGHT_K = 5;
 
 export class ModelScoreboard {
   private records: OutcomeRecord[] = [];
+  private cachedMtimeMs = -1;
 
   constructor(private readonly file: string = defaultLedgerPath()) {
     this.load();
   }
 
+  /** The pre-v2 array ledger sits next to the JSONL one, `.jsonl` → `.json`. */
+  private legacyFile(): string | null {
+    return this.file.endsWith('.jsonl') ? this.file.slice(0, -1) : null;
+  }
+
+  private statMtimeMs(): number {
+    try {
+      return fs.statSync(this.file).mtimeMs;
+    } catch {
+      return -1;
+    }
+  }
+
+  /** Pick up records appended by OTHER processes since our last read. */
+  private maybeReload(): void {
+    const mtime = this.statMtimeMs();
+    if (mtime !== this.cachedMtimeMs) this.load();
+  }
+
   private load(): void {
     try {
-      if (!fs.existsSync(this.file)) return;
-      const raw = fs.readFileSync(this.file, 'utf-8').trim();
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) this.records = parsed as OutcomeRecord[];
+      let raw = '';
+      if (fs.existsSync(this.file)) {
+        raw = fs.readFileSync(this.file, 'utf-8').trim();
+      } else {
+        const legacy = this.legacyFile();
+        if (legacy && fs.existsSync(legacy)) {
+          raw = fs.readFileSync(legacy, 'utf-8').trim();
+        }
+      }
+      if (!raw) {
+        this.records = [];
+        this.cachedMtimeMs = this.statMtimeMs();
+        return;
+      }
+      if (raw.startsWith('[')) {
+        // Legacy pretty-JSON array (or a legacy .json ledger) — migrate to JSONL.
+        const parsed = JSON.parse(raw);
+        this.records = Array.isArray(parsed) ? (parsed as OutcomeRecord[]) : [];
+        this.rewriteAsJsonl();
+      } else {
+        this.records = raw
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line) as OutcomeRecord];
+            } catch {
+              return []; // a torn/corrupt line loses one record, never the ledger
+            }
+          });
+      }
+      this.cachedMtimeMs = this.statMtimeMs();
     } catch (err) {
       logger.warn?.('[model-scoreboard] could not read ledger, starting empty', {
         err: err instanceof Error ? err.message : String(err),
@@ -85,10 +158,27 @@ export class ModelScoreboard {
     }
   }
 
-  private save(): void {
+  private rewriteAsJsonl(): void {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(this.file, JSON.stringify(this.records, null, 2), 'utf-8');
+      fs.writeFileSync(this.file, this.records.map((r) => JSON.stringify(r)).join('\n') + (this.records.length ? '\n' : ''), 'utf-8');
+      this.cachedMtimeMs = this.statMtimeMs();
+    } catch (err) {
+      logger.warn?.('[model-scoreboard] could not migrate ledger to JSONL', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** Append one model's outcome for a run and persist (O(1), concurrent-safe append). */
+  recordOutcome(rec: OutcomeRecord): void {
+    const normalized: OutcomeRecord = rec.role ? { ...rec, role: normalizeRole(rec.role) } : rec;
+    this.maybeReload();
+    this.records.push(normalized);
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      fs.appendFileSync(this.file, JSON.stringify(normalized) + '\n', 'utf-8');
+      this.cachedMtimeMs = this.statMtimeMs();
     } catch (err) {
       logger.warn?.('[model-scoreboard] could not write ledger', {
         err: err instanceof Error ? err.message : String(err),
@@ -96,23 +186,58 @@ export class ModelScoreboard {
     }
   }
 
-  /** Append one model's outcome for a run and persist. */
-  recordOutcome(rec: OutcomeRecord): void {
-    this.records.push(rec);
-    this.save();
+  private runsFor(taskType: string, model: string): OutcomeRecord[] {
+    this.maybeReload();
+    return this.records.filter((r) => r.taskType === taskType && r.model === model);
   }
 
-  /** Historical win rate (0-1) of a model for a task type. 0 when never seen. */
+  /** Raw historical win rate (0-1) of a model for a task type. 0 when never seen. Display only. */
   winRate(taskType: string, model: string): number {
-    const runs = this.records.filter((r) => r.taskType === taskType && r.model === model);
+    const runs = this.runsFor(taskType, model).filter((r) => !r.failed);
     if (runs.length === 0) return 0;
     const wins = runs.filter((r) => r.won).length;
     return wins / runs.length;
   }
 
+  /** How many council runs this (taskType × model) has been observed in. */
+  runCount(taskType: string, model: string): number {
+    return this.runsFor(taskType, model).length;
+  }
+
+  /** Laplace-smoothed win rate: (wins + 1) / (runs + 2). 0.5 when never seen. */
+  smoothedWinRate(taskType: string, model: string): number {
+    const runs = this.runsFor(taskType, model);
+    const wins = runs.filter((r) => r.won).length;
+    return (wins + 1) / (runs.length + 2);
+  }
+
+  /** How much to trust this model's history: runs / (runs + K). 0 when never seen. */
+  historyWeight(taskType: string, model: string): number {
+    const runs = this.runCount(taskType, model);
+    return runs / (runs + HISTORY_WEIGHT_K);
+  }
+
+  /**
+   * Selection bias for routing, in [-1, 1]: smoothed win rate re-centred on 0
+   * and weighted by history confidence. Unseen models sit at 0 (neutral); a
+   * 1/1 model gets a small nudge (~+0.06), a 9/10 one a strong one (~+0.44),
+   * and consistent losers go negative. Replaces the raw `(1 + winRate)`
+   * multiplier that locked in the first-ever winner.
+   */
+  selectionBias(taskType: string, model: string): number {
+    const centred = (this.smoothedWinRate(taskType, model) - 0.5) * 2;
+    const bias = centred * this.historyWeight(taskType, model);
+    return Math.max(-1, Math.min(1, bias));
+  }
+
   /** Historical role-specific score for assigning future council roles. 0 when never seen. */
   roleScore(taskType: string, role: string, model: string): number {
-    const runs = this.records.filter((r) => r.taskType === taskType && r.role === role && r.model === model);
+    const wanted = normalizeRole(role);
+    this.maybeReload();
+    const runs = this.records.filter(
+      (r) =>
+        !r.failed && r.taskType === taskType && r.role !== undefined && normalizeRole(r.role) === wanted && r.model === model,
+    );
     if (runs.length === 0) return 0;
     const wins = runs.filter((r) => r.won).length;
     const winRate = wins / runs.length;
@@ -121,14 +246,17 @@ export class ModelScoreboard {
   }
 
   roleRanking(taskType?: string, role?: string): RoleModelStat[] {
+    this.maybeReload();
+    const wanted = role ? normalizeRole(role) : undefined;
     const scoped = this.records.filter((r) =>
+      !r.failed &&
       Boolean(r.role) &&
       (!taskType || r.taskType === taskType) &&
-      (!role || r.role === role),
+      (!wanted || normalizeRole(r.role!) === wanted),
     );
     const byRoleModel = new Map<string, OutcomeRecord[]>();
     for (const r of scoped) {
-      const key = `${r.role}\u0000${r.model}`;
+      const key = `${normalizeRole(r.role!)} ${r.model}`;
       const arr = byRoleModel.get(key) ?? [];
       arr.push(r);
       byRoleModel.set(key, arr);
@@ -140,7 +268,7 @@ export class ModelScoreboard {
       const wins = runs.filter((r) => r.won).length;
       const n = runs.length;
       stats.push({
-        role: first.role!,
+        role: normalizeRole(first.role!),
         model: first.model,
         provider: first.provider,
         runs: n,
@@ -159,9 +287,11 @@ export class ModelScoreboard {
    * win rate desc then avg quality desc.
    */
   ranking(taskType?: string): ModelStat[] {
-    const scoped = taskType
+    this.maybeReload();
+    const scoped = (taskType
       ? this.records.filter((r) => r.taskType === taskType)
-      : this.records;
+      : this.records
+    ).filter((r) => !r.failed);
     const byModel = new Map<string, OutcomeRecord[]>();
     for (const r of scoped) {
       const arr = byModel.get(r.model) ?? [];

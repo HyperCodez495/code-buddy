@@ -125,3 +125,127 @@ describe('ModelScoreboard', () => {
     expect(out).toMatch(/reviewer/);
   });
 });
+
+describe('ModelScoreboard v2 — smoothed selection bias', () => {
+  it('is neutral (0) for never-seen models instead of locking them out', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    expect(sb.selectionBias('code', 'unseen')).toBe(0);
+    expect(sb.runCount('code', 'unseen')).toBe(0);
+    expect(sb.smoothedWinRate('code', 'unseen')).toBeCloseTo(0.5, 5);
+  });
+
+  it('ranks 9/10 above 1/1 — no more rich-get-richer lock-in', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ model: 'one-shot', won: true }));
+    for (let i = 0; i < 10; i++) {
+      sb.recordOutcome(rec({ model: 'proven', won: i < 9 }));
+    }
+    const oneShot = sb.selectionBias('code', 'one-shot');
+    const proven = sb.selectionBias('code', 'proven');
+    expect(proven).toBeGreaterThan(oneShot);
+    expect(oneShot).toBeGreaterThan(0);
+    // Raw winRate would have said the opposite (1.0 vs 0.9).
+    expect(sb.winRate('code', 'one-shot')).toBe(1);
+    expect(sb.winRate('code', 'proven')).toBeCloseTo(0.9, 5);
+  });
+
+  it('pushes consistent losers negative', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    for (let i = 0; i < 6; i++) sb.recordOutcome(rec({ model: 'loser', won: false }));
+    expect(sb.selectionBias('code', 'loser')).toBeLessThan(0);
+  });
+});
+
+describe('ModelScoreboard v2 — failed records (dead-model penalty)', () => {
+  it('counts failures as losses for selection but excludes them from quality stats', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    for (let i = 0; i < 3; i++) {
+      sb.recordOutcome(rec({ model: 'dead-model', won: false, quality: 0, failed: true }));
+    }
+
+    // Selection: penalized and no longer "unseen" for ε-exploration.
+    expect(sb.runCount('code', 'dead-model')).toBe(3);
+    expect(sb.selectionBias('code', 'dead-model')).toBeLessThan(0);
+    // Quality display: a 404 is not a quality defeat.
+    expect(sb.winRate('code', 'dead-model')).toBe(0);
+    expect(sb.ranking('code')).toHaveLength(0);
+    expect(sb.print('code')).toMatch(/No council history/);
+  });
+
+  it('mixes quality runs and failures honestly', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ model: 'flaky', won: true, quality: 0.9 }));
+    sb.recordOutcome(rec({ model: 'flaky', won: false, quality: 0, failed: true }));
+
+    expect(sb.winRate('code', 'flaky')).toBe(1); // 1 win / 1 quality run
+    expect(sb.runCount('code', 'flaky')).toBe(2); // failure still counts as observed
+    expect(sb.smoothedWinRate('code', 'flaky')).toBeCloseTo((1 + 1) / (2 + 2), 5);
+    expect(sb.ranking('code')[0]!.runs).toBe(1); // failed run excluded from stats
+  });
+});
+
+describe('ModelScoreboard v2 — role normalization', () => {
+  it('aggregates suffixed panel-seat roles (reviewer-4) into the stable role id', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ role: 'reviewer-4', won: true, quality: 0.8 }));
+    sb.recordOutcome(rec({ role: 'reviewer', won: false, quality: 0.4 }));
+
+    expect(sb.roleScore('code', 'reviewer', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
+    expect(sb.roleScore('code', 'reviewer-7', 'grok-3')).toBeCloseTo(0.7 * 0.5 + 0.3 * 0.6, 5);
+    const ranking = sb.roleRanking('code', 'reviewer');
+    expect(ranking).toHaveLength(1);
+    expect(ranking[0]!.runs).toBe(2);
+    expect(ranking[0]!.role).toBe('reviewer');
+  });
+});
+
+describe('ModelScoreboard v2 — JSONL ledger', () => {
+  it('appends one JSON line per outcome', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ won: true }));
+    sb.recordOutcome(rec({ won: false }));
+    const lines = fs.readFileSync(tmpFile, 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]!).won).toBe(true);
+  });
+
+  it('migrates a legacy pretty-JSON array ledger in place', () => {
+    fs.writeFileSync(tmpFile, JSON.stringify([rec({ won: true }), rec({ won: false })], null, 2), 'utf-8');
+    const sb = new ModelScoreboard(tmpFile);
+    expect(sb.winRate('code', 'grok-3')).toBeCloseTo(0.5, 5);
+    expect(fs.readFileSync(tmpFile, 'utf-8').trimStart().startsWith('{')).toBe(true);
+    // And appends keep working after migration.
+    sb.recordOutcome(rec({ won: true }));
+    expect(new ModelScoreboard(tmpFile).runCount('code', 'grok-3')).toBe(3);
+  });
+
+  it('migrates from the sibling legacy .json file when the .jsonl does not exist yet', () => {
+    const jsonl = path.join(path.dirname(tmpFile), 'perf2.jsonl');
+    const legacy = path.join(path.dirname(tmpFile), 'perf2.json');
+    fs.writeFileSync(legacy, JSON.stringify([rec({ won: true })], null, 2), 'utf-8');
+
+    const sb = new ModelScoreboard(jsonl);
+    expect(sb.winRate('code', 'grok-3')).toBe(1);
+    expect(fs.existsSync(jsonl)).toBe(true);
+    // Legacy file is left untouched (recoverable).
+    expect(fs.existsSync(legacy)).toBe(true);
+  });
+
+  it('picks up records appended by another instance (cross-process reload)', () => {
+    const writer = new ModelScoreboard(tmpFile);
+    const reader = new ModelScoreboard(tmpFile);
+    expect(reader.runCount('code', 'grok-3')).toBe(0);
+
+    writer.recordOutcome(rec({ won: true }));
+    expect(reader.runCount('code', 'grok-3')).toBe(1);
+    expect(reader.winRate('code', 'grok-3')).toBe(1);
+  });
+
+  it('survives a torn/corrupt line without losing the ledger', () => {
+    const sb = new ModelScoreboard(tmpFile);
+    sb.recordOutcome(rec({ won: true }));
+    fs.appendFileSync(tmpFile, '{"broken json...\n', 'utf-8');
+    sb.recordOutcome(rec({ won: false }));
+    expect(new ModelScoreboard(tmpFile).runCount('code', 'grok-3')).toBe(2);
+  });
+});
