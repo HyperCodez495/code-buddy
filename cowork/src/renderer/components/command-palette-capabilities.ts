@@ -25,7 +25,10 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   { id: 'cap-team', label: 'Agent Team', description: 'Coordinate an agent team', run: (s) => s.setShowTeamPanel(true) },
   { id: 'cap-orchestrator', label: 'Orchestrator', description: 'Spawn a multi-agent workflow', run: (s) => s.setShowOrchestratorLauncher(true) },
   { id: 'cap-missions', label: 'Mission board', description: 'Multi-agent task board', run: (s) => s.setShowMissionBoard(true) },
-  { id: 'cap-autonomy', label: 'Autonomy', description: 'Autonomous loop, YOLO, goal', run: (s) => s.setShowAutonomyPanel(true) },
+  // Autonomy + reasoning-trace dock into the chat workspace (rc-dock tabs in DockWorkspace), not as
+  // global overlays — from a non-chat view the tab would mount inside a display:none subtree and
+  // never show. Switch to the chat view first so the panel is actually visible.
+  { id: 'cap-autonomy', label: 'Autonomy', description: 'Autonomous loop, YOLO, goal', run: (s) => { s.setPrimaryView('chat'); s.setShowAutonomyPanel(true); } },
   { id: 'cap-workflows', label: 'Workflows', description: 'Visual workflow editor', run: (s) => s.setShowWorkflowProPanel(true) },
   { id: 'cap-evolution', label: 'Evolution', description: 'Versions from self-improvement', run: (s) => s.setShowEvolutionPanel(true) },
   { id: 'cap-knowledge', label: 'Knowledge (CKG)', description: 'Collective memory + research topics', run: (s) => s.setShowKnowledgePanel(true) },
@@ -33,7 +36,7 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   { id: 'cap-lessons-candidates', label: 'Lesson candidates', description: 'Review learned-lesson candidates', run: (s) => s.setShowLessonCandidatePanel(true) },
   { id: 'cap-user-model', label: 'User model', description: 'What Code Buddy learned about you', run: (s) => s.setShowUserModelPanel(true) },
   { id: 'cap-research', label: 'Research / Flow launcher', description: 'Wide research + planning flow', run: (s) => s.setShowLiveLauncher(true) },
-  { id: 'cap-reasoning-trace', label: 'Reasoning trace', description: 'Inspect the reasoning tree', run: (s) => s.setShowReasoningViewer(true) },
+  { id: 'cap-reasoning-trace', label: 'Reasoning trace', description: 'Inspect the reasoning tree', run: (s) => { s.setPrimaryView('chat'); s.setShowReasoningViewer(true); } },
   { id: 'cap-insights', label: 'Session insights', description: 'Analysis of this session', run: (s) => s.setShowSessionInsights(true) },
   { id: 'cap-activity', label: 'Activity feed', description: 'Cross-project activity', run: (s) => s.setShowActivityFeed(true) },
   { id: 'cap-tests', label: 'Test runner', description: 'Run the test suite', run: (s) => s.setShowTestRunner(true) },

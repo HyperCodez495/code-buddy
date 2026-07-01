@@ -10,9 +10,10 @@ import { useAppStore } from '../store';
  *
  * NOTE — what this does NOT prove: that a *panel* reads the flipped flag and is mounted where the new
  * shell renders it. That mount-liveness was verified manually against App.tsx / DockWorkspace (the
- * hosts NewShell renders): 26 panels are mounted globally in App.tsx, autonomy/reasoning render in
- * the chat view (DockWorkspace), and the previously-dead `showWorkflowProPanel` flag was given a
- * mounted overlay reader in App.tsx as part of this change.
+ * hosts NewShell renders): most panels are mounted globally in App.tsx; autonomy/reasoning-trace dock
+ * into the chat workspace, so their entries also switch primaryView to 'chat' (asserted below) to
+ * avoid opening into a hidden subtree; and the previously-dead `showWorkflowProPanel` flag was given
+ * a mounted overlay reader in App.tsx as part of this change.
  */
 
 /** All boolean `show*` flags on the live store — the universe a capability may flip. */
@@ -67,6 +68,17 @@ describe('CAPABILITY_COMMANDS', () => {
       const after = useAppStore.getState() as unknown as Record<string, boolean>;
       const flipped = flags.filter((f) => after[f] === true);
       expect(flipped, `${c.id} should flip exactly one show-flag (flipped: ${flipped.join(',') || 'none'})`).toHaveLength(1);
+    }
+  });
+
+  it('chat-docked capabilities switch primaryView to chat so they are not opened into a hidden view', () => {
+    const dockedIntoChat = ['cap-autonomy', 'cap-reasoning-trace'];
+    for (const id of dockedIntoChat) {
+      const cmd = CAPABILITY_COMMANDS.find((c) => c.id === id);
+      expect(cmd, `expected capability ${id}`).toBeDefined();
+      useAppStore.getState().setPrimaryView('advanced');
+      cmd!.run(useAppStore.getState());
+      expect(useAppStore.getState().primaryView, `${id} should force the chat view`).toBe('chat');
     }
   });
 });
