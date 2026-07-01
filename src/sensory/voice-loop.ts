@@ -23,6 +23,7 @@ import { logger } from '../utils/logger.js';
 import { commandExists } from '../utils/command-exists.js';
 import { inferTaskType } from '../fleet/model-capability-heuristics.js';
 import { withSpeakingGuard } from './voice-activity.js';
+import { prepareSpeech } from './speech-sanitizer.js';
 import { matchVoiceInteraction, VOICE_INTERACTION_PREWARM_PHRASES } from './voice-interactions.js';
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
@@ -645,8 +646,16 @@ export async function sayNow(
   text: string,
   options: { voice?: string; rootDir?: string; synth?: SynthFn; play?: PlayFn } = {},
 ): Promise<void> {
-  const t = (text ?? '').trim();
-  if (!t) return;
+  // Sanity gate before the speakers AND the phone push: strip leaked control tokens + foreign-script
+  // contamination (a local model drifting into CJK the voice can't pronounce), stay silent if nothing
+  // meaningful remains. Clean once so speech, Telegram voice, and logs all use the same text.
+  const t = prepareSpeech(text);
+  if (!t) {
+    if ((text ?? '').trim()) {
+      logger.info(`[voice] sayNow muted — nothing speakable after sanitize: ${JSON.stringify((text ?? '').slice(0, 120))}`);
+    }
+    return;
+  }
   // The active personality picks its own Piper voice (.onnx) if it set one (else the env default).
   let voice = options.voice;
   if (!voice && !options.synth) {
@@ -701,9 +710,18 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): (heard: string)
     let playMs = 0;
     try {
       const replyStart = Date.now();
-      const reply = (await replyFn(heard)).trim();
+      const rawReply = await replyFn(heard);
       replyMs = Date.now() - replyStart;
-      if (!reply) return; // nothing to say → silence (never an error)
+      // Sanity gate before synth: strip leaked control tokens + foreign-script contamination
+      // (observed: a French reply degrading into CJK the Piper voice can't pronounce), stay silent
+      // if nothing meaningful survives. `reply` is what we synth, log, and hand to onSpoke.
+      const reply = prepareSpeech(rawReply);
+      if (!reply) {
+        if ((rawReply ?? '').trim()) {
+          logger.info(`[voice] reply muted — nothing speakable after sanitize: ${JSON.stringify((rawReply ?? '').slice(0, 120))}`);
+        }
+        return; // nothing to say → silence (never an error)
+      }
       // Resolve the voice per-reply so a mid-session `/persona use …` changes the voice live.
       let synth = options.synth;
       if (!synth) {
