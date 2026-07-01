@@ -94,6 +94,14 @@ export function EvolutionPanel({ onClose }: { onClose: () => void }) {
                           <span>{v.createdAt.slice(0, 10)}</span>
                         </div>
                         {v.detail && <div className="mt-0.5 text-xs">{v.detail}</div>}
+                        {v.plan && (
+                          <details className="mt-1">
+                            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                              Plan qui a produit cette version
+                            </summary>
+                            <pre className="mt-1 text-[11px] whitespace-pre-wrap bg-muted/40 rounded p-2 max-h-48 overflow-auto">{v.plan}</pre>
+                          </details>
+                        )}
                       </li>
                     ))}
                   </ul>

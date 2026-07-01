@@ -14,6 +14,8 @@ export interface EvolvedVariant {
   regressions: string[];
   createdAt: string;
   detail?: string;
+  /** The mutation plan that produced this version (goal + inspirations the mutator followed). */
+  plan?: string;
   behavior?: string;
   parents?: string[];
   generation?: number;

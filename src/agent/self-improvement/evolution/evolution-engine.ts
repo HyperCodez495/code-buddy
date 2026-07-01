@@ -49,7 +49,7 @@ export interface MutateArgs {
 }
 
 /** Produces a code change in the worktree toward the weakness. Returns whether it changed anything. */
-export type Mutator = (args: MutateArgs) => Promise<{ changed: boolean; detail?: string }>;
+export type Mutator = (args: MutateArgs) => Promise<{ changed: boolean; detail?: string; plan?: string }>;
 
 export interface EvolutionCycleOptions {
   baselineRef: string;
@@ -137,10 +137,12 @@ export async function runEvolutionCycle(opts: EvolutionCycleOptions): Promise<Ev
 
   // 2-3. mutate in an isolated worktree, then commit the change on the branch.
   let mutated = false;
+  let mutationPlan: string | undefined; // the instruction that produced this variant (for audit)
   const mgr = WorktreeSessionManager.getInstance();
   const session = mgr.createWorktreeSession(branch, basePath);
   try {
     const res = await opts.mutate({ branch, weakness: opts.weakness, worktreeDir: session.worktreePath, env, inspirations });
+    mutationPlan = res.plan;
     git(['add', '-A'], session.worktreePath);
     const dirty = git(['status', '--porcelain'], session.worktreePath).trim().length > 0;
     if (dirty) {
@@ -190,6 +192,7 @@ export async function runEvolutionCycle(opts: EvolutionCycleOptions): Promise<Ev
     regressions: report.regressions,
     createdAt: new Date().toISOString(),
     detail: `${opts.weakness.kind}: ${opts.weakness.goal}`,
+    ...(mutationPlan ? { plan: mutationPlan } : {}),
     behavior: behaviorDescriptor(changedPathsVsBase(branch, opts.baselineRef, basePath)),
     parents,
     generation: computeGeneration(parents, store.list()),
@@ -226,6 +229,7 @@ export function agentMutator(opts: { timeoutMs?: number; model?: string } = {}):
           .map((i) => `--- [fitness ${i.score.toFixed(3)}] ${i.goal}\n${i.diff || '(diff unavailable)'}`)
           .join('\n');
     }
+    const mutationPlan = prompt; // capture the exact instruction that drove this generation
     const args = [cli, '--prompt', prompt, '--directory', worktreeDir];
     if (opts.model) args.push('--model', opts.model);
     await new Promise<void>((resolve) => {
@@ -250,7 +254,7 @@ export function agentMutator(opts: { timeoutMs?: number; model?: string } = {}):
         resolve();
       });
     });
-    return { changed: true, detail: 'agent run complete (changes detected by git)' };
+    return { changed: true, detail: 'agent run complete (changes detected by git)', plan: mutationPlan };
   };
 }
 

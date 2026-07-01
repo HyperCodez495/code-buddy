@@ -99,8 +99,12 @@ export function registerEvolveCommands(program: Command): void {
         return;
       }
       logger.info(`Variant ${v.id}  (${v.branch})`);
+      logger.info(`  generation=${variantGeneration(v)}${(v.parents ?? []).length ? `  parents=[${(v.parents ?? []).join(', ')}]` : '  (from baseline)'}`);
       logger.info(`  fitness=${v.score.toFixed(3)}  passedAll=${v.passedAll}  regressions=[${v.regressions.join(', ')}]`);
       logger.info(`  ${v.detail ?? ''}`);
+      if (v.plan) {
+        logger.info(`\nPlan qui a produit cette version :\n${v.plan}`);
+      }
       try {
         const stat = git(['diff', '--stat', `${options.baseline}...${v.branch}`]);
         logger.info(`\nDiff vs ${options.baseline}:\n${stat}`);

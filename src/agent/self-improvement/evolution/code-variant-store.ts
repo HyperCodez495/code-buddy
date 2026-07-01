@@ -22,6 +22,12 @@ export interface VariantRecord {
   regressions: string[];
   createdAt: string;
   detail?: string;
+  /**
+   * The mutation plan that produced this version: the exact instruction the mutator followed
+   * (goal + the prior elite approaches it was told to build on / diverge from). Stored so a
+   * generation is auditable — you can see WHY/HOW it came to be, not just its score.
+   */
+  plan?: string;
   /** MAP-Elites niche descriptor (which area + how broad a change) — for diversity. */
   behavior?: string;
   /**

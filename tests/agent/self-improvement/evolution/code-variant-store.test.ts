@@ -139,10 +139,12 @@ describe('genealogy (recursive self-improvement lineage)', () => {
     try {
       const s = new CodeVariantStore(join(d, 'variants.json'));
       s.record(rec({ id: 'p', generation: 0 }));
-      s.record(rec({ id: 'child', generation: 1, parents: ['p'] }));
+      s.record(rec({ id: 'child', generation: 1, parents: ['p'], plan: 'Goal: speed up recall. Build on parent p.' }));
       const loaded = s.list();
-      expect(loaded.find((v) => v.id === 'child')?.parents).toEqual(['p']);
-      expect(loaded.find((v) => v.id === 'child')?.generation).toBe(1);
+      const child = loaded.find((v) => v.id === 'child');
+      expect(child?.parents).toEqual(['p']);
+      expect(child?.generation).toBe(1);
+      expect(child?.plan).toContain('speed up recall'); // the plan that produced the version is stored
     } finally {
       rmSync(d, { recursive: true, force: true });
     }
