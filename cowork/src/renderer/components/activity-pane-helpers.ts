@@ -5,7 +5,7 @@
  * "live reasoning log, not a spinner" UX principle. Kept pure + deterministic so it's unit-tested
  * without a React tree; the component is a thin renderer over these.
  */
-import type { TraceStep } from '../types';
+import type { TraceStep, DiffPreview, DiffEntry } from '../types';
 
 export interface ActivityLine {
   id: string;
@@ -78,6 +78,22 @@ export function traceStepToLine(step: TraceStep): ActivityLine {
     timestamp: step.timestamp,
     durationMs: step.duration,
   };
+}
+
+/**
+ * Flatten a session's diff previews into the set of changed files, deduped by path (the latest
+ * change for each path wins), preserving first-seen order. Powers the Activity pane's reviewable
+ * "Fichiers modifiés" section.
+ */
+export function collectSessionDiffs(previews: readonly DiffPreview[] | undefined): DiffEntry[] {
+  if (!previews || previews.length === 0) return [];
+  const byPath = new Map<string, DiffEntry>();
+  for (const preview of previews) {
+    for (const entry of preview.diffs ?? []) {
+      if (entry?.path) byPath.set(entry.path, entry); // later preview overwrites → latest state
+    }
+  }
+  return [...byPath.values()];
 }
 
 /** One-line status summary for the pane header. */

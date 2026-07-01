@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { traceStepToLine, activityStatus } from '../src/renderer/components/activity-pane-helpers';
-import type { TraceStep } from '../src/renderer/types';
+import { traceStepToLine, activityStatus, collectSessionDiffs } from '../src/renderer/components/activity-pane-helpers';
+import type { TraceStep, DiffPreview } from '../src/renderer/types';
 
 function step(over: Partial<TraceStep>): TraceStep {
   return { id: 'x', type: 'text', status: 'completed', title: '', timestamp: 0, ...over } as TraceStep;
@@ -50,5 +50,29 @@ describe('activityStatus', () => {
     expect(activityStatus([], null)).toEqual({ text: 'Rien pour l’instant', busy: false });
     expect(activityStatus([step({ status: 'completed' })], null)).toEqual({ text: 'Terminé', busy: false });
     expect(activityStatus([step({ status: 'error', isError: true })], null).text).toContain('erreur');
+  });
+});
+
+describe('collectSessionDiffs', () => {
+  const preview = (turnId: number, ...paths: Array<[string, number]>): DiffPreview => ({
+    turnId,
+    sessionId: 's',
+    timestamp: turnId,
+    status: 'pending',
+    diffs: paths.map(([path, linesAdded]) => ({ path, action: 'modify', linesAdded, linesRemoved: 0, excerpt: '' })),
+  });
+
+  it('dedupes by path across previews, keeping the latest change', () => {
+    const out = collectSessionDiffs([
+      preview(1, ['a.ts', 1], ['b.ts', 2]),
+      preview(2, ['a.ts', 9]), // a.ts changed again — latest (+9) wins
+    ]);
+    expect(out.map((d) => d.path)).toEqual(['a.ts', 'b.ts']);
+    expect(out.find((d) => d.path === 'a.ts')!.linesAdded).toBe(9);
+  });
+
+  it('returns [] for undefined/empty', () => {
+    expect(collectSessionDiffs(undefined)).toEqual([]);
+    expect(collectSessionDiffs([])).toEqual([]);
   });
 });
