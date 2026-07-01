@@ -23,6 +23,8 @@ import { ServerDashboard } from './ServerDashboard';
 import { RunnerBadge } from './RunnerBadge';
 import { ClipboardSummaryPanel } from './ClipboardSummaryPanel';
 import { VoiceChatOverlay } from './VoiceChatOverlay';
+import { ModelSwitcher } from './ModelSwitcher';
+import { LiveBudgetMeter } from './LiveBudgetMeter';
 
 const isMac = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
 
@@ -58,6 +60,10 @@ export function Titlebar() {
       <div className="flex-1 min-w-0 flex items-center pl-2">
         <TabBar />
       </div>
+
+      {/* Model + live cost, promoted to the always-on titlebar for the new shell (chat-only in the
+          old shell → the new-shell home had no model picker / spend). Gated on newShellEnabled. */}
+      <TitlebarModelCost />
 
       {/* Presence indicator (face memory) — opens EnrollmentDialog on click. */}
       <div className="titlebar-no-drag px-2 flex items-center ml-auto">
@@ -152,6 +158,35 @@ export function Titlebar() {
             <X className="w-4 h-4 text-text-secondary group-hover:text-white" />
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Model switcher + live budget, promoted to the always-on titlebar so the new shell has a global
+ * model picker and spend readout even on the home (where no ChatHeader is mounted). Reuses the exact
+ * components/wiring from ChatHeader (electronAPI.model.switch + cost.summary). Gated on
+ * newShellEnabled → the old shell is byte-for-byte unchanged. LiveBudgetMeter self-hides until there
+ * is cost data, so the home stays clean until the first paid turn.
+ */
+function TitlebarModelCost() {
+  const newShellEnabled = useAppStore((s) => s.newShellEnabled);
+  const appConfig = useAppStore((s) => s.appConfig);
+
+  if (!newShellEnabled) return null;
+
+  return (
+    <div className="titlebar-no-drag flex items-center gap-1.5 px-2 h-full">
+      <LiveBudgetMeter />
+      {appConfig?.model && (
+        <ModelSwitcher
+          currentModel={appConfig.model}
+          onModelChange={(model) => {
+            window.electronAPI?.model?.switch(model);
+            useAppStore.getState().setAppConfig({ ...appConfig, model });
+          }}
+        />
       )}
     </div>
   );
