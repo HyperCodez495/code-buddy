@@ -22,6 +22,17 @@ export interface KnowledgeIngestDeps {
   ) => Promise<{ relations: Array<{ predicate: string }> } | null>;
   recallHybrid: (query: string, opts: { limit?: number }) => Promise<Array<{ text: string; similarity?: number; relations: Array<{ predicate: string }> }>>;
   getStats: () => { entities: number; relations: number; ledgerPath: string };
+  /** List indexed entities (documents = type 'discovery'), newest first. For `research list`. */
+  listEntities: (opts: { limit?: number; type?: string }) => Array<{
+    id: string;
+    name: string;
+    type: string;
+    source?: string;
+    confidence: number;
+    mentions: number;
+    contributors: number;
+    createdAt: string;
+  }>;
   /** Build the NLI relation classifier (for --classify). Absent → links stay `related_to`. */
   makeClassifier?: () => RelationClassifier;
   /** Pull Code Explorer code-graph insights as discoveries (for `ingest-code`). */
@@ -40,6 +51,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
     ingestPublication: (pub, opts) => ckg.ingestPublication(pub, opts ?? {}),
     recallHybrid: (query, opts) => ckg.recallHybrid(query, opts),
     getStats: () => ckg.getStats(),
+    listEntities: (opts) => ckg.listEntities(opts as { limit?: number; type?: import('../../memory/knowledge-graph.js').EntityType }),
     makeClassifier: () => makeLlmRelationClassifier(),
     fetchCodeInsights: (opts) => fetchCodeExplorerInsights(opts),
     log: (msg) => console.log(msg),
@@ -189,5 +201,70 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
       const s = deps.getStats();
       deps.log(`Graphe de connaissances collectif : ${s.entities} découvertes, ${s.relations} liens.`);
       deps.log(`Ledger : ${s.ledgerPath}`);
+    });
+
+  cmd
+    .command('list')
+    .description('List the indexed documents/entities in the collective knowledge graph (newest first)')
+    .option('-n, --limit <n>', 'Max entries', '20')
+    .option('-t, --type <type>', 'Filter by entity type (e.g. "discovery" = ingested documents)')
+    .action(async (opts: { limit?: string; type?: string }) => {
+      const deps = await depsFactory();
+      const rows = deps.listEntities({ limit: clampInt(opts.limit, 20, 1, 500), ...(opts.type ? { type: opts.type } : {}) });
+      if (rows.length === 0) {
+        deps.log('Rien d’indexé' + (opts.type ? ` pour le type « ${opts.type} »` : '') + '.');
+        return;
+      }
+      deps.log(`${rows.length} entrée(s)${opts.type ? ` (type ${opts.type})` : ''} — plus récentes d’abord :\n`);
+      for (const r of rows) {
+        const date = r.createdAt.slice(0, 10);
+        const meta = `conf ${r.confidence.toFixed(2)}, ${r.mentions} mention(s), ${r.contributors} contributeur(s)`;
+        deps.log(`• [${r.type}] ${r.name}`);
+        deps.log(`    ${date} · ${meta}${r.source ? ` · ${r.source}` : ''}`);
+      }
+    });
+
+  // Topics the auto-ingest daemon studies — persisted, unioned with CODEBUDDY_RESEARCH_TOPICS.
+  const topics = cmd.command('topics').description('Manage the auto-ingest research topics');
+  topics
+    .command('list', { isDefault: true })
+    .description('List the topics the daemon will study (persisted + env)')
+    .action(async () => {
+      const { loadStoredTopics, resolveResearchTopics } = await import('../../research/research-topics.js');
+      const stored = loadStoredTopics();
+      const effective = resolveResearchTopics();
+      if (effective.length === 0) {
+        console.log('Aucun sujet configuré. Ajoute-en : buddy research topics add "<sujet>"');
+        return;
+      }
+      console.log(`Sujets étudiés par le daemon (${effective.length}) :`);
+      for (const t of effective) {
+        const src = stored.some((s) => s.toLowerCase() === t.toLowerCase()) ? 'store' : 'env';
+        console.log(`  • ${t}  (${src})`);
+      }
+    });
+  topics
+    .command('add <topics...>')
+    .description('Add one or more topics to the persistent store')
+    .action(async (list: string[]) => {
+      const { addStoredTopics } = await import('../../research/research-topics.js');
+      const next = addStoredTopics(list);
+      console.log(`✅ Ajouté. ${next.length} sujet(s) dans le store : ${next.join(', ')}`);
+    });
+  topics
+    .command('remove <topics...>')
+    .description('Remove one or more topics from the persistent store')
+    .action(async (list: string[]) => {
+      const { removeStoredTopics } = await import('../../research/research-topics.js');
+      const next = removeStoredTopics(list);
+      console.log(`✅ Retiré. ${next.length} sujet(s) restant(s) : ${next.join(', ') || '(aucun)'}`);
+    });
+  topics
+    .command('clear')
+    .description('Remove all persisted topics')
+    .action(async () => {
+      const { clearStoredTopics } = await import('../../research/research-topics.js');
+      clearStoredTopics();
+      console.log('✅ Store des sujets vidé.');
     });
 }

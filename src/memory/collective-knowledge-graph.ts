@@ -478,6 +478,37 @@ export class CollectiveKnowledgeGraph {
     };
   }
 
+  /**
+   * List the indexed entities (newest first) for administration — `buddy research list`. Ingested
+   * publications/code insights are type `'discovery'`; pass `type` to filter (e.g. to the documents).
+   */
+  listEntities(opts: { limit?: number; type?: EntityType } = {}): Array<{
+    id: string;
+    name: string;
+    type: EntityType;
+    source?: string;
+    confidence: number;
+    mentions: number;
+    contributors: number;
+    createdAt: string;
+  }> {
+    this.load();
+    let items = [...this.current.values()];
+    if (opts.type) items = items.filter((e) => e.type === opts.type);
+    items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)); // newest first
+    if (opts.limit && opts.limit > 0) items = items.slice(0, opts.limit);
+    return items.map((e) => ({
+      id: e.id,
+      name: e.name,
+      type: e.type,
+      ...(e.source ? { source: e.source } : {}),
+      confidence: e.confidence,
+      mentions: e.mentions,
+      contributors: e.contributors.size,
+      createdAt: e.createdAt,
+    }));
+  }
+
   // -- internals ------------------------------------------------------------
 
   private append(event: LedgerEvent): void {

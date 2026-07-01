@@ -41,6 +41,20 @@ describe('CollectiveKnowledgeGraph (Phase 0)', () => {
     expect(existsSync(ledgerPath)).toBe(true);
   });
 
+  it('listEntities lists indexed entries (newest first) and filters by type', () => {
+    const ckg = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'host/repo' });
+    ckg.remember({ text: 'Un fait ancien sur les agents.', type: 'fact', source: 's1' });
+    ckg.remember({ text: 'Une découverte récente sur le RAG.', type: 'discovery', source: 's2' });
+    const all = ckg.listEntities({});
+    expect(all.length).toBe(2);
+    expect(all[0]!.createdAt >= all[1]!.createdAt).toBe(true); // newest first
+    const docs = ckg.listEntities({ type: 'discovery' });
+    expect(docs.length).toBe(1);
+    expect(docs[0]!.type).toBe('discovery');
+    expect(docs[0]!.source).toBe('s2');
+    expect(ckg.listEntities({ limit: 1 }).length).toBe(1);
+  });
+
   it('THESIS: agent B benefits from what agent A learned (shared ledger)', () => {
     const agentA = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'ministar/code-buddy' });
     const agentB = new CollectiveKnowledgeGraph({ ledgerPath, agentId: 'laptop/code-buddy' });

@@ -64,8 +64,9 @@ export function readResearchTopics(env: NodeJS.ProcessEnv = process.env): string
  * the real CKG, rotating across cycles. No-op (applied:false) when no topics are configured.
  */
 export async function defaultAutoResearchIngest(): Promise<{ applied: boolean; detail: string }> {
-  const topics = readResearchTopics();
-  if (topics.length === 0) return { applied: false, detail: 'CODEBUDDY_RESEARCH_TOPICS not set' };
+  const { resolveResearchTopics } = await import('./research-topics.js');
+  const topics = resolveResearchTopics(); // env ∪ persisted store (buddy research topics …)
+  if (topics.length === 0) return { applied: false, detail: 'no research topics (env CODEBUDDY_RESEARCH_TOPICS or `buddy research topics add`)' };
   try {
     const { fetchPublications } = await import('./publication-sources.js');
     const { getCollectiveKnowledgeGraph } = await import('../memory/collective-knowledge-graph.js');
