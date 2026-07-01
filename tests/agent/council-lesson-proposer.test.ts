@@ -4,7 +4,9 @@ import os from 'os';
 import path from 'path';
 import {
   proposeFromCouncilOutcome,
+  proposeFromCouncilRunResult,
   type CouncilOutcomeInput,
+  type CouncilRunLessonInput,
 } from '../../src/agent/council-lesson-proposer.js';
 import {
   getLessonCandidateQueue,
@@ -91,5 +93,84 @@ describe('proposeFromCouncilOutcome', () => {
     const res = proposeFromCouncilOutcome(input(), '');
     expect(res.proposed).toBe(false);
     expect(res.reason).toMatch(/no workDir/);
+  });
+});
+
+function runInput(overrides: Partial<CouncilRunLessonInput> = {}): CouncilRunLessonInput {
+  return {
+    task: 'Compare REST et GraphQL pour ce projet',
+    planMode: 'direct',
+    confidence: 'medium',
+    verdictKind: 'judged',
+    consensus: {
+      score: 0.3,
+      threshold: 0.7,
+      total: 3,
+      disagreements: [{ peerId: 'grok', model: 'grok-4', preview: 'REST' }],
+    },
+    ...overrides,
+  };
+}
+
+describe('proposeFromCouncilRunResult (CLI council bridge)', () => {
+  it('does NOT propose on a healthy collective run — lexical divergence between roles is by design', () => {
+    const res = proposeFromCouncilRunResult(
+      runInput({ planMode: 'collective', confidence: 'high' }),
+      workDir,
+    );
+    expect(res.proposed).toBe(false);
+    expect(res.reason).toMatch(/no learnable disagreement/);
+    expect(getLessonCandidateQueue(workDir).list('pending')).toHaveLength(0);
+  });
+
+  it('proposes on a direct run with sub-threshold agreement', () => {
+    const res = proposeFromCouncilRunResult(runInput(), workDir);
+    expect(res.proposed).toBe(true);
+    expect(res.candidate?.provenance?.sagaId).toMatch(/^cli:[0-9a-f]{16}$/);
+  });
+
+  it('proposes when the judge abstained, even in collective mode', () => {
+    const res = proposeFromCouncilRunResult(
+      runInput({ planMode: 'collective', verdictKind: 'abstained' }),
+      workDir,
+    );
+    expect(res.proposed).toBe(true);
+  });
+
+  it('proposes on low decision confidence, even in collective mode', () => {
+    const res = proposeFromCouncilRunResult(
+      runInput({ planMode: 'collective', confidence: 'low' }),
+      workDir,
+    );
+    expect(res.proposed).toBe(true);
+  });
+
+  it('dedups re-runs of the same task via the stable task-hash id', () => {
+    const first = proposeFromCouncilRunResult(runInput(), workDir);
+    expect(first.proposed).toBe(true);
+    // Same task, slightly different consensus numbers (as a real re-run would produce).
+    const second = proposeFromCouncilRunResult(
+      runInput({ consensus: { score: 0.25, threshold: 0.7, total: 3, disagreements: [] } }),
+      workDir,
+    );
+    expect(second.proposed).toBe(false);
+    expect(second.reason).toMatch(/already proposed/);
+    expect(getLessonCandidateQueue(workDir).list('pending')).toHaveLength(1);
+  });
+
+  it('still respects the unanimity gate (direct mode, full agreement)', () => {
+    const res = proposeFromCouncilRunResult(
+      runInput({
+        confidence: 'low',
+        consensus: { score: 0.95, threshold: 0.7, total: 3, disagreements: [] },
+      }),
+      workDir,
+    );
+    expect(res.proposed).toBe(false);
+  });
+
+  it('never throws without a workDir', () => {
+    const res = proposeFromCouncilRunResult(runInput(), '');
+    expect(res.proposed).toBe(false);
   });
 });

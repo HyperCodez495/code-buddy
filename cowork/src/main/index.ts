@@ -84,6 +84,7 @@ import { SubAgentBridge } from './agent/sub-agent-bridge';
 import { OrchestratorBridge } from './agent/orchestrator-bridge';
 import { FleetBridge } from './fleet/fleet-bridge';
 import { SagaRunner } from './fleet/saga-runner';
+import { resolveWorkDir } from './ipc/ipc-workdir';
 import {
   buildFleetInternetProofPlan,
   buildInternetProofSummaryMetadata,
@@ -555,7 +556,11 @@ function getScheduledFleetSagaRunner(): SagaRunner | null {
     scheduledFleetSagaRunner = {
       bridge: fleetBridge,
       activityFeed,
-      runner: new SagaRunner(fleetBridge, sendToRenderer, activityFeed),
+      // Same workDirResolver as the IPC runner (fleet-ipc.ts) — without it,
+      // SCHEDULED council sagas never proposed lesson candidates.
+      runner: new SagaRunner(fleetBridge, sendToRenderer, activityFeed, () =>
+        resolveWorkDir(() => projectManager),
+      ),
     };
   }
   return scheduledFleetSagaRunner.runner;

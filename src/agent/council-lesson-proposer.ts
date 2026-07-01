@@ -20,6 +20,7 @@
  * @module agent/council-lesson-proposer
  */
 
+import { createHash } from 'node:crypto';
 import { getLessonCandidateQueue, type LessonCandidate } from './lesson-candidate-queue.js';
 import { logger } from '../utils/logger.js';
 
@@ -112,6 +113,59 @@ export function proposeFromCouncilOutcome(
     });
     return { proposed: false, reason: 'propose failed' };
   }
+}
+
+/**
+ * CLI-council variant of {@link proposeFromCouncilOutcome} — same review
+ * queue, same never-throw discipline, but gated on the council's DECISION
+ * signals instead of raw lexical divergence. In collective (conductor) mode
+ * the role-specialised answers diverge lexically BY DESIGN (an Architect and
+ * a Reviewer should not use the same words — `council/signals.ts` ignores the
+ * lexical term there for the same reason), so the saga gate would propose a
+ * noise candidate on nearly every run. Structural primitives, no import from
+ * `council/` — mirrors the saga-runner's duck-typed shape.
+ */
+export interface CouncilRunLessonInput {
+  task: string;
+  planMode: 'direct' | 'collective';
+  confidence: 'high' | 'medium' | 'low';
+  verdictKind: 'judged' | 'abstained';
+  consensus: CouncilConsensusInput;
+}
+
+export function proposeFromCouncilRunResult(
+  input: CouncilRunLessonInput,
+  workDir: string,
+): ProposeFromCouncilResult {
+  const disagreements = input.consensus?.disagreements ?? [];
+  const lexicalDisagreement =
+    disagreements.length > 0 ||
+    (typeof input.consensus?.score === 'number' &&
+      typeof input.consensus?.threshold === 'number' &&
+      input.consensus.score < input.consensus.threshold);
+
+  const learnable =
+    input.verdictKind === 'abstained' ||
+    input.confidence === 'low' ||
+    (input.planMode === 'direct' && lexicalDisagreement);
+  if (!learnable) {
+    return { proposed: false, reason: 'no learnable disagreement signal' };
+  }
+
+  // Stable per-question id: re-running the same task must hit the existing
+  // saga-level dedup (gate 3) instead of piling up near-duplicate candidates
+  // (a per-run timestamp id would make that gate dead code).
+  const sagaId = `cli:${createHash('sha256').update(input.task.trim().toLowerCase()).digest('hex').slice(0, 16)}`;
+
+  return proposeFromCouncilOutcome(
+    {
+      sagaId,
+      goal: input.task,
+      aggregation: 'consensus',
+      consensus: input.consensus,
+    },
+    workDir,
+  );
 }
 
 function buildContent(input: CouncilOutcomeInput): string {
