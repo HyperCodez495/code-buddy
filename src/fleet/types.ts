@@ -9,6 +9,8 @@
  * @module fleet/types
  */
 
+import type { ModelStrength } from '../config/model-strengths.js';
+
 /** Provider families a peer can talk to. */
 export type FleetProvider =
   | 'anthropic'
@@ -24,19 +26,11 @@ export type FleetProvider =
 
 /**
  * Strengths a model is known for. Used by the task router (Fleet P3)
- * to score `model.strengths` vs `task.requires`. Glob-matched via
- * `getModelToolConfig()` patterns at registry build time.
+ * to score `model.strengths` vs `task.requires`. The union itself lives
+ * in `config/model-strengths.ts` (single source of truth alongside
+ * `model-tools.ts`); re-exported here so fleet importers keep working.
  */
-export type ModelStrength =
-  | 'reasoning'      // strong CoT, research, complex planning (Claude Opus, GPT-5, qwen3.6:35b-a3b)
-  | 'vision'         // multimodal images (Gemini Pro Vision, Claude 3+, GPT-4o)
-  | 'code'           // code generation / refactoring (Codex, qwen-coder, Claude)
-  | 'long-context'   // 128k+ context window comfortably (Gemini Pro, Claude 200k)
-  | 'cheap'          // <$0.5/Mtok input — good for parallel workers (Haiku, gemma4, Mistral Tiny)
-  | 'fast'           // <500ms p50 first token (Haiku, gpt-5-mini, gemma4:8b)
-  | 'tool-calling'   // reliable structured tool calls
-  | 'french'         // strong native French quality (Mistral, qwen3.6 fine-tunes)
-  | 'thinking';      // extended-thinking budget (Claude, qwen-thinking)
+export type { ModelStrength } from '../config/model-strengths.js';
 
 /**
  * Egress class describes where the network call physically goes.

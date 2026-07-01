@@ -28,7 +28,7 @@ import * as os from 'os';
 import * as path from 'node:path';
 import { logger } from '../utils/logger.js';
 import { getFleetLoad } from './fleet-load.js';
-import { getModelToolConfig } from '../config/model-tools.js';
+import { getModelStrengths } from '../config/model-tools.js';
 import type {
   FleetModelDescriptor,
   ModelStrength,
@@ -242,27 +242,13 @@ function detectGeminiCliBinary(): boolean {
 }
 
 /**
- * Glob-match a model id against the existing `model-tools.ts` config
- * to derive its strengths. The mapping below extends `getModelToolConfig`
- * (which only knows reasoning/tool-calls/vision booleans) with the
- * router's richer `ModelStrength` taxonomy.
+ * Derive a model's strengths — delegates to `getModelStrengths()`
+ * (config/model-tools.ts, the single source of truth), plus the one piece
+ * of knowledge model-tools cannot have: the provider (it only sees names).
  */
 function deriveStrengths(modelId: string, provider: FleetProvider): ModelStrength[] {
-  const cfg = getModelToolConfig(modelId);
-  const out: Set<ModelStrength> = new Set();
-  if (cfg.supportsReasoning) out.add('reasoning');
-  if (cfg.supportsVision) out.add('vision');
-  if (cfg.supportsToolCalls) out.add('tool-calling');
-  if ((cfg.contextWindow ?? 0) >= 128_000) out.add('long-context');
-
-  // Provider-derived heuristics on top of the config.
-  if (provider === 'mistral' || /qwen3\.6.*fr/i.test(modelId)) out.add('french');
-  if (/codex|gpt-5-codex|qwen.*coder/i.test(modelId)) out.add('code');
-  if (/-thinking|-reasoner|qwen.*a3b/i.test(modelId)) out.add('thinking');
-  if (/haiku|mini|nano|gemma|tiny|3b\b|7b\b|8b\b/i.test(modelId)) {
-    out.add('cheap');
-    out.add('fast');
-  }
+  const out = new Set<ModelStrength>(getModelStrengths(modelId));
+  if (provider === 'mistral') out.add('french');
   return Array.from(out);
 }
 

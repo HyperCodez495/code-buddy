@@ -13,7 +13,7 @@ import { getLocalCapabilities } from './capability-registry.js';
 import { loadBenchmarkScoreMap } from '../agent/model-benchmark.js';
 import type { FleetModelDescriptor, FleetProvider, ModelStrength } from './types.js';
 import { TailscaleManager } from '../integrations/tailscale.js';
-import { getModelToolConfig } from '../config/model-tools.js';
+import { getModelStrengths, getModelToolConfig } from '../config/model-tools.js';
 import { normalizeBaseURL } from '../utils/base-url.js';
 import { findRuntimeProvider } from '../providers/provider-catalog.js';
 
@@ -270,19 +270,10 @@ function runtimeProviderKey(provider: FleetProvider): string {
   return provider;
 }
 
+/** Delegates to `getModelStrengths()` (config/model-tools.ts, single source of truth). */
 function cfgToStrengths(cfg: ReturnType<typeof getModelToolConfig>, model: string): ModelStrength[] {
-  const set = new Set<ModelStrength>();
-  if (cfg.supportsReasoning) set.add('reasoning');
-  if (cfg.supportsVision) set.add('vision');
-  if (cfg.supportsToolCalls) set.add('tool-calling');
-  if ((cfg.contextWindow ?? 0) >= 128_000) set.add('long-context');
-  if (/coder|code|codex/i.test(model)) set.add('code');
-  if (/thinking|reasoner/i.test(model)) set.add('thinking');
-  if (/haiku|mini|nano|7b|8b|3b|small/i.test(model)) {
-    set.add('fast');
-    set.add('cheap');
-  }
-  return Array.from(set);
+  void cfg; // capabilities are re-derived from the config inside getModelStrengths
+  return getModelStrengths(model);
 }
 
 function deriveBestFor(

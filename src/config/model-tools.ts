@@ -8,10 +8,19 @@
  */
 
 import { logger } from '../utils/logger.js';
+import type { ModelStrength } from './model-strengths.js';
 
 export interface ModelToolConfig {
   /** Model name pattern (glob-like matching) */
   model: string;
+  /**
+   * Strengths the booleans cannot express (code, thinking, french, fast,
+   * cheap). reasoning/vision/tool-calling/long-context are DERIVED from the
+   * booleans + contextWindow by `getModelStrengths()` — do not duplicate them
+   * here. This field is the single source of truth that replaced the three
+   * name-regex mappers (inferStrengths / deriveStrengths / cfgToStrengths).
+   */
+  strengths?: ModelStrength[];
   /** Tools to enable for this model (null = all tools) */
   enabledTools?: string[] | null;
   /** Tools to disable for this model */
@@ -65,6 +74,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // o4 / o4-mini (2026 reasoning models)
   {
     model: 'o4*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -75,6 +85,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // o3-mini (reasoning model)
   {
     model: 'o3-mini*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: false,
@@ -85,6 +96,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // o1 / o1-mini (reasoning models)
   {
     model: 'o1*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: false,
@@ -115,6 +127,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude Opus 4.6 (200K context, 128K output)
   {
     model: 'claude-opus-4-6*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -126,6 +139,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude Sonnet 4.5 (200K context, 64K output)
   {
     model: 'claude-sonnet-4-5*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -137,6 +151,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude Haiku 4.5 (200K context, 64K output)
   {
     model: 'claude-haiku-4-5*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -147,6 +162,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude Opus 4/4.1/4.5 (200K context, 32K-64K output)
   {
     model: 'claude-opus-4*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -158,6 +174,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude Sonnet 4 (200K context, 64K output)
   {
     model: 'claude-sonnet-4*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -168,6 +185,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude 3.x legacy
   {
     model: 'claude-3*',
+    strengths: ['code'],
     supportsReasoning: false,
     supportsToolCalls: true,
     supportsVision: true,
@@ -178,6 +196,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Claude catch-all
   {
     model: 'claude-*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -191,6 +210,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // CodeExplorer helper default; `gpt-5.2` remains the known-good fallback.
   {
     model: 'gpt-5.5*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -201,6 +221,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'gpt-5.1-codex*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: false,
@@ -211,6 +232,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'gpt-5-codex*',
+    strengths: ['code', 'thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: false,
@@ -221,6 +243,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'gpt-5.1*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -232,6 +255,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // GPT-5 (400K context, 128K output)
   {
     model: 'gpt-5*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -242,6 +266,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Grok 4.1 Fast (2M context)
   {
     model: 'grok-4*fast*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -253,6 +278,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Grok 4 (256K context)
   {
     model: 'grok-4*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -264,6 +290,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Grok Code Fast (256K context)
   {
     model: 'grok-code*',
+    strengths: ['code'],
     supportsReasoning: false,
     supportsToolCalls: true,
     supportsVision: false,
@@ -295,6 +322,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Gemini 3.1 Flash-Lite (1M context, 64K output, thinkingLevel support)
   {
     model: 'gemini-3.1-flash-lite*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -305,6 +333,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Gemini 3.x (1M context, 64K output)
   {
     model: 'gemini-3*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -315,6 +344,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Gemini 2.5 (1M context, 65K output)
   {
     model: 'gemini-2.5*',
+    strengths: ['thinking'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: true,
@@ -356,6 +386,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Mistral / Devstral
   {
     model: 'devstral*',
+    strengths: ['code', 'french'],
     supportsReasoning: true,
     supportsToolCalls: true,
     supportsVision: false,
@@ -365,6 +396,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'mistral*',
+    strengths: ['french'],
     supportsReasoning: false,
     supportsToolCalls: true,
     supportsVision: false,
@@ -395,6 +427,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'qwen2.5*',
+    strengths: ['french'],
     supportsReasoning: false,
     // Conservative: qwen2.5:7b emits tool calls as TEXT (not structured OpenAI
     // tool_calls) via Ollama, so the agent can't execute them — it stays
@@ -411,6 +444,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   },
   {
     model: 'qwen3*',
+    strengths: ['french'],
     supportsReasoning: true,
     // qwen3 (incl. the 2026 MoE builds) reliably emits OpenAI tool calls via
     // Ollama, so it can drive the agent loop — unlike the older small models
@@ -454,6 +488,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // smoke with gemma4:12b only succeeds when the selected tools are preserved.
   {
     model: 'gemma4*',
+    strengths: ['french'],
     supportsReasoning: false,
     supportsToolCalls: true,
     supportsVision: false,
@@ -467,6 +502,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
   // Gemma 2/3 (legacy lineage) — same conservative defaults.
   {
     model: 'gemma*',
+    strengths: ['french'],
     supportsReasoning: false,
     supportsToolCalls: false,
     supportsVision: false,
@@ -554,6 +590,91 @@ export function getModelToolConfig(
   };
   if (!customConfigs) _configCache.set(modelName, fallback);
   return fallback;
+}
+
+// ─── Model strengths (single source of truth) ───────────────────────
+//
+// Replaces the three divergent name→strengths mappers that used to live in
+// fleet/model-capability-heuristics.ts (inferStrengths), fleet/capability-
+// registry.ts (deriveStrengths) and fleet/model-inventory.ts (cfgToStrengths)
+// — all three now delegate here.
+
+/** Name heuristics for strengths the config booleans cannot express. */
+const NAME_CODE = /code|coder|codex/i;
+const NAME_THINKING = /thinking|reasoner|qwq|r1\b|a3b/i;
+const NAME_FAST_CHEAP = /flash|mini|fast|haiku|small|nano|tiny|gemma|:3b|:4b|:7b|:8b|\b3b\b|\b7b\b|\b8b\b/i;
+const NAME_FRENCH = /mistral|qwen|gemma|mixtral/i;
+
+/** Fallback-only heuristics — applied ONLY when no glob matched (the config
+ * booleans are authoritative for reasoning/vision when a glob DID match). */
+const NAME_REASONING_FALLBACK = /opus|gpt-5|o1|o3|reason|think|r1|qwq|deepseek|gemini|sonnet|grok-[34]/i;
+const NAME_VISION_FALLBACK = /vision|gpt-4o|gpt-5|gemini/i;
+const NAME_LONG_CONTEXT_FALLBACK = /gemini|pro|opus|sonnet|long|1m|200k|128k/i;
+
+function matchModelConfig(modelName: string): { cfg: ModelToolConfig; matched: boolean } {
+  for (const config of DEFAULT_MODEL_CONFIGS) {
+    if (matchModel(modelName, config.model)) return { cfg: config, matched: true };
+  }
+  return { cfg: getModelToolConfig(modelName), matched: false };
+}
+
+const _strengthsCache = new Map<string, ModelStrength[]>();
+
+/** Test seam — clear the strengths memo. */
+export function resetModelStrengthsCache(): void {
+  _strengthsCache.clear();
+}
+
+/**
+ * Derive a model's strengths from its config entry (single source of truth).
+ *
+ * Precedence:
+ *  - **Glob matched** — the config booleans are AUTHORITATIVE: reasoning /
+ *    vision / tool-calling come from `supportsReasoning` / `supportsVision` /
+ *    `supportsToolCalls`, long-context from `contextWindow ≥ 128k`. The
+ *    explicit `strengths` field and the name heuristics add ONLY strengths
+ *    the booleans cannot express (code, thinking, fast, cheap, french) — a
+ *    name pattern never grants vision/reasoning/tool-calling against the
+ *    config (e.g. gpt-5-codex is NOT vision, qwen2.5 is NOT tool-calling).
+ *  - **No glob matched** (unknown model) — no authoritative data, so the full
+ *    legacy regex union applies, plus the permissive fallback's booleans
+ *    (which include tool-calling).
+ */
+export function getModelStrengths(modelName: string): ModelStrength[] {
+  const cached = _strengthsCache.get(modelName);
+  if (cached) return [...cached];
+
+  const { cfg, matched } = matchModelConfig(modelName);
+  const out = new Set<ModelStrength>();
+
+  if (cfg.supportsReasoning) out.add('reasoning');
+  if (cfg.supportsVision) out.add('vision');
+  if (cfg.supportsToolCalls) out.add('tool-calling');
+  if ((cfg.contextWindow ?? 0) >= 128_000) out.add('long-context');
+
+  if (matched) {
+    for (const s of cfg.strengths ?? []) out.add(s);
+  }
+  if (NAME_CODE.test(modelName)) out.add('code');
+  if (NAME_THINKING.test(modelName)) out.add('thinking');
+  if (NAME_FAST_CHEAP.test(modelName)) {
+    out.add('fast');
+    out.add('cheap');
+  }
+  if (NAME_FRENCH.test(modelName)) out.add('french');
+
+  if (!matched) {
+    if (NAME_REASONING_FALLBACK.test(modelName)) {
+      out.add('reasoning');
+      out.add('thinking');
+    }
+    if (NAME_VISION_FALLBACK.test(modelName)) out.add('vision');
+    if (NAME_LONG_CONTEXT_FALLBACK.test(modelName)) out.add('long-context');
+  }
+
+  const arr = [...out];
+  _strengthsCache.set(modelName, arr);
+  return [...arr];
 }
 
 /**
