@@ -82,6 +82,13 @@ export interface FocusedMessageTarget {
 
 export type FleetGoalDraftProfile = 'balanced' | 'research' | 'code' | 'review' | 'safe';
 
+/**
+ * Primary areas of the opt-in redesigned shell (see cowork/REDESIGN.md). Replaces the ~44 `show*`
+ * overlay flags with one calm view model. Slice 1: Chat is the home; Activity/Workspace reuse the
+ * existing overlays; Advanced is a progressive-disclosure launcher into the current panels.
+ */
+export type PrimaryView = 'chat' | 'activity' | 'workspace' | 'advanced';
+
 export interface FleetGoalDraft {
   goal: string;
   dispatchProfile?: FleetGoalDraftProfile;
@@ -222,6 +229,9 @@ interface AppState {
   isLoading: boolean;
   sidebarCollapsed: boolean;
   contextPanelCollapsed: boolean;
+  // New shell (opt-in redesign behind COWORK_NEW_SHELL) — see cowork/REDESIGN.md.
+  newShellEnabled: boolean;
+  primaryView: PrimaryView;
   showSettings: boolean;
   settingsTab: string | null;
   scheduleDraft: ScheduleDraft | null;
@@ -555,6 +565,8 @@ interface AppState {
   toggleContextPanel: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setContextPanelCollapsed: (collapsed: boolean) => void;
+  setNewShellEnabled: (on: boolean) => void;
+  setPrimaryView: (v: PrimaryView) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
   setScheduleDraft: (draft: Omit<ScheduleDraft, 'nonce'> | null) => void;
@@ -845,6 +857,16 @@ const defaultSettings: Settings = {
   maxContextTokens: 180000,
 };
 
+/** Read the opt-in new-shell flag from localStorage (renderer). Safe in non-DOM test envs. */
+function readNewShellFlag(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage.getItem('COWORK_NEW_SHELL') === 'true';
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   // Initial state
   sessions: [],
@@ -855,6 +877,8 @@ export const useAppStore = create<AppState>((set) => ({
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
+  newShellEnabled: readNewShellFlag(),
+  primaryView: 'chat',
   showSettings: false,
   settingsTab: null,
   scheduleDraft: null,
@@ -1434,6 +1458,15 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setContextPanelCollapsed: (collapsed) => set({ contextPanelCollapsed: collapsed }),
+  setNewShellEnabled: (on) => {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('COWORK_NEW_SHELL', String(on));
+    } catch {
+      /* ignore */
+    }
+    set({ newShellEnabled: on });
+  },
+  setPrimaryView: (v) => set({ primaryView: v }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setScheduleDraft: (draft) =>

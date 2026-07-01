@@ -75,6 +75,7 @@ import { BtwQuickAsk } from './components/BtwQuickAsk';
 import { PresenceService } from './services/presence/PresenceService';
 import { DockWorkspace } from './components/DockWorkspace';
 import { ShellNavigation } from './components/ShellNavigation';
+import { NewShell } from './components/NewShell';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -110,6 +111,7 @@ function App() {
   const { pendingPermission, pendingSudoPassword } = usePendingDialogs();
   const showCommandPalette = useShowCommandPalette();
   const showShortcutsDialog = useShowShortcutsDialog();
+  const newShellEnabled = useAppStore((s) => s.newShellEnabled);
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
   const showActivityFeed = useAppStore((s) => s.showActivityFeed);
   const showFileActivity = useAppStore((s) => s.showFileActivity);
@@ -417,14 +419,15 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Left rail — panel/agent launchers (fleet, autonomy, memory, reasoning, …) */}
-        <ShellNavigation />
+        {/* Left rail — panel/agent launchers (fleet, autonomy, memory, reasoning, …). Hidden in the
+            opt-in new shell, which carries its own thin rail. */}
+        {!newShellEnabled && <ShellNavigation />}
         <Group orientation="horizontal" id="cowork-layout" className="flex-1">
           {/* Main Content Area */}
           <Panel id="main" minSize={30}>
             <main className="h-full min-h-0 min-w-0 flex flex-col overflow-hidden bg-background relative">
               <div className={`absolute inset-0 z-0 ${showSettings ? 'hidden' : ''}`}>
-                <DockWorkspace />
+                {newShellEnabled ? <NewShell /> : <DockWorkspace />}
               </div>
               {showSettings && (
                 <div className="absolute inset-0 z-10 bg-background">
