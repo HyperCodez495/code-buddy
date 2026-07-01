@@ -76,6 +76,7 @@ import { PresenceService } from './services/presence/PresenceService';
 import { DockWorkspace } from './components/DockWorkspace';
 import { ShellNavigation } from './components/ShellNavigation';
 import { NewShell } from './components/NewShell';
+import { ExportDialogHost } from './components/ExportDialogHost';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -415,7 +416,8 @@ function App() {
     >
       {/* Titlebar - draggable region */}
       <Titlebar />
-      <TopMenuBar />
+      {/* Menu bar duplicates the rail/Advanced launcher — the new shell drops it (one nav, not three). */}
+      {!newShellEnabled && <TopMenuBar />}
 
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -442,6 +444,9 @@ function App() {
           </Panel>
         </Group>
       </div>
+
+      {/* Session export dialog host — gives /export and /save a live listener (both shells). */}
+      <ExportDialogHost />
 
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}
