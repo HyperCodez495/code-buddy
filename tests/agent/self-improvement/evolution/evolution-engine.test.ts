@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { beatsBaseline, gatherInspirations } from '../../../../src/agent/self-improvement/evolution/evolution-engine.js';
+import { beatsBaseline, gatherInspirations, chooseBranchBase } from '../../../../src/agent/self-improvement/evolution/evolution-engine.js';
 import { CodeVariantStore, type VariantRecord } from '../../../../src/agent/self-improvement/evolution/code-variant-store.js';
 import type { FitnessReport } from '../../../../src/agent/self-improvement/evolution/variant-fitness.js';
 
@@ -26,6 +26,18 @@ describe('evolution-engine beatsBaseline', () => {
   it('with no baseline, wins iff passedAll and no regressions', () => {
     expect(beatsBaseline(report({ score: 0.5 }))).toBe(true);
     expect(beatsBaseline(report({ passedAll: false }))).toBe(false);
+  });
+});
+
+describe('chooseBranchBase (compounding, guarded)', () => {
+  it('branches off the elite when reachable', () => {
+    expect(chooseBranchBase('main', 'codebuddy/evolve/e1', () => true)).toBe('codebuddy/evolve/e1');
+  });
+  it('falls back to baseline when the elite is unreachable (pruned)', () => {
+    expect(chooseBranchBase('main', 'codebuddy/evolve/e1', () => false)).toBe('main');
+  });
+  it('uses baseline when no compound ref given', () => {
+    expect(chooseBranchBase('main', undefined, () => true)).toBe('main');
   });
 });
 

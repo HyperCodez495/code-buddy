@@ -71,6 +71,13 @@ export interface EvolutionCycleOptions {
   keepLosers?: boolean;
   /** How many prior elite variants to show the mutator as inspirations (default 2; 0 disables). */
   inspirationCount?: number;
+  /**
+   * Compounding: branch the candidate off THIS ref (a prior elite's branch/sha) instead of the
+   * baseline, so generations build on each other's code — not just via inspiration. Guarded: if the
+   * ref is unreachable (elite pruned), falls back to `baselineRef`. Fitness is still measured vs the
+   * true baseline (`baseline`), so the score reflects NET progress.
+   */
+  compoundFrom?: string;
   /** Plans the variant before mutating (default: LLM planner). null result → mutator's ad-hoc prompt. */
   planner?: VariantPlanner;
 }
@@ -93,6 +100,25 @@ export function beatsBaseline(report: FitnessReport, baseline?: FitnessReport): 
 
 function git(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
+/** True if a ref/sha resolves to a reachable commit (used to guard compounding off a maybe-pruned elite). */
+function isReachableRef(ref: string, cwd: string): boolean {
+  try {
+    git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Pure: pick the branch base — the compounding elite when reachable, else the baseline. */
+export function chooseBranchBase(
+  baselineRef: string,
+  compoundFrom: string | undefined,
+  isReachable: (ref: string) => boolean,
+): string {
+  return compoundFrom && isReachable(compoundFrom) ? compoundFrom : baselineRef;
 }
 
 const MAX_INSPIRATION_DIFF = 4000;
@@ -141,8 +167,10 @@ export async function runEvolutionCycle(opts: EvolutionCycleOptions): Promise<Ev
   // touching code. Never-throws → null falls back to the mutator's legacy ad-hoc prompt.
   const plan: VariantPlan | null = await (opts.planner ?? makeLlmVariantPlanner())({ weakness: opts.weakness, inspirations });
 
-  // 1. branch off baseline.
-  git(['branch', '-f', branch, opts.baselineRef], basePath);
+  // 1. branch off the baseline — OR off a prior elite when compounding (guarded: fall back to
+  //    baseline if that elite ref is unreachable, e.g. it was pruned).
+  const branchBase = chooseBranchBase(opts.baselineRef, opts.compoundFrom, (r) => isReachableRef(r, basePath));
+  git(['branch', '-f', branch, branchBase], basePath);
 
   // 2-3. mutate in an isolated worktree, then commit the change on the branch.
   let mutated = false;

@@ -33,6 +33,10 @@ interface EvolveOptions {
   confirm?: boolean;
   /** Commander sets this false when --no-plan is passed (default true → deliberate planning on). */
   plan?: boolean;
+  /** Branch each candidate off the current best elite (compounding), not the baseline. */
+  compound?: boolean;
+  /** Re-index Code Explorer before selecting weaknesses, so hotspots/feature-map are fresh. */
+  refreshModel?: boolean;
 }
 
 function git(args: string[]): string {
@@ -155,6 +159,8 @@ export function registerEvolveCommands(program: Command): void {
     .option('--baseline <ref>', 'Baseline ref to branch from + rank against', 'main')
     .option('--model <model>', 'Model for the mutator agent + planner')
     .option('--no-plan', 'Skip deliberate planning (use the ad-hoc mutator prompt)')
+    .option('--compound', 'Branch each candidate off the current best elite (compounding), not the baseline')
+    .option('--refresh-model', 'Re-index Code Explorer first so hotspots + feature map are fresh (--auto)')
     .action(async (options: EvolveOptions) => {
       if (process.env.CODEBUDDY_EVOLVE !== 'true') {
         logger.error('Evolution is opt-in. Set CODEBUDDY_EVOLVE=true to run (it spawns real agent runs + LLM calls).');
@@ -188,6 +194,15 @@ export function registerEvolveCommands(program: Command): void {
         const { selectWeaknesses } = await import('../../agent/self-improvement/evolution/weakness-selector.js');
         const src = options.source ?? 'hotspots';
         const all = src === 'all';
+        if (options.refreshModel) {
+          try {
+            const { getCodeExplorerClient } = await import('../../plugins/code-explorer/code-explorer-client.js');
+            logger.info('Refreshing self-model (Code Explorer detect_changes)…');
+            await getCodeExplorerClient().call('detect_changes', {});
+          } catch (err) {
+            logger.warn(`[evolve] self-model refresh skipped: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
         logger.info(`Auto-selecting weaknesses (source: ${src})…`);
         weaknesses = await selectWeaknesses({
           basePath: process.cwd(),
@@ -208,6 +223,19 @@ export function registerEvolveCommands(program: Command): void {
       const baseline = await computeFitness({ checkoutDir: process.cwd() }, components);
       logger.info(`  baseline fitness=${baseline.score.toFixed(3)}`);
 
+      // Compounding: build each candidate on top of the current best elite (guarded by reachability
+      // in the engine → falls back to baseline if that elite branch was pruned). Fitness stays vs baseline.
+      let compoundFrom: string | undefined;
+      if (options.compound) {
+        const elite = store.best({ baselineScore: baseline.score });
+        compoundFrom = elite?.branch;
+        logger.info(
+          compoundFrom
+            ? `Compounding from elite ${elite!.id} (${compoundFrom}, fitness ${elite!.score.toFixed(3)})`
+            : 'Compound requested but no prior elite beats the baseline → branching off baseline',
+        );
+      }
+
       // Manual goal → fan out `rounds` candidates for it. Auto → one round per selected weakness.
       const allResults = [];
       for (const w of weaknesses) {
@@ -222,6 +250,7 @@ export function registerEvolveCommands(program: Command): void {
           components,
           baseline,
           store,
+          ...(compoundFrom ? { compoundFrom } : {}),
         });
         for (const r of results) {
           logger.info(`  ${r.variantId}: fitness=${r.report.score.toFixed(3)} beats=${r.beatsBaseline} kept=${r.kept}`);
