@@ -27,7 +27,7 @@ export interface Weakness {
   id: string;
   /** Human-readable goal handed to the mutator ("fix eval task X", "reduce coupling in Y"). */
   goal: string;
-  kind: 'eval-failure' | 'hotspot' | 'manual';
+  kind: 'eval-failure' | 'hotspot' | 'manual' | 'research';
 }
 
 /** A prior high-scoring variant shown to the mutator as context (AlphaEvolve "inspirations"). */

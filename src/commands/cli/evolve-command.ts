@@ -149,7 +149,7 @@ export function registerEvolveCommands(program: Command): void {
     .description('Author + evaluate candidate variant(s) toward a weakness (gated by CODEBUDDY_EVOLVE=true)')
     .option('--goal <text>', 'The weakness/goal to improve toward (manual)')
     .option('--auto', 'Pick the weakness automatically (failing eval tasks / self-model hotspots)')
-    .option('--source <src>', 'Auto source: eval | hotspots | both', 'hotspots')
+    .option('--source <src>', 'Auto source: eval | hotspots | research | both | all', 'hotspots')
     .option('--rounds <n>', 'Candidates per goal (fan-out), or max auto-weaknesses', '1')
     .option('--concurrency <n>', 'How many candidates to evaluate at once', '2')
     .option('--baseline <ref>', 'Baseline ref to branch from + rank against', 'main')
@@ -181,18 +181,20 @@ export function registerEvolveCommands(program: Command): void {
       const store = new CodeVariantStore();
 
       // Resolve the weakness/goals.
-      let weaknesses: Array<{ id: string; goal: string; kind: 'manual' | 'eval-failure' | 'hotspot' }>;
+      let weaknesses: Array<{ id: string; goal: string; kind: 'manual' | 'eval-failure' | 'hotspot' | 'research' }>;
       if (options.goal) {
         weaknesses = [{ id: 'goal', goal: options.goal, kind: 'manual' }];
       } else {
         const { selectWeaknesses } = await import('../../agent/self-improvement/evolution/weakness-selector.js');
         const src = options.source ?? 'hotspots';
+        const all = src === 'all';
         logger.info(`Auto-selecting weaknesses (source: ${src})…`);
         weaknesses = await selectWeaknesses({
           basePath: process.cwd(),
           limit: rounds,
-          includeEvalFailures: src !== 'hotspots',
-          includeHotspots: src !== 'eval',
+          includeEvalFailures: all || src === 'eval' || src === 'both',
+          includeHotspots: all || src === 'hotspots' || src === 'both',
+          includeResearch: all || src === 'research',
           env: process.env,
         });
         if (weaknesses.length === 0) {

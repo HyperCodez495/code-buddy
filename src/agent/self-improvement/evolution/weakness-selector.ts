@@ -49,8 +49,12 @@ export interface SelectWeaknessOptions {
   limit?: number;
   includeEvalFailures?: boolean;
   includeHotspots?: boolean;
+  /** Research-driven, article-grounded goals (matched to Code Buddy features). Opt-in. */
+  includeResearch?: boolean;
   fetchHotspots?: HotspotFetcher;
   detectEvalFailures?: EvalFailureDetector;
+  /** Injectable research source (default: fetchResearchGoals over the CKG). */
+  fetchResearchGoals?: () => Promise<Weakness[]>;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -76,9 +80,25 @@ export async function selectWeaknesses(opts: SelectWeaknessOptions = {}): Promis
       logger.warn(`[evolve] hotspot fetch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  if (opts.includeResearch) {
+    const fetch = opts.fetchResearchGoals ?? defaultFetchResearchGoals(limit);
+    try {
+      out.push(...(await fetch()));
+    } catch (err) {
+      logger.warn(`[evolve] research goal fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   const seen = new Set<string>();
   return out.filter((w) => (seen.has(w.id) ? false : (seen.add(w.id), true))).slice(0, limit);
+}
+
+/** Default research source: article-grounded goals from the CKG (lazy import to avoid a cycle). */
+function defaultFetchResearchGoals(limit: number): () => Promise<Weakness[]> {
+  return async () => {
+    const { fetchResearchGoals } = await import('./research-weakness-source.js');
+    return fetchResearchGoals({ limit });
+  };
 }
 
 /** Run each eval task; the ones that fail (non-zero exit) are current weaknesses. LLM-costly. */
