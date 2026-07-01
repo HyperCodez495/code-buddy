@@ -235,6 +235,74 @@ export function parsePatch(patchText: string): FileOp[] {
 }
 
 // ============================================================================
+// Dry-run compute (review gate)
+// ============================================================================
+
+export interface ComputedPatch {
+  /** Full resulting content per touched path (null = delete) — review-gate input. */
+  changes: Array<{ path: string; newContent: string | null }>;
+  errors: string[];
+}
+
+/**
+ * Compute the FULL resulting content of every file the patch touches, without
+ * writing anything — the input the diff-review gate needs. STRICTER than
+ * `applyPatchOps` on purpose: any failed hunk or missing update target is an
+ * error (a partially-resolved patch is not what the agent intended, so the
+ * gated path fails closed instead of applying the hunks that happened to
+ * match). Legacy ungated behavior is unchanged.
+ */
+export function computePatchedFiles(ops: FileOp[], cwd: string = process.cwd()): ComputedPatch {
+  const changes: ComputedPatch['changes'] = [];
+  const errors: string[] = [];
+
+  for (const op of ops) {
+    const fullPath = path.resolve(cwd, op.path);
+    if (op.type === 'add') {
+      changes.push({ path: op.path, newContent: op.content ?? '' });
+      continue;
+    }
+    if (op.type === 'delete') {
+      // Legacy skips missing deletes silently — same here.
+      if (fs.existsSync(fullPath)) changes.push({ path: op.path, newContent: null });
+      continue;
+    }
+    // update
+    if (!fs.existsSync(fullPath)) {
+      errors.push(`File not found: ${op.path}`);
+      continue;
+    }
+    const fileLines = fs.readFileSync(fullPath, 'utf-8').split('\n');
+    let lineIndex = 0;
+    let failed = false;
+    for (const hunk of op.hunks ?? []) {
+      if (hunk.oldLines.length > 0) {
+        const seekIdx = seekSequence(fileLines, hunk.oldLines, lineIndex);
+        if (seekIdx >= 0) {
+          fileLines.splice(seekIdx, hunk.oldLines.length, ...hunk.newLines);
+          lineIndex = seekIdx + hunk.newLines.length;
+        } else {
+          errors.push(`Hunk failed in ${op.path}: "${hunk.oldLines[0]?.substring(0, 60)}..."`);
+          failed = true;
+        }
+      } else if (hunk.newLines.length > 0) {
+        fileLines.splice(lineIndex, 0, ...hunk.newLines);
+        lineIndex += hunk.newLines.length;
+      }
+    }
+    if (failed) continue;
+    const newContent = fileLines.join('\n');
+    if (op.moveTo) {
+      changes.push({ path: op.moveTo, newContent });
+      changes.push({ path: op.path, newContent: null });
+    } else {
+      changes.push({ path: op.path, newContent });
+    }
+  }
+  return { changes, errors };
+}
+
+// ============================================================================
 // Applier
 // ============================================================================
 
@@ -313,6 +381,11 @@ export class ApplyPatchTool extends BaseTool {
         description: 'The patch content in *** Begin Patch format.',
         required: true,
       },
+      intent: {
+        type: 'string',
+        description: 'What this change is trying to achieve (used by the diff-review gate when enabled).',
+        required: false,
+      },
     };
   }
 
@@ -325,6 +398,16 @@ export class ApplyPatchTool extends BaseTool {
       if (ops.length === 0) {
         return this.error('No valid operations found in patch.');
       }
+
+      // Diff-review gate (CODEBUDDY_DIFF_REVIEW=static|full, default off).
+      // The env check is inlined so the off path never loads the review
+      // module graph (lazy-loading is load-bearing in this repo) — keep in
+      // sync with resolveReviewMode() in src/review/review-engine.ts.
+      const rawMode = (process.env.CODEBUDDY_DIFF_REVIEW ?? 'off').toLowerCase();
+      if (rawMode === 'static' || rawMode === 'full') {
+        return await this.executeGated(ops, rawMode, typeof input.intent === 'string' ? input.intent : undefined);
+      }
+
       const patchResult = applyPatchOps(ops);
       const lines: string[] = [];
       if (patchResult.filesAdded.length > 0) lines.push(`Added: ${patchResult.filesAdded.join(', ')}`);
@@ -339,5 +422,30 @@ export class ApplyPatchTool extends BaseTool {
     } catch (err) {
       return this.error(`Patch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * Review-gated path: resolve the patch to full before/after content
+   * (fail-closed on any unresolved hunk), then let the diff-review gate
+   * validate, apply transactionally and journal. A reject/annotate verdict
+   * comes back as a tool ERROR carrying the annotations, so the agent can
+   * revise the patch instead of silently losing the edit.
+   */
+  private async executeGated(ops: FileOp[], mode: 'static' | 'full', intent?: string): Promise<ToolResult> {
+    const cwd = process.cwd();
+    const { changes, errors } = computePatchedFiles(ops, cwd);
+    if (errors.length > 0) {
+      return this.error(`review gate: patch does not resolve against the working tree (fail-closed, nothing applied):\n${errors.join('\n')}`);
+    }
+    if (changes.length === 0) {
+      return this.error('review gate: patch resolves to no effective change.');
+    }
+    const { applyPatchWithReview } = await import('../review/apply-patch-bridge.js');
+    const outcome = await applyPatchWithReview(
+      { changes, cwd, intent: intent ?? `apply_patch (${ops.length} operation${ops.length > 1 ? 's' : ''})` },
+      { mode },
+    );
+    logger.debug(`apply_patch review gate: ${outcome.ok ? 'applied' : 'blocked'} (${mode})`);
+    return outcome.ok ? this.success(outcome.summary) : this.error(outcome.summary);
   }
 }
