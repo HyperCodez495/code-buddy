@@ -18,7 +18,7 @@ import { execFileSync, spawn } from 'child_process';
 import { logger } from '../../../utils/logger.js';
 import { scoreBranchInWorktree } from './worktree-scorer.js';
 import { WorktreeSessionManager } from '../../../git/worktree-sessions.js';
-import { CodeVariantStore, behaviorDescriptor, diverseElites, type VariantRecord } from './code-variant-store.js';
+import { CodeVariantStore, behaviorDescriptor, diverseElites, computeGeneration, type VariantRecord } from './code-variant-store.js';
 import { changedPathsVsBase } from './protected-paths.js';
 import type { FitnessComponent, FitnessReport } from './variant-fitness.js';
 
@@ -179,6 +179,8 @@ export async function runEvolutionCycle(opts: EvolutionCycleOptions): Promise<Ev
       return '';
     }
   })();
+  // Genealogy: the elites that inspired this variant are its parents; generation = 1 + max(parent gen).
+  const parents = inspirations.map((i) => i.id);
   const record: VariantRecord = {
     id: variantId,
     branch,
@@ -189,6 +191,8 @@ export async function runEvolutionCycle(opts: EvolutionCycleOptions): Promise<Ev
     createdAt: new Date().toISOString(),
     detail: `${opts.weakness.kind}: ${opts.weakness.goal}`,
     behavior: behaviorDescriptor(changedPathsVsBase(branch, opts.baselineRef, basePath)),
+    parents,
+    generation: computeGeneration(parents, store.list()),
   };
   store.record(record);
 

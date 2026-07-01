@@ -6,6 +6,10 @@ import {
   CodeVariantStore,
   behaviorDescriptor,
   diverseElites,
+  computeGeneration,
+  variantGeneration,
+  childrenOf,
+  genealogyRows,
   type VariantRecord,
 } from '../../../../src/agent/self-improvement/evolution/code-variant-store.js';
 
@@ -92,5 +96,55 @@ describe('diverseElites (one best per niche → diversity)', () => {
       rec({ id: 'c', score: 0.7, behavior: 'src/c:single' }),
     ];
     expect(diverseElites(recs, 2).map((e) => e.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('genealogy (recursive self-improvement lineage)', () => {
+  it('variantGeneration defaults a legacy/undefined record to 0 (backward-compat)', () => {
+    expect(variantGeneration(rec({ id: 'legacy' }))).toBe(0); // no generation field
+    expect(variantGeneration(rec({ id: 'g2', generation: 2 }))).toBe(2);
+  });
+
+  it('computeGeneration = 1 + max(parent generation); 0 when derived from baseline alone', () => {
+    const records = [rec({ id: 'g0a', generation: 0 }), rec({ id: 'g1', generation: 1 })];
+    expect(computeGeneration([], records)).toBe(0); // baseline child
+    expect(computeGeneration(['g0a'], records)).toBe(1);
+    expect(computeGeneration(['g0a', 'g1'], records)).toBe(2); // 1 + max(0,1)
+    expect(computeGeneration(['missing'], records)).toBe(0); // unknown parent → treated as -1 → 0
+  });
+
+  it('childrenOf finds records that list a parent id', () => {
+    const records = [
+      rec({ id: 'p', generation: 0 }),
+      rec({ id: 'c1', generation: 1, parents: ['p'] }),
+      rec({ id: 'c2', generation: 1, parents: ['p', 'x'] }),
+      rec({ id: 'other', generation: 0 }),
+    ];
+    expect(childrenOf(records, 'p').map((r) => r.id).sort()).toEqual(['c1', 'c2']);
+    expect(childrenOf(records, 'p')).toHaveLength(2);
+    expect(childrenOf(records, 'nope')).toEqual([]);
+  });
+
+  it('genealogyRows orders by generation asc then score desc', () => {
+    const records = [
+      rec({ id: 'g1-hi', generation: 1, score: 0.9 }),
+      rec({ id: 'g0', generation: 0, score: 0.5 }),
+      rec({ id: 'g1-lo', generation: 1, score: 0.7 }),
+    ];
+    expect(genealogyRows(records).map((r) => r.record.id)).toEqual(['g0', 'g1-hi', 'g1-lo']);
+  });
+
+  it('records persist parents + generation and round-trip through the store', () => {
+    const d = mkdtempSync(join(tmpdir(), 'cvs-gen-'));
+    try {
+      const s = new CodeVariantStore(join(d, 'variants.json'));
+      s.record(rec({ id: 'p', generation: 0 }));
+      s.record(rec({ id: 'child', generation: 1, parents: ['p'] }));
+      const loaded = s.list();
+      expect(loaded.find((v) => v.id === 'child')?.parents).toEqual(['p']);
+      expect(loaded.find((v) => v.id === 'child')?.generation).toBe(1);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });

@@ -15,7 +15,12 @@
 import { execFileSync } from 'child_process';
 import type { Command } from 'commander';
 import { logger } from '../../utils/logger.js';
-import { CodeVariantStore, type VariantRecord } from '../../agent/self-improvement/evolution/code-variant-store.js';
+import {
+  CodeVariantStore,
+  genealogyRows,
+  variantGeneration,
+  type VariantRecord,
+} from '../../agent/self-improvement/evolution/code-variant-store.js';
 
 interface EvolveOptions {
   goal?: string;
@@ -34,7 +39,8 @@ function git(args: string[]): string {
 
 function fmtVariant(v: VariantRecord): string {
   const flags = `${v.passedAll ? 'pass' : 'FAIL'}${v.regressions.length ? ` regr:${v.regressions.join(',')}` : ''}`;
-  return `  ${v.id.padEnd(16)} score=${v.score.toFixed(3)}  ${flags.padEnd(20)} ${v.branch}  ${v.detail ?? ''}`;
+  const parents = (v.parents ?? []).length ? ` ⇐ ${(v.parents ?? []).join(',')}` : '';
+  return `  gen${variantGeneration(v)} ${v.id.padEnd(16)} score=${v.score.toFixed(3)}  ${flags.padEnd(20)} ${(v.behavior ?? '-').padEnd(18)} ${v.branch}${parents}  ${v.detail ?? ''}`;
 }
 
 export function registerEvolveCommands(program: Command): void {
@@ -45,14 +51,40 @@ export function registerEvolveCommands(program: Command): void {
   evolve
     .command('list')
     .description('List evaluated candidate variants, ranked by fitness')
-    .action(() => {
+    .option('--json', 'Output the variant records as JSON (for scripts / the GUI)', false)
+    .action((opts: { json?: boolean }) => {
       const variants = new CodeVariantStore().list().sort((a, b) => b.score - a.score);
+      if (opts.json) {
+        // Raw JSON to stdout (not via logger) so it's machine-parseable.
+        console.log(JSON.stringify(variants, null, 2));
+        return;
+      }
       if (variants.length === 0) {
         logger.info('No evaluated variants yet. Run `buddy evolve run --goal "<weakness>"`.');
         return;
       }
       logger.info(`Evaluated variants (${variants.length}):`);
       for (const v of variants) logger.info(fmtVariant(v));
+    });
+
+  evolve
+    .command('tree')
+    .description('Show the genealogy of evaluated variants — the generations of recursive self-improvement')
+    .action(() => {
+      const rows = genealogyRows(new CodeVariantStore().list());
+      if (rows.length === 0) {
+        logger.info('No evaluated variants yet. Run `buddy evolve run --goal "<weakness>"`.');
+        return;
+      }
+      logger.info(`Genealogy (${rows.length} variant(s), by generation):`);
+      let curGen = -1;
+      for (const { record, generation } of rows) {
+        if (generation !== curGen) {
+          curGen = generation;
+          logger.info(`\n── generation ${generation} ──`);
+        }
+        logger.info(fmtVariant(record));
+      }
     });
 
   evolve

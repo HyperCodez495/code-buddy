@@ -24,6 +24,14 @@ export interface VariantRecord {
   detail?: string;
   /** MAP-Elites niche descriptor (which area + how broad a change) — for diversity. */
   behavior?: string;
+  /**
+   * Genealogy (recursive self-improvement lineage): ids of the prior elite variants that inspired
+   * this one (the AlphaEvolve program-database seed shown to the mutator). Empty/absent = derived
+   * from the baseline alone. Optional for backward-compat with pre-genealogy records.
+   */
+  parents?: string[];
+  /** Generation depth: 0 for a direct child of the baseline, else 1 + max(parent generation). */
+  generation?: number;
 }
 
 export interface BestOptions {
@@ -76,6 +84,39 @@ export function diverseElites(records: VariantRecord[], k: number, baselineScore
     }
   }
   return [...bestPerNiche.values()].sort((a, b) => b.score - a.score).slice(0, k);
+}
+
+/** Generation of a record (0 if unset — pre-genealogy or baseline child). */
+export function variantGeneration(v: VariantRecord): number {
+  return typeof v.generation === 'number' && v.generation >= 0 ? v.generation : 0;
+}
+
+/** Compute a new variant's generation from its parents: 1 + max(parent generation), else 0. */
+export function computeGeneration(parents: string[], records: VariantRecord[]): number {
+  if (parents.length === 0) return 0;
+  const byId = new Map(records.map((r) => [r.id, r]));
+  let maxParent = -1;
+  for (const p of parents) {
+    const rec = byId.get(p);
+    if (rec) maxParent = Math.max(maxParent, variantGeneration(rec));
+  }
+  return maxParent + 1;
+}
+
+/** Direct children of a variant (records that list `id` among their parents). */
+export function childrenOf(records: VariantRecord[], id: string): VariantRecord[] {
+  return records.filter((r) => (r.parents ?? []).includes(id));
+}
+
+/**
+ * Genealogy rows for display (CLI tree + GUI): every record with its generation, ordered by
+ * generation ascending then score descending. A flat, DAG-safe projection (a variant can have
+ * several inspiring parents, so we band by generation rather than force a single-parent tree).
+ */
+export function genealogyRows(records: VariantRecord[]): Array<{ record: VariantRecord; generation: number }> {
+  return records
+    .map((record) => ({ record, generation: variantGeneration(record) }))
+    .sort((a, b) => a.generation - b.generation || b.record.score - a.record.score);
 }
 
 export class CodeVariantStore {
