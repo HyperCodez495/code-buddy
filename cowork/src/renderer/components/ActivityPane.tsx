@@ -1,0 +1,123 @@
+/**
+ * ActivityPane — the embedded Activity surface of the new shell (cowork/REDESIGN.md slice 2).
+ *
+ * Separates *work* from *conversation*: a calm, always-scannable live work-log of the active
+ * session (tool calls, reasoning, results) rendered from the session's `traceSteps`, plus a
+ * one-click Undo/Redo of the last change (the core checkpoint IPC). This replaces embedding the
+ * full-screen `ActivityFeed` overlay inside the new shell's Activity view.
+ *
+ * Plan-then-act (an approvable step list before execution) will land here in a later slice — it
+ * needs the engine to pause for approval, which the GUI seam does not yet expose. This pane is the
+ * surface it will live in.
+ */
+import { useCallback, useState } from 'react';
+import { useAppStore } from '../store';
+import type { TraceStep } from '../types';
+import { traceStepToLine, activityStatus } from './activity-pane-helpers';
+
+const EMPTY_STEPS: TraceStep[] = [];
+
+export function ActivityPane() {
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const traceSteps = useAppStore(
+    (s) => (s.activeSessionId ? s.sessionStates[s.activeSessionId]?.traceSteps : undefined) ?? EMPTY_STEPS,
+  );
+  const activeTurn = useAppStore(
+    (s) => (s.activeSessionId ? s.sessionStates[s.activeSessionId]?.activeTurn ?? null : null),
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const checkpoint = useCallback(async (op: 'undo' | 'redo') => {
+    try {
+      const api = (window as unknown as { electronAPI?: { checkpoint?: Record<string, () => Promise<unknown>> } }).electronAPI;
+      const fn = api?.checkpoint?.[op];
+      if (!fn) {
+        setNotice('Checkpoints indisponibles ici.');
+        return;
+      }
+      await fn();
+      setNotice(op === 'undo' ? 'Dernier changement annulé.' : 'Changement rétabli.');
+    } catch {
+      setNotice('Action impossible.');
+    }
+  }, []);
+
+  const status = activityStatus(traceSteps, activeTurn);
+  const lines = traceSteps.map(traceStepToLine);
+
+  return (
+    <div className="h-full min-h-0 flex flex-col bg-background" data-testid="activity-pane">
+      {/* Header: what's happening + undo/redo */}
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
+        <span className="font-semibold">Activité</span>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full ${
+            status.busy ? 'bg-accent text-foreground' : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          {status.busy && <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />}
+          {status.text}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => checkpoint('undo')}
+            className="text-xs px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors"
+            title="Annuler le dernier changement de fichier (checkpoint)"
+          >
+            ↶ Annuler
+          </button>
+          <button
+            type="button"
+            onClick={() => checkpoint('redo')}
+            className="text-xs px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors"
+            title="Rétablir"
+          >
+            ↷ Rétablir
+          </button>
+        </div>
+      </div>
+
+      {notice && (
+        <div className="px-4 py-1.5 text-xs text-muted-foreground border-b border-border bg-muted/40">{notice}</div>
+      )}
+
+      {/* Live work-log */}
+      <div className="flex-1 min-h-0 overflow-auto px-2 py-2">
+        {!activeSessionId ? (
+          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+            Aucune session active. Lance une tâche depuis Chat.
+          </div>
+        ) : lines.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+            Rien à montrer pour l’instant — l’activité s’affichera ici pendant que Code Buddy travaille.
+          </div>
+        ) : (
+          <ol className="space-y-0.5">
+            {lines.map((l) => (
+              <li
+                key={l.id}
+                className={`flex items-start gap-2 rounded-md px-2 py-1 text-sm ${
+                  l.error ? 'text-red-500' : l.running ? 'text-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                <span className="mt-0.5 shrink-0 w-4 text-center">
+                  {l.running ? <span className="inline-block w-2 h-2 rounded-full bg-current animate-pulse" /> : l.glyph}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium text-foreground">{l.label}</span>
+                  {l.detail && <span className="text-muted-foreground"> — {l.detail}</span>}
+                </span>
+                {typeof l.durationMs === 'number' && l.durationMs > 0 && (
+                  <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                    {l.durationMs < 1000 ? `${l.durationMs}ms` : `${(l.durationMs / 1000).toFixed(1)}s`}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
+}

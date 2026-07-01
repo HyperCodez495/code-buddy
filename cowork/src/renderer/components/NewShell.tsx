@@ -13,7 +13,7 @@
 import { useAppStore } from '../store';
 import type { PrimaryView } from '../store';
 import { DockWorkspace } from './DockWorkspace';
-import { ActivityFeed } from './ActivityFeed';
+import { ActivityPane } from './ActivityPane';
 import { FileActivityPanel } from './FileActivityPanel';
 
 interface RailItem {
@@ -101,7 +101,7 @@ export function NewShell() {
         <div className={`absolute inset-0 ${primaryView === 'chat' ? '' : 'hidden'}`}>
           <DockWorkspace />
         </div>
-        {primaryView === 'activity' && <ActivityFeed open onClose={backToChat} />}
+        {primaryView === 'activity' && <ActivityPane />}
         {primaryView === 'workspace' && <FileActivityPanel open onClose={backToChat} />}
         {primaryView === 'advanced' && <AdvancedLauncher />}
       </div>
