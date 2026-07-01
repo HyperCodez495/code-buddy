@@ -71,9 +71,35 @@ describe('renderVariantPlan', () => {
   });
 });
 
+describe('buildPlanningPrompt — CKG grounding', () => {
+  it('includes recalled knowledge when provided', () => {
+    const p = buildPlanningPrompt(weakness, inspirations, ['MMR improves retrieval diversity (paper Z)']);
+    expect(p).toContain('Connaissances de recherche');
+    expect(p).toContain('MMR improves retrieval diversity');
+  });
+  it('omits the knowledge section when empty', () => {
+    expect(buildPlanningPrompt(weakness, inspirations, [])).not.toContain('Connaissances de recherche');
+  });
+});
+
 describe('planVariant / makeLlmVariantPlanner (injected chat)', () => {
   it('plans via an injected chat returning JSON', async () => {
     const plan = await planVariant({ weakness, inspirations }, async () => goodJson);
+    expect(plan?.approach).toBe('build-on');
+  });
+
+  it('grounds the plan in the CKG: recalled knowledge reaches the chat prompt', async () => {
+    let seenPrompt = '';
+    const chat = async (p: string) => { seenPrompt = p; return goodJson; };
+    const recall = async () => ['Corroborated technique from ingested paper'];
+    await planVariant({ weakness, inspirations }, chat, recall);
+    expect(seenPrompt).toContain('Corroborated technique from ingested paper');
+  });
+
+  it('a recall that throws does not block planning (grounding is best-effort)', async () => {
+    const chat = async () => goodJson;
+    const recall = async () => { throw new Error('ckg down'); };
+    const plan = await planVariant({ weakness, inspirations }, chat, recall);
     expect(plan?.approach).toBe('build-on');
   });
 

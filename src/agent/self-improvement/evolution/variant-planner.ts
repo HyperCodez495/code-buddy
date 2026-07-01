@@ -36,12 +36,16 @@ export interface VariantPlan {
 /** A chat call reduced to text-in/text-out; injected so the planner is testable + provider-agnostic. */
 export type PlanChat = (prompt: string) => Promise<string | null>;
 
+/** Grounds the plan in the collective knowledge graph: query → relevant knowledge snippets. Injected. */
+export type PlanRecall = (query: string) => Promise<string[]>;
+
 export type VariantPlanner = (args: { weakness: Weakness; inspirations: Inspiration[] }) => Promise<VariantPlan | null>;
 
 const MAX_INSPIRATION_DIFF = 2500;
 
-/** Goal-oriented planning prompt (borrows PlanningFlow's decompose framing, evolution-specific). */
-export function buildPlanningPrompt(weakness: Weakness, inspirations: Inspiration[]): string {
+/** Goal-oriented planning prompt (borrows PlanningFlow's decompose framing, evolution-specific).
+ *  `knowledge` grounds the plan in the collective knowledge graph (ingested research + lessons). */
+export function buildPlanningPrompt(weakness: Weakness, inspirations: Inspiration[], knowledge: string[] = []): string {
   const elites =
     inspirations.length === 0
       ? '(aucune version antérieure — tu pars du baseline)'
@@ -51,7 +55,7 @@ export function buildPlanningPrompt(weakness: Weakness, inspirations: Inspiratio
             return `- id=${i.id} (fitness ${i.score.toFixed(3)}) — ${i.goal}\n${diff ? `  diff:\n${diff}` : '  (diff indisponible)'}`;
           })
           .join('\n');
-  return [
+  const lines = [
     "Tu planifies la PROCHAINE version du code source de Code Buddy pour progresser sur un objectif.",
     'Décide une APPROCHE et un plan CONCRET et court. Ne modifie PAS les tests, benchmarks, gates ou le harnais d\'éval.',
     '',
@@ -59,11 +63,22 @@ export function buildPlanningPrompt(weakness: Weakness, inspirations: Inspiratio
     '',
     'Versions antérieures les mieux notées (bâtis sur la meilleure OU diverge délibérément — ne copie pas bêtement) :',
     elites,
+  ];
+  const grounding = knowledge.map((k) => `- ${k.replace(/\s+/g, ' ').trim().slice(0, 400)}`).filter((l) => l.length > 2);
+  if (grounding.length > 0) {
+    lines.push(
+      '',
+      'Connaissances de recherche pertinentes (mémoire collective — appuie-toi dessus quand c\'est pertinent) :',
+      ...grounding,
+    );
+  }
+  lines.push(
     '',
     'Réponds STRICTEMENT en JSON, rien d\'autre :',
     '{"approach":"build-on|diverge|fresh","basedOn":"<id élite ou omis>","summary":"<1 phrase>",' +
       '"steps":[{"title":"<court>","description":"<quoi faire>","rationale":"<pourquoi>"}]}',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 function stripFences(text: string): string {
@@ -112,13 +127,22 @@ export function renderVariantPlan(plan: VariantPlan): string {
   return `${head}\nÉtapes :\n${steps}`;
 }
 
-/** Build a plan from an injected chat call. Never-throws → null on any failure. */
+/** Build a plan from an injected chat call, grounded in the CKG via an optional recall. Never-throws → null. */
 export async function planVariant(
   args: { weakness: Weakness; inspirations: Inspiration[] },
   chat: PlanChat,
+  recall?: PlanRecall,
 ): Promise<VariantPlan | null> {
   try {
-    const text = await chat(buildPlanningPrompt(args.weakness, args.inspirations));
+    let knowledge: string[] = [];
+    if (recall) {
+      try {
+        knowledge = await recall(args.weakness.goal);
+      } catch {
+        knowledge = []; // grounding is best-effort — a CKG hiccup must not block planning
+      }
+    }
+    const text = await chat(buildPlanningPrompt(args.weakness, args.inspirations, knowledge));
     if (!text || !text.trim()) return null;
     return parseVariantPlan(text);
   } catch (err) {
@@ -150,8 +174,23 @@ function makeDefaultChat(model?: string): PlanChat {
   };
 }
 
-/** The default variant planner: plans in-process via the env provider. Inject `chat` for tests. */
-export function makeLlmVariantPlanner(opts: { model?: string; chat?: PlanChat } = {}): VariantPlanner {
+/** Default CKG grounding: hybrid recall of relevant discoveries/lessons (mirrors llm-drafter). []-safe. */
+function makeDefaultRecall(): PlanRecall {
+  return async (query) => {
+    try {
+      const { getCollectiveKnowledgeGraph } = await import('../../../memory/collective-knowledge-graph.js');
+      const hits = await getCollectiveKnowledgeGraph().recallHybrid(query, { limit: 4 });
+      return hits.map((h) => h.text).filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+}
+
+/** The default variant planner: plans in-process via the env provider, grounded in the CKG.
+ *  Inject `chat`/`recall` for tests. Set `recall: null` to disable grounding. */
+export function makeLlmVariantPlanner(opts: { model?: string; chat?: PlanChat; recall?: PlanRecall | null } = {}): VariantPlanner {
   const chat = opts.chat ?? makeDefaultChat(opts.model);
-  return (args) => planVariant(args, chat);
+  const recall = opts.recall === null ? undefined : (opts.recall ?? makeDefaultRecall());
+  return (args) => planVariant(args, chat, recall);
 }
