@@ -68,10 +68,12 @@ function AdvancedLauncher() {
     { label: 'Skills', hint: 'Docs Office, charts, recherche', open: () => s.setShowSkillsManager(true) },
     { label: 'Companion', hint: 'Voix, présence, canaux', open: () => s.setShowCompanionPanel(true) },
     { label: 'Autonomie', hint: 'Boucle autonome, YOLO', open: () => s.setShowAutonomyPanel(true) },
+    { label: 'Recherche', hint: 'Recherche large + flow de planification', open: () => s.setShowLiveLauncher(true) },
     { label: 'Tests', hint: 'Lancer la suite de tests', open: () => s.setShowTestRunner(true) },
     { label: 'Insights', hint: 'Analyse de session', open: () => s.setShowSessionInsights(true) },
   ];
   const labs: LauncherCard[] = [
+    { label: 'Connaissances', hint: 'Mémoire collective (CKG) + sujets de recherche', open: () => s.setShowKnowledgePanel(true) },
     { label: 'Évolution', hint: 'Versions générées par l’auto-amélioration', open: () => s.setShowEvolutionPanel(true) },
     { label: 'Fleet', hint: 'Multi-agents, pairs, routage', open: () => s.setShowFleetCommandCenter(true) },
     { label: 'Missions', hint: 'Tableau des tâches multi-agents', open: () => s.setShowMissionBoard(true) },

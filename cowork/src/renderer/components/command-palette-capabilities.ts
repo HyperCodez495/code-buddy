@@ -28,6 +28,7 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   { id: 'cap-autonomy', label: 'Autonomy', description: 'Autonomous loop, YOLO, goal', run: (s) => s.setShowAutonomyPanel(true) },
   { id: 'cap-workflows', label: 'Workflows', description: 'Visual workflow editor', run: (s) => s.setShowWorkflowProPanel(true) },
   { id: 'cap-evolution', label: 'Evolution', description: 'Versions from self-improvement', run: (s) => s.setShowEvolutionPanel(true) },
+  { id: 'cap-knowledge', label: 'Knowledge (CKG)', description: 'Collective memory + research topics', run: (s) => s.setShowKnowledgePanel(true) },
   { id: 'cap-memory', label: 'Memory', description: 'What Code Buddy remembers', run: (s) => s.setShowMemoryEditor(true) },
   { id: 'cap-lessons-candidates', label: 'Lesson candidates', description: 'Review learned-lesson candidates', run: (s) => s.setShowLessonCandidatePanel(true) },
   { id: 'cap-user-model', label: 'User model', description: 'What Code Buddy learned about you', run: (s) => s.setShowUserModelPanel(true) },

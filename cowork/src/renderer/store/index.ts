@@ -235,6 +235,8 @@ export interface AppState {
   showSettings: boolean;
   /** Evolution panel (new-shell Labs) — lists variants from recursive self-improvement. */
   showEvolutionPanel: boolean;
+  /** Knowledge panel (new-shell Labs) — CKG discoveries/stats + research-ingest topics. */
+  showKnowledgePanel: boolean;
   settingsTab: string | null;
   scheduleDraft: ScheduleDraft | null;
   permissionRuleTestDraft: PermissionRuleTestDraft | null;
@@ -571,6 +573,7 @@ export interface AppState {
   setPrimaryView: (v: PrimaryView) => void;
   setShowSettings: (show: boolean) => void;
   setShowEvolutionPanel: (show: boolean) => void;
+  setShowKnowledgePanel: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
   setScheduleDraft: (draft: Omit<ScheduleDraft, 'nonce'> | null) => void;
   clearScheduleDraft: () => void;
@@ -884,6 +887,7 @@ export const useAppStore = create<AppState>((set) => ({
   primaryView: 'chat',
   showSettings: false,
   showEvolutionPanel: false,
+  showKnowledgePanel: false,
   settingsTab: null,
   scheduleDraft: null,
   permissionRuleTestDraft: null,
@@ -1473,6 +1477,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPrimaryView: (v) => set({ primaryView: v }),
   setShowSettings: (show) => set({ showSettings: show }),
   setShowEvolutionPanel: (show) => set({ showEvolutionPanel: show }),
+  setShowKnowledgePanel: (show) => set({ showKnowledgePanel: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setScheduleDraft: (draft) =>
     set({

@@ -674,6 +674,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listVariants: (cwd?: string) => ipcRenderer.invoke('evolve.listVariants', cwd),
   },
 
+  // CKG (Collective Knowledge Graph): read-only discoveries/stats + research-topic admin. Namespaced
+  // `ckg` to avoid the existing per-project `knowledge` (KnowledgeBase browser) API.
+  ckg: {
+    stats: () => ipcRenderer.invoke('ckg.stats'),
+    list: (opts?: { limit?: number; type?: string }) => ipcRenderer.invoke('ckg.list', opts),
+    topicsList: () => ipcRenderer.invoke('ckg.topicsList'),
+    topicsAdd: (topic: string) => ipcRenderer.invoke('ckg.topicsAdd', topic),
+    topicsRemove: (topic: string) => ipcRenderer.invoke('ckg.topicsRemove', topic),
+  },
+
   // Checkpoint operations
   checkpoint: {
     list: () => ipcRenderer.invoke('checkpoint.list'),
@@ -4749,6 +4759,29 @@ declare global {
       };
       evolve: {
         listVariants: (cwd?: string) => Promise<unknown>;
+      };
+      ckg: {
+        stats: () => Promise<{
+          entities: number;
+          superseded: number;
+          relations: number;
+          ledgerPath: string;
+        } | null>;
+        list: (opts?: { limit?: number; type?: string }) => Promise<
+          Array<{
+            id: string;
+            name: string;
+            type: string;
+            source?: string;
+            confidence: number;
+            mentions: number;
+            contributors: number;
+            createdAt: string;
+          }>
+        >;
+        topicsList: () => Promise<string[]>;
+        topicsAdd: (topic: string) => Promise<string[]>;
+        topicsRemove: (topic: string) => Promise<string[]>;
       };
       checkpoint: {
         list: () => Promise<unknown>;
