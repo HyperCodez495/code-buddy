@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runPresenceTick, resetPresenceState, type Moment, type PresenceDeps } from '../../src/companion/presence-loop.js';
+import { addFollowUp, dueFollowUp } from '../../src/companion/event-followups.js';
 
 const AFTERNOON = new Date('2026-06-26T14:00:00');
 const EVENING = new Date('2026-06-26T20:00:00');
@@ -103,5 +104,17 @@ describe('presence loop — the conductor speaks only when it warms (rails)', ()
   it('never throws (a moment that explodes → silent)', async () => {
     const m: Moment = { id: 'boom', cooldownMs: 0, generate: () => { throw new Error('nope'); } };
     await expect(runPresenceTick(baseDeps({ moments: [m] }))).resolves.toBeNull();
+  });
+
+  it('asks how a due event went (follow-up), opens the window, and marks it asked once', async () => {
+    const efPath = path.join(stateDir, 'event-followups.json');
+    const nowMs = AFTERNOON.getTime();
+    addFollowUp({ event: 'le déploiement', eventDayAt: nowMs - 2 * 86_400_000, followUp: 'Alors, ce déploiement, ça a donné quoi ?' }, nowMs, efPath);
+    const say = vi.fn(async () => {});
+    const onEngage = vi.fn();
+    const line = await runPresenceTick(baseDeps({ say, onEngage, eventFollowUpsPath: efPath }));
+    expect(line).toBe('Alors, ce déploiement, ça a donné quoi ?');
+    expect(onEngage).toHaveBeenCalledTimes(1);
+    expect(dueFollowUp(nowMs, efPath)).toBeNull(); // marked asked → never repeats
   });
 });

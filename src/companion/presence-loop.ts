@@ -26,6 +26,7 @@ import {
   markMilestonesUpTo,
   REUNION_DAYS,
 } from './relationship-state.js';
+import { dueFollowUp, markFired } from './event-followups.js';
 
 export interface PresenceCtx {
   now: Date;
@@ -45,6 +46,8 @@ export interface PresenceCtx {
   daysSinceLastSeen: number;
   /** Tenure milestones already celebrated — so a milestone moment fires exactly once. */
   celebratedMilestones: number[];
+  /** An event Patrice mentioned that is now due for a "how did it go?" follow-up, or null. */
+  dueEventFollowUp?: { id: string; followUp: string } | null;
 }
 
 export interface Moment {
@@ -76,6 +79,9 @@ export interface PresenceDeps {
   /** Override the relationship-state file path (tests). Default: CODEBUDDY_RELATIONSHIP_STATE_FILE
    *  or ~/.codebuddy/companion/relationship-state.json. */
   relationshipStatePath?: string;
+  /** Override the event-followups file path (tests). Setting it (or CODEBUDDY_COMPANION_EVENT_FOLLOWUPS)
+   *  enables the due-follow-up read each tick. Default path: ~/.codebuddy/companion/event-followups.json. */
+  eventFollowUpsPath?: string;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
@@ -117,6 +123,15 @@ export const RELATIONSHIP_MOMENTS: Moment[] = [
             ctx.now,
           )
         : null,
+  },
+  {
+    // "How did that go?" — an event Patrice mentioned earlier that has now passed. Placed high (a
+    // timely, personal follow-up), engages so he can answer back. Short cooldown so a due one
+    // surfaces on the next presence rather than waiting hours.
+    id: 'followup',
+    cooldownMs: 30 * 60_000,
+    engage: true,
+    generate: (ctx) => ctx.dueEventFollowUp?.followUp ?? null,
   },
   {
     id: 'milestone',
@@ -259,6 +274,12 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
     firedTimestamps = firedTimestamps.filter((t) => nowMs - t < 3600_000);
     if (firedTimestamps.length >= hourlyCap(deps)) return null; // hourly cap
 
+    // A due event follow-up ("how did that deploy go?") — only read the store when the feature is
+    // enabled (env or an injected path), so we never touch the real home dir in default/tests.
+    const efEnabled =
+      process.env.CODEBUDDY_COMPANION_EVENT_FOLLOWUPS === 'true' || deps.eventFollowUpsPath != null;
+    const due = efEnabled ? dueFollowUp(nowMs, deps.eventFollowUpsPath) : null;
+
     // — Build context once —
     const ctx: PresenceCtx = {
       now,
@@ -270,6 +291,7 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       daysTogether,
       daysSinceLastSeen,
       celebratedMilestones: relState.celebratedMilestones,
+      dueEventFollowUp: due ? { id: due.id, followUp: due.followUp } : null,
     };
 
     // — Pick the first warranted moment that's off cooldown —
@@ -286,6 +308,10 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       if (moment.id === 'milestone') {
         relState.celebratedMilestones = markMilestonesUpTo(relState.celebratedMilestones, daysTogether);
         saveRelationshipState(relState, deps.relationshipStatePath);
+      }
+      // Mark a fired follow-up done so it's asked exactly once.
+      if (moment.id === 'followup' && due) {
+        markFired(due.id, nowMs, deps.eventFollowUpsPath);
       }
       logger.info(`[presence] ${moment.id} → ${line}`);
       return line;

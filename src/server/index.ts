@@ -1254,6 +1254,34 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 };
               }
 
+              // Event follow-ups (opt-in): when Patrice mentions a dated future event IN a real
+              // conversation with Lisa, capture it and confirm aloud so a mis-hear is corrected on
+              // the spot; the presence loop later asks how it went. Capture runs AFTER the reply and
+              // fire-and-forget so it never adds reply latency, and is skipped for reminder commands
+              // (those are handled above and would otherwise double as a "future event").
+              if (process.env.CODEBUDDY_COMPANION_EVENT_FOLLOWUPS === 'true') {
+                const ef = await import('../companion/event-followups.js');
+                const { sayNow } = await import('../sensory/voice-loop.js');
+                const extractor = ef.makeLLMEventExtractor();
+                const inner = onHeard;
+                onHeard = async (t: string) => {
+                  await inner(t);
+                  if (reminderShortcut?.(t)) return;
+                  void (async () => {
+                    try {
+                      const captured = await ef.captureEventFollowUp(t, Date.now(), { extractor });
+                      if (captured) {
+                        await sayNow(ef.confirmationLine(captured, Date.now()));
+                        logger.info(`[event-followup] captured "${captured.event}" → due ${new Date(captured.dueAt).toISOString()}`);
+                      }
+                    } catch (err) {
+                      logger.warn(`[event-followup] capture failed: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                  })();
+                };
+                logger.info('Event follow-ups: Enabled (CODEBUDDY_COMPANION_EVENT_FOLLOWUPS) — capture dated events from conversation, ask how they went');
+              }
+
               const wireOpts: Parameters<typeof wireSpeechReaction>[0] = { onHeard };
               if (!alwaysRespond) {
                 // Reuse the session decider shared with the vision greeting above, so a
