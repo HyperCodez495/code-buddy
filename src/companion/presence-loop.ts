@@ -18,6 +18,14 @@
  * @module companion/presence-loop
  */
 import { logger } from '../utils/logger.js';
+import {
+  loadRelationshipState,
+  saveRelationshipState,
+  daysBetween,
+  pendingMilestone,
+  markMilestonesUpTo,
+  REUNION_DAYS,
+} from './relationship-state.js';
 
 export interface PresenceCtx {
   now: Date;
@@ -31,6 +39,12 @@ export interface PresenceCtx {
   drowsy: boolean;
   /** A thread from memory worth following up (e.g. a project). */
   projectThread: string | null;
+  /** Whole days since the companion first saw Patrice (shared-history tenure). */
+  daysTogether: number;
+  /** Whole days since the last confirmed sighting (0 on a continuous presence). */
+  daysSinceLastSeen: number;
+  /** Tenure milestones already celebrated — so a milestone moment fires exactly once. */
+  celebratedMilestones: number[];
 }
 
 export interface Moment {
@@ -59,6 +73,9 @@ export interface PresenceDeps {
   /** Max presence acts per rolling hour (default from env, generous since he chose "vivant"). */
   hourlyCap?: number;
   tickMs?: number;
+  /** Override the relationship-state file path (tests). Default: CODEBUDDY_RELATIONSHIP_STATE_FILE
+   *  or ~/.codebuddy/companion/relationship-state.json. */
+  relationshipStatePath?: string;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
@@ -80,9 +97,49 @@ function pick(lines: string[], now: Date): string {
 
 const FRUSTRATION = /\b(j'?en peux plus|marre|galère|gal[èe]re|bloqu[ée]|coince|coincé|ça marche pas|ca marche pas|énerve|enerve|fatigu[ée]|épuis|sais plus)\b/i;
 
+// ── relationship-aware moments (shared history) ───────────────────────
+// Warm, sparse, non-gamified: a reunion after a real absence and a tenure milestone. Placed
+// FIRST so a genuine "welcome back" / "we've been together N days" wins over routine moments on
+// the tick it applies. Both fire at most once per occurrence (reunion: the sighting resets the
+// gap; milestone: `celebratedMilestones` records it).
+export const RELATIONSHIP_MOMENTS: Moment[] = [
+  {
+    id: 'reunion',
+    cooldownMs: 6 * 3600_000,
+    engage: true,
+    generate: (ctx) =>
+      ctx.daysSinceLastSeen >= REUNION_DAYS
+        ? pick(
+            [
+              `Te revoilà — ça faisait ${ctx.daysSinceLastSeen} jours. Content de te retrouver, tout va bien ?`,
+              `Ça faisait un moment, ${ctx.daysSinceLastSeen} jours sans te voir. Je suis contente que tu sois là.`,
+            ],
+            ctx.now,
+          )
+        : null,
+  },
+  {
+    id: 'milestone',
+    cooldownMs: 20 * 3600_000,
+    generate: (ctx) => {
+      const m = pendingMilestone(ctx.daysTogether, ctx.celebratedMilestones);
+      return m == null
+        ? null
+        : pick(
+            [
+              `Tu sais, ça fait ${m} jours qu'on se côtoie, toi et moi. J'aime bien notre bout de chemin.`,
+              `${m} jours ensemble déjà. Merci d'être là, Patrice.`,
+            ],
+            ctx.now,
+          );
+    },
+  },
+];
+
 // ── default moment library (priority order) ───────────────────────────
 
 export const DEFAULT_MOMENTS: Moment[] = [
+  ...RELATIONSHIP_MOMENTS,
   {
     id: 'encourage',
     cooldownMs: 20 * 60_000,
@@ -185,9 +242,20 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
     if (isQuietHour(hour)) return null; // never while you sleep
     const present = await (deps.isPersonPresent ?? defaultPersonPresent)();
     if (!present) return null; // never to an empty room
+
+    // — Shared-history bookkeeping — read the gap BEFORE recording this sighting, so the reunion
+    // moment (which can only fire on RETURN — the tick early-returns while absent) sees the real
+    // absence. Recorded even if we then bail on conversation/cap: a confirmed presence IS a sighting.
+    const nowMs = now.getTime();
+    const relState = loadRelationshipState(deps.relationshipStatePath);
+    if (relState.firstSeenAt == null) relState.firstSeenAt = nowMs;
+    const daysTogether = daysBetween(relState.firstSeenAt, nowMs);
+    const daysSinceLastSeen = relState.lastPresentAt != null ? daysBetween(relState.lastPresentAt, nowMs) : 0;
+    relState.lastPresentAt = nowMs;
+    saveRelationshipState(relState, deps.relationshipStatePath);
+
     if (await (deps.inConversation ?? (() => false))()) return null; // never over a live exchange
 
-    const nowMs = now.getTime();
     firedTimestamps = firedTimestamps.filter((t) => nowMs - t < 3600_000);
     if (firedTimestamps.length >= hourlyCap(deps)) return null; // hourly cap
 
@@ -199,6 +267,9 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       recentHearing: await (deps.recentHearing ?? defaultRecentHearing)(),
       drowsy: await (deps.drowsy ?? (() => false))(),
       projectThread: await (deps.projectThread ?? (async () => null))(),
+      daysTogether,
+      daysSinceLastSeen,
+      celebratedMilestones: relState.celebratedMilestones,
     };
 
     // — Pick the first warranted moment that's off cooldown —
@@ -211,6 +282,11 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       firedTimestamps.push(nowMs);
       await (deps.say ?? defaultSay)(line);
       if (moment.engage) deps.onEngage?.();
+      // Record a celebrated tenure milestone (all marks up to today) so it never repeats.
+      if (moment.id === 'milestone') {
+        relState.celebratedMilestones = markMilestonesUpTo(relState.celebratedMilestones, daysTogether);
+        saveRelationshipState(relState, deps.relationshipStatePath);
+      }
       logger.info(`[presence] ${moment.id} → ${line}`);
       return line;
     }

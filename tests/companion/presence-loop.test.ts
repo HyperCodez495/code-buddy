@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { runPresenceTick, resetPresenceState, type Moment, type PresenceDeps } from '../../src/companion/presence-loop.js';
 
 const AFTERNOON = new Date('2026-06-26T14:00:00');
 const EVENING = new Date('2026-06-26T20:00:00');
 const NIGHT = new Date('2026-06-26T23:30:00');
+
+let stateDir: string;
 
 function baseDeps(over: Partial<PresenceDeps> = {}): PresenceDeps {
   return {
@@ -14,6 +19,8 @@ function baseDeps(over: Partial<PresenceDeps> = {}): PresenceDeps {
     recentHearing: async () => [],
     drowsy: () => false,
     projectThread: async () => null,
+    // Isolate relationship-state I/O to a temp file so tests never touch the real home dir.
+    relationshipStatePath: path.join(stateDir, 'relationship-state.json'),
     ...over,
   };
 }
@@ -21,10 +28,12 @@ function baseDeps(over: Partial<PresenceDeps> = {}): PresenceDeps {
 beforeEach(() => {
   resetPresenceState();
   process.env.CODEBUDDY_COMPANION_PRESENCE = 'true';
+  stateDir = mkdtempSync(path.join(os.tmpdir(), 'presence-'));
 });
 afterEach(() => {
   delete process.env.CODEBUDDY_COMPANION_PRESENCE;
   delete process.env.CODEBUDDY_COMPANION_QUIET;
+  rmSync(stateDir, { recursive: true, force: true });
 });
 
 describe('presence loop — the conductor speaks only when it warms (rails)', () => {
