@@ -3445,6 +3445,24 @@ ipcMain.handle('config.model-inventory', async (_event, payload?: { includeTailn
   }
 });
 
+// Evolution: list the code variants (versions of Code Buddy) the recursive self-improvement loop
+// generated for a workspace. Read-only; loads the core store via loadCoreModule (never bundles it).
+ipcMain.handle('evolve.listVariants', async (_event, cwd?: string) => {
+  try {
+    const mod = await loadCoreModule<typeof import('@codebuddy/agent/self-improvement/evolution/code-variant-store.js')>(
+      'agent/self-improvement/evolution/code-variant-store.js',
+    );
+    if (!mod) return [];
+    // Per-project store (mirrors the core defaultStorePath layout, keyed off the active workspace).
+    const base = cwd || process.cwd();
+    const store = new mod.CodeVariantStore(join(base, '.codebuddy', 'self-improvement', 'evolution', 'variants.json'));
+    return store.list();
+  } catch (error) {
+    logError('[evolve] listVariants failed:', error);
+    return [];
+  }
+});
+
 // MCP Server IPC handlers
 ipcMain.handle('mcp.getServers', () => {
   try {

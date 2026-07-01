@@ -669,6 +669,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('automations.reminderDone', id),
   },
 
+  // Evolution: list the code variants (versions) the recursive self-improvement loop generated.
+  evolve: {
+    listVariants: (cwd?: string) => ipcRenderer.invoke('evolve.listVariants', cwd),
+  },
+
   // Checkpoint operations
   checkpoint: {
     list: () => ipcRenderer.invoke('checkpoint.list'),
@@ -4741,6 +4746,9 @@ declare global {
         toggle: (kind: 'rule' | 'reminder', id: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>;
         remove: (kind: 'rule' | 'reminder', id: string) => Promise<{ ok: boolean; error?: string }>;
         reminderDone: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      };
+      evolve: {
+        listVariants: (cwd?: string) => Promise<unknown>;
       };
       checkpoint: {
         list: () => Promise<unknown>;

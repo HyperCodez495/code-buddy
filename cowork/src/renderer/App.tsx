@@ -77,6 +77,7 @@ import { DockWorkspace } from './components/DockWorkspace';
 import { ShellNavigation } from './components/ShellNavigation';
 import { NewShell } from './components/NewShell';
 import { ExportDialogHost } from './components/ExportDialogHost';
+import { EvolutionPanel } from './components/EvolutionPanel';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -113,6 +114,7 @@ function App() {
   const showCommandPalette = useShowCommandPalette();
   const showShortcutsDialog = useShowShortcutsDialog();
   const newShellEnabled = useAppStore((s) => s.newShellEnabled);
+  const showEvolutionPanel = useAppStore((s) => s.showEvolutionPanel);
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
   const showActivityFeed = useAppStore((s) => s.showActivityFeed);
   const showFileActivity = useAppStore((s) => s.showFileActivity);
@@ -447,6 +449,9 @@ function App() {
 
       {/* Session export dialog host — gives /export and /save a live listener (both shells). */}
       <ExportDialogHost />
+
+      {/* Evolution panel (new-shell Labs) — versions from recursive self-improvement. */}
+      {showEvolutionPanel && <EvolutionPanel onClose={() => useAppStore.getState().setShowEvolutionPanel(false)} />}
 
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}

@@ -233,6 +233,8 @@ interface AppState {
   newShellEnabled: boolean;
   primaryView: PrimaryView;
   showSettings: boolean;
+  /** Evolution panel (new-shell Labs) — lists variants from recursive self-improvement. */
+  showEvolutionPanel: boolean;
   settingsTab: string | null;
   scheduleDraft: ScheduleDraft | null;
   permissionRuleTestDraft: PermissionRuleTestDraft | null;
@@ -568,6 +570,7 @@ interface AppState {
   setNewShellEnabled: (on: boolean) => void;
   setPrimaryView: (v: PrimaryView) => void;
   setShowSettings: (show: boolean) => void;
+  setShowEvolutionPanel: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
   setScheduleDraft: (draft: Omit<ScheduleDraft, 'nonce'> | null) => void;
   clearScheduleDraft: () => void;
@@ -880,6 +883,7 @@ export const useAppStore = create<AppState>((set) => ({
   newShellEnabled: readNewShellFlag(),
   primaryView: 'chat',
   showSettings: false,
+  showEvolutionPanel: false,
   settingsTab: null,
   scheduleDraft: null,
   permissionRuleTestDraft: null,
@@ -1468,6 +1472,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setPrimaryView: (v) => set({ primaryView: v }),
   setShowSettings: (show) => set({ showSettings: show }),
+  setShowEvolutionPanel: (show) => set({ showEvolutionPanel: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setScheduleDraft: (draft) =>
     set({

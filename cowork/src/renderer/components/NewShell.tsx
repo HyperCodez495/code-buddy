@@ -72,6 +72,7 @@ function AdvancedLauncher() {
     { label: 'Insights', hint: 'Analyse de session', open: () => s.setShowSessionInsights(true) },
   ];
   const labs: LauncherCard[] = [
+    { label: 'Évolution', hint: 'Versions générées par l’auto-amélioration', open: () => s.setShowEvolutionPanel(true) },
     { label: 'Fleet', hint: 'Multi-agents, pairs, routage', open: () => s.setShowFleetCommandCenter(true) },
     { label: 'Missions', hint: 'Tableau des tâches multi-agents', open: () => s.setShowMissionBoard(true) },
     { label: 'Workflows', hint: 'Éditeur de workflow visuel', open: () => s.setShowWorkflowProPanel(true) },
