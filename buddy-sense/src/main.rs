@@ -11,11 +11,13 @@
 mod bridge;
 mod bus;
 mod event;
+mod organs;
 mod senses;
 
 use tokio::sync::{broadcast, mpsc};
 
 use event::SensoryEvent;
+use organs::{resolve_organs, Organ};
 
 const AUDIO_FRAME_MS: u64 = 20;
 const AUDIO_THRESHOLD: f64 = 0.05;
@@ -87,6 +89,29 @@ async fn main() {
         tokio::spawn(async move { thalamus.run(sense_rx, tx).await });
     }
 
+    // Which organs (senses) run — chosen at RUNTIME among the ones this binary was COMPILED with.
+    // `available` reflects the compiled features; `BUDDY_SENSE_ORGANS` (csv) narrows it (Vital is
+    // autonomic and always kept). This is what lets the operator run several organs in parallel
+    // without recompiling, and makes the live set visible in the logs.
+    // `mut` is used only under the sense features; a default build pushes nothing.
+    #[allow(unused_mut)]
+    let mut available = vec![Organ::Vital];
+    #[cfg(feature = "live-screen")]
+    available.push(Organ::Screen);
+    #[cfg(feature = "live-vision")]
+    available.push(Organ::Vision);
+    #[cfg(feature = "live-ui")]
+    available.push(Organ::Ui);
+    #[cfg(feature = "live-audio")]
+    available.push(Organ::LiveAudio);
+    let organs = resolve_organs(&available, std::env::var("BUDDY_SENSE_ORGANS").ok().as_deref());
+    eprintln!(
+        "[buddy-sense] organs live ({}): {}",
+        organs.len(),
+        organs.iter().map(|o| o.as_str()).collect::<Vec<_>>().join(", ")
+    );
+    let organ_active = |o: Organ| organs.contains(&o);
+
     // Bridge to Code Buddy. A shared token (if set) authenticates our frames.
     {
         let rx = bcast_tx.subscribe();
@@ -104,14 +129,14 @@ async fn main() {
     let heartbeat_count = std::env::var("BUDDY_SENSE_HEARTBEAT_COUNT")
         .ok()
         .and_then(|s| s.parse::<u64>().ok());
-    {
+    if organ_active(Organ::Vital) {
         let tx = sense_tx.clone();
         tokio::spawn(async move { senses::vital::run(tx, heartbeat_ms, heartbeat_count).await });
     }
 
     // Screen sense — light event-driven screen-change detection (opt-in build).
     #[cfg(feature = "live-screen")]
-    {
+    if organ_active(Organ::Screen) {
         let tx = sense_tx.clone();
         let screen_ms = std::env::var("BUDDY_SENSE_SCREEN_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(1000);
         let screen_threshold = std::env::var("BUDDY_SENSE_SCREEN_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.02);
@@ -121,7 +146,7 @@ async fn main() {
 
     // Camera sense — live webcam motion detection (the robot's eyes), opt-in build.
     #[cfg(feature = "live-vision")]
-    {
+    if organ_active(Organ::Vision) {
         let tx = sense_tx.clone();
         let device = std::env::var("BUDDY_SENSE_CAMERA").unwrap_or_else(|_| "/dev/video0".to_string());
         let cam_ms = std::env::var("BUDDY_SENSE_CAMERA_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(1500);
@@ -132,7 +157,7 @@ async fn main() {
 
     // UI sense — semantic accessibility events (active app / focus), opt-in build.
     #[cfg(feature = "live-ui")]
-    {
+    if organ_active(Organ::Ui) {
         let tx = sense_tx.clone();
         eprintln!("[buddy-sense] ui sense active (AT-SPI)");
         tokio::spawn(async move { senses::ui::live::run(tx).await });
@@ -144,7 +169,7 @@ async fn main() {
     // Needs the recognizer .so on the loader path → spawn this binary with
     // LD_LIBRARY_PATH set to its own directory (where the prebuilt .so are copied).
     #[cfg(feature = "live-audio")]
-    {
+    if organ_active(Organ::LiveAudio) {
         let tx = sense_tx.clone();
         let source = std::env::var("BUDDY_SENSE_MIC_SOURCE").unwrap_or_else(|_| "default".to_string());
         let threshold = std::env::var("BUDDY_SENSE_MIC_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(senses::live_audio::DEFAULT_MIC_THRESHOLD);
