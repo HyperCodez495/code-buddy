@@ -945,6 +945,36 @@ export class ToolHandler {
       return await this.executeBashWithHooks(args, context);
     }
 
+    // apply_patch carries no `path` arg (its files live inside the patch body),
+    // so it would otherwise skip the checkpoint/hook path below and write with
+    // no /undo snapshot. Parse the patch, checkpoint each affected file, run
+    // hooks, then execute. Checkpointing is best-effort — never block the write.
+    if (toolName === 'apply_patch' && metadata.modifiesFiles) {
+      const patchText = typeof args.patch === 'string' ? args.patch : '';
+      const affected: string[] = [];
+      try {
+        const { parsePatch } = await import('../tools/apply-patch.js');
+        for (const op of parsePatch(patchText)) {
+          if (op.type === 'add') this.deps.checkpointManager.checkpointBeforeCreate(op.path);
+          else this.deps.checkpointManager.checkpointBeforeEdit(op.path);
+          affected.push(op.path);
+          if (op.moveTo) {
+            this.deps.checkpointManager.checkpointBeforeCreate(op.moveTo);
+            affected.push(op.moveTo);
+          }
+        }
+      } catch { /* best-effort checkpoint — still apply the patch */ }
+
+      for (const file of affected) {
+        await this.deps.hooksManager.executeHooks('pre-edit', { file, content: '' });
+      }
+      const result = await this.registry.execute(toolName, args, context);
+      for (const file of affected) {
+        await this.deps.hooksManager.executeHooks('post-edit', { file, content: '', output: result.output });
+      }
+      return result;
+    }
+
     // Handle file-modifying tools with checkpoints and hooks
     const editPath = (args.path || args.file_path) as string | undefined;
     if (metadata.modifiesFiles && editPath) {

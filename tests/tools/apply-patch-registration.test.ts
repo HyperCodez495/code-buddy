@@ -1,0 +1,69 @@
+/**
+ * V2 — apply_patch must be a REGISTERED, executable tool.
+ *
+ * WritePolicy.strict (buddy dev default) blocks direct str_replace/create_file
+ * writes and points the agent at apply_patch, which the gate always allows. But
+ * apply_patch was defined and never registered, so strict mode was an edit
+ * DEADLOCK: apply_patch → "Unknown tool", any direct editor → blocked. These
+ * tests pin the registration + the deadlock resolution.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { createTextEditorTools, ApplyPatchExecuteTool } from '../../src/tools/registry/text-editor-tools.js';
+import { WritePolicy } from '../../src/security/write-policy.js';
+
+describe('apply_patch registration (V2)', () => {
+  it('is included in createTextEditorTools() with a required `patch` param', () => {
+    const tools = createTextEditorTools();
+    const applyPatch = tools.find((t) => t.name === 'apply_patch');
+    expect(applyPatch).toBeDefined();
+    const schema = applyPatch!.getSchema!();
+    expect(schema.parameters.required).toContain('patch');
+  });
+
+  describe('WritePolicy.strict resolves the edit deadlock', () => {
+    afterEach(() => WritePolicy.getInstance().setMode('off'));
+
+    it('allows apply_patch but blocks direct str_replace in strict mode', async () => {
+      const wp = WritePolicy.getInstance();
+      wp.setMode('strict');
+
+      const patchGate = await wp.gate({ toolName: 'apply_patch', paths: ['x.ts'] });
+      expect(patchGate.allowed).toBe(true);
+
+      const editGate = await wp.gate({ toolName: 'str_replace_editor', paths: ['x.ts'] });
+      expect(editGate.allowed).toBe(false);
+      expect(editGate.reason).toMatch(/apply_patch/);
+    });
+  });
+
+  describe('ApplyPatchExecuteTool applies a real patch', () => {
+    let dir: string;
+    let prevCwd: string;
+    beforeEach(() => {
+      prevCwd = process.cwd();
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-applypatch-'));
+      process.chdir(dir);
+    });
+    afterEach(() => {
+      process.chdir(prevCwd);
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('adds a new file from a Codex-style patch', async () => {
+      const tool = new ApplyPatchExecuteTool();
+      const patch = '*** Begin Patch\n*** Add File: hello.txt\n+hello world\n*** End Patch';
+      const result = await tool.execute({ patch });
+      expect(result.success).toBe(true);
+      expect(fs.readFileSync(path.join(dir, 'hello.txt'), 'utf-8')).toContain('hello world');
+    });
+
+    it('rejects an empty patch', async () => {
+      const tool = new ApplyPatchExecuteTool();
+      const result = await tool.execute({ patch: '' });
+      expect(result.success).toBe(false);
+    });
+  });
+});

@@ -362,6 +362,96 @@ export class StrReplaceEditorTool implements ITool {
 }
 
 // ============================================================================
+// ApplyPatchTool
+// ============================================================================
+
+// Lazy singleton for the diff-first patch applier (src/tools/apply-patch.ts).
+let applyPatchInstance: InstanceType<typeof import('../apply-patch.js').ApplyPatchTool> | null = null;
+async function getApplyPatchTool() {
+  if (!applyPatchInstance) {
+    const { ApplyPatchTool } = await import('../apply-patch.js');
+    applyPatchInstance = new ApplyPatchTool();
+  }
+  return applyPatchInstance;
+}
+
+/**
+ * ApplyPatchExecuteTool — ITool adapter for the diff-first patch applier.
+ *
+ * Registering this makes WritePolicy `strict` mode's diff-first path REAL:
+ * strict blocks direct str_replace/create_file writes and points the agent at
+ * apply_patch, which the write-policy gate always allows. Before this, the tool
+ * was defined but never registered — so `buddy dev` (WritePolicy.strict by
+ * default) was an edit DEADLOCK: apply_patch → "Unknown tool", any direct
+ * editor → blocked by strict policy. When CODEBUDDY_DIFF_REVIEW is on, the
+ * underlying tool routes through the review gate.
+ */
+export class ApplyPatchExecuteTool implements ITool {
+  readonly name = 'apply_patch';
+  readonly description =
+    'Apply a patch to add, update, or delete files (diff-first). Use *** Begin Patch / *** End Patch with -/+ lines. Required by WritePolicy strict mode.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const tool = await getApplyPatchTool();
+    return tool.execute(input);
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          patch: {
+            type: 'string',
+            description: 'The patch in *** Begin Patch / *** End Patch format with -/+ lines.',
+          },
+          intent: {
+            type: 'string',
+            description: 'What this change achieves (used by the diff-review gate when enabled).',
+          },
+        },
+        required: ['patch'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const patch = (input as Record<string, unknown>).patch;
+    if (typeof patch !== 'string' || patch.trim() === '') {
+      return { valid: false, errors: ['patch must be a non-empty string'] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'file_write' as ToolCategoryType,
+      keywords: ['patch', 'diff', 'apply', 'edit', 'unified', 'write', 'update'],
+      priority: 8,
+      requiresConfirmation: true,
+      modifiesFiles: true,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+/** Reset the shared ApplyPatchTool instance (for testing). */
+export function resetApplyPatchInstance(): void {
+  applyPatchInstance = null;
+}
+
+// ============================================================================
 // Factory Function
 // ============================================================================
 
@@ -373,5 +463,6 @@ export function createTextEditorTools(): ITool[] {
     new ViewFileTool(),
     new CreateFileTool(),
     new StrReplaceEditorTool(),
+    new ApplyPatchExecuteTool(),
   ];
 }

@@ -65,6 +65,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     priority: 8,
     description: 'Apply multiple text replacements to a single file atomically'
   },
+  {
+    name: 'apply_patch',
+    category: 'file_write',
+    keywords: ['patch', 'diff', 'apply', 'unified', 'edit', 'update', 'add', 'delete', 'file', 'diff-first'],
+    priority: 8,
+    description: 'Apply a diff-first patch to add/update/delete files (required by WritePolicy strict mode)'
+  },
 
   // Directory listing
   {
