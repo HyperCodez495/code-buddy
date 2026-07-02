@@ -475,11 +475,28 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
   const hh = parseInt(tm[1]!, 10);
   const mm = tm[2] ? parseInt(tm[2], 10) : 0;
   if (hh > 23 || mm > 59) return null;
-  const time = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  // Lead time — "rappelle-moi 30 min AVANT mon train à 10h38" fires at 10h08 (event − lead), with a
+  // label that says how far ahead. Only same-day (a lead crossing midnight keeps the event time).
+  let fireH = hh;
+  let fireM = mm;
+  let leadLabel = '';
+  const leadM = t.match(/(\d+)\s*(min|minute|minutes|h|heure|heures)\s+avant/i);
+  if (leadM) {
+    const nLead = parseInt(leadM[1]!, 10);
+    const isHour = /^h/i.test(leadM[2]!);
+    const total = hh * 60 + mm - (isHour ? nLead * 60 : nLead);
+    if (total >= 0) {
+      fireH = Math.floor(total / 60);
+      fireM = total % 60;
+      leadLabel = ` (dans ${nLead} ${isHour ? `heure${nLead > 1 ? 's' : ''}` : `minute${nLead > 1 ? 's' : ''}`})`;
+    }
+  }
+  const time = `${String(fireH).padStart(2, '0')}:${String(fireM).padStart(2, '0')}`;
   const date = parseRelativeFrenchDate(t, now);
   const label =
-    t
+    (t
       .replace(CREATE_VERB, ' ')
+      .replace(/\b\d+\s*(?:min|minute|minutes|h|heure|heures)\s+avant\b/gi, ' ') // strip the lead phrase
       .replace(/(?:^|\s)(?:à|a)\s*\d{1,2}\s*(?:h(?:eures?)?|:)\s*\d{0,2}/i, ' ')
       .replace(/\b\d{1,2}:\d{2}\b/, ' ')
       // Strip the date cue too, so the label is "train", not "train demain".
@@ -488,7 +505,7 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
       .replace(/\b(de|d'|tous les jours|chaque jour|stp|s'il te pla[iî]t|mon|ma|mes)\b/gi, ' ')
       .replace(/[.,!?]/g, ' ')
       .replace(/\s+/g, ' ')
-      .trim() || 'rappel';
+      .trim() || 'rappel') + leadLabel;
   return { label, time, ...(date ? { date } : {}) };
 }
 
@@ -514,8 +531,12 @@ const REMINDER_DISABLE_RE = /\b(desactive|coupe|suspends?|arrete)\b/;
 
 export type ReminderCommand =
   | { kind: 'list' }
+  | { kind: 'agenda'; days: number }
   | { kind: 'remove'; target: string }
   | { kind: 'disable'; target: string };
+
+const REMINDER_AGENDA_RE =
+  /\b(mon agenda|mon planning|qu est ce que j ai|qu ai je|quoi de prevu|ce qui est prevu|mes rendez vous|a venir|prochains rappels|prochains jours)\b/;
 
 /** The label fragment after the word "rappel", stripped of stopwords ("du train" → "train"). */
 function targetAfterRappel(t: string): string {
@@ -537,6 +558,13 @@ export function parseReminderCommand(text: string): ReminderCommand | null {
   if (!t) return null;
   const isRemove = REMINDER_REMOVE_RE.test(t);
   const isDisable = REMINDER_DISABLE_RE.test(t);
+  // Agenda ("qu'est-ce que j'ai demain / cette semaine") — a calendar view by date.
+  if (REMINDER_AGENDA_RE.test(t) && !isRemove && !isDisable && !CREATE_VERB.test(text)) {
+    let days = 7;
+    if (/\baujourd hui\b/.test(t)) days = 0;
+    else if (/\bdemain\b/.test(t)) days = 1;
+    return { kind: 'agenda', days };
+  }
   // A pure query ("quels sont mes rappels") — but not when a remove/disable/create verb is present.
   if (REMINDER_LIST_RE.test(t) && !isRemove && !isDisable && !CREATE_VERB.test(text)) {
     return { kind: 'list' };
@@ -593,6 +621,78 @@ export function reminderCadencePhrase(r: Pick<Reminder, 'date' | 'days'>, now: D
   return 'tous les jours';
 }
 
+// ── AGENDA (a calendar view of upcoming reminder occurrences) ─────────
+
+const FR_DAY_NAMES = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+export interface AgendaEntry {
+  id: string;
+  label: string;
+  /** Epoch ms of the occurrence (local). */
+  at: number;
+  time: string;
+  recurring: boolean;
+}
+
+/** Local epoch ms for Y / month0 / day at HH:MM, or null if the time is malformed. */
+function occurrenceAt(year: number, month0: number, day: number, time: string): number | null {
+  const [h, m] = time.split(':').map(Number);
+  if (h === undefined || m === undefined) return null;
+  return new Date(year, month0, day, h, m, 0, 0).getTime();
+}
+
+/**
+ * Upcoming reminder occurrences over the next `days` days, chronological. A one-shot dated reminder
+ * appears once (on its day); a recurring reminder appears once per applicable day in the window
+ * (respecting its weekday mask). Past occurrences and disabled reminders are skipped. Pure + testable.
+ */
+export function agendaFor(reminders: Reminder[], nowMs: number, days: number): AgendaEntry[] {
+  const span = Math.max(0, Math.floor(days));
+  const base = new Date(nowMs);
+  // Window in CALENDAR days: from now through the END of the day `span` days ahead (so "demain" covers
+  // ALL of tomorrow, not just now+24h). End-exclusive at the start of the day AFTER the last one.
+  const windowEnd = new Date(base.getFullYear(), base.getMonth(), base.getDate() + span + 1, 0, 0, 0, 0).getTime();
+  const out: AgendaEntry[] = [];
+  for (const r of reminders) {
+    if (!r.enabled || !isValidTime(r.time)) continue;
+    if (isOneShot(r)) {
+      if (!isValidDate(r.date!)) continue;
+      const [y, mo, d] = r.date!.split('-').map(Number) as [number, number, number];
+      const at = occurrenceAt(y, mo - 1, d, r.time);
+      if (at != null && at >= nowMs && at < windowEnd) {
+        out.push({ id: r.id, label: r.label, at, time: r.time, recurring: false });
+      }
+    } else {
+      for (let offset = 0; offset <= span; offset++) {
+        const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset);
+        if (r.days && r.days.length > 0 && !r.days.includes(d.getDay())) continue;
+        const at = occurrenceAt(d.getFullYear(), d.getMonth(), d.getDate(), r.time);
+        if (at != null && at >= nowMs && at < windowEnd) {
+          out.push({ id: r.id, label: r.label, at, time: r.time, recurring: true });
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => a.at - b.at).slice(0, 30);
+}
+
+/** A spoken summary of the upcoming agenda, using relative day words (aujourd'hui/demain) when close. */
+export function describeAgendaForSpeech(agenda: AgendaEntry[], nowMs: number): string {
+  if (agenda.length === 0) return "Tu n'as rien de prévu dans cette période.";
+  const n = new Date(nowMs);
+  const todayKey = localDateKey(n);
+  const tomorrowKey = localDateKey(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1));
+  const items = agenda.slice(0, 8).map((e) => {
+    const d = new Date(e.at);
+    const dk = localDateKey(d);
+    const when = dk === todayKey ? "aujourd'hui" : dk === tomorrowKey ? 'demain' : FR_DAY_NAMES[d.getDay()];
+    return `${e.label} ${when} à ${e.time}`;
+  });
+  const head = agenda.length === 1 ? 'Tu as un rappel à venir :' : `Tu as ${agenda.length} rappels à venir :`;
+  const tail = agenda.length > 8 ? ` … et ${agenda.length - 8} autres.` : '.';
+  return `${head} ${items.join(' ; ')}${tail}`;
+}
+
 /** A spoken summary of the active reminders (bounded), or a gentle "none" line. */
 export function describeRemindersForSpeech(reminders: Reminder[]): string {
   const active = reminders.filter((r) => r.enabled);
@@ -610,6 +710,8 @@ export interface ReminderVoiceDeps {
   list?: () => Promise<Reminder[]>;
   remove?: (id: string) => Promise<boolean>;
   disable?: (id: string) => Promise<Reminder | null>;
+  /** Clock for the agenda window (tests). Default Date.now(). */
+  now?: number;
 }
 
 /**
@@ -624,6 +726,11 @@ export async function handleReminderVoiceCommand(text: string, deps: ReminderVoi
     const reminders = await (deps.list ?? listReminders)();
     if (cmd.kind === 'list') {
       await deps.speak(describeRemindersForSpeech(reminders));
+      return true;
+    }
+    if (cmd.kind === 'agenda') {
+      const now = deps.now ?? Date.now();
+      await deps.speak(describeAgendaForSpeech(agendaFor(reminders, now, cmd.days), now));
       return true;
     }
     const match = matchReminderByLabel(reminders.filter((r) => r.enabled || cmd.kind === 'remove'), cmd.target);

@@ -2468,10 +2468,11 @@ program
 
 program
   .command("remind [action] [args...]")
-  .description("Reminders — the robot reminds you (meds…) and you flag them done (add|list|done|rm)")
+  .description("Reminders — the robot reminds you (meds…) and you flag them done (add|list|agenda|done|rm)")
   .option("--at <time>", "time of day HH:MM (for `add`)")
   .option("--date <date>", "one-shot date YYYY-MM-DD — fires once then retires (not recurring)")
   .option("--days <csv>", "days of week 0=Sun..6=Sat, e.g. 1,3,5 (default: every day)")
+  .option("--ahead <n>", "agenda: how many days ahead to list (default 7)")
   .option("--daily", "every day (default when --days omitted)")
   .option("--message <text>", "custom spoken/sent text")
   .action(async (action: string | undefined, args: string[] = [], options) => {
@@ -2511,6 +2512,17 @@ program
             `${x.enabled ? "•" : "◦"} ${x.id}  ${x.time}  ${cadence}  ${x.label}` +
               `${x.lastDoneAt ? `  (last done ${x.lastDoneAt.slice(0, 16).replace("T", " ")})` : ""}`,
           );
+        }
+      } else if (act === "agenda") {
+        const ahead = Number(options.ahead ?? 7);
+        const agenda = r.agendaFor(await r.listReminders(), Date.now(), Number.isFinite(ahead) ? ahead : 7);
+        if (!agenda.length) {
+          cli.stdout("Rien de prévu dans cette période.");
+          return;
+        }
+        for (const e of agenda) {
+          const when = new Date(e.at).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+          cli.stdout(`${when}  ${e.time}  ${e.label}  ${e.recurring ? "[récurrent]" : "[ponctuel]"}`);
         }
       } else if (act === "done") {
         const id = args[0];
