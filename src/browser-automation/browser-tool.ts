@@ -531,21 +531,16 @@ export class BrowserTool {
     const results: Array<{ action: string; success: boolean; output?: string; error?: string }> = [];
 
     for (const subAction of input.actions) {
-      // SSRF check for navigation actions in batch (Native Engine v2026.3.14)
+      // SSRF check for navigation actions in batch — same fail-closed guard as
+      // single-navigate (blocks file:/data:/about:, private/metadata IPs, and
+      // refuses if the guard module can't load).
       if (subAction.action === 'navigate' && subAction.url) {
-        try {
-          const { assertSafeUrl } = await import('../security/ssrf-guard.js');
-          const check = await assertSafeUrl(subAction.url);
-          if (!check.safe) {
-            results.push({
-              action: subAction.action,
-              success: false,
-              error: `SSRF blocked: ${check.reason || 'URL not allowed'}`,
-            });
-            if (stopOnError) break;
-            continue;
-          }
-        } catch { /* SSRF guard unavailable, proceed */ }
+        const guard = await this.guardNavigationUrl(subAction.url);
+        if (!guard.ok) {
+          results.push({ action: subAction.action, success: false, error: guard.error });
+          if (stopOnError) break;
+          continue;
+        }
       }
 
       const result = await this.execute(subAction);
@@ -779,25 +774,39 @@ export class BrowserTool {
   // Navigation
   // ============================================================================
 
+  /**
+   * Gate EVERY navigation target — fail closed. assertSafeUrl already blocks
+   * non-http(s) schemes (`file:`/`data:`/`about:` → would otherwise read local
+   * files, e.g. `file:///home/user/.aws/credentials`, straight into the model
+   * context), private/loopback/metadata IPs, DNS-rebind, and unparseable URLs,
+   * and it never throws. The only remaining failure point is the dynamic import
+   * of the guard module itself; if that fails we REFUSE rather than proceed (the
+   * previous code caught the import error and navigated unchecked — S3). The one
+   * explicit exception is `about:blank`, an inert empty page with no read.
+   */
+  private async guardNavigationUrl(url: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (url.trim().toLowerCase() === 'about:blank') return { ok: true };
+    try {
+      const { assertSafeUrl } = await import('../security/ssrf-guard.js');
+      const check = await assertSafeUrl(url);
+      if (!check.safe) {
+        return { ok: false, error: `Navigation blocked: ${check.reason || 'URL not allowed'}` };
+      }
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `Navigation blocked: URL guard unavailable (${msg})` };
+    }
+  }
+
   private async navigate(input: BrowserToolInput): Promise<ToolResult> {
     if (!input.url) {
       return { success: false, error: 'URL is required' };
     }
 
-    // SSRF guard for the network surface only. http/https can be steered at internal
-    // services / cloud metadata, so they're validated (parity with batch-mode :474).
-    // Local schemes (file://, about:, data:) are legitimate navigation targets and are
-    // not a server-side request forgery, so they pass through unchanged.
-    let scheme = '';
-    try { scheme = new URL(input.url).protocol; } catch { /* leave to Playwright */ }
-    if (scheme === 'http:' || scheme === 'https:') {
-      try {
-        const { assertSafeUrl } = await import('../security/ssrf-guard.js');
-        const check = await assertSafeUrl(input.url);
-        if (!check.safe) {
-          return { success: false, error: `SSRF blocked: ${check.reason || 'URL not allowed'}` };
-        }
-      } catch { /* SSRF guard unavailable, proceed */ }
+    const guard = await this.guardNavigationUrl(input.url);
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
 
     await this.manager.navigate({

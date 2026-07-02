@@ -47,7 +47,7 @@ describe('navigate SSRF guard (parity with batch-mode)', () => {
     const tool = new BrowserTool();
     const r = await tool.execute({ action: 'navigate', url });
     expect(r.success).toBe(false);
-    expect(r.error).toMatch(/SSRF blocked/);
+    expect(r.error).toMatch(/blocked/i);
     expect(navigateSpy).not.toHaveBeenCalled();
   });
 
@@ -58,6 +58,41 @@ describe('navigate SSRF guard (parity with batch-mode)', () => {
   ])('allows %s through to the manager', async (_label, url) => {
     const tool = new BrowserTool();
     const r = await tool.execute({ action: 'navigate', url });
+    expect(r.success).toBe(true);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // S2 — non-http(s) schemes must NOT bypass the guard. A `file://` navigate
+  // followed by get_html would otherwise read arbitrary local files (creds, keys)
+  // into the model context.
+  it.each([
+    ['file:// local read', 'file:///home/patrice/.aws/credentials'],
+    ['file:// etc passwd', 'file:///etc/passwd'],
+    ['data: url', 'data:text/html,<script>1</script>'],
+    ['about:config', 'about:config'],
+    ['chrome scheme', 'chrome://settings'],
+    ['ftp scheme', 'ftp://example.com/x'],
+  ])('blocks non-http scheme: %s', async (_label, url) => {
+    const tool = new BrowserTool();
+    const r = await tool.execute({ action: 'navigate', url });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/blocked/i);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  // S3 — an unparseable URL previously left `scheme=''` and skipped the guard.
+  it('fails closed on an unparseable URL', async () => {
+    const tool = new BrowserTool();
+    const r = await tool.execute({ action: 'navigate', url: 'notaurl' });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/blocked/i);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  // about:blank is an inert empty page — explicitly allowed for practicality.
+  it('allows about:blank', async () => {
+    const tool = new BrowserTool();
+    const r = await tool.execute({ action: 'navigate', url: 'about:blank' });
     expect(r.success).toBe(true);
     expect(navigateSpy).toHaveBeenCalledTimes(1);
   });
