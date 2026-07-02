@@ -479,3 +479,139 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
       .trim() || 'rappel';
   return { label, time, ...(date ? { date } : {}) };
 }
+
+// ── voice MANAGEMENT of reminders (list / remove / disable) ────────────
+// So Patrice can say "supprime le rappel du train" instead of needing the CLI. The parse + fuzzy
+// match + spoken-summary logic is pure/testable; `handleReminderVoiceCommand` wires it to the store.
+
+/** Lowercase, strip diacritics + punctuation → clean word sequence (STT-friendly). */
+function normLabel(s: string): string {
+  return (s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const REMINDER_LIST_RE =
+  /\b(mes rappels|quels rappels|quels sont mes rappels|liste (les|mes) rappels|montre.{0,12}rappels|c est quoi mes rappels|combien de rappels)\b/;
+const REMINDER_REMOVE_RE = /\b(oublie|annule|supprime|enleve|efface|retire)\b/;
+const REMINDER_DISABLE_RE = /\b(desactive|coupe|suspends?|arrete)\b/;
+
+export type ReminderCommand =
+  | { kind: 'list' }
+  | { kind: 'remove'; target: string }
+  | { kind: 'disable'; target: string };
+
+/** The label fragment after the word "rappel", stripped of stopwords ("du train" → "train"). */
+function targetAfterRappel(t: string): string {
+  const idx = t.indexOf('rappel');
+  let rest = idx >= 0 ? t.slice(idx + 'rappel'.length) : t;
+  rest = rest.replace(/^s\b/, ' '); // "rappels"
+  return rest
+    .replace(/\b(du|de|des|la|le|les|mon|ma|mes|pour|d|a|au|aux|ce|cet|cette)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Parse a spoken reminder-MANAGEMENT command (list / remove / disable), or null. Deliberately does
+ * NOT fire on a creation ("rappelle-moi …") or a bare verb without "rappel". Pure + testable.
+ */
+export function parseReminderCommand(text: string): ReminderCommand | null {
+  const t = normLabel(text);
+  if (!t) return null;
+  const isRemove = REMINDER_REMOVE_RE.test(t);
+  const isDisable = REMINDER_DISABLE_RE.test(t);
+  // A pure query ("quels sont mes rappels") — but not when a remove/disable/create verb is present.
+  if (REMINDER_LIST_RE.test(t) && !isRemove && !isDisable && !CREATE_VERB.test(text)) {
+    return { kind: 'list' };
+  }
+  if (!/\brappel\b/.test(t)) return null; // remove/disable must target "le rappel …"
+  if (isDisable) return { kind: 'disable', target: targetAfterRappel(t) };
+  if (isRemove) return { kind: 'remove', target: targetAfterRappel(t) };
+  return null;
+}
+
+/** True when the utterance is a reminder-management command (for the voice shortcut gate). */
+export function isReminderVoiceCommand(text: string): boolean {
+  return parseReminderCommand(text) !== null;
+}
+
+/** Find the reminder that best matches a spoken label fragment (token overlap + substring), or null. */
+export function matchReminderByLabel(reminders: Reminder[], target: string): Reminder | null {
+  const t = normLabel(target);
+  if (!t) return null;
+  const tTokens = new Set(t.split(' ').filter(Boolean));
+  let best: Reminder | null = null;
+  let bestScore = 0;
+  for (const r of reminders) {
+    const rl = normLabel(r.label);
+    let overlap = 0;
+    for (const tok of rl.split(' ')) if (tTokens.has(tok)) overlap++;
+    const contains = rl.includes(t) || t.includes(rl) ? 2 : 0;
+    const score = overlap + contains;
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+/** A spoken summary of the active reminders (bounded), or a gentle "none" line. */
+export function describeRemindersForSpeech(reminders: Reminder[]): string {
+  const active = reminders.filter((r) => r.enabled);
+  if (active.length === 0) return "Tu n'as aucun rappel actif pour le moment.";
+  const items = active.slice(0, 8).map((r) => {
+    const when = r.date ? `le ${r.date}` : r.days?.length ? 'certains jours' : 'tous les jours';
+    return `${r.label} à ${r.time} ${when}`;
+  });
+  const head = active.length === 1 ? 'Tu as un rappel :' : `Tu as ${active.length} rappels :`;
+  const tail = active.length > 8 ? ` … et ${active.length - 8} autres.` : '.';
+  return `${head} ${items.join(' ; ')}${tail}`;
+}
+
+export interface ReminderVoiceDeps {
+  /** Speak a line aloud (required). */
+  speak: (text: string) => Promise<void>;
+  /** Store ops — default to the real store; injectable for tests. */
+  list?: () => Promise<Reminder[]>;
+  remove?: (id: string) => Promise<boolean>;
+  disable?: (id: string) => Promise<Reminder | null>;
+}
+
+/**
+ * Handle a spoken reminder-management command end to end (parse → match → act → speak). Returns true
+ * if the utterance WAS such a command (handled), false otherwise so the caller falls through to
+ * create/ack/reply. Never-throws.
+ */
+export async function handleReminderVoiceCommand(text: string, deps: ReminderVoiceDeps): Promise<boolean> {
+  const cmd = parseReminderCommand(text);
+  if (!cmd) return false;
+  try {
+    const reminders = await (deps.list ?? listReminders)();
+    if (cmd.kind === 'list') {
+      await deps.speak(describeRemindersForSpeech(reminders));
+      return true;
+    }
+    const match = matchReminderByLabel(reminders.filter((r) => r.enabled || cmd.kind === 'remove'), cmd.target);
+    if (!match) {
+      await deps.speak(cmd.target ? `Je ne trouve pas de rappel « ${cmd.target} ».` : 'De quel rappel parles-tu ?');
+      return true;
+    }
+    if (cmd.kind === 'remove') {
+      await (deps.remove ?? removeReminder)(match.id);
+      await deps.speak(`C'est fait, j'ai supprimé le rappel : ${match.label}.`);
+    } else {
+      await (deps.disable ?? ((id: string) => setReminderEnabled(id, false)))(match.id);
+      await deps.speak(`D'accord, j'ai désactivé le rappel : ${match.label}.`);
+    }
+  } catch (err) {
+    logger.warn(`[reminders] voice command failed: ${err instanceof Error ? err.message : String(err)}`);
+    await deps.speak('Je n\'ai pas réussi à modifier tes rappels, désolée.').catch(() => undefined);
+  }
+  return true;
+}

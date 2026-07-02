@@ -1232,7 +1232,9 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 // A reminder voice-ack OR a voice-creation both bypass the silence gate and
                 // short-circuit the normal reply (the robot confirms instead of chatting).
                 reminderShortcut = (t: string) =>
-                  rem.matchAck(t, Date.now()) !== null || rem.parseVoiceReminder(t) !== null;
+                  rem.matchAck(t, Date.now()) !== null ||
+                  rem.isReminderVoiceCommand(t) ||
+                  rem.parseVoiceReminder(t) !== null;
                 onHeard = async (t: string) => {
                   const id = rem.matchAck(t, Date.now());
                   if (id) {
@@ -1240,6 +1242,9 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                     if (done) await sayNow(rem.reminderReadback(done.label));
                     return;
                   }
+                  // Manage reminders by voice (list / remove / disable) BEFORE create, so
+                  // "supprime le rappel du train" isn't misread as a new reminder.
+                  if (await rem.handleReminderVoiceCommand(t, { speak: sayNow })) return;
                   const created = rem.parseVoiceReminder(t);
                   if (created) {
                     try {
