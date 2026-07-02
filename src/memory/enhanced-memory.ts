@@ -175,6 +175,8 @@ export class EnhancedMemory extends EventEmitter {
   private embeddingProvider: MemoryEmbedder | null = null;
   private bayesianQualifier = new BayesianQualifier();
   private disposed = false;
+  /** Resolves when initialize() finished (dirs ensured, stores loaded). */
+  private readonly ready: Promise<void>;
 
   constructor(config: Partial<MemoryConfig> = {}) {
     super();
@@ -205,7 +207,19 @@ export class EnhancedMemory extends EventEmitter {
       }
     }
 
-    this.initialize();
+    // Captured, never fire-and-forget: an immediate store() used to race
+    // ensureDir (ENOENT) and loadMemories() could overwrite entries stored
+    // before the load completed. Every async public method awaits `ready`.
+    this.ready = this.initialize().catch((err) => {
+      logger.warn('EnhancedMemory initialization failed — continuing best-effort', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  /** Await full initialization (dirs + persisted state loaded). */
+  whenReady(): Promise<void> {
+    return this.ready;
   }
 
   /** Inject an embedder (tests / alternative engines) and enable semantic recall. */
@@ -411,6 +425,7 @@ export class EnhancedMemory extends EventEmitter {
     sessionId?: string;
     expiresIn?: number; // days
   }): Promise<MemoryEntry> {
+    await this.ready;
     const id = crypto.randomBytes(8).toString('hex');
     const now = new Date();
 
@@ -548,6 +563,7 @@ export class EnhancedMemory extends EventEmitter {
    * Recall memories
    */
   async recall(options: MemorySearchOptions = {}): Promise<MemoryEntry[]> {
+    await this.ready;
     let results = Array.from(this.memories.values());
 
     // Filter expired
@@ -701,6 +717,7 @@ export class EnhancedMemory extends EventEmitter {
    * Forget a memory
    */
   async forget(id: string): Promise<boolean> {
+    await this.ready;
     const memory = this.memories.get(id);
     if (!memory) return false;
 
@@ -777,6 +794,7 @@ export class EnhancedMemory extends EventEmitter {
    * Store project context
    */
   async setProjectContext(projectPath: string): Promise<ProjectMemory> {
+    await this.ready;
     const projectId = crypto
       .createHash('sha256')
       .update(projectPath)
@@ -830,6 +848,7 @@ export class EnhancedMemory extends EventEmitter {
     examples?: string[];
     confidence?: number;
   }): Promise<void> {
+    await this.ready;
     if (!this.currentProjectId) return;
 
     const project = this.projects.get(this.currentProjectId);
@@ -871,6 +890,7 @@ export class EnhancedMemory extends EventEmitter {
     todos?: string[];
     messageCount: number;
   }): Promise<ConversationSummary> {
+    await this.ready;
     const summary: ConversationSummary = {
       id: crypto.randomBytes(8).toString('hex'),
       sessionId: options.sessionId,
@@ -912,6 +932,7 @@ export class EnhancedMemory extends EventEmitter {
    * Update user profile
    */
   async updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
+    await this.ready;
     if (!this.userProfile) {
       this.userProfile = {
         id: crypto.randomBytes(8).toString('hex'),
@@ -969,6 +990,7 @@ export class EnhancedMemory extends EventEmitter {
     includeRecentSummaries?: boolean;
     query?: string;
   } = {}): Promise<string> {
+    await this.ready;
     const parts: string[] = [];
 
     // Add user preferences
@@ -1083,6 +1105,7 @@ export class EnhancedMemory extends EventEmitter {
    * Clear all memories
    */
   async clear(): Promise<void> {
+    await this.ready;
     this.memories.clear();
     this.summaries = [];
     await this.saveAll();
@@ -1124,6 +1147,7 @@ export class EnhancedMemory extends EventEmitter {
    * Qualify a memory as approved or rejected (Active Learning labeling)
    */
   async qualifyMemory(entry: MemoryEntry, approved: boolean, query?: string): Promise<void> {
+    await this.ready;
     const queryEmbedding = query ? await this.generateEmbedding(query) : undefined;
     const features = this.extractMemoryFeatures(entry, queryEmbedding);
     this.bayesianQualifier.addSample(features, approved ? 1 : 0);
@@ -1144,7 +1168,9 @@ export class EnhancedMemory extends EventEmitter {
    * Active Learning: Retrieve memories with the highest uncertainty (BALD score)
    * so the system can solicit user feedback and improve its relevance model.
    */
-  async getActiveLearningTargets(limit: number = 5, query?: string): Promise<{ memory: MemoryEntry; baldScore: number }[]> {
+  async getActiveLearningTargets(limit: number = 5, query?: string): Promise<{
+    memory: MemoryEntry; baldScore: number }[]> {
+    await this.ready;
     if (!this.bayesianQualifier || !(this.bayesianQualifier as any).isTrained) {
       return [];
     }

@@ -27,10 +27,9 @@ let memory: EnhancedMemory | null = null;
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'enhanced-mem-'));
   homeHolder.dir = tmpHome;
-  // initialize() ensures these asynchronously (fire-and-forget in the
-  // constructor) — pre-create so an immediate store() doesn't race it.
-  fs.mkdirSync(path.join(tmpHome, '.codebuddy', 'memory', 'projects'), { recursive: true });
-  fs.mkdirSync(path.join(tmpHome, '.codebuddy', 'memory', 'memories'), { recursive: true });
+  // NOTE: the data dirs are deliberately NOT pre-created — every async
+  // public method awaits `ready` (initialize barrier), so an immediate
+  // store() on a fresh HOME must no longer race ensureDir/loadMemories.
 });
 
 afterEach(() => {
