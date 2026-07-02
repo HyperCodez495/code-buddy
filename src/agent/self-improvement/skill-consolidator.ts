@@ -78,6 +78,23 @@ export async function consolidateCluster(
     return { accepted: false, absorbed: [], skippedPinned, rejectionReason: 'cluster-too-small', reasons: ['need ≥2 non-pinned authored skills to consolidate'] };
   }
 
+  // Gate 0 — every sibling's coverage must be VERIFIABLE before we risk
+  // absorbing it. A scenario with no `expectIncludes` gives coversScenario a
+  // vacuous `[].every() === true`, so Gate 2 below could not actually protect
+  // that sibling — the umbrella would "cover" it while containing none of its
+  // guidance. Fail closed: refuse to consolidate a cluster whose coverage
+  // can't be checked, rather than silently archiving a sibling we can't verify.
+  const unverifiable = mergeable.filter((s) => s.scenario.expectIncludes.length === 0).map((s) => s.scenario.id);
+  if (unverifiable.length > 0) {
+    return {
+      accepted: false,
+      absorbed: [],
+      skippedPinned,
+      rejectionReason: 'coverage-loss',
+      reasons: [`coverage unverifiable (empty expectIncludes) for: ${unverifiable.join(', ')} — refusing to absorb`],
+    };
+  }
+
   const proposal = await proposer.propose({ siblings: mergeable });
   if (!proposal || !proposal.content.trim()) {
     return { accepted: false, absorbed: [], skippedPinned, rejectionReason: 'no-proposal', reasons: ['no umbrella proposal'] };

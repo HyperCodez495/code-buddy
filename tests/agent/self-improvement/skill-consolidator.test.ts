@@ -103,4 +103,25 @@ describe('skill consolidation — coverage-gated', () => {
     expect(mutator.has('authored-dev-procedures')).toBe(false);
     expect(mutator.has('authored-git-bisect')).toBe(true);
   });
+
+  it('REFUSES to absorb a sibling whose scenario has no expectIncludes (coverage unverifiable)', async () => {
+    const { mutator, archive } = setup();
+    // A sibling scenario with EMPTY expectIncludes: coversScenario would return
+    // a vacuous true, so Gate 2 could not protect it — fail closed before merge.
+    const emptyScenario = { ...DELETE, id: 'safe-delete', expectIncludes: [] };
+    const cluster = buildClusterFromInstalled(mutator, [BISECT, emptyScenario]);
+
+    const out = await consolidateCluster(cluster, new StaticUmbrellaProposer(UMBRELLA_GOOD), mutator, archive, {
+      keepOnAccept: true,
+    });
+
+    expect(out.accepted).toBe(false);
+    expect(out.rejectionReason).toBe('coverage-loss');
+    expect(out.reasons.join(' ')).toMatch(/unverifiable.*safe-delete/);
+    expect(out.absorbed).toHaveLength(0);
+    // Nothing archived, both siblings intact.
+    expect(mutator.has('authored-git-bisect')).toBe(true);
+    expect(mutator.has('authored-safe-delete')).toBe(true);
+    expect(mutator.has('authored-dev-procedures')).toBe(false);
+  });
 });
