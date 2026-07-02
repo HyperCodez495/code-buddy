@@ -694,18 +694,17 @@ export class LessonsTracker {
     ];
     const shownIds: string[] = [];
     let used = 0;
-    let overflowed = false;
+    // Best-fit packing IN priority order: try categories RULE→…→INSIGHT and, within each, rank/recency.
+    // A single over-budget item is SKIPPED (not a hard stop), so one long RULE lesson no longer starves
+    // the shorter PATTERN/CONTEXT/INSIGHT lessons that would still fit — while a lower-priority lesson
+    // is only ever packed into the budget LEFT after the higher-priority ones (priority is preserved).
     const order: LessonCategory[] = ['RULE', 'PATTERN', 'CONTEXT', 'INSIGHT'];
     for (const cat of order) {
-      if (overflowed) break;
       const catItems = (grouped.get(cat) ?? []).slice().sort(byRankThenRecency);
       for (const item of catItems) {
         const ctx = item.context ? ` _(${item.context})_` : '';
         const line = `**[${item.category}]**${ctx} ${item.content}`;
-        if (used + line.length > maxChars) {
-          overflowed = true;
-          break;
-        }
+        if (used + line.length > maxChars) continue; // skip this over-budget item, keep packing smaller ones
         lines.push(line);
         used += line.length;
         shownIds.push(item.id);

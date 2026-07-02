@@ -75,6 +75,20 @@ describe('buildContextBlock — budget', () => {
     expect(block).toMatch(/ranked by recency/);
   });
 
+  it('best-fit: a long over-budget lesson does not starve a shorter one that fits', async () => {
+    const t = tracker();
+    t.add('RULE', 'short rule keep me', 'manual'); // older, short
+    await new Promise((r) => setTimeout(r, 10)); // distinct createdAt → the long one ranks first by recency
+    t.add('RULE', 'X'.repeat(400), 'manual'); // newer, long → over budget on its own
+
+    const block = t.buildContextBlock({ maxChars: 100 })!;
+    // The long lesson overflows and is skipped, but the short one still fits and is shown
+    // (the old hard-break would have dropped BOTH once the first over-budget item was hit).
+    expect(block).toContain('short rule keep me');
+    expect(block).not.toContain('X'.repeat(400));
+    expect(block).toMatch(/\+1 lesson over the 100-char budget/);
+  });
+
   it('exports a sane default budget', () => {
     expect(DEFAULT_LESSONS_CONTEXT_CHARS).toBe(2000);
   });
