@@ -13,6 +13,8 @@ import { logger } from '../utils/logger.js';
 import {
   dueReminders,
   markFired,
+  setReminderEnabled,
+  isOneShot,
   openAck,
   bumpNag,
   pendingAcks,
@@ -78,11 +80,15 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
   for (const r of due) {
     try {
       await markFired(r.id, now);
+      // A one-shot (dated) reminder retires the moment it fires — it must never come back tomorrow.
+      // The isDue date check already prevents that, but disabling makes it explicit + visible in the
+      // list, and closes any same-day double-fire edge.
+      if (isOneShot(r)) await setReminderEnabled(r.id, false);
       openAck(r, nowMs);
       const msg = reminderMessage(r);
       await say(msg);
       await notify(`⏰ ${msg}`);
-      logger.info(`[reminders] fired '${r.label}' (awaiting ack)`);
+      logger.info(`[reminders] fired '${r.label}'${isOneShot(r) ? ' (one-shot → retired)' : ''} (awaiting ack)`);
     } catch (err) {
       logger.warn(`[reminders] fire '${r.label}' failed: ${err instanceof Error ? err.message : String(err)}`);
     }

@@ -2470,6 +2470,7 @@ program
   .command("remind [action] [args...]")
   .description("Reminders — the robot reminds you (meds…) and you flag them done (add|list|done|rm)")
   .option("--at <time>", "time of day HH:MM (for `add`)")
+  .option("--date <date>", "one-shot date YYYY-MM-DD — fires once then retires (not recurring)")
   .option("--days <csv>", "days of week 0=Sun..6=Sat, e.g. 1,3,5 (default: every day)")
   .option("--daily", "every day (default when --days omitted)")
   .option("--message <text>", "custom spoken/sent text")
@@ -2492,11 +2493,11 @@ program
         const rem = await r.addReminder({
           label,
           time: options.at,
-          ...(days && days.length ? { days } : {}),
+          ...(options.date ? { date: String(options.date) } : days && days.length ? { days } : {}),
           ...(options.message ? { message: options.message } : {}),
         });
         cli.stdout(
-          `✅ Added ${rem.id}: "${rem.label}" at ${rem.time} ${rem.days?.length ? `on ${rem.days.join(",")}` : "daily"}`,
+          `✅ Added ${rem.id}: "${rem.label}" at ${rem.time} ${rem.date ? `on ${rem.date} (one-shot)` : rem.days?.length ? `on ${rem.days.join(",")}` : "daily"}`,
         );
       } else if (act === "list") {
         const list = await r.listReminders();
@@ -2505,8 +2506,9 @@ program
           return;
         }
         for (const x of list) {
+          const cadence = x.date ? `${x.date} (once)` : x.days?.length ? `[${x.days.join(",")}]` : "daily";
           cli.stdout(
-            `${x.enabled ? "•" : "◦"} ${x.id}  ${x.time}  ${x.days?.length ? `[${x.days.join(",")}]` : "daily"}  ${x.label}` +
+            `${x.enabled ? "•" : "◦"} ${x.id}  ${x.time}  ${cadence}  ${x.label}` +
               `${x.lastDoneAt ? `  (last done ${x.lastDoneAt.slice(0, 16).replace("T", " ")})` : ""}`,
           );
         }
