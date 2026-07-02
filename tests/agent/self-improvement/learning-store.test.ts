@@ -164,4 +164,22 @@ describe('LearningStore (git-backed reversibility)', () => {
     expect(status.best?.score?.covered).toBe(2);
     expect(status.versions).toBe(2);
   });
+
+  it('THROWS instead of returning a fake success when git is unavailable (reversibility guarantee)', async () => {
+    const port = makePort();
+    const store = new LearningStore({ workDir: dir, port, now });
+    port.set([{ category: 'RULE', content: 'path filter' }]);
+
+    // Make `git` unresolvable for the spawned child: empty PATH → spawn error
+    // → runGit code 1 (the exact no-git branch that used to fake `{ sha: '' }`).
+    const savedPath = process.env.PATH;
+    process.env.PATH = '';
+    try {
+      await expect(store.commitVersion({ reason: 'v1' })).rejects.toThrow(/git (init failed|error|unavailable)/i);
+    } finally {
+      process.env.PATH = savedPath;
+    }
+    // Nothing was persisted: no committed versions exist.
+    expect(await store.listVersions()).toEqual([]);
+  });
 });

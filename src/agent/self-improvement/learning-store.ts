@@ -115,7 +115,13 @@ export class LearningStore {
   async ensureRepo(): Promise<void> {
     if (this.isRepo) return;
     fs.mkdirSync(this.storeDir, { recursive: true });
-    await this.runGit(['init', '-q']);
+    const init = await this.runGit(['init', '-q']);
+    // Fail loudly if git is unavailable: a silent no-op here made commitVersion
+    // return a fake success (sha '') while nothing was persisted, voiding the
+    // reversibility guarantee. Better an honest throw the caller can log.
+    if (init.code !== 0 || !this.isRepo) {
+      throw new Error(`learning store: git init failed (git unavailable?): ${init.stderr.trim() || `exit ${init.code}`}`);
+    }
     fs.writeFileSync(path.join(this.storeDir, '.gitignore'), '', 'utf-8');
     await this.runGit(['add', '-A']);
     await this.runGit([...GIT_IDENTITY, 'commit', '-q', '--allow-empty', '-m', 'init: learning store']);
@@ -153,8 +159,16 @@ export class LearningStore {
         ? `improve(${options.scenarioId}): +${options.delta} coverage ${score.covered}/${score.total}`
         : `${options.reason} — coverage ${score.covered}/${score.total}`;
     const message = `${subject}\n\nCo-Authored-By: Code Buddy Self-Improve <self-improve@codebuddy.local>`;
-    await this.runGit([...GIT_IDENTITY, 'commit', '-q', '--allow-empty', '-m', message]);
+    const commit = await this.runGit([...GIT_IDENTITY, 'commit', '-q', '--allow-empty', '-m', message]);
     const sha = (await this.runGit(['rev-parse', 'HEAD'])).stdout.trim();
+    // The version is only reversible if it was actually committed. A blank or
+    // non-sha result means git silently failed — surface it instead of
+    // returning a fake `{ sha: '' }` success.
+    if (commit.code !== 0 || !/^[0-9a-f]{7,40}$/.test(sha)) {
+      throw new Error(
+        `learning store: version commit did not persist (git error) — reversibility not guaranteed: ${commit.stderr.trim() || `exit ${commit.code}`}`,
+      );
+    }
     return { sha, score };
   }
 
