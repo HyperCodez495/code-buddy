@@ -92,3 +92,37 @@ describe('LiveSkillMutator — archive / restore round-trip', () => {
     expect(m.has('authored-git-bisect')).toBe(true);
   });
 });
+
+describe('LiveSkillMutator — authored-only guard (never touches user/bundled skills)', () => {
+  it('refuses to remove / archive / pin / unpin / restore a non-authored skill', () => {
+    const root = tmpRoot();
+    const m = new LiveSkillMutator(root);
+    // A user hand-places a non-authored skill in the same dir.
+    const userDir = path.join(root, 'my-user-skill');
+    fs.mkdirSync(userDir, { recursive: true });
+    const userFile = path.join(userDir, 'SKILL.md');
+    const original = '---\nname: my-user-skill\n---\n# Mine\ndo not touch';
+    fs.writeFileSync(userFile, original, 'utf-8');
+
+    expect(m.remove('my-user-skill')).toBe(false);
+    expect(m.archive('my-user-skill')).toBe(false);
+    expect(m.pin('my-user-skill')).toBe(false);
+    expect(m.unpin('my-user-skill')).toBe(false);
+    expect(m.restore('my-user-skill')).toBe(false);
+
+    // Untouched on disk (pin/unpin would have rewritten the frontmatter).
+    expect(fs.existsSync(userFile)).toBe(true);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(original);
+  });
+
+  it('still operates normally on authored- skills', () => {
+    const root = tmpRoot();
+    const m = new LiveSkillMutator(root);
+    m.create(SPEC);
+    expect(m.pin('authored-git-bisect')).toBe(true);
+    expect(m.unpin('authored-git-bisect')).toBe(true);
+    expect(m.archive('authored-git-bisect')).toBe(true);
+    expect(m.restore('authored-git-bisect')).toBe(true);
+    expect(m.remove('authored-git-bisect')).toBe(true);
+  });
+});

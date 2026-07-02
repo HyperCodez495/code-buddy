@@ -185,6 +185,10 @@ export class LiveSkillMutator implements SkillMutatorPort {
   }
 
   remove(name: string): boolean {
+    // Contract: the engine only ever touches skills it authored. Without this
+    // guard, `improve skills-*` on a user-placed (non-authored) skill would
+    // delete/mutate a skill the engine is forbidden to manage.
+    if (!isAuthoredSkillName(name)) return false;
     if (this.isPinned(name)) return false;
     const dir = this.dirFor(name);
     const existed = fs.existsSync(dir);
@@ -193,8 +197,9 @@ export class LiveSkillMutator implements SkillMutatorPort {
     return existed;
   }
 
-  /** Recoverable removal — move to .archive/. Refuses pinned. */
+  /** Recoverable removal — move to .archive/. Refuses pinned. Authored-only. */
   archive(name: string): boolean {
+    if (!isAuthoredSkillName(name)) return false;
     if (this.isPinned(name)) return false;
     const dir = this.dirFor(name);
     if (!fs.existsSync(dir)) return false;
@@ -208,6 +213,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
   }
 
   restore(name: string): boolean {
+    if (!isAuthoredSkillName(name)) return false;
     const src = path.join(this.skillsRoot, ARCHIVE_DIR, name);
     if (!fs.existsSync(src)) return false;
     const dir = this.dirFor(name);
@@ -226,6 +232,9 @@ export class LiveSkillMutator implements SkillMutatorPort {
   }
 
   private setPin(name: string, value: boolean): boolean {
+    // pin/unpin rewrite the SKILL.md frontmatter — authored-only, like every
+    // other mutating op, so a user's hand-placed skill is never rewritten.
+    if (!isAuthoredSkillName(name)) return false;
     const content = this.readContent(name);
     if (content === null) return false;
     const withFm = ensureFrontmatter(name, '', content);
