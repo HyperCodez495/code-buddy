@@ -61,19 +61,23 @@ export type {
 
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 
 /**
  * Get the path to bundled SKILL.md skills.
  *
- * Strategy: walk up from the entry script (process.argv[1]) or cwd
- * to find .codebuddy/skills/bundled. This avoids __dirname (unavailable
- * in ESM) and import.meta.url (breaks ts-jest).
+ * Resolution order: explicit env override → walk-up to a user-populated
+ * `.codebuddy/skills/bundled` → the skills SHIPPED WITH THE PACKAGE, resolved
+ * relative to this module (`src/skills/bundled/` in dev, `dist/skills/bundled/`
+ * in a build — copied there by scripts/copy-bundled-skills.mjs). Before the
+ * module-relative candidate existed, a normal checkout resolved to a
+ * non-existent path and the bundled tier silently never loaded.
  */
 export function getBundledSkillsPath(): string {
   // Explicit override — a host (e.g. the Cowork desktop app) can point the
   // bundled-skills tier at its own resolved skills directory so the embedded
   // engine surfaces the same skills the host ships. Unset for the CLI, which
-  // falls back to the .codebuddy/skills/bundled walk below.
+  // falls back to the candidates below.
   const envDir = process.env.CODEBUDDY_BUNDLED_SKILLS_DIR;
   if (envDir && fs.existsSync(envDir)) {
     return envDir;
@@ -90,6 +94,16 @@ export function getBundledSkillsPath(): string {
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
+  }
+
+  // Skills shipped with the package, next to this module. (The old
+  // "import.meta.url breaks ts-jest" concern is obsolete — the test runner is
+  // vitest/ESM and src/index.ts uses import.meta.url; see model-registry.ts.)
+  try {
+    const shipped = path.join(path.dirname(fileURLToPath(import.meta.url)), 'bundled');
+    if (fs.existsSync(shipped)) return shipped;
+  } catch {
+    // Exotic host without import.meta.url support — fall through.
   }
 
   // Fallback to cwd

@@ -56,7 +56,7 @@
     "code-buddy": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-bundled-skills.mjs",
     "build:bun": "bun run tsc",
     "build:watch": "tsc --watch",
     "clean": "rm -rf dist coverage .nyc_output *.tsbuildinfo",
@@ -129,8 +129,7 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    ".codebuddy/skills/bundled"
+    "LICENSE"
   ],
   "license": "MIT",
   "dependencies": {

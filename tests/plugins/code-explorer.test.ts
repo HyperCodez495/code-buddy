@@ -87,6 +87,57 @@ describe('CodeExplorerManager', () => {
     });
   });
 
+  describe('binary fallback (code-explorer | gitnexus)', () => {
+    const onlyGitnexus = (cmd: unknown) => {
+      if (String(cmd).startsWith('gitnexus')) return Buffer.from('gitnexus 0.1.0');
+      throw new Error('command not found');
+    };
+
+    it('falls back to gitnexus when code-explorer is not on PATH', () => {
+      (execSync as unknown as ReturnType<typeof vi.fn>).mockImplementation(onlyGitnexus);
+
+      expect(manager.isInstalled()).toBe(true);
+      expect(execSync).toHaveBeenCalledWith('code-explorer --version', expect.anything());
+      expect(execSync).toHaveBeenCalledWith('gitnexus --version', expect.anything());
+    });
+
+    it('analyze spawns the resolved gitnexus binary', async () => {
+      (execSync as unknown as ReturnType<typeof vi.fn>).mockImplementation(onlyGitnexus);
+      const mockOn = vi.fn().mockImplementation((event: string, cb: (code: number) => void) => {
+        if (event === 'close') setImmediate(() => cb(0));
+      });
+      (spawn as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        on: mockOn,
+      });
+
+      await manager.analyze();
+
+      expect(spawn).toHaveBeenCalledWith('gitnexus', ['analyze'], expect.anything());
+    });
+
+    it('caches the probe — a second isInstalled() does not re-probe PATH', () => {
+      (execSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(Buffer.from('1.0.0'));
+
+      manager.isInstalled();
+      manager.isInstalled();
+
+      expect(execSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a clear error when neither binary exists', async () => {
+      (execSync as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        throw new Error('command not found');
+      });
+
+      expect(manager.isInstalled()).toBe(false);
+      await expect(manager.analyze()).rejects.toThrow(
+        /neither code-explorer nor gitnexus/,
+      );
+    });
+  });
+
   describe('isRepoIndexed', () => {
     it('should return true when .codeexplorer directory exists', () => {
       (fs.existsSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -225,6 +276,14 @@ describe('CodeExplorerManager', () => {
   });
 
   describe('analyze', () => {
+    beforeEach(() => {
+      // analyze() now resolves the binary first — make the PATH probe succeed
+      // (clearAllMocks does not drop implementations set by earlier tests).
+      (execSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+        Buffer.from('1.0.0'),
+      );
+    });
+
     it('should spawn code-explorer analyze', async () => {
       const mockOn = vi.fn();
       const mockStdout = { on: vi.fn() };

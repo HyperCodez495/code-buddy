@@ -39,26 +39,48 @@ const DEFAULT_STATS: CodeExplorerStats = {
 /** Singleton cache keyed by resolved repo path */
 const instances = new Map<string, CodeExplorerManager>();
 
+/**
+ * The engine ships under TWO binary names: `code-explorer` (the product name)
+ * and `gitnexus` (the original name, still what many installs have on PATH).
+ * Same double-name tolerance as the MCP tool prefix (CODE_EXPLORER_TOOL_RE in
+ * codebuddy/tools.ts) — only probing `code-explorer` silently broke every
+ * gitnexus install.
+ */
+const CODE_EXPLORER_BINARIES = ['code-explorer', 'gitnexus'] as const;
+
 export class CodeExplorerManager {
   private repoPath: string;
   private mcpProcess: ChildProcess | null = null;
+  /** Resolved binary name; undefined = not probed yet, null = none found. */
+  private binaryName: string | null | undefined;
 
   constructor(repoPath: string = process.cwd()) {
     this.repoPath = path.resolve(repoPath);
   }
 
-  /** Check whether the `code-explorer` CLI is available on PATH. */
-  isInstalled(): boolean {
-    try {
-      execSync('code-explorer --version', {
-        stdio: 'pipe',
-        timeout: 10_000,
-        cwd: this.repoPath,
-      });
-      return true;
-    } catch {
-      return false;
+  /** First CLI name on PATH that answers `--version`, cached per instance. */
+  private resolveBinary(): string | null {
+    if (this.binaryName !== undefined) return this.binaryName;
+    for (const name of CODE_EXPLORER_BINARIES) {
+      try {
+        execSync(`${name} --version`, {
+          stdio: 'pipe',
+          timeout: 10_000,
+          cwd: this.repoPath,
+        });
+        this.binaryName = name;
+        return name;
+      } catch {
+        // Try the next name.
+      }
     }
+    this.binaryName = null;
+    return null;
+  }
+
+  /** Check whether the CLI (`code-explorer` or `gitnexus`) is available on PATH. */
+  isInstalled(): boolean {
+    return this.resolveBinary() !== null;
   }
 
   /** Check whether the repo has been indexed (`.codeexplorer/` directory exists). */
@@ -79,8 +101,15 @@ export class CodeExplorerManager {
 
     logger.info(`CodeExplorer: analyzing repo at ${this.repoPath}`, { args });
 
+    const binary = this.resolveBinary();
+    if (!binary) {
+      throw new Error(
+        `CodeExplorer analyze failed: neither ${CODE_EXPLORER_BINARIES.join(' nor ')} is on PATH`,
+      );
+    }
+
     return new Promise<void>((resolve, reject) => {
-      const child = spawn('code-explorer', args, {
+      const child = spawn(binary, args, {
         cwd: this.repoPath,
         stdio: 'pipe',
         shell: true,
@@ -157,7 +186,14 @@ export class CodeExplorerManager {
 
     logger.info('CodeExplorer: starting MCP server');
 
-    this.mcpProcess = spawn('code-explorer', ['mcp'], {
+    const binary = this.resolveBinary();
+    if (!binary) {
+      throw new Error(
+        `CodeExplorer MCP server failed to start: neither ${CODE_EXPLORER_BINARIES.join(' nor ')} is on PATH`,
+      );
+    }
+
+    this.mcpProcess = spawn(binary, ['mcp'], {
       cwd: this.repoPath,
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,

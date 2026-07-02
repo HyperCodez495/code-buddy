@@ -44,7 +44,7 @@ and answers structural questions instantly:
 | How risky is my current diff? | `detect_changes` |
 | Anything else | `cypher` (read-only graph query) |
 
-**31 tools over MCP · 14 languages · 100% local, no internet required.** Works
+**30 tools over MCP · 14 languages · 100% local, no internet required.** (The public build ships 30 tools; the `business` tool lives in a private edition.) Works
 with any MCP-compatible agent (Claude Code, Cursor, VS Code…).
 
 ## The gain, measured
@@ -84,7 +84,7 @@ gitnexus mcp-install         # writes .mcp.json for Claude Code
 # …or add it manually:  { "command": "gitnexus", "args": ["mcp"] }
 ```
 
-Verify: your agent should report **"gitnexus · 31 tools"**.
+Verify: your agent should report **"gitnexus · 30 tools"**.
 
 ## Honest caveats
 
@@ -103,5 +103,5 @@ on for any **non-commercial** purpose — personal projects, research, education
 evaluation. **Commercial use requires a separate license** — open an issue or get
 in touch.
 
-<sub>Detailed reference (all 31 tools, every language, legacy .NET support, the
+<sub>Detailed reference (all 30 tools, every language, legacy .NET support, the
 HTML doc generator and desktop app) lives in [docs/REFERENCE.md](docs/REFERENCE.md).</sub>
