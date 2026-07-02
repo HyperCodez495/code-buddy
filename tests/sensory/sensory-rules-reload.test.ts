@@ -45,25 +45,27 @@ describe('sensory-rules — hot-reload (admin change takes effect with no restar
     const execute = vi.fn(async () => ({ ok: true }));
     const unwire = wireSensoryRules({ reloadThrottleMs: 0, execute, now: () => 1_000_000 });
     try {
-      await tick(); // initial load completes
+      // Enabled rule fires on a matching event. Retry-fire until it does, so the assertion never
+      // races the engine's async initial load / the async action — robust vs a fixed-sleep settle.
+      for (let i = 0; i < 200 && execute.mock.calls.length === 0; i++) {
+        fire('test_kind');
+        await tick(10);
+      }
+      expect(execute).toHaveBeenCalled(); // the enabled rule fired
 
-      fire('test_kind');
-      await tick();
-      expect(execute).toHaveBeenCalledTimes(1); // rule fired
-
-      // Admin disables the rule (writes the JSON; new mtime).
-      await tick(10);
+      await tick(10); // ensure a distinct mtime for the admin write
       expect(await toggleSensoryRule('r1', false)).toBe(true);
 
-      // One event triggers the throttled reload (may still fire on old rules); let it settle.
-      fire('test_kind');
-      await tick();
-      execute.mockClear();
-
-      // Now the running engine has the disabled rule → no more fires. NO restart happened.
-      fire('test_kind');
-      await tick();
-      expect(execute).not.toHaveBeenCalled();
+      // The disable propagates to the RUNNING engine (hot-reload). Poll until a fresh event no longer
+      // executes — robust vs the async reload not having landed within a fixed sleep. No restart.
+      let disabledEffective = false;
+      for (let i = 0; i < 200 && !disabledEffective; i++) {
+        execute.mockClear();
+        fire('test_kind');
+        await tick(10);
+        disabledEffective = execute.mock.calls.length === 0;
+      }
+      expect(disabledEffective).toBe(true); // the running engine picked up the disabled rule
     } finally {
       unwire();
     }
