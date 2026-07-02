@@ -174,10 +174,9 @@ mod tests {
     fn vad_emits_start_then_end_for_silence_loud_silence() {
         let rate = 16_000u32;
         let frame = (rate / 50) as usize; // 20 ms
-        let mut s = Vec::new();
-        s.extend(std::iter::repeat(0i16).take(frame * 3)); // silence
-        s.extend(std::iter::repeat(12_000i16).take(frame * 3)); // loud
-        s.extend(std::iter::repeat(0i16).take(frame * 3)); // silence
+        let mut s: Vec<i16> = vec![0i16; frame * 3]; // silence
+        s.resize(frame * 6, 12_000); // loud
+        s.resize(frame * 9, 0); // silence
         let evs = vad_events(&s, rate, 20, 0.05);
         let kinds: Vec<&str> = evs.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(kinds, vec!["speech_start", "speech_end"]);
@@ -195,9 +194,8 @@ mod tests {
     fn hysteresis_prevents_chatter_around_threshold() {
         let rate = 16_000u32;
         let frame = (rate / 50) as usize; // 20 ms
-        let blk = |v: i16, n: usize| std::iter::repeat(v).take(frame * n);
-        let mut s = Vec::new();
-        s.extend(blk(0, 2)); // silence
+        let blk = |v: i16, n: usize| vec![v; frame * n];
+        let mut s = blk(0, 2); // silence
         for _ in 0..3 {
             s.extend(blk(3932, 1)); // rms ~0.12 — above threshold 0.1
             s.extend(blk(2621, 1)); // rms ~0.08 — below threshold but above t_low (0.06)

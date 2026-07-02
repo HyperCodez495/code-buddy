@@ -29,7 +29,7 @@ pub async fn run_bridge(url: String, token: Option<String>, mut rx: broadcast::R
                         msg = rx.recv() => match msg {
                             Ok(ev) => {
                                 if let Some(text) = frame_json(&ev, token.as_deref()) {
-                                    if ws.send(Message::Text(text.into())).await.is_err() {
+                                    if ws.send(Message::Text(text)).await.is_err() {
                                         break;
                                     }
                                 }
@@ -42,7 +42,7 @@ pub async fn run_bridge(url: String, token: Option<String>, mut rx: broadcast::R
                         },
                         // Proactive keepalive: detect a half-open socket when traffic is quiet.
                         _ = keepalive.tick() => {
-                            if ws.send(Message::Ping(Vec::new().into())).await.is_err() {
+                            if ws.send(Message::Ping(Vec::new())).await.is_err() {
                                 break;
                             }
                         }
