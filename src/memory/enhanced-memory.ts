@@ -19,9 +19,10 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import { getMemoryRepository, MemoryRepository } from '../database/repositories/memory-repository.js';
 import type { Memory as DBMemory, MemoryType as DBMemoryType } from '../database/schema.js';
-import { getEmbeddingProvider, EmbeddingProvider } from '../embeddings/embedding-provider.js';
+import { getEmbeddingProvider } from '../embeddings/embedding-provider.js';
 import { logger } from '../utils/logger.js';
 import { BayesianQualifier } from '../ml/bayesian-qualifier.js';
+import { mmrSelect, type RankedCandidate } from './hybrid-mmr.js';
 
 export interface MemoryEntry {
   id: string;
@@ -123,6 +124,8 @@ export interface MemorySearchOptions {
   limit?: number;
   includeExpired?: boolean;
   explorationFactor?: number; // Weight for uncertainty in Bayesian retrieval (UCB)
+  /** MMR balance for semantic recall: 1 = pure relevance (naive top-k), 0 = pure diversity. Default 0.7. */
+  mmrLambda?: number;
 }
 
 export interface MemoryConfig {
@@ -154,6 +157,11 @@ const DEFAULT_CONFIG: MemoryConfig = {
 /**
  * Enhanced Memory Manager
  */
+/** Minimal embedder surface recall needs — EmbeddingProvider satisfies it (test seam). */
+export interface MemoryEmbedder {
+  embed(text: string): Promise<{ embedding: Float32Array }>;
+}
+
 export class EnhancedMemory extends EventEmitter {
   private config: MemoryConfig;
   private dataDir: string;
@@ -164,7 +172,7 @@ export class EnhancedMemory extends EventEmitter {
   private currentProjectId: string | null = null;
   private decayIntervalId: ReturnType<typeof setInterval> | null = null;
   private dbRepository: MemoryRepository | null = null;
-  private embeddingProvider: EmbeddingProvider | null = null;
+  private embeddingProvider: MemoryEmbedder | null = null;
   private bayesianQualifier = new BayesianQualifier();
   private disposed = false;
 
@@ -198,6 +206,12 @@ export class EnhancedMemory extends EventEmitter {
     }
 
     this.initialize();
+  }
+
+  /** Inject an embedder (tests / alternative engines) and enable semantic recall. */
+  setEmbeddingProvider(provider: MemoryEmbedder | null): void {
+    this.embeddingProvider = provider;
+    if (provider) this.config.embeddingEnabled = true;
   }
 
   /**
@@ -565,6 +579,7 @@ export class EnhancedMemory extends EventEmitter {
     }
 
     // Text search
+    let queryRanked = false;
     if (options.query) {
       const query = options.query.toLowerCase();
 
@@ -585,10 +600,13 @@ export class EnhancedMemory extends EventEmitter {
           .filter(r => r.score > 0.3)
           .sort((a, b) => b.score - a.score)
           .map(r => r.memory);
+        queryRanked = true;
       } else if (this.config.embeddingEnabled) {
-        // Semantic search
+        // Semantic search + MMR rerank: cosine gives the relevance, MMR keeps
+        // the selection DIVERSE so near-duplicate memories don't crowd the
+        // limit (λ=1 reproduces the old naive top-k; see memory/hybrid-mmr.ts).
         const queryEmbedding = await this.generateEmbedding(options.query);
-        results = results
+        const scored = results
           .map(m => ({
             memory: m,
             similarity: m.embedding
@@ -596,8 +614,23 @@ export class EnhancedMemory extends EventEmitter {
               : 0,
           }))
           .filter(r => r.similarity > 0.5)
-          .sort((a, b) => b.similarity - a.similarity)
-          .map(r => r.memory);
+          .sort((a, b) => b.similarity - a.similarity);
+        const fused: RankedCandidate[] = scored.map((r, i) => ({
+          id: r.memory.id,
+          relevance: r.similarity,
+          lexicalRank: null,
+          semanticRank: i + 1,
+        }));
+        const vectors = new Map<string, Float32Array | null>(
+          scored.map(r => [r.memory.id, r.memory.embedding ? Float32Array.from(r.memory.embedding) : null]),
+        );
+        const picked = mmrSelect(fused, vectors, {
+          k: options.limit ?? fused.length,
+          lambda: options.mmrLambda ?? 0.7,
+        });
+        const byId = new Map(scored.map(r => [r.memory.id, r.memory]));
+        results = picked.map(p => byId.get(p.id)!);
+        queryRanked = true;
       } else {
         // Keyword search
         results = results.filter(m =>
@@ -608,8 +641,11 @@ export class EnhancedMemory extends EventEmitter {
       }
     }
 
-    // Sort by importance and recency
-    results.sort((a, b) => {
+    // Sort by importance and recency — ONLY when no query ranking happened:
+    // the Bayesian and semantic branches above already ordered by relevance,
+    // and this unconditional re-sort used to DESTROY that ordering (a real
+    // bug: semantic recall returned importance order, not similarity order).
+    if (!queryRanked) results.sort((a, b) => {
       const importanceWeight = 0.6;
       const recencyWeight = 0.4;
 
