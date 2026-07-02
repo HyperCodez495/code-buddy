@@ -1233,9 +1233,17 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 // short-circuit the normal reply (the robot confirms instead of chatting).
                 reminderShortcut = (t: string) =>
                   rem.matchAck(t, Date.now()) !== null ||
+                  rem.isSnoozeCommand(t, Date.now()) ||
                   rem.isReminderVoiceCommand(t) ||
                   rem.parseVoiceReminder(t) !== null;
                 onHeard = async (t: string) => {
+                  // Snooze a pending reminder ("dans 10 minutes" / "plus tard") before anything else.
+                  const snoozed = rem.snoozePending(t, Date.now());
+                  if (snoozed) {
+                    const mins = Math.max(1, Math.round(snoozed.delayMs / 60_000));
+                    await sayNow(`D'accord, je te le rappelle dans ${mins} minute${mins > 1 ? 's' : ''}.`);
+                    return;
+                  }
                   const id = rem.matchAck(t, Date.now());
                   if (id) {
                     const done = await rem.markDone(id, 'voice');

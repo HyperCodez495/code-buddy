@@ -644,3 +644,64 @@ export async function handleReminderVoiceCommand(text: string, deps: ReminderVoi
   }
   return true;
 }
+
+// ── SNOOZE (defer a fired reminder) ───────────────────────────────────
+// "rappelle-moi dans 10 minutes" / "plus tard" while a reminder is pending → re-announce it later
+// instead of letting it re-nag then lapse to "missed".
+
+/** Parse a snooze/defer delay (ms) from an utterance, or null. Bare defers default to 10 min. */
+export function parseSnooze(text: string): number | null {
+  const t = normLabel(text);
+  if (!t) return null;
+  const m = t.match(/\bdans\s+(\d+)\s*(min|minute|minutes|h|heure|heures)\b/);
+  if (m) {
+    const n = parseInt(m[1]!, 10);
+    const ms = /^h/.test(m[2]!) ? n * 3600_000 : n * 60_000;
+    return ms > 0 && ms <= 12 * 3600_000 ? ms : null;
+  }
+  if (/\b(plus tard|repousse|repousser|snooze|tout a l heure|un peu plus tard|dans un moment)\b/.test(t)) {
+    return 10 * 60_000;
+  }
+  return null;
+}
+
+interface SnoozedReminder {
+  id: string;
+  label: string;
+  fireAt: number;
+}
+const snoozes = new Map<string, SnoozedReminder>();
+
+/** Schedule a reminder to re-announce at `fireAtMs`. */
+export function snoozeReminder(id: string, label: string, fireAtMs: number): void {
+  snoozes.set(id, { id, label, fireAt: fireAtMs });
+}
+/** Snoozed reminders now due to re-announce (returned + removed). */
+export function dueSnoozes(nowMs: number): Array<{ id: string; label: string }> {
+  const due = [...snoozes.values()].filter((s) => nowMs >= s.fireAt);
+  for (const s of due) snoozes.delete(s.id);
+  return due.map((s) => ({ id: s.id, label: s.label }));
+}
+/** Test seam. */
+export function resetSnoozes(): void {
+  snoozes.clear();
+}
+
+/**
+ * If `text` is a snooze AND a reminder is currently pending its ack, defer that reminder: close its
+ * ack and schedule a re-announce. Returns the deferral (for the spoken confirmation) or null.
+ */
+export function snoozePending(text: string, nowMs: number): { id: string; label: string; delayMs: number } | null {
+  const delayMs = parseSnooze(text);
+  if (delayMs == null) return null;
+  const target = pendingAcks(nowMs)[0]; // most-recently-fired pending
+  if (!target) return null;
+  closeAck(target.id);
+  snoozeReminder(target.id, target.label, nowMs + delayMs);
+  return { id: target.id, label: target.label, delayMs };
+}
+
+/** True when the utterance is a snooze AND a reminder is pending (for the voice shortcut gate). */
+export function isSnoozeCommand(text: string, nowMs: number): boolean {
+  return parseSnooze(text) != null && pendingAcks(nowMs).length > 0;
+}

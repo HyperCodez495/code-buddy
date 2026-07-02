@@ -19,6 +19,8 @@ import {
   bumpNag,
   pendingAcks,
   expireAcks,
+  dueSnoozes,
+  loadReminders,
   reminderMessage,
   logReminderEvent,
   ackWindowMs,
@@ -91,6 +93,22 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
       logger.info(`[reminders] fired '${r.label}'${isOneShot(r) ? ' (one-shot → retired)' : ''} (awaiting ack)`);
     } catch (err) {
       logger.warn(`[reminders] fire '${r.label}' failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 1b. Re-announce any SNOOZED reminders now due (a "rappelle-moi dans 10 min" deferral) — reopens
+  // a fresh ack cycle so it can be acked or snoozed again.
+  for (const s of dueSnoozes(nowMs)) {
+    try {
+      const r = (await loadReminders()).find((x) => x.id === s.id);
+      const msg = r ? reminderMessage(r) : `C'est l'heure : ${s.label}.`;
+      openAck({ id: s.id, label: s.label }, nowMs);
+      await say(msg);
+      await notify(`⏰ ${msg}`);
+      await logReminderEvent('fired', { id: s.id, label: s.label }, { snoozed: true }, now);
+      logger.info(`[reminders] snoozed reminder re-fired '${s.label}'`);
+    } catch (err) {
+      logger.warn(`[reminders] snooze re-fire '${s.label}' failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
