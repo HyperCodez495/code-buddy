@@ -38,6 +38,8 @@ import { scanForSecrets, redactSecrets } from '../fleet/privacy-lint.js';
 import { defaultFleetAgentId } from '../fleet/colab-store.js';
 import { getCodeBuddyHome } from '../utils/codebuddy-home.js';
 import { EmbeddingProvider } from '../embeddings/embedding-provider.js';
+import { BM25Index } from '../search/bm25.js';
+import { cosineSimilarityF32, hybridMmrRank, type HybridCandidate } from './hybrid-mmr.js';
 
 /** Multilingual embeddings — all-MiniLM (the global default) is English-leaning and misses
  *  French synonyms (measured: it failed paraphrase recall); this model discriminates French
@@ -189,6 +191,13 @@ export interface CollectiveKnowledgeGraphOptions {
   agentId?: string;
   /** Override the (multilingual) embedding model for hybrid recall. */
   embeddingModel?: string;
+  /** Inject an embedder (tests / alternative engines). Default: a dedicated EmbeddingProvider. */
+  embedder?: CkgEmbedder;
+}
+
+/** Minimal embedder surface hybrid recall needs — EmbeddingProvider satisfies it. */
+export interface CkgEmbedder {
+  embed(text: string): Promise<{ embedding: Float32Array }>;
 }
 
 /**
@@ -206,16 +215,17 @@ export class CollectiveKnowledgeGraph {
   /** contentHash → embedding vector. Content-addressed, so it survives ledger reloads. */
   private readonly embCache = new Map<string, Float32Array>();
   private readonly embeddingModel: string;
-  private embedder: EmbeddingProvider | null = null;
+  private embedder: CkgEmbedder | null = null;
 
   constructor(options: CollectiveKnowledgeGraphOptions = {}) {
     this.ledgerPath = options.ledgerPath ?? join(getCodeBuddyHome(), 'collective', 'ckg-ledger.jsonl');
     this.agentId = options.agentId ?? safeAgentId();
     this.embeddingModel = options.embeddingModel ?? CKG_EMBEDDING_MODEL;
+    this.embedder = options.embedder ?? null;
   }
 
   /** Dedicated multilingual embedder (lazy; isolated from EnhancedMemory's all-MiniLM singleton). */
-  private getEmbedder(): EmbeddingProvider {
+  private getEmbedder(): CkgEmbedder {
     if (!this.embedder) {
       this.embedder = new EmbeddingProvider({ provider: 'local', modelName: this.embeddingModel });
     }
@@ -316,7 +326,7 @@ export class CollectiveKnowledgeGraph {
           v = (await provider.embed(`${e.name}. ${e.text}`)).embedding;
           this.embCache.set(e.contentHash, v);
         }
-        sims.push({ e, sim: provider.cosineSimilarity(selfVec, v) });
+        sims.push({ e, sim: cosineSimilarityF32(selfVec, v) });
       }
       sims.sort((a, b) => b.sim - a.sim);
       const k = input.autoLinkK ?? 3;
@@ -391,9 +401,6 @@ export class CollectiveKnowledgeGraph {
   ): Promise<CkgRecallResult[]> {
     this.load();
     const limit = opts.limit ?? 5;
-    const wSem = opts.semanticWeight ?? 0.7;
-    const wKw = 1 - wSem;
-    const q = tokenize(query);
     const typeFilter = opts.types ? new Set(opts.types) : null;
     const candidates = [...this.current.values()].filter((e) => !typeFilter || typeFilter.has(e.type));
     if (candidates.length === 0) return [];
@@ -413,35 +420,45 @@ export class CollectiveKnowledgeGraph {
       return this.recall(query, { limit, ...(opts.types ? { types: opts.types } : {}) });
     }
 
-    const scored = candidates.map((e) => {
-      const vec = this.embCache.get(e.contentHash);
-      const sem = vec && qVec ? Math.max(0, provider.cosineSimilarity(qVec, vec)) : 0;
-      const kw = keywordOverlap(q, `${e.name} ${e.text}`);
+    // Lexical leg: transient BM25 over the live candidates (small corpus,
+    // O(N) per query — same cost class as the keyword pass it replaces, with
+    // idf + tf length-norm + stemming instead of raw overlap). The stemmer/
+    // stopwords are English-leaning; on French text BM25 still beats raw
+    // overlap, and the MULTILINGUAL semantic leg carries French synonymy.
+    const index = new BM25Index();
+    index.addDocuments(candidates.map((e) => ({ id: e.id, content: `${e.name} ${e.text}` })));
+    const lexScores = new Map(index.search(query, candidates.length).map((r) => [r.id, r.score]));
+
+    const byId = new Map(candidates.map((e) => [e.id, e]));
+    const semById = new Map<string, number>();
+    const hybridCandidates: HybridCandidate[] = candidates.map((e) => {
+      const vec = this.embCache.get(e.contentHash) ?? null;
+      const sem = vec && qVec ? Math.max(0, cosineSimilarityF32(qVec, vec)) : null;
+      if (sem !== null) semById.set(e.id, sem);
       const salience = computeSalience(e.mentions, new Date(e.updatedAt));
-      // Recency is a gentle tie-breaker; cross-agent corroboration lifts trusted facts.
-      const rel = (wSem * sem + wKw * kw) * (0.7 + 0.3 * Math.min(1, salience)) * corroborationBoost(e.contributors.size);
-      return { e, rel, sem, vec };
+      return {
+        id: e.id,
+        lexicalScore: lexScores.get(e.id) ?? 0,
+        semanticScore: sem,
+        vector: vec,
+        // Recency is a gentle tie-breaker; cross-agent corroboration lifts
+        // trusted facts. Applied AFTER rank fusion (see hybrid-mmr.ts).
+        prior: (0.7 + 0.3 * Math.min(1, salience)) * corroborationBoost(e.contributors.size),
+      };
     });
-    // MMR (Carbonell & Goldstein, 1998) — greedily pick relevant BUT diverse results so the
-    // collective doesn't surface N near-duplicate facts. λ favours relevance.
-    const lambda = opts.mmrLambda ?? 0.7;
-    const pool = scored.slice().sort((a, b) => b.rel - a.rel);
-    const picked: typeof scored = [];
-    while (picked.length < limit && pool.length > 0) {
-      let bestIdx = 0;
-      let bestMmr = -Infinity;
-      for (let i = 0; i < pool.length; i++) {
-        const cand = pool[i]!;
-        let maxSim = 0;
-        for (const p of picked) {
-          if (cand.vec && p.vec) maxSim = Math.max(maxSim, provider.cosineSimilarity(cand.vec, p.vec));
-        }
-        const mmr = lambda * cand.rel - (1 - lambda) * maxSim;
-        if (mmr > bestMmr) { bestMmr = mmr; bestIdx = i; }
-      }
-      picked.push(pool.splice(bestIdx, 1)[0]!);
-    }
-    return picked.map(({ e, rel, sem }) => ({ ...this.toResult(e, rel), similarity: sem }));
+
+    // Weighted RRF fusion + MMR rerank — see memory/hybrid-mmr.ts for why
+    // RANK fusion (scale-free) replaces the previous linear mix of an
+    // unbounded keyword score with a bounded cosine.
+    const ranked = hybridMmrRank(hybridCandidates, {
+      k: limit,
+      ...(opts.mmrLambda !== undefined ? { lambda: opts.mmrLambda } : {}),
+      ...(opts.semanticWeight !== undefined ? { semanticWeight: opts.semanticWeight } : {}),
+    });
+    return ranked.map((r) => {
+      const e = byId.get(r.id)!;
+      return { ...this.toResult(e, r.relevance), similarity: semById.get(r.id) ?? 0 };
+    });
   }
 
   /** A `<collective_knowledge>` system block for prompt injection (token-budgeted).
