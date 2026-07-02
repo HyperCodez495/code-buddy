@@ -672,6 +672,11 @@ export class AgentExecutor {
 
     try {
       const pipeline = this.deps.middlewarePipeline;
+      // New task: clear per-task middleware latching (quality-gate run count,
+      // auto-repair attempts, verification one-shot warning). The pipeline is
+      // built once and reused across tasks while toolRound restarts at 0, so
+      // without this the gates would silently stay off after the first task(s).
+      pipeline?.resetForNewTask?.();
 
       let terminateDetectedStreaming = false;
       while (toolRounds < maxToolRounds) {

@@ -191,6 +191,48 @@ describe('AutoRepairMiddleware', () => {
     });
   });
 
+  // ── L3: use the authoritative success flag, not text matching ──────
+  describe('detects failure from toolResult.success, not output text (L3)', () => {
+    function flaggedResult(content: string, success: boolean, toolName = 'bash'): ChatEntry {
+      return {
+        type: 'tool_result',
+        content,
+        timestamp: new Date(),
+        toolCall: { id: 'c', type: 'function', function: { name: toolName, arguments: '{}' } },
+        toolResult: { success, output: content },
+      };
+    }
+
+    it('does NOT fire on a PASSING run whose output contains "error"/"passed"', async () => {
+      const mw = new AutoRepairMiddleware();
+      const ctx = makeContext({
+        history: [flaggedResult('✓ throws an error on bad input\n\n42 passed, 0 failed', true)],
+      });
+      const result = await mw.afterTurn(ctx);
+      expect(result.action).toBe('continue');
+      expect(mw.getAttemptCount()).toBe(0);
+    });
+
+    it('DOES fire when the tool actually failed (success:false)', async () => {
+      const mw = new AutoRepairMiddleware();
+      const ctx = makeContext({
+        history: [flaggedResult('1 failing\n  expected 2 to equal 3', false)],
+      });
+      const result = await mw.afterTurn(ctx);
+      expect(result.action).toBe('warn');
+      expect(mw.getAttemptCount()).toBe(1);
+    });
+
+    it('reset() clears the per-task attempt counter', async () => {
+      const mw = new AutoRepairMiddleware();
+      const ctx = makeContext({ history: [flaggedResult('boom', false)] });
+      await mw.afterTurn(ctx);
+      expect(mw.getAttemptCount()).toBe(1);
+      mw.reset();
+      expect(mw.getAttemptCount()).toBe(0);
+    });
+  });
+
   describe('createAutoRepairMiddleware', () => {
     it('creates an instance with default config', () => {
       const mw = createAutoRepairMiddleware();

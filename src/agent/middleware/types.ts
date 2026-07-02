@@ -85,4 +85,10 @@ export interface ConversationMiddleware {
    * Called after each tool execution round completes.
    */
   afterTurn?(context: MiddlewareContext): Promise<MiddlewareResult> | MiddlewareResult;
+  /**
+   * Reset any per-task latching state (counters, one-shot warnings). Called at
+   * the start of every new user task so state from a previous task doesn't
+   * suppress this one. Optional — stateless middlewares can omit it.
+   */
+  reset?(): void;
 }

@@ -66,6 +66,24 @@ export class MiddlewarePipeline {
     return this.middlewares.map(m => m.name);
   }
 
+  /**
+   * Reset every middleware's per-task latching state. The pipeline is built once
+   * and reused for every user message, but per-task counters (quality-gate run
+   * count, auto-repair attempts) and one-shot warnings (verification "verify
+   * before finishing") would otherwise persist for the process lifetime while
+   * context.toolRound restarts at 0 each task — silently suppressing the gates
+   * on later tasks. Call this at the start of every new task. Never throws.
+   */
+  resetForNewTask(): void {
+    for (const middleware of this.middlewares) {
+      try {
+        middleware.reset?.();
+      } catch (error) {
+        logger.error(`Middleware "${middleware.name}" threw in reset`, error as Error);
+      }
+    }
+  }
+
   private async runPhase(
     phase: 'beforeTurn' | 'afterTurn',
     context: MiddlewareContext

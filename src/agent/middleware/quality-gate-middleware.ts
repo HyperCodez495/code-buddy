@@ -457,6 +457,11 @@ export class QualityGateMiddleware implements ConversationMiddleware {
     this.lastGateRound = -1;
   }
 
+  /** ConversationMiddleware per-task reset hook. */
+  reset(): void {
+    this.resetGateCount();
+  }
+
   /** Get current gate run count */
   getGateRunCount(): number {
     return this.gateRunCount;
