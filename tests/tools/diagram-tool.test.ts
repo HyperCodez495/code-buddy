@@ -61,6 +61,25 @@ describe('DiagramTool', () => {
       expect(result.output).toContain('No nodes found in flowchart'); // Basic mock implementation check
     });
 
+    it('renders an all-zero pie chart without NaN (total=0 guard)', async () => {
+      mockVfs.ensureDir.mockResolvedValue(undefined);
+      const code = 'pie title Zero\n"a" : 0\n"b" : 0';
+      const result = await tool.generateFromMermaid(code, { outputFormat: 'ascii' });
+      expect(result.success).toBe(true);
+      expect(result.output).not.toContain('NaN');
+      expect(result.output).toContain('0.0%');
+    });
+
+    it('renders pie percentages for non-zero values', async () => {
+      mockVfs.ensureDir.mockResolvedValue(undefined);
+      const code = 'pie title Split\n"a" : 3\n"b" : 1';
+      const result = await tool.generateFromMermaid(code, { outputFormat: 'ascii' });
+      expect(result.success).toBe(true);
+      expect(result.output).not.toContain('NaN');
+      expect(result.output).toContain('75.0%');
+      expect(result.output).toContain('25.0%');
+    });
+
     it('should generate diagram with mmdc', async () => {
       mockVfs.ensureDir.mockResolvedValue(undefined);
       mockVfs.exists.mockResolvedValue(true);

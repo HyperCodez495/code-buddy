@@ -473,14 +473,21 @@ export class DiagramTool {
       }
     }
 
+    if (data.length === 0) {
+      return [title, '─'.repeat(40), '(no data)'].join('\n');
+    }
+
     const total = data.reduce((sum, d) => sum + d.value, 0);
     const maxLabelLen = Math.max(...data.map(d => d.label.length));
 
     const result = [title, '─'.repeat(40)];
 
     for (const item of data) {
-      const pct = ((item.value / total) * 100).toFixed(1);
-      const barLen = Math.round((item.value / total) * 20);
+      // Guard total === 0 (all-zero values): item.value / 0 is NaN, which used
+      // to render "NaN%" and break the bar. Fall back to a 0% empty bar.
+      const fraction = total > 0 ? item.value / total : 0;
+      const pct = (fraction * 100).toFixed(1);
+      const barLen = Math.max(0, Math.min(20, Math.round(fraction * 20)));
       const bar = '█'.repeat(barLen) + '░'.repeat(20 - barLen);
       result.push(`${item.label.padEnd(maxLabelLen)} │${bar}│ ${pct}%`);
     }
