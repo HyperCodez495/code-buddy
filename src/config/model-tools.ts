@@ -544,10 +544,13 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
  * Match a model name against a pattern with glob-like wildcards.
  */
 function matchModel(modelName: string, pattern: string): boolean {
-  const regex = new RegExp(
-    '^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
-    'i'
-  );
+  // Escape regex metacharacters FIRST (except the glob wildcards * and ?), THEN
+  // expand the wildcards. Without escaping, a literal '.' in a version pattern
+  // like `gpt-5.5` / `gpt-4.1` acted as regex "any char" and could match the
+  // wrong family (e.g. `gpt-4.1` matching `gpt-4o1`), assigning a model the
+  // wrong context/output caps.
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp('^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
   return regex.test(modelName);
 }
 
