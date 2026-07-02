@@ -1508,9 +1508,11 @@ describe('WhatsAppChannel', () => {
         type: 'notify',
       });
 
-      await new Promise(resolve => setImmediate(resolve));
-      // Give a bit more time for both async message handlers
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Poll until both async message handlers have fired — robust vs a fixed 50ms sleep, which can
+      // race the async handlers under parallel test load.
+      for (let i = 0; i < 200 && messageSpy.mock.calls.length < 2; i++) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
 
       expect(messageSpy).toHaveBeenCalledTimes(2);
     });
