@@ -236,9 +236,11 @@ export class TextEditorTool implements Disposable {
 
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-        const previewContent = replaceAll 
+        // Function replacement so the preview matches the actual write below
+        // (and doesn't expand `$`-patterns in newStr — see the write path).
+        const previewContent = replaceAll
           ? content.split(oldStr).join(newStr)
-          : content.replace(oldStr, newStr);
+          : content.replace(oldStr, () => newStr);
         const oldLines = content.split("\n");
         const newLines = previewContent.split("\n");
         const diffContent = this.generateDiff(oldLines, newLines, filePath);

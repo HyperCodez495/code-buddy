@@ -433,7 +433,9 @@ export class MultiFileEditor {
     switch (edit.type) {
       case "replace":
         if (edit.oldText) {
-          return content.replace(edit.oldText, edit.newText);
+          // Function replacement: keep `$`-patterns in newText literal (a plain
+          // string would let String.replace expand $&/$$/$`/$' and corrupt it).
+          return content.replace(edit.oldText, () => edit.newText);
         }
         return content;
 

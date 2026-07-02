@@ -303,7 +303,8 @@ export class OperationHistory {
           let content = await this.vfs.readFile(op.filePath, "utf-8");
           for (const edit of op.edits) {
             if (edit.type === "replace" && edit.oldText) {
-              content = content.replace(edit.oldText, edit.newText);
+              // Function replacement: keep `$`-patterns in newText literal.
+              content = content.replace(edit.oldText, () => edit.newText);
             } else if (edit.type === "insert") {
               const lines = content.split("\n");
               lines.splice(edit.startLine - 1, 0, edit.newText);

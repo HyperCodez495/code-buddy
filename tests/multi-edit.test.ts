@@ -64,6 +64,20 @@ describe('MultiEditTool', () => {
       expect(content).toBe('Hello Universe');
     });
 
+    it('inserts $-patterns in new_string literally (no String.replace expansion)', async () => {
+      const filePath = path.join(tempDir, 'test.txt');
+      await fs.writeFile(filePath, 'const a = OLD; const b = TWO;');
+
+      const result = await multiEdit.execute(filePath, [
+        { old_string: 'OLD', new_string: 'x.replace(/a/, "$&!")' }, // $& would insert the match
+        { old_string: 'TWO', new_string: 'a$`b' }, // $` would inject the preceding file
+      ]);
+
+      expect(result.success).toBe(true);
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toBe('const a = x.replace(/a/, "$&!"); const b = a$`b;');
+    });
+
     it('should apply multiple edits to the same file in order', async () => {
       const filePath = path.join(tempDir, 'test.txt');
       await fs.writeFile(filePath, 'AAA BBB CCC');

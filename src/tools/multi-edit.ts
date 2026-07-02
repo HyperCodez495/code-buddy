@@ -103,8 +103,12 @@ export class MultiEditTool {
         };
       }
 
-      // Replace only the first occurrence (natively Edit tool)
-      content = content.replace(old_string, new_string);
+      // Replace only the first occurrence (native Edit-tool semantics). Use a
+      // replacement FUNCTION so `$`-patterns in new_string ($&, $$, $`, $', $n)
+      // are inserted verbatim — passing it as a string would let String.replace
+      // expand them and corrupt the edit (e.g. "$&" would insert the matched
+      // text, "$`" the whole preceding file).
+      content = content.replace(old_string, () => new_string);
     }
 
     // ── If content unchanged, skip write ──────────────────────────
