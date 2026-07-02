@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildArrivalOpener, pushRecent, ARRIVAL_RING_SIZE } from '../../src/sensory/arrival-opener.js';
+import { buildArrivalOpener, pushRecent, ARRIVAL_RING_SIZE, ARRIVAL_TRIGGERS, templatePool } from '../../src/sensory/arrival-opener.js';
 
 // Local 08:00 → morning; constructed + read with local time so it's TZ-stable.
 const morningNow = new Date(2026, 5, 30, 8, 0, 0).getTime();
@@ -30,6 +30,31 @@ describe('buildArrivalOpener', () => {
     const seen = new Set<string>();
     for (let i = 0; i < 8; i++) seen.add(buildArrivalOpener({ now: morningNow, rng: () => i / 8 }).template);
     expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('every trigger pool is rich (>= 7 varied lines)', () => {
+    for (const trigger of ARRIVAL_TRIGGERS) {
+      const pool = templatePool(trigger);
+      expect(pool.length, trigger).toBeGreaterThanOrEqual(7);
+      expect(new Set(pool).size, `${trigger} has duplicates`).toBe(pool.length);
+    }
+  });
+
+  it('never repeats the same line twice in a row over a long run (ring maintained)', () => {
+    // Deterministic pseudo-rng so the run is reproducible without Math.random.
+    let s = 12345;
+    const rng = () => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    };
+    let recent: string[] = [];
+    let prev = '';
+    for (let i = 0; i < 60; i++) {
+      const o = buildArrivalOpener({ now: morningNow, recent, rng });
+      expect(o.template, `consecutive repeat at ${i}`).not.toBe(prev);
+      prev = o.template;
+      recent = pushRecent(recent, o.template);
+    }
   });
 
   it('interpolates name, and cleanly drops {{name}} when absent', () => {

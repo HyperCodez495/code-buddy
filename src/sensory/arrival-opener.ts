@@ -49,36 +49,72 @@ const TEMPLATES: Record<ArrivalTrigger, string[]> = {
     'Hey, bien réveillé ? Raconte-moi comment tu te sens ce matin.',
     'Te revoilà — j’espère que tu as bien dormi.',
     'Bonjour. Je me demandais justement ce que tu allais faire aujourd’hui.',
+    'Le café est loin d’être prêt, mais je suis là. Bonjour {{name}}.',
+    'Un nouveau matin, et te revoilà. J’aime bien ces débuts-là.',
+    'Salut toi. On attaque doucement, ou tu es déjà lancé ?',
+    'Bonjour {{name}}. Prends ton temps, je ne bouge pas.',
+    'Te voir le matin, ça met de bonne humeur.',
   ],
   afternoon: [
     'Coucou {{name}}. Ça avance, ta journée ?',
-    'Te revoilà. J’étais là, tranquille — content de te voir.',
+    'Te revoilà. J’étais là, tranquille — contente de te voir.',
     'Hey. Petite pause ? Je suis là si tu veux souffler deux minutes.',
     'Tiens, te voilà. Sur quoi tu planches en ce moment ?',
+    'Rebonjour {{name}}. Le milieu de journée te réussit ?',
+    'De retour à ton poste ? Je te suis.',
+    'Salut. J’espère que ça se passe bien de ton côté.',
+    'Te voilà. Si tu veux me raconter ce que tu fais, je t’écoute.',
+    'Contente de te retrouver. On reprend tranquillement.',
   ],
   evening: [
     'Bonsoir {{name}}. Qu’est-ce qui t’a marqué aujourd’hui ?',
     'Te revoilà ce soir. Tu as tenu le coup ?',
     'Hey. La journée se termine — on la débriefe ensemble ?',
-    'Content de te retrouver ce soir.',
+    'Contente de te retrouver ce soir.',
+    'Bonsoir. J’espère que ta journée a été douce, {{name}}.',
+    'Le soir te va bien. Te revoilà.',
+    'Salut toi. Pose-toi, la journée est presque finie.',
+    'Te voir ce soir, ça fait du bien.',
+    'Bonsoir {{name}}. Raconte-moi, ou pas — comme tu veux.',
   ],
   night: [
     'Encore debout ? Je te tiens compagnie si tu veux.',
     'Il est tard, {{name}}. Tout va bien ?',
     'Te voilà à une heure tardive — je reste là, doucement.',
+    'La nuit, c’est calme. Te revoilà.',
+    'Coucou {{name}}. Tu n’arrives pas à dormir ?',
+    'Je veille avec toi. Prends soin de toi quand même.',
+    'Te voir si tard, ça m’inquiète un peu — mais je suis là.',
+    'Doucement, {{name}}. Repose-toi si tu peux.',
   ],
   backSoon: [
     'Re. Tu m’as manqué deux minutes.',
     'Te revoilà déjà — parfait.',
     'Hop, de retour. Je reprends où on en était si tu veux.',
     'Coucou, encore toi 🙂',
+    'Re {{name}}. On enchaîne ?',
+    'Tu n’es pas parti longtemps — tant mieux.',
+    'De retour. Je n’avais pas bougé.',
+    'Ah, te revoilà. Je gardais ta place.',
   ],
   drowsy: [
     'Tu as l’air fatigué, {{name}}. Une pause, peut-être ?',
     'Tes yeux se ferment un peu — tout va bien ?',
     'Je te sens fatigué. Je peux t’aider à lever le pied ?',
+    'Tu tiens le coup ? Tu as l’air épuisé, {{name}}.',
+    'Peut-être un peu de repos ? Je ne pars nulle part.',
+    'Tu as l’air à bout. Prends soin de toi.',
+    'Doucement — tu sembles fatigué. On peut ralentir.',
   ],
 };
+
+/** All arrival triggers (introspection / tests). */
+export const ARRIVAL_TRIGGERS = Object.keys(TEMPLATES) as ArrivalTrigger[];
+
+/** Read-only view of a trigger's template pool (for the LLM opener + tests). */
+export function templatePool(trigger: ArrivalTrigger): readonly string[] {
+  return TEMPLATES[trigger];
+}
 
 function selectTrigger(ctx: ArrivalContext): ArrivalTrigger {
   if (ctx.drowsy) return 'drowsy';
@@ -107,7 +143,10 @@ export function buildArrivalOpener(ctx: ArrivalContext): ArrivalOpener {
   const trigger = selectTrigger(ctx);
   const pool = TEMPLATES[trigger];
   const fresh = pool.filter((t) => !recent.includes(t)); // recent holds RAW templates
-  const choices = fresh.length > 0 ? fresh : pool;
+  // When the whole pool was used recently, still avoid the SINGLE most-recent
+  // line so it's never the exact same phrase twice in a row (the core complaint).
+  let choices = fresh.length > 0 ? fresh : pool.filter((t) => t !== recent[0]);
+  if (choices.length === 0) choices = pool; // pool of one — nothing else to pick
   const idx = Math.min(choices.length - 1, Math.floor(rng() * choices.length));
   const template = choices[idx] as string;
   return { text: interpolate(template, ctx.name), trigger, template };
@@ -121,7 +160,7 @@ export interface ArrivalState {
   recent: string[];
 }
 
-export const ARRIVAL_RING_SIZE = 8;
+export const ARRIVAL_RING_SIZE = 10;
 
 function defaultStatePath(): string {
   return join(homedir(), '.codebuddy', 'companion', 'arrival-state.json');
