@@ -199,6 +199,20 @@ describe('output-sanitizer', () => {
       const input = 'Normal text with no invisible characters.';
       expect(stripInvisibleChars(input)).toBe(input);
     });
+
+    it('strips the word joiner (U+2060) and invisible math operators (U+2061..U+2064)', () => {
+      expect(stripInvisibleChars('word⁠joiner')).toBe('wordjoiner');
+      expect(stripInvisibleChars('a⁡b⁢c⁣d⁤e')).toBe('abcde');
+    });
+
+    it('strips the Mongolian vowel separator (U+180E)', () => {
+      expect(stripInvisibleChars('x᠎y')).toBe('xy');
+    });
+
+    it('PRESERVES an emoji variation selector (U+FE0F) — it changes rendering, not a leak', () => {
+      const emoji = '❤️'; // ❤️ (heart + VS-16)
+      expect(stripInvisibleChars(`j'aime ${emoji}`)).toBe(`j'aime ${emoji}`);
+    });
   });
 
   describe('sanitizeLLMOutput (integrated)', () => {

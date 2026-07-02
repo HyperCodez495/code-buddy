@@ -62,14 +62,19 @@ const LLAMA_SYS_PATTERN = /<<SYS>>[\s\S]*?<<\/SYS>>/g;
 const LLAMA_INST_PATTERN = /\[INST\][\s\S]*?\[\/INST\]/g;
 
 /**
- * Zero-width and invisible Unicode characters.
+ * Zero-width and invisible Unicode characters that leak from various models.
  * - U+200B: Zero Width Space
  * - U+200C: Zero Width Non-Joiner
  * - U+200D: Zero Width Joiner
+ * - U+2060: Word Joiner (invisible, no line-break)
+ * - U+2061..U+2064: invisible math operators (function application / times / separator / plus)
+ * - U+180E: Mongolian Vowel Separator (deprecated, zero-width)
  * - U+FEFF: Byte Order Mark (BOM) / Zero Width No-Break Space
  * - U+00AD: Soft Hyphen
+ * (Emoji variation selectors U+FE0x are deliberately NOT stripped; they change rendering.)
  */
-const ZERO_WIDTH_CHARS_PATTERN = /(?:\u200B|\u200C|\u200D|\uFEFF|\u00AD)/g;
+const ZERO_WIDTH_CHARS_PATTERN =
+  /\u200B|\u200C|\u200D|\u2060|\u2061|\u2062|\u2063|\u2064|\u180E|\uFEFF|\u00AD/g;
 
 /**
  * All sanitization rules applied in order.
@@ -124,14 +129,10 @@ export function sanitizeModelOutput(text: string): string {
 }
 
 /**
- * Strip zero-width and invisible Unicode characters from text.
- *
- * Removes:
- * - U+200B (Zero Width Space)
- * - U+200C (Zero Width Non-Joiner)
- * - U+200D (Zero Width Joiner)
- * - U+FEFF (BOM / Zero Width No-Break Space)
- * - U+00AD (Soft Hyphen)
+ * Strip zero-width and invisible Unicode characters from text (see ZERO_WIDTH_CHARS_PATTERN):
+ * ZWSP/ZWNJ/ZWJ (U+200B..U+200D), Word Joiner (U+2060), invisible math operators (U+2061..U+2064),
+ * Mongolian Vowel Separator (U+180E), BOM (U+FEFF), and Soft Hyphen (U+00AD). Emoji variation
+ * selectors (U+FE0x) are preserved.
  *
  * @param text - The text to clean
  * @returns Text without invisible characters
