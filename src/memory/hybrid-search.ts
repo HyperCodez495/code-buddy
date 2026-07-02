@@ -129,7 +129,10 @@ export class BM25Index {
   private tokenize(text: string): string[] {
     return text
       .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
+      // Unicode-aware: `\w` is ASCII-only, so `[^\w\s]` deleted accented
+      // characters ("créer" → "cr"+"er"), wrecking memory recall for French
+      // (and other non-ASCII) content. Keep letters/digits/underscore.
+      .replace(/[^\p{L}\p{N}_\s]/gu, ' ')
       .split(/\s+/)
       .filter(t => t.length > 0);
   }
