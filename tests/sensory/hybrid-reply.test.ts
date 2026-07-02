@@ -37,6 +37,20 @@ describe('hybrid reply — intent classifier (isSubstantiveQuery)', () => {
     }
   });
 
+  it('routes explicit help requests to the grounded agent (true)', () => {
+    for (const s of [
+      'aide-moi',
+      'aide-moi à débugger ça',
+      "j'ai besoin d'aide",
+      'aidez-moi',
+      'au secours',
+    ]) {
+      expect(isSubstantiveQuery(s), s).toBe(true);
+    }
+    // …but gratitude for help stays warm chitchat (social wins).
+    expect(isSubstantiveQuery('merci pour ton aide')).toBe(false);
+  });
+
   it('survives accent loss from STT (ça → ca)', () => {
     expect(isSubstantiveQuery('ca va')).toBe(false);
     expect(isSubstantiveQuery('verifie le service')).toBe(true);

@@ -68,6 +68,9 @@ const QUESTION_WORDS =
 // Technical nouns that signal a grounded question about the system/code.
 const TECH =
   /\b(fichier|fichiers|log|logs|erreur|erreurs|build|test|tests|service|services|commit|commits|branche|branches|fonction|fonctions|bug|bugs|code|terminal|git|serveur|serveurs|api|script|scripts|config|memoire|disque|cpu|process|processus|port|ports|deploiement|systemd|ollama|modele|modeles|token|tokens|repo|depot|database|base de donnees)\b/;
+// Explicit help requests — a grounded agent turn, not a shallow chitchat reply.
+// (norm strips diacritics, so "aidez"/"j'ai besoin d'aide" arrive as below.)
+const HELP_REQUEST = /\b(aide|aidez|aider|besoin d aide|au secours)\b/;
 // Social / emotional small talk — stays a fast warm reply even if phrased as a question.
 const SOCIAL =
   /\b(je t aime|je taime|tu m aimes|tu maimes|ca va|comment ca va|comment vas-tu|comment vas tu|tu vas bien|tu es la|content|contente|heureux|heureuse|fatigue|fatiguee|bonne nuit|bonjour|bonsoir|merci|coucou|salut|hello|tu me manques|je pense a toi|bisous|cherie|cheri|mon amour|je t embrasse|ma journee|ta journee)\b/;
@@ -85,6 +88,7 @@ export function isSubstantiveQuery(raw: string): boolean {
   const wordCount = t.split(' ').length;
   // Pure social/emotional, with no command/tech → keep it warm and instant.
   if (SOCIAL.test(t) && !COMMAND_VERBS.test(t) && !TECH.test(t)) return false;
+  if (HELP_REQUEST.test(t)) return true;
   if (COMMAND_VERBS.test(t)) return true;
   if (TECH.test(t)) return true;
   if (/\?\s*$/.test(raw.trim())) return true;
