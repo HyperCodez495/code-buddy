@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { writeFile, rm } from 'node:fs/promises';
-import { sendTelegramVoice } from '../../src/sensory/alert.js';
+import { sendTelegramVoice, sendTelegramAlert } from '../../src/sensory/alert.js';
 
 let ogg: string;
 
@@ -60,5 +60,52 @@ describe('sendTelegramVoice — voice note to the phone', () => {
         post: async () => ({ ok: true }),
       }),
     ).resolves.toBe(false);
+  });
+});
+
+describe('sendTelegramAlert — never drops the notification', () => {
+  afterEach(() => {
+    delete process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
+    delete process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
+  });
+
+  it('no-op when unconfigured', async () => {
+    const urls: string[] = [];
+    await sendTelegramAlert('hi', undefined, { fetch: async (u) => { urls.push(u); return {}; } });
+    expect(urls).toEqual([]);
+  });
+
+  it('sends a text message when there is no image', async () => {
+    process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
+    process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
+    const urls: string[] = [];
+    await sendTelegramAlert('bonjour', undefined, { fetch: async (u) => { urls.push(u); return {}; } });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/bottok/sendMessage');
+  });
+
+  it('sends a photo when the image reads fine', async () => {
+    process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
+    process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
+    const urls: string[] = [];
+    await sendTelegramAlert('vu', '/tmp/frame.jpg', {
+      readFile: async () => Buffer.from([0xff, 0xd8]),
+      fetch: async (u) => { urls.push(u); return {}; },
+    });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/sendPhoto');
+  });
+
+  it('FALLS BACK to a text message when the keyframe is unreadable (never a dropped alert)', async () => {
+    process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
+    process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
+    const urls: string[] = [];
+    await sendTelegramAlert('👤 quelqu’un est entré', '/nonexistent/frame.jpg', {
+      readFile: async () => { throw new Error('ENOENT'); },
+      fetch: async (u) => { urls.push(u); return {}; },
+    });
+    // Old behaviour: nothing sent. New: a text message so Patrice is still notified.
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/sendMessage');
   });
 });

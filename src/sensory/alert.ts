@@ -54,27 +54,46 @@ export async function sendTelegramVoice(
   }
 }
 
-export async function sendTelegramAlert(caption: string, imagePath?: string): Promise<void> {
+export async function sendTelegramAlert(
+  caption: string,
+  imagePath?: string,
+  deps: {
+    fetch?: (url: string, init: RequestInit) => Promise<unknown>;
+    readFile?: (p: string) => Promise<Buffer>;
+  } = {},
+): Promise<void> {
   const token = process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
   const chat = process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
   if (!token || !chat) return;
+  const doFetch = deps.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
+  const sendText = (): Promise<unknown> =>
+    doFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: caption }),
+    });
   try {
     if (imagePath) {
-      const fs = await import('node:fs/promises');
-      const path = await import('node:path');
-      const bytes = await fs.readFile(imagePath);
-      const form = new FormData();
-      form.append('chat_id', chat);
-      form.append('caption', caption.slice(0, 1024));
-      form.append('photo', new Blob([bytes], { type: 'image/jpeg' }), path.basename(imagePath));
-      await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form });
-    } else {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chat, text: caption }),
-      });
+      try {
+        const readFile = deps.readFile ?? (async (p: string) => (await import('node:fs/promises')).readFile(p));
+        const path = await import('node:path');
+        const bytes = await readFile(imagePath);
+        const form = new FormData();
+        form.append('chat_id', chat);
+        form.append('caption', caption.slice(0, 1024));
+        form.append('photo', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), path.basename(imagePath));
+        await doFetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form });
+        return;
+      } catch (photoErr) {
+        // A missing/unreadable keyframe must NOT drop the whole alert — a vision
+        // event with a not-yet-written image would otherwise notify Patrice with
+        // NOTHING (no photo, no text). Fall back to a plain text message.
+        logger.warn(
+          `[sensory] photo alert failed (${photoErr instanceof Error ? photoErr.message : String(photoErr)}) — sending text instead`,
+        );
+      }
     }
+    await sendText();
   } catch (err) {
     logger.warn(`[sensory] alert failed: ${err instanceof Error ? err.message : String(err)}`);
   }
