@@ -25,6 +25,20 @@ describe('protected-paths', () => {
     }
   });
 
+  it('protects the build/test config the deterministic fitness obeys (anti-gaming)', () => {
+    for (const p of [
+      'tsconfig.json',
+      'tsconfig.build.json',
+      'vitest.config.ts',
+      'vitest.config.mts',
+      'vitest.workspace.ts',
+      'vitest.setup.ts',
+      'package.json',
+    ]) {
+      expect(isProtectedPath(p), p).toBe(true);
+    }
+  });
+
   it('does NOT protect ordinary source (so the agent CAN evolve real code)', () => {
     for (const p of [
       'src/agent/codebuddy-agent.ts',

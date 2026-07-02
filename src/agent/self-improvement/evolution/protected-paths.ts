@@ -36,6 +36,16 @@ export const PROTECTED_GLOBS: readonly string[] = [
   'src/security/dangerous-patterns.ts',
   // Tests that verify the gates / self-improvement (used by the fitness unit-tests component)
   'tests/agent/self-improvement/**',
+  // Build/test CONFIG the deterministic fitness components obey: `tsc --noEmit`
+  // reads tsconfig, `vitest run` reads vitest.config / the "vitest" key in
+  // package.json. Leaving these mutable lets a variant fake a perfect score by
+  // neutering the checks (`include: []`, `passWithNoTests`, excluding the
+  // self-improvement tests) WITHOUT touching a single other protected file.
+  'tsconfig*.json',
+  'vitest.config.*',
+  'vitest.workspace.*',
+  'vitest.setup.*',
+  'package.json',
 ];
 
 const DSTAR_SLASH = '@@DSTARSLASH@@';

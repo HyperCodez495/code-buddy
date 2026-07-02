@@ -3,6 +3,7 @@ import {
   computeFitness,
   detectRegressions,
   parseVitestCounts,
+  scoreVitestRun,
   type FitnessComponent,
   type FitnessReport,
 } from '../../../../src/agent/self-improvement/evolution/variant-fitness.js';
@@ -64,5 +65,23 @@ describe('parseVitestCounts', () => {
     expect(parseVitestCounts('Tests  3 passed (3)')).toEqual({ passed: 3, failed: 0 });
     expect(parseVitestCounts('Tests  2 failed | 5 passed (7)')).toEqual({ passed: 5, failed: 2 });
     expect(parseVitestCounts('no summary here')).toEqual({ passed: 0, failed: 0 });
+  });
+});
+
+describe('scoreVitestRun — anti-gaming (zero tests is not a pass)', () => {
+  it('all-passing scores 1 and passes', () => {
+    expect(scoreVitestRun(10, 0, 0, false)).toEqual({ score: 1, passed: true });
+  });
+
+  it('some failures → proportional score, not a pass', () => {
+    expect(scoreVitestRun(8, 2, 1, false)).toEqual({ score: 0.8, passed: false });
+  });
+
+  it('ZERO collected tests scores 0 and does NOT pass, even on exit 0 (the neutered-harness vector)', () => {
+    expect(scoreVitestRun(0, 0, 0, false)).toEqual({ score: 0, passed: false });
+  });
+
+  it('a timeout never passes', () => {
+    expect(scoreVitestRun(10, 0, 0, true)).toEqual({ score: 1, passed: false });
   });
 });

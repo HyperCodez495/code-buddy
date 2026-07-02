@@ -156,6 +156,26 @@ export function typecheckComponent(weight = 3): FitnessComponent {
   };
 }
 
+/**
+ * Score a vitest run. ZERO collected tests is NOT evidence of correctness —
+ * it is the signature of a neutered harness (config excluded them, wrong cwd,
+ * `passWithNoTests`). The old `total===0 ? (code===0 ? 1 : 0)` rewarded exactly
+ * that gaming vector with a perfect score; zero tests now scores 0, never a pass.
+ * Pure + exported so the anti-gaming rule is testable without spawning vitest.
+ */
+export function scoreVitestRun(
+  passed: number,
+  failed: number,
+  code: number,
+  timedOut: boolean,
+): { score: number; passed: boolean } {
+  const total = passed + failed;
+  return {
+    score: total > 0 ? passed / total : 0,
+    passed: total > 0 && failed === 0 && code === 0 && !timedOut,
+  };
+}
+
 /** Targeted unit tests: `vitest run <patterns>`. Deterministic; score = passed/(passed+failed). */
 export function unitTestsComponent(patterns: string[], weight = 4): FitnessComponent {
   return {
@@ -166,13 +186,13 @@ export function unitTestsComponent(patterns: string[], weight = 4): FitnessCompo
       const r = await runProc('npx', ['vitest', 'run', ...patterns], ctx);
       const { passed, failed } = parseVitestCounts(r.stdout + r.stderr);
       const total = passed + failed;
-      const score = total > 0 ? passed / total : r.code === 0 ? 1 : 0;
+      const { score, passed: passedFlag } = scoreVitestRun(passed, failed, r.code, r.timedOut);
       return {
         name: 'unit-tests',
         weight,
         score,
-        passed: failed === 0 && r.code === 0 && !r.timedOut,
-        detail: total > 0 ? `${passed} passed / ${failed} failed` : lastLines(r.stdout + r.stderr, 4),
+        passed: passedFlag,
+        detail: total > 0 ? `${passed} passed / ${failed} failed` : `no tests collected — ${lastLines(r.stdout + r.stderr, 4)}`,
         metrics: { passed, failed },
       };
     },
