@@ -94,6 +94,26 @@ describe('judgeAnswers — hardened verdicts', () => {
     expect(verdict.kind).toBe('abstained');
   });
 
+  // Robust winner parsing: a judge (esp. a small local one) that replies
+  // "Answer B" must NOT be read as 'A' (first char of "ANSWER") and mis-route.
+  it('resolves the winner from a non-bare-letter reply ("Answer B" → B)', async () => {
+    const client = fakeClient('{"scores":{"A":0.9,"B":0.1},"winner":"Answer B"}');
+    const verdict = await judgeAnswers(client, 'task', [{ content: 'a' }, { content: 'b' }], CONFIG, identityRng);
+
+    expect(verdict.kind).toBe('judged');
+    expect(verdict.winnerIdx).toBe(1); // B, not A — even though A has the higher score
+  });
+
+  it('resolves the winner from a prose reply ("C is best" → C)', async () => {
+    const client = fakeClient('{"scores":{"A":0.1,"B":0.2,"C":0.3},"winner":"C is best"}');
+    const verdict = await judgeAnswers(
+      client, 'task', [{ content: 'a' }, { content: 'b' }, { content: 'c' }], CONFIG, identityRng,
+    );
+
+    expect(verdict.kind).toBe('judged');
+    expect(verdict.winnerIdx).toBe(2);
+  });
+
   it('parses dual task/role scores and discloses announced roles to the judge', async () => {
     const seen: string[] = [];
     const client = fakeClient(

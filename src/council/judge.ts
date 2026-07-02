@@ -223,8 +223,24 @@ export async function judgeAnswers(
     if (entry.task !== null) scores[order[pos]!] = entry.task;
     if (entry.role !== null) roleScores[order[pos]!] = entry.role;
   }
-  const winLetter = String(json.winner ?? '').trim().toUpperCase().charAt(0);
-  const winPos = letters.indexOf(winLetter);
+  // Extract the winner letter robustly. A bare "A" is the common case, but a
+  // judge (especially a small local one) that replies "Answer B" would, with a
+  // naive charAt(0), be read as 'A' (first char of "ANSWER") and MIS-ROUTE the
+  // win. Prefer an exact single-letter reply, else the earliest standalone
+  // option letter actually mentioned.
+  const winRaw = String(json.winner ?? '').trim().toUpperCase();
+  let winLetter = letters.includes(winRaw) ? winRaw : '';
+  if (!winLetter) {
+    let bestPos = Infinity;
+    for (const letter of letters) {
+      const idx = winRaw.search(new RegExp(`\\b${letter}\\b`));
+      if (idx >= 0 && idx < bestPos) {
+        bestPos = idx;
+        winLetter = letter;
+      }
+    }
+  }
+  const winPos = winLetter ? letters.indexOf(winLetter) : -1;
   let winnerIdx = winPos >= 0 ? order[winPos]! : -1;
   if (winnerIdx < 0) {
     const best = Math.max(...scores);
