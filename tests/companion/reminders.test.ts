@@ -164,6 +164,13 @@ describe('reminders — parseVoiceReminder', () => {
     expect(parseVoiceReminder('rappelle moi de prendre mes médicaments à 21h30')).toMatchObject({ time: '21:30' });
     expect(parseVoiceReminder('rappelle-moi le rendez-vous à 14:15')).toEqual({ label: 'le rendez-vous', time: '14:15' });
   });
+  it('handles the spelled-out "heures" (no more "eures" label)', () => {
+    // Regression: "à 9 heures" used to match only the "h" of "heures" and leave
+    // "eures" as the label.
+    expect(parseVoiceReminder('rappelle-moi à 9 heures')).toEqual({ label: 'rappel', time: '09:00' });
+    expect(parseVoiceReminder('rappelle-moi à 9 heures 30 de sortir')).toMatchObject({ label: 'sortir', time: '09:30' });
+    expect(parseVoiceReminder('rappelle-moi mes médicaments à 8 heure')).toMatchObject({ label: 'médicaments', time: '08:00' });
+  });
   it('returns null for non-creation speech or no time', () => {
     expect(parseVoiceReminder('il fait beau')).toBeNull();
     expect(parseVoiceReminder('rappelle-moi mes médicaments')).toBeNull(); // no time

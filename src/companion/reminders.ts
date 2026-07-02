@@ -348,7 +348,9 @@ export function parseVoiceReminder(text: string): AddReminderInput | null {
   const t = (text ?? '').trim();
   if (!t || !CREATE_VERB.test(t)) return null;
   // NB: `\b` before "à" fails (à isn't an ASCII word char), so anchor on start/space instead.
-  const tm = t.match(/(?:^|\s)(?:à|a)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?/i) || t.match(/\b(\d{1,2}):(\d{2})\b/);
+  // Accept the spelled-out "heure(s)" too — otherwise "à 9 heures" matched only
+  // the "h" of "heures" and left "eures" in the label (a reminder named "eures").
+  const tm = t.match(/(?:^|\s)(?:à|a)\s*(\d{1,2})\s*(?:h(?:eures?)?|:)\s*(\d{2})?/i) || t.match(/\b(\d{1,2}):(\d{2})\b/);
   if (!tm) return null;
   const hh = parseInt(tm[1]!, 10);
   const mm = tm[2] ? parseInt(tm[2], 10) : 0;
@@ -357,7 +359,7 @@ export function parseVoiceReminder(text: string): AddReminderInput | null {
   const label =
     t
       .replace(CREATE_VERB, ' ')
-      .replace(/(?:^|\s)(?:à|a)\s*\d{1,2}\s*(?:h|:)\s*\d{0,2}/i, ' ')
+      .replace(/(?:^|\s)(?:à|a)\s*\d{1,2}\s*(?:h(?:eures?)?|:)\s*\d{0,2}/i, ' ')
       .replace(/\b\d{1,2}:\d{2}\b/, ' ')
       .replace(/\b(de|d'|tous les jours|chaque jour|stp|s'il te pla[iî]t|mon|ma|mes)\b/gi, ' ')
       .replace(/[.,!?]/g, ' ')
