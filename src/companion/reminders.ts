@@ -430,6 +430,13 @@ export function parseRelativeFrenchDate(text: string, now: Date = new Date()): s
   if (/\bapres[- ]?demain\b/.test(t)) return at(now, 2);
   if (/\bdemain\b/.test(t)) return at(now, 1);
   if (/\b(aujourd'?hui|ce soir|ce matin|cet apres[- ]?midi|ce midi|tout a l'heure)\b/.test(t)) return at(now, 0);
+  // "dans N jours" / "la semaine prochaine".
+  const inDays = t.match(/\bdans\s+(\d+)\s+jours?\b/);
+  if (inDays) {
+    const n = parseInt(inDays[1]!, 10);
+    if (n > 0 && n <= 365) return at(now, n);
+  }
+  if (/\b(la semaine prochaine|dans une semaine)\b/.test(t)) return at(now, 7);
   for (const [name, dow] of Object.entries(FR_WEEKDAYS)) {
     if (new RegExp(`\\b${name}\\b`).test(t)) {
       let ahead = (dow - now.getDay() + 7) % 7;
@@ -501,6 +508,8 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
       .replace(/\b\d{1,2}:\d{2}\b/, ' ')
       // Strip the date cue too, so the label is "train", not "train demain".
       .replace(/\b(apr[èe]s[- ]?demain|demain|aujourd'?hui|ce soir|ce matin|cet apr[èe]s[- ]?midi|ce midi|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/gi, ' ')
+      .replace(/\bdans\s+\d+\s+jours?\b/gi, ' ')
+      .replace(/\b(la semaine prochaine|dans une semaine)\b/gi, ' ')
       .replace(/\ble\s+\d{1,2}\b/gi, ' ')
       .replace(/\b(de|d'|tous les jours|chaque jour|stp|s'il te pla[iî]t|mon|ma|mes)\b/gi, ' ')
       .replace(/[.,!?]/g, ' ')

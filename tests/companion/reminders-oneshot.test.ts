@@ -76,6 +76,12 @@ describe('parseRelativeFrenchDate', () => {
     expect(parseRelativeFrenchDate('le 8', now)).toBe(key(new Date(2026, 6, 8)));
     expect(parseRelativeFrenchDate('le 1', now)).toBe(key(new Date(2026, 7, 1))); // already past → August
   });
+  it('resolves "dans N jours" and "la semaine prochaine / dans une semaine"', () => {
+    expect(parseRelativeFrenchDate('dans 3 jours', now)).toBe(key(new Date(2026, 6, 5)));
+    expect(parseRelativeFrenchDate('dans 1 jour', now)).toBe(key(new Date(2026, 6, 3)));
+    expect(parseRelativeFrenchDate('la semaine prochaine', now)).toBe(key(new Date(2026, 6, 9)));
+    expect(parseRelativeFrenchDate('dans une semaine', now)).toBe(key(new Date(2026, 6, 9)));
+  });
   it('returns null when there is no date cue', () => {
     expect(parseRelativeFrenchDate('mes médicaments à 9h', now)).toBeNull();
   });
@@ -96,6 +102,14 @@ describe('parseVoiceReminder — one-shot vs recurring', () => {
     expect(p!.date).toBe(key(new Date(2026, 6, 3)));
     expect(p!.label).toContain('train');
     expect(p!.label).not.toMatch(/demain/i);
+  });
+  it('"dans N jours à HH:MM" sets the one-shot date and strips the cue from the label', () => {
+    const p = parseVoiceReminder('rappelle-moi le dentiste dans 3 jours à 14h', now);
+    expect(p).not.toBeNull();
+    expect(p!.time).toBe('14:00');
+    expect(p!.date).toBe(key(new Date(2026, 6, 5)));
+    expect(p!.label).toContain('dentiste');
+    expect(p!.label).not.toMatch(/dans 3 jours/i);
   });
 });
 
