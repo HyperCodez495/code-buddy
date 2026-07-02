@@ -6,7 +6,7 @@
   <title>Code Explorer — intelligence de code par graphe, pour les agents IA</title>
   <meta name="description" content="Un moteur Rust qui pré-indexe tout ton dépôt en un graphe de connaissance et expose 30 outils via MCP — appelants, appelés, rayon d'impact — pour que les agents IA comprennent une base de code au lieu de lire les fichiers un par un. 14 langages, 100 % local." />
   <meta property="og:title" content="Code Explorer — intelligence de code pour agents IA" />
-  <meta property="og:description" content="Graphe de connaissance pré-indexé via MCP. Rayon d'impact en 0,62 s au lieu de lire 24 000 tokens de source. 30 outils, 14 langages, 100 % local. Rust." />
+  <meta property="og:description" content="Graphe de connaissance pré-indexé via MCP. Rayon d'impact en 0,65 s au lieu de lire 35 000 tokens de source. 30 outils, 14 langages, 100 % local. Rust." />
   <meta property="og:type" content="website" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -59,14 +59,14 @@
 
 <span class="t-key">Aval</span> <span class="t-dim">(symboles affectés par un changement) :</span>
   Niveau 1 (7)  Niveau 2 (39)  Niveau 3 (4)
-  Niveau 4 (3)  Niveau 5 (29)
+  Niveau 4 (7)  Niveau 5 (4)
 <span class="t-key">Amont</span> <span class="t-dim">(symboles qui affectent celui-ci) :</span>
-  Niveau 1 (1)  Niveau 2 (12)  Niveau 3 (22) …
+  Niveau 1 (1)  Niveau 2 (13)  Niveau 3 (22) …
 
-<span class="t-ok">✓ 187 symboles, 5 niveaux — 0,6 s</span>
+<span class="t-ok">✓ 136 symboles, 5 niveaux — 0,65 s</span>
 <span class="t-dim">  aucun fichier lu · graphe de tout le dépôt</span></pre></div>
           </div>
-          <p class="caption">Vrai run sur une base de 1 864 fichiers. Une recherche texte ne peut pas calculer ce rayon d'impact transitif, point.</p>
+          <p class="caption">Vrai run sur une base de 1 984 fichiers. Une recherche texte ne peut pas calculer ce rayon d'impact transitif, point.</p>
         </div>
       </div>
     </section>
@@ -90,11 +90,11 @@
     <section id="gain" class="section alt">
       <div class="wrap narrow">
         <h2>Le gain, mesuré</h2>
-        <p class="sub">Chiffres réels, en indexant une base TypeScript de 1 864 fichiers (l'agent Code Buddy lui-même).</p>
+        <p class="sub">Chiffres réels, en indexant une base TypeScript de 1 984 fichiers (l'agent Code Buddy lui-même), mesurés le 2026-07-03.</p>
 
         <div class="statline">
-          <span>📦 Index : <b>1 864 fichiers</b></span>
-          <span>🔗 <b>63 719 nœuds</b> / <b>146 120 arêtes</b></span>
+          <span>📦 Index : <b>1 984 fichiers</b></span>
+          <span>🔗 <b>67 114 nœuds</b> / <b>153 966 arêtes</b></span>
           <span>⚡ construit une fois</span>
         </div>
 
@@ -106,18 +106,18 @@
           <tbody>
             <tr>
               <td class="col-q">Méthode</td>
-              <td class="bad">grep trouve <b>3 fichiers</b> qui mentionnent le nom</td>
+              <td class="bad">grep trouve <b>4 fichiers</b> qui mentionnent le nom</td>
               <td class="good">un seul appel <code>impact</code></td>
             </tr>
             <tr>
               <td class="col-q">Coût</td>
-              <td class="bad">les lire ≈ <b>24 000 tokens</b> <span class="t-dim">(est.)</span></td>
-              <td class="good"><b>0,6 s</b> · un seul appel</td>
+              <td class="bad">les lire ≈ <b>35 000 tokens</b> <span class="t-dim">(est.)</span></td>
+              <td class="good"><b>0,65 s</b> · un seul appel</td>
             </tr>
             <tr>
               <td class="col-q">Réponse</td>
               <td class="bad">mentions directes seulement — le rayon d'impact transitif est <b>incalculable</b> par recherche texte</td>
-              <td class="good"><b>187 symboles impactés</b> (82 aval + 105 amont), 5 niveaux de profondeur</td>
+              <td class="good"><b>136 symboles impactés</b> (75 amont + 61 aval), 5 niveaux de profondeur</td>
             </tr>
           </tbody>
         </table>

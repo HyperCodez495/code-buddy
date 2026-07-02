@@ -6,7 +6,7 @@
   <title>Code Explorer — graph-powered code intelligence for AI agents</title>
   <meta name="description" content="A Rust engine that pre-indexes your whole repo into a knowledge graph and exposes 30 tools over MCP — callers, callees, blast radius — so AI agents understand a codebase instead of reading files one at a time. 14 languages, 100% local." />
   <meta property="og:title" content="Code Explorer — code intelligence for AI agents" />
-  <meta property="og:description" content="Pre-indexed knowledge graph over MCP. Blast radius in 0.62s instead of reading 24K tokens of source. 30 tools, 14 languages, 100% local. Rust." />
+  <meta property="og:description" content="Pre-indexed knowledge graph over MCP. Blast radius in 0.65s instead of reading 35K tokens of source. 30 tools, 14 languages, 100% local. Rust." />
   <meta property="og:type" content="website" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -59,14 +59,14 @@
 
 <span class="t-key">Downstream</span> <span class="t-dim">(symbols affected by a change):</span>
   Depth 1 (7)  Depth 2 (39)  Depth 3 (4)
-  Depth 4 (3)  Depth 5 (29)
+  Depth 4 (7)  Depth 5 (4)
 <span class="t-key">Upstream</span> <span class="t-dim">(symbols that affect this):</span>
-  Depth 1 (1)  Depth 2 (12)  Depth 3 (22) …
+  Depth 1 (1)  Depth 2 (13)  Depth 3 (22) …
 
-<span class="t-ok">✓ 187 symbols, 5 levels — 0.6 s</span>
+<span class="t-ok">✓ 136 symbols, 5 levels — 0.65 s</span>
 <span class="t-dim">  no files read · whole-repo graph</span></pre></div>
           </div>
-          <p class="caption">Real run on a 1,864-file codebase. A text search can't compute that transitive blast radius at all.</p>
+          <p class="caption">Real run on a 1,984-file codebase. A text search can't compute that transitive blast radius at all.</p>
         </div>
       </div>
     </section>
@@ -90,11 +90,11 @@
     <section id="gain" class="section alt">
       <div class="wrap narrow">
         <h2>The gain, measured</h2>
-        <p class="sub">Real numbers from indexing a 1,864-file TypeScript codebase (the Code Buddy agent itself).</p>
+        <p class="sub">Real numbers from indexing a 1,984-file TypeScript codebase (the Code Buddy agent itself), measured 2026-07-03.</p>
 
         <div class="statline">
-          <span>📦 Index: <b>1,864 files</b></span>
-          <span>🔗 <b>63,719 nodes</b> / <b>146,120 edges</b></span>
+          <span>📦 Index: <b>1,984 files</b></span>
+          <span>🔗 <b>67,114 nodes</b> / <b>153,966 edges</b></span>
           <span>⚡ built once</span>
         </div>
 
@@ -106,18 +106,18 @@
           <tbody>
             <tr>
               <td class="col-q">Method</td>
-              <td class="bad">grep finds <b>3 files</b> that mention the name</td>
+              <td class="bad">grep finds <b>4 files</b> that mention the name</td>
               <td class="good">one <code>impact</code> call</td>
             </tr>
             <tr>
               <td class="col-q">Cost</td>
-              <td class="bad">reading them ≈ <b>24,000 tokens</b> <span class="t-dim">(est.)</span></td>
-              <td class="good"><b>0.6 s</b> · one call</td>
+              <td class="bad">reading them ≈ <b>35,000 tokens</b> <span class="t-dim">(est.)</span></td>
+              <td class="good"><b>0.65 s</b> · one call</td>
             </tr>
             <tr>
               <td class="col-q">Answer</td>
               <td class="bad">direct mentions only — the transitive blast radius is <b>uncomputable</b> by text search</td>
-              <td class="good"><b>187 affected symbols</b> (82 down + 105 up), 5 levels deep</td>
+              <td class="good"><b>136 affected symbols</b> (75 up + 61 down), 5 levels deep</td>
             </tr>
           </tbody>
         </table>
