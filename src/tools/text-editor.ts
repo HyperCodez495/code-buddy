@@ -262,9 +262,15 @@ export class TextEditorTool implements Disposable {
         }
       }
 
+      // Use a replacement FUNCTION for the single-occurrence path: passing
+      // newStr as a plain string makes String.replace interpret `$`-patterns in
+      // it ($&, $$, $`, $', $n) — so replacing with code containing "$&" would
+      // insert the matched text and "$`" the whole preceding file, corrupting
+      // the edit. `() => newStr` inserts it verbatim. (split/join is already
+      // literal for replaceAll.)
       const newContent = replaceAll
         ? content.split(oldStr).join(newStr)
-        : content.replace(oldStr, newStr);
+        : content.replace(oldStr, () => newStr);
 
       // Diff-review gate — the matching cascade above resolved the fragment
       // to FULL resulting content, which is exactly what the gate reviews.
