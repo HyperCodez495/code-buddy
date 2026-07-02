@@ -361,6 +361,46 @@ export class TextEditorTool implements Disposable {
         }
       }
 
+      // Diff-review gate (CODEBUDDY_DIFF_REVIEW=static|full, default off) —
+      // covers create_file AND its write_file alias. The env check is inlined
+      // so the off path never loads the review module graph; keep in sync
+      // with resolveReviewMode() in src/review/review-engine.ts. Runs AFTER
+      // the user confirmation above — the review complements the human gate,
+      // it never replaces it.
+      const reviewMode = (process.env.CODEBUDDY_DIFF_REVIEW ?? "off").toLowerCase();
+      if (reviewMode === "static" || reviewMode === "full") {
+        const relPath = path.relative(this.baseDirectory, resolvedPath);
+        if (relPath.startsWith("..") || path.isAbsolute(relPath)) {
+          // Fail closed: the review model only covers paths inside the base
+          // directory — an ungated escape hatch would defeat the gate.
+          return {
+            success: false,
+            error: `review gate: ${filePath} resolves outside the base directory — gated creation only covers project files (fail-closed, nothing written)`,
+          };
+        }
+        const { reviewGatedWrite } = await import("../review/write-gate.js");
+        const outcome = await reviewGatedWrite(
+          {
+            changes: [{ path: relPath.split(path.sep).join("/"), newContent: content }],
+            cwd: this.baseDirectory,
+            intent: `create ${filePath}`,
+            originLabel: "create_file",
+          },
+          { mode: reviewMode },
+        );
+        if (!outcome.ok) {
+          return { success: false, error: outcome.summary };
+        }
+        this.editHistory.push({
+          command: "create",
+          path: filePath,
+          content,
+          fileHash: this.computeHash(content),
+        });
+        const gatedDiff = this.generateDiff([], content.split("\n"), filePath);
+        return { success: true, output: `${gatedDiff}\n\n${outcome.summary}` };
+      }
+
       const dir = path.dirname(resolvedPath);
       await this.vfs.ensureDir(dir);
       await this.vfs.writeFile(resolvedPath, content, "utf-8");

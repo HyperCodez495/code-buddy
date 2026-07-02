@@ -1,17 +1,18 @@
 /**
- * apply_patch → diff-review bridge.
+ * Write gate — the shared review entry for every gated write flow
+ * (apply_patch, create_file and its write_file alias).
  *
- * Turns a resolved patch (full before/after content, computed dry-run by
- * `computePatchedFiles` in tools/apply-patch.ts) into a reviewed, gated,
- * transactional application, and formats the verdict for the AGENT: a
- * reject/annotate comes back as an actionable message carrying the
- * annotations so the proposer can revise the patch — never a silent loss.
+ * Takes resolved FULL before/after content, routes it through
+ * `reviewAndApply` (review → transactional apply → audit ledger) and formats
+ * the verdict FOR THE AGENT: a reject/annotate comes back as an actionable
+ * message carrying the line-anchored annotations so the proposer can revise —
+ * never a silent loss.
  *
- * In `full` mode with no injected client, a default reviewer client is
- * resolved from the active-LLM pool (dead models skipped via the scoreboard);
- * none available → the engine fails closed.
+ * In `full` mode with no injected client, a default reviewer is resolved from
+ * the active-LLM pool (dead models skipped via the scoreboard); none
+ * available → the engine fails closed.
  *
- * @module review/apply-patch-bridge
+ * @module review/write-gate
  */
 
 import { reviewAndApply } from './review-engine.js';
@@ -20,13 +21,15 @@ import type { CouncilChatClient } from '../council/types.js';
 import type { ApplyMode, ReviewAnnotation, ReviewMode } from './types.js';
 import type { ProposedChangeInput } from './diff-model.js';
 
-export interface ApplyPatchWithReviewInput {
+export interface ReviewGatedWriteInput {
   changes: ProposedChangeInput[];
   cwd: string;
   intent: string;
+  /** Producer label journaled in the ledger (default 'agent-write'). */
+  originLabel?: string;
 }
 
-export interface ApplyPatchWithReviewDeps {
+export interface ReviewGatedWriteDeps {
   mode: Exclude<ReviewMode, 'off'>;
   /** Injected reviewer client; undefined in `full` mode → resolved from the pool; null → fail-closed. */
   client?: CouncilChatClient | null;
@@ -34,7 +37,7 @@ export interface ApplyPatchWithReviewDeps {
   applyMode?: ApplyMode;
 }
 
-export interface ApplyPatchWithReviewOutcome {
+export interface ReviewGatedWriteOutcome {
   ok: boolean;
   summary: string;
 }
@@ -49,10 +52,10 @@ export function formatReviewAnnotations(annotations: ReviewAnnotation[]): string
     .join('\n');
 }
 
-export async function applyPatchWithReview(
-  input: ApplyPatchWithReviewInput,
-  deps: ApplyPatchWithReviewDeps,
-): Promise<ApplyPatchWithReviewOutcome> {
+export async function reviewGatedWrite(
+  input: ReviewGatedWriteInput,
+  deps: ReviewGatedWriteDeps,
+): Promise<ReviewGatedWriteOutcome> {
   const client =
     deps.mode === 'full' ? (deps.client !== undefined ? deps.client : await resolveDefaultReviewClient()) : null;
 
@@ -60,7 +63,7 @@ export async function applyPatchWithReview(
     {
       workDir: input.cwd,
       intent: input.intent,
-      origin: { kind: 'agent', label: 'apply_patch' },
+      origin: { kind: 'agent', label: input.originLabel ?? 'agent-write' },
       changes: input.changes,
     },
     {
@@ -98,8 +101,8 @@ export async function applyPatchWithReview(
   const header = verdict.failClosed
     ? `review UNAVAILABLE (${verdict.mode}) — fail-closed, nothing applied. Retry later or run with CODEBUDDY_DIFF_REVIEW=static.`
     : verdict.decision === 'reject'
-      ? `review REJECTED the patch (${verdict.mode}: ${reviewers}) — nothing applied.`
-      : `review requests changes (${verdict.mode}: ${reviewers}) — nothing applied. Revise the patch to address the annotations, then re-apply.`;
+      ? `review REJECTED the change (${verdict.mode}: ${reviewers}) — nothing applied.`
+      : `review requests changes (${verdict.mode}: ${reviewers}) — nothing applied. Revise to address the annotations, then retry.`;
 
   return {
     ok: false,

@@ -440,9 +440,14 @@ export class ApplyPatchTool extends BaseTool {
     if (changes.length === 0) {
       return this.error('review gate: patch resolves to no effective change.');
     }
-    const { applyPatchWithReview } = await import('../review/apply-patch-bridge.js');
-    const outcome = await applyPatchWithReview(
-      { changes, cwd, intent: intent ?? `apply_patch (${ops.length} operation${ops.length > 1 ? 's' : ''})` },
+    const { reviewGatedWrite } = await import('../review/write-gate.js');
+    const outcome = await reviewGatedWrite(
+      {
+        changes,
+        cwd,
+        intent: intent ?? `apply_patch (${ops.length} operation${ops.length > 1 ? 's' : ''})`,
+        originLabel: 'apply_patch',
+      },
       { mode },
     );
     logger.debug(`apply_patch review gate: ${outcome.ok ? 'applied' : 'blocked'} (${mode})`);

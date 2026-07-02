@@ -1,6 +1,7 @@
 /**
- * apply_patch → review gate wiring: dry-run compute, bridge outcomes, and the
- * tool's gated path behind CODEBUDDY_DIFF_REVIEW (off path untouched).
+ * Write gate wiring — apply_patch dry-run + bridge outcomes, and the
+ * create_file/write_file path through TextEditorTool.create, all behind
+ * CODEBUDDY_DIFF_REVIEW (off paths untouched).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -12,8 +13,10 @@ vi.mock('../../src/utils/logger.js', () => ({
 }));
 
 import { ApplyPatchTool, computePatchedFiles, parsePatch } from '../../src/tools/apply-patch.js';
-import { applyPatchWithReview } from '../../src/review/apply-patch-bridge.js';
+import { TextEditorTool } from '../../src/tools/text-editor.js';
+import { reviewGatedWrite } from '../../src/review/write-gate.js';
 import { resetCheckpointManager } from '../../src/checkpoints/checkpoint-manager.js';
+import { ConfirmationService } from '../../src/utils/confirmation-service.js';
 import type { CouncilChatClient } from '../../src/council/types.js';
 
 let workDir: string;
@@ -24,7 +27,8 @@ beforeEach(() => {
   resetCheckpointManager();
   previousCwd = process.cwd();
   previousEnv = process.env.CODEBUDDY_DIFF_REVIEW;
-  workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'patch-bridge-'));
+  workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'write-gate-'));
+  ConfirmationService.getInstance().setSessionFlag('fileOperations', true);
 });
 
 afterEach(() => {
@@ -101,12 +105,12 @@ describe('computePatchedFiles (dry-run)', () => {
   });
 });
 
-describe('applyPatchWithReview (bridge)', () => {
-  it('static mode: clean patch → reviewed, applied transactionally, ok summary', async () => {
+describe('reviewGatedWrite (shared gate)', () => {
+  it('static mode: clean change → reviewed, applied transactionally, ok summary', async () => {
     write('a.ts', 'const a = 1;\n');
     const { changes } = computePatchedFiles(parsePatch(UPDATE_PATCH), workDir);
 
-    const outcome = await applyPatchWithReview({ changes, cwd: workDir, intent: 'bump a' }, { mode: 'static' });
+    const outcome = await reviewGatedWrite({ changes, cwd: workDir, intent: 'bump a' }, { mode: 'static' });
 
     expect(outcome.ok).toBe(true);
     expect(outcome.summary).toMatch(/review accepted \(static: static-gate\)/);
@@ -116,7 +120,7 @@ describe('applyPatchWithReview (bridge)', () => {
 
   it('static mode: introduced secret → blocked with annotations, nothing applied', async () => {
     write('a.ts', 'const a = 1;\n');
-    const outcome = await applyPatchWithReview(
+    const outcome = await reviewGatedWrite(
       { changes: [{ path: 'a.ts', newContent: 'const k = "AKIAABCDEFGHIJKLMNOP";\n' }], cwd: workDir, intent: 'sneak' },
       { mode: 'static' },
     );
@@ -140,7 +144,7 @@ describe('applyPatchWithReview (bridge)', () => {
       },
     };
 
-    const outcome = await applyPatchWithReview(
+    const outcome = await reviewGatedWrite(
       { changes: [{ path: 'a.ts', newContent: 'const a = 2;\n' }], cwd: workDir, intent: 'bump a' },
       { mode: 'full', client },
     );
@@ -154,7 +158,7 @@ describe('applyPatchWithReview (bridge)', () => {
 
   it('full mode with client=null fails CLOSED with a retry hint', async () => {
     write('a.ts', 'const a = 1;\n');
-    const outcome = await applyPatchWithReview(
+    const outcome = await reviewGatedWrite(
       { changes: [{ path: 'a.ts', newContent: 'const a = 2;\n' }], cwd: workDir, intent: 'bump a' },
       { mode: 'full', client: null },
     );
@@ -191,6 +195,7 @@ describe('ApplyPatchTool — gated behind CODEBUDDY_DIFF_REVIEW', () => {
     expect(read('a.ts')).toBe('const a = 2;\n');
     const ledger = JSON.parse(read('.codebuddy/diff-reviews.jsonl').trim());
     expect(ledger.intent).toBe('bump a');
+    expect(ledger.origin.label).toBe('apply_patch');
     expect(ledger.applied).toBe(true);
   });
 
@@ -225,5 +230,62 @@ describe('ApplyPatchTool — gated behind CODEBUDDY_DIFF_REVIEW', () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/does not resolve/);
     expect(read('a.ts')).toBe('totally different\n');
+  });
+});
+
+describe('TextEditorTool.create — gated behind CODEBUDDY_DIFF_REVIEW (create_file + write_file alias)', () => {
+  function editor(): TextEditorTool {
+    // Relative paths resolve against process.cwd() (basicResolvePath), the
+    // base directory is the isolation boundary — align both on workDir.
+    process.chdir(workDir);
+    const tool = new TextEditorTool();
+    tool.setBaseDirectory(workDir);
+    return tool;
+  }
+
+  it('off (default): legacy path, no review artifacts', async () => {
+    delete process.env.CODEBUDDY_DIFF_REVIEW;
+
+    const result = await editor().create('fresh.ts', 'export const a = 1;\n');
+
+    expect(result.success).toBe(true);
+    expect(read('fresh.ts')).toBe('export const a = 1;\n');
+    expect(fs.existsSync(path.join(workDir, '.codebuddy'))).toBe(false);
+  });
+
+  it('static: a clean creation is reviewed, applied and journaled', async () => {
+    process.env.CODEBUDDY_DIFF_REVIEW = 'static';
+
+    const result = await editor().create('src/fresh.ts', 'export const a = 1;\n');
+
+    expect(result.success).toBe(true);
+    expect(result.output).toMatch(/review accepted/);
+    expect(read('src/fresh.ts')).toBe('export const a = 1;\n');
+    const ledger = JSON.parse(read('.codebuddy/diff-reviews.jsonl').trim());
+    expect(ledger.origin.label).toBe('create_file');
+    expect(ledger.intent).toBe('create src/fresh.ts');
+    expect(ledger.applied).toBe(true);
+  });
+
+  it('static: a creation smuggling a secret is blocked with the annotations', async () => {
+    process.env.CODEBUDDY_DIFF_REVIEW = 'static';
+
+    const result = await editor().create('cfg.ts', 'export const key = "AKIAABCDEFGHIJKLMNOP";\n');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/REJECTED/);
+    expect(result.error).toMatch(/AWS access key/);
+    expect(fs.existsSync(path.join(workDir, 'cfg.ts'))).toBe(false);
+  });
+
+  it('full mode with an injected-free environment fails closed rather than writing unreviewed', async () => {
+    process.env.CODEBUDDY_DIFF_REVIEW = 'static';
+    // Escape attempt: absolute path outside the base directory.
+    const outside = path.join(os.tmpdir(), `write-gate-escape-${Date.now()}.ts`);
+
+    const result = await editor().create(outside, 'export const a = 1;\n');
+
+    expect(result.success).toBe(false);
+    expect(fs.existsSync(outside)).toBe(false);
   });
 });
