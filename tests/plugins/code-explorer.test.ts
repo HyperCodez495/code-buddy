@@ -69,7 +69,7 @@ describe('CodeExplorerManager', () => {
       );
 
       expect(manager.isInstalled()).toBe(true);
-      expect(execSync).toHaveBeenCalledWith('npx code-explorer --version', {
+      expect(execSync).toHaveBeenCalledWith('code-explorer --version', {
         stdio: 'pipe',
         timeout: 10_000,
         cwd: path.resolve(testRepoPath),
@@ -225,7 +225,7 @@ describe('CodeExplorerManager', () => {
   });
 
   describe('analyze', () => {
-    it('should spawn npx code-explorer analyze', async () => {
+    it('should spawn code-explorer analyze', async () => {
       const mockOn = vi.fn();
       const mockStdout = { on: vi.fn() };
       const mockStderr = { on: vi.fn() };
@@ -250,8 +250,8 @@ describe('CodeExplorerManager', () => {
       await manager.analyze();
 
       expect(spawn).toHaveBeenCalledWith(
-        'npx',
-        ['code-explorer', 'analyze'],
+        'code-explorer',
+        ['analyze'],
         expect.objectContaining({
           cwd: path.resolve(testRepoPath),
           shell: true,
@@ -280,8 +280,8 @@ describe('CodeExplorerManager', () => {
       await manager.analyze({ force: true });
 
       expect(spawn).toHaveBeenCalledWith(
-        'npx',
-        ['code-explorer', 'analyze', '--force'],
+        'code-explorer',
+        ['analyze', '--force'],
         expect.anything(),
       );
     });
@@ -307,8 +307,8 @@ describe('CodeExplorerManager', () => {
       await manager.analyze({ withSkills: true });
 
       expect(spawn).toHaveBeenCalledWith(
-        'npx',
-        ['code-explorer', 'analyze', '--with-skills'],
+        'code-explorer',
+        ['analyze', '--with-skills'],
         expect.anything(),
       );
     });
