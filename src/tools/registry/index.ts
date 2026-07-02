@@ -35,6 +35,12 @@ export {
   resetLsInstance,
 } from './ls-tools.js';
 
+// Tool Adapters - Self-describe (robot self-model / components)
+export {
+  SelfDescribeTool,
+  createSelfDescribeTools,
+} from './self-describe-tools.js';
+
 // Tool Adapters - Search
 export {
   UnifiedSearchTool,
@@ -607,6 +613,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createTextEditorTools(),
     ...createBashTools(),
     ...createLsTools(),
+    ...createSelfDescribeTools(),
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
@@ -676,6 +683,7 @@ import { FormalToolRegistry } from './tool-registry.js';
 import { createTextEditorTools } from './text-editor-tools.js';
 import { createBashTools } from './bash-tools.js';
 import { createLsTools } from './ls-tools.js';
+import { createSelfDescribeTools } from './self-describe-tools.js';
 import { createSearchTools } from './search-tools.js';
 import { createWebTools } from './web-tools.js';
 import { createTodoTools } from './todo-tools.js';
