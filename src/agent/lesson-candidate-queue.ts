@@ -41,6 +41,10 @@ export interface LessonCandidateProvenance {
   sagaId?: string;
   /** Free-form note, e.g. "proposed after passing verification on task X". */
   note?: string;
+  /** Deterministic triage score (0..1) from council-lesson-proposer — helps the human sort the queue. */
+  pedagogicalValue?: number;
+  /** The score's component factors (substance, resolution, testability, generalizability, stanceDivergence). */
+  valueFactors?: Record<string, number>;
 }
 
 export interface LessonCandidate {

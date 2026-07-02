@@ -254,6 +254,21 @@ async function maybeProposeCouncilLesson(task: string, result: CouncilRunResult,
     if (!existsSync(path.join(workDir, '.codebuddy'))) return;
 
     const { proposeFromCouncilRunResult } = await import('../agent/council-lesson-proposer.js');
+    // Positions = each member's stance: the contract's first "VERDICT:" line
+    // when present (guaranteed on post-contract collective runs), else the
+    // answer head. This is what makes a candidate readable without reopening
+    // the transcript.
+    const positions = result.answers.map((answer) => {
+      const firstVerdictLine = answer.content
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => /^verdict\s*:/i.test(l));
+      return {
+        label: answer.role?.label ?? answer.displayName,
+        stance: (firstVerdictLine ?? answer.content.trim().slice(0, 160)).replace(/^verdict\s*:\s*/i, ''),
+      };
+    });
+    const winner = result.verdict.winnerIdx !== null ? result.answers[result.verdict.winnerIdx] : undefined;
     const proposal = proposeFromCouncilRunResult(
       {
         task,
@@ -266,6 +281,16 @@ async function maybeProposeCouncilLesson(task: string, result: CouncilRunResult,
           total: result.consensus.total,
           disagreements: result.consensus.disagreements,
         },
+        positions,
+        ...(result.verdict.kind === 'judged'
+          ? {
+              resolution: {
+                ...(winner ? { winner: winner.role?.label ?? winner.displayName } : {}),
+                ...(result.verdict.rationale ? { rationale: result.verdict.rationale } : {}),
+                ...(result.verdict.verified ? { verified: result.verdict.verified } : {}),
+              },
+            }
+          : {}),
       },
       workDir,
     );

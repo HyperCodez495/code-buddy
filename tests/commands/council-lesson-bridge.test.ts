@@ -36,7 +36,8 @@ function cannedResult(): CouncilRunResult {
       {
         source: { kind: 'local', provider: 'p1', model: 'm1' },
         displayName: 'm1',
-        content: 'réponse un',
+        content:
+          'VERDICT: oui, migrer — le mode WAL règle le verrouillage inter-process si les accès restent locaux\ndétails…',
         latencyMs: 10,
         tokensUsed: 5,
         costUsd: 0,
@@ -44,7 +45,8 @@ function cannedResult(): CouncilRunResult {
       {
         source: { kind: 'local', provider: 'p2', model: 'm2' },
         displayName: 'm2',
-        content: 'autre position',
+        content:
+          'VERDICT: non si les écritures restent atomiques par rename et verrou explicite ; réviser sinon\ndétails…',
         latencyMs: 12,
         tokensUsed: 5,
         costUsd: 0,
@@ -56,8 +58,8 @@ function cannedResult(): CouncilRunResult {
       winnerIdx: 0,
       scores: [0.9, 0.4],
       roleScores: [0.9, 0.4],
-      rationale: 'ok',
-      verified: '',
+      rationale: 'la migration couvre le scénario deux-writers demandé',
+      verified: 'les deux tranchent, seule A fournit un plan',
       judgeModel: 'j',
       neutral: true,
     },
@@ -143,17 +145,41 @@ describe('runCouncil — lesson bridge host policy', () => {
     expect(lines.join('\n')).toContain('buddy lessons');
   });
 
-  it('inside a project but healthy collective run: no candidate', async () => {
+  it('inside a project but abstained verdict (infra noise): no candidate', async () => {
     fs.mkdirSync(path.join(tmpDir, '.codebuddy'));
-    const collective = cannedResult();
-    collective.plan.mode = 'collective';
-    collective.signals.confidence = 'high';
-    runCouncilPipeline.mockResolvedValue(collective);
+    const abstained = cannedResult();
+    abstained.verdict = {
+      kind: 'abstained',
+      winnerIdx: null,
+      scores: [0, 0],
+      roleScores: [0, 0],
+      rationale: '(juge indisponible: backend 400)',
+      verified: '',
+      judgeModel: 'dead-judge',
+      neutral: true,
+    };
+    abstained.signals.confidence = 'low';
+    runCouncilPipeline.mockResolvedValue(abstained);
 
     const lines: string[] = [];
     await runCouncil('Audit complet du module', {}, (s) => lines.push(s));
 
     expect(fs.existsSync(path.join(tmpDir, '.codebuddy', 'lesson-candidates.json'))).toBe(false);
     expect(lines.join('\n')).not.toContain('💡');
+  });
+
+  it('the candidate carries the members\' VERDICT stances and the judge resolution', async () => {
+    fs.mkdirSync(path.join(tmpDir, '.codebuddy'));
+    const lines: string[] = [];
+    await runCouncil('Compare les deux approches', {}, (s) => lines.push(s));
+
+    const file = path.join(tmpDir, '.codebuddy', 'lesson-candidates.json');
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const candidate = (Array.isArray(parsed) ? parsed : parsed.candidates)[0];
+    expect(candidate.content).toContain('oui, migrer');
+    expect(candidate.content).toContain('non si les écritures restent atomiques');
+    expect(candidate.content).toMatch(/Settled/);
+    expect(candidate.provenance.pedagogicalValue).toBeGreaterThan(0.35);
+    expect(candidate.category).toBe('RULE');
   });
 });
