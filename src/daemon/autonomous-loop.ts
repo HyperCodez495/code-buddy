@@ -34,6 +34,30 @@ import type {
   FleetColabStore,
 } from '../fleet/colab-store.js';
 import { DEFAULT_COLAB_GOAL_MAX_TURNS, type ColabGoalJudge } from './colab-goal.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getCodeBuddyPath } from '../utils/codebuddy-home.js';
+
+/** Read the persisted last-self-improve timestamp (ms). Best-effort → null. */
+function readSelfImproveState(file: string): number | null {
+  try {
+    const raw = fs.readFileSync(file, 'utf-8');
+    const at = (JSON.parse(raw) as { lastSelfImproveAt?: unknown }).lastSelfImproveAt;
+    return typeof at === 'number' && Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the last-self-improve timestamp (ms). Best-effort, never-throws. */
+function writeSelfImproveState(file: string, at: number): void {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ lastSelfImproveAt: at }), 'utf-8');
+  } catch {
+    /* the cooldown persistence is best-effort — never block the loop */
+  }
+}
 
 export interface TaskExecutionResult {
   ok: boolean;
@@ -142,6 +166,14 @@ export interface AutonomousLoopConfig {
   selfImproveCooldownMs?: number;
   /** Clock for the cooldown (tests). Default Date.now. */
   now?: () => number;
+  /**
+   * Where the last-self-improve timestamp is persisted so the cooldown
+   * SURVIVES a daemon restart. Without persistence, `lastSelfImproveAt`
+   * reset to -Infinity on every boot and a crash-looping daemon fired an
+   * unbounded LLM self-improve cycle on each start. Default under the
+   * CodeBuddy home; injectable for hermetic tests.
+   */
+  selfImproveStatePath?: string;
 }
 
 export interface TickResult {
@@ -166,7 +198,8 @@ export class FleetAutonomousLoop {
   private readonly selfImprove: SelfImproveHook;
   private readonly selfImproveCooldownMs: number;
   private readonly now: () => number;
-  private lastSelfImproveAt = Number.NEGATIVE_INFINITY;
+  private readonly selfImproveStatePath: string;
+  private lastSelfImproveAt: number;
 
   constructor(config: AutonomousLoopConfig) {
     this.store = config.store;
@@ -178,6 +211,10 @@ export class FleetAutonomousLoop {
     this.selfImprove = config.selfImprove ?? defaultSelfImproveHook;
     this.selfImproveCooldownMs = config.selfImproveCooldownMs ?? 15 * 60 * 1000;
     this.now = config.now ?? (() => Date.now());
+    this.selfImproveStatePath =
+      config.selfImproveStatePath ?? getCodeBuddyPath('self-improvement', 'idle-cooldown.json');
+    // Restore the cooldown across restarts (see selfImproveStatePath docs).
+    this.lastSelfImproveAt = readSelfImproveState(this.selfImproveStatePath) ?? Number.NEGATIVE_INFINITY;
   }
 
   /**
@@ -197,6 +234,7 @@ export class FleetAutonomousLoop {
       return { outcome: 'idle', detail: 'self-improve on cooldown' };
     }
     this.lastSelfImproveAt = now;
+    writeSelfImproveState(this.selfImproveStatePath, now); // survive a restart
     this.store.updatePresence({ status: 'active', currentTask: 'self-improvement' });
     const doneLoad = beginFleetWork('autonomy.task');
     try {

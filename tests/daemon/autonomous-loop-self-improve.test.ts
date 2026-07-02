@@ -40,6 +40,8 @@ describe('FleetAutonomousLoop — idle self-improvement trigger', () => {
       selfImprove,
       selfImproveCooldownMs: 1000,
       now,
+      // Hermetic: keep the persisted cooldown inside the tmp dir, never ~/.codebuddy.
+      selfImproveStatePath: join(dir, 'idle-cooldown.json'),
     });
   }
 
@@ -74,6 +76,32 @@ describe('FleetAutonomousLoop — idle self-improvement trigger', () => {
     t = 1500; // past cooldown
     const r3 = await l.tick();
     expect(r3.outcome).toBe('self_improved');
+    expect(hook).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists the cooldown across a restart — a fresh loop stays on cooldown (no unbounded cycle on reboot)', async () => {
+    process.env.CODEBUDDY_SELF_IMPROVE = 'true';
+    const hook = vi.fn(async () => ({ applied: true, detail: 'x' }));
+    let t = 10_000;
+
+    // First process runs a cycle at t=10_000 and persists the timestamp.
+    await loop(hook, () => t).tick();
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    // Daemon restarts within the cooldown window → a BRAND NEW loop instance
+    // (lastSelfImproveAt would be -Infinity without persistence).
+    t = 10_500; // 500ms later, cooldown is 1000ms
+    const rebooted = loop(hook, () => t);
+    const r = await rebooted.tick();
+
+    expect(r.outcome).toBe('idle');
+    expect(r.detail).toContain('cooldown');
+    expect(hook).toHaveBeenCalledTimes(1); // NOT re-fired on restart
+
+    // Past the window, the restored loop resumes normally.
+    t = 11_500;
+    const r2 = await rebooted.tick();
+    expect(r2.outcome).toBe('self_improved');
     expect(hook).toHaveBeenCalledTimes(2);
   });
 
