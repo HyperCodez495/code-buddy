@@ -250,9 +250,17 @@ export class QualityGateMiddleware implements ConversationMiddleware {
   // ── File extraction ─────────────────────────────────────────────
 
   private extractChangedFiles(context: MiddlewareContext): string[] {
+    // Prefer the authoritative edit set derived from editor tool CALLS
+    // (populated by buildMiddlewareContext). Editors emit unified DIFFS in their
+    // results, so the legacy verb/`file:` scrape below never matched them and the
+    // gate reviewed an empty set — the whole point of V3.
+    if (context.changedFiles && context.changedFiles.length > 0) {
+      return context.changedFiles;
+    }
+
     const files = new Set<string>();
 
-    // Scan history for file write/edit tool results
+    // Legacy fallback: scan history for file write/edit tool RESULT text.
     for (const entry of context.history) {
       if (entry.type !== 'tool_result') continue;
       const content = typeof entry.content === 'string' ? entry.content : '';

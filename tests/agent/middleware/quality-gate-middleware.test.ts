@@ -185,6 +185,49 @@ describe('QualityGateMiddleware', () => {
   });
 });
 
+// ── V3: changedFiles drives gate selection ─────────────────────────
+// The gate scraped tool_result TEXT for verbs (wrote/created/…), but editors
+// emit unified diffs, so changedFiles was always empty → security-review never
+// applied and code-guardian reviewed nothing. Now it consumes context.changedFiles.
+
+describe('quality gate consumes context.changedFiles (V3)', () => {
+  it('extractChangedFiles prefers context.changedFiles over the text scrape', () => {
+    const mw = new QualityGateMiddleware();
+    const ctx = makeContext({
+      changedFiles: ['src/auth/login.ts'],
+      // A diff-formatted result the legacy scrape can NOT parse.
+      history: [toolResultEntry('--- a/src/auth/login.ts\n+++ b/src/auth/login.ts\n@@ -1 +1 @@', 'str_replace_editor')],
+    });
+    const files = (mw as unknown as { extractChangedFiles(c: MiddlewareContext): string[] }).extractChangedFiles(ctx);
+    expect(files).toEqual(['src/auth/login.ts']);
+  });
+
+  it('security-review becomes applicable when an auth file is in changedFiles', () => {
+    const mw = new QualityGateMiddleware();
+    const files = ['src/auth/login.ts'];
+    const gates = (mw as unknown as { filterApplicableGates(f: string[]): Array<{ id: string }> }).filterApplicableGates(files);
+    expect(gates.map(g => g.id)).toContain('security-review');
+    expect(gates.map(g => g.id)).toContain('code-guardian'); // always applicable
+  });
+
+  it('security-review is NOT applicable for a non-sensitive file', () => {
+    const mw = new QualityGateMiddleware();
+    const gates = (mw as unknown as { filterApplicableGates(f: string[]): Array<{ id: string }> }).filterApplicableGates(['src/util/math.ts']);
+    expect(gates.map(g => g.id)).not.toContain('security-review');
+    expect(gates.map(g => g.id)).toContain('code-guardian');
+  });
+
+  it('falls back to the legacy text scrape when changedFiles is empty', () => {
+    const mw = new QualityGateMiddleware();
+    const ctx = makeContext({
+      changedFiles: [],
+      history: [toolResultEntry('wrote `src/legacy.ts`')],
+    });
+    const files = (mw as unknown as { extractChangedFiles(c: MiddlewareContext): string[] }).extractChangedFiles(ctx);
+    expect(files).toContain('src/legacy.ts');
+  });
+});
+
 // ── Structured findings extraction ─────────────────────────────────
 // The middleware used to DISCARD the agents' structured data and re-parse
 // their prose with regexes; these pins guarantee the structure is read.

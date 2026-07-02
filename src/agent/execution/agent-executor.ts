@@ -48,6 +48,7 @@ import {
 } from "./post-tool-handlers.js";
 import type { LaneQueue } from "../../concurrency/lane-queue.js";
 import type { MiddlewarePipeline, MiddlewareContext } from "../middleware/index.js";
+import { extractEditedFilesFromHistory } from "../middleware/changed-files.js";
 import type { MessageQueue } from "../message-queue.js";
 import { semanticTruncate } from "../../utils/head-tail-truncation.js";
 import { compressWithLmResizer, isLmResizerEnabled } from "../../context/lm-resizer-compressor.js";
@@ -330,6 +331,9 @@ export class AgentExecutor {
       messages,
       isStreaming,
       abortController,
+      // Authoritative edit set from editor tool CALLS — editors emit diffs in
+      // their RESULTS, which the quality gate's text scrape can't parse (V3).
+      changedFiles: extractEditedFilesFromHistory(history),
     };
   }
 
