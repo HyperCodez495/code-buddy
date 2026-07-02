@@ -36,6 +36,43 @@ export interface ExecuteCodeRunnerOptions {
   rpcMaxCalls?: number;
   /** Per-call RPC execution timeout (ms). Default 15s. */
   rpcCallTimeoutMs?: number;
+  /**
+   * Environment exposure to the child process.
+   *  - `'inherit'` (default): the child sees the full `process.env` — for the
+   *    user-facing execute_code tool, which may legitimately need credentials.
+   *  - `'isolate'`: the child sees ONLY a minimal allowlist (PATH, locale, a
+   *    throwaway HOME pointing at the run dir) plus the runner's own
+   *    CODEBUDDY_EXECUTE_CODE_* keys and the caller-supplied `env`. Every
+   *    secret (`*_API_KEY`, `*_TOKEN`, OAuth creds…) is dropped, and HOME is
+   *    redirected so `~/.codebuddy/*` credential files are unreachable by
+   *    path. Used by the self-improvement sandbox so authored/untrusted code
+   *    cannot exfiltrate secrets — even during pre-accept scoring.
+   */
+  envMode?: 'inherit' | 'isolate';
+}
+
+/**
+ * Build the child env under isolation: a minimal allowlist of the parent's
+ * non-secret vars, a HOME redirected into the throwaway run dir, plus the
+ * caller-supplied overrides. Nothing else from `process.env` crosses over.
+ */
+function buildIsolatedEnv(runDir: string, callerEnv: Record<string, string>): Record<string, string> {
+  const ALLOW = new Set([
+    'PATH', 'Path', // interpreter discovery (Windows uses `Path`)
+    'LANG', 'LC_ALL', 'LC_CTYPE', 'LANGUAGE', 'TZ', // locale / time
+    'TMPDIR', 'TMP', 'TEMP', // temp dir
+    'SYSTEMROOT', 'SystemRoot', 'COMSPEC', 'ComSpec', 'PATHEXT', 'WINDIR', // Windows runtime
+    'NODE_PATH',
+  ]);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && ALLOW.has(k)) out[k] = v;
+  }
+  // Redirect HOME at the sandbox so credential files under the real home
+  // (~/.codebuddy/*.json) cannot be read by path.
+  out.HOME = runDir;
+  out.USERPROFILE = runDir;
+  return { ...out, ...callerEnv };
 }
 
 export interface ExecuteCodeResult {
@@ -125,15 +162,18 @@ export async function executeCode(
   let spawnError: Error | undefined;
 
   const completed = await new Promise<{ exitCode: number | null; signal: string | null }>((resolve) => {
+    const runnerEnv = {
+      CODEBUDDY_EXECUTE_CODE_RUN_DIR: runDir,
+      CODEBUDDY_WORKSPACE_ROOT: rootDir,
+      ...(rpcSupported ? { CODEBUDDY_EXECUTE_CODE_RPC_DIR: rpcDir } : {}),
+    };
+    const childEnv =
+      options.envMode === 'isolate'
+        ? buildIsolatedEnv(runDir, { ...env, ...runnerEnv })
+        : { ...process.env, ...env, ...runnerEnv };
     const child = spawn(invocation.command, [...invocation.args, scriptPath, ...scriptArgs], {
       cwd: runDir,
-      env: {
-        ...process.env,
-        ...env,
-        CODEBUDDY_EXECUTE_CODE_RUN_DIR: runDir,
-        CODEBUDDY_WORKSPACE_ROOT: rootDir,
-        ...(rpcSupported ? { CODEBUDDY_EXECUTE_CODE_RPC_DIR: rpcDir } : {}),
-      },
+      env: childEnv,
       windowsHide: true,
     });
 

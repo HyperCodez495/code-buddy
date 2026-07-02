@@ -4,8 +4,10 @@
  * authored tool runs" so the thing we GATE is exactly the thing we REGISTER.
  *
  * An authored tool runs its `code` SANDBOXED: a throwaway cwd, RPC off (no
- * callback into the tool system), and its call arguments arrive as JSON in the
- * CODEBUDDY_TOOL_INPUT env var; the script prints its result to stdout.
+ * callback into the tool system), an ISOLATED environment (no inherited
+ * secrets, HOME redirected away from `~/.codebuddy`), and its call arguments
+ * arrive as JSON in the CODEBUDDY_TOOL_INPUT env var; the script prints its
+ * result to stdout.
  *
  * @module agent/self-improvement/authored-tool-runtime
  */
@@ -50,7 +52,9 @@ export function buildAuthoredTool(spec: AuthoredToolSpec): ITool {
       try {
         const res = await executeCode(
           { code, language, env: { CODEBUDDY_TOOL_INPUT: JSON.stringify(input ?? {}) } },
-          { rootDir, rpcEnabled: false },
+          // envMode 'isolate' → the sandbox (used for BOTH pre-accept scoring
+          // and live calls) never inherits the host's secrets.
+          { rootDir, rpcEnabled: false, envMode: 'isolate' },
         );
         if (!res.ok) {
           return {
