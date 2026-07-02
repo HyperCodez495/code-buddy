@@ -93,11 +93,25 @@ impl Thalamus {
         &self.memory
     }
 
-    /// Drive the thalamus: drain the sense channel, admit, broadcast.
-    pub async fn run(mut self, mut rx: mpsc::Receiver<SensoryEvent>, tx: broadcast::Sender<SensoryEvent>) {
-        while let Some(ev) = rx.recv().await {
+    /// Drive the thalamus from PER-ORGAN channels merged fairly (`StreamMap`), instead of one shared
+    /// queue. This is the organ-isolation fix: a burst on one organ fills only ITS channel and never
+    /// parks another organ's producer (no cross-organ head-of-line blocking). The thalamus still
+    /// admits + broadcasts sequentially, but ingress is decoupled per organ. The loop ends when every
+    /// organ channel has closed. Returns when all inputs are done.
+    pub async fn run_multi(
+        mut self,
+        receivers: Vec<mpsc::Receiver<SensoryEvent>>,
+        tx: broadcast::Sender<SensoryEvent>,
+    ) {
+        use tokio_stream::wrappers::ReceiverStream;
+        use tokio_stream::{StreamExt, StreamMap};
+
+        let mut map: StreamMap<usize, ReceiverStream<SensoryEvent>> = StreamMap::new();
+        for (i, rx) in receivers.into_iter().enumerate() {
+            map.insert(i, ReceiverStream::new(rx));
+        }
+        while let Some((_organ, ev)) = map.next().await {
             if let Some(out) = self.admit(ev) {
-                // Ignore send errors: a broadcast with no live receivers is fine.
                 let _ = tx.send(out);
             }
         }
@@ -154,7 +168,7 @@ mod tests {
         let (stx, srx) = mpsc::channel::<SensoryEvent>(16);
         let (btx, mut brx) = broadcast::channel::<SensoryEvent>(16);
         let thalamus = Thalamus::new(8, 100);
-        let handle = tokio::spawn(async move { thalamus.run(srx, btx).await });
+        let handle = tokio::spawn(async move { thalamus.run_multi(vec![srx], btx).await });
 
         stx.send(ev(Modality::Vision, "motion", 0, 10)).await.unwrap(); // passes
         stx.send(ev(Modality::Vision, "motion", 30, 10)).await.unwrap(); // within window → coalesced
@@ -167,5 +181,41 @@ mod tests {
             kinds.push(e.kind);
         }
         assert_eq!(kinds, vec!["motion", "speech_start"]); // the 2nd motion was dropped
+    }
+
+    #[tokio::test]
+    async fn run_multi_merges_every_organ_channel() {
+        // Two organs, each on its OWN channel — the thalamus must admit + broadcast from both.
+        let (vtx, vrx) = mpsc::channel::<SensoryEvent>(8); // vision organ
+        let (atx, arx) = mpsc::channel::<SensoryEvent>(8); // audio organ
+        let (btx, mut brx) = broadcast::channel::<SensoryEvent>(16);
+        let thalamus = Thalamus::new(8, 100);
+        let handle = tokio::spawn(async move { thalamus.run_multi(vec![vrx, arx], btx).await });
+
+        vtx.send(ev(Modality::Vision, "motion", 0, 180)).await.unwrap();
+        atx.send(ev(Modality::Audio, "speech_start", 5, 200)).await.unwrap();
+        drop(vtx);
+        drop(atx);
+        handle.await.unwrap();
+
+        let mut mods = Vec::new();
+        while let Ok(e) = brx.try_recv() {
+            mods.push(e.modality);
+        }
+        assert!(mods.contains(&Modality::Vision));
+        assert!(mods.contains(&Modality::Audio));
+        assert_eq!(mods.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_full_organ_channel_does_not_block_another_organ() {
+        // The head-of-line fix, at the channel level: with per-organ channels, saturating organ A
+        // must not stop organ B's producer. (With ONE shared channel, a full queue blocks ALL sends.)
+        let (a_tx, _a_rx) = mpsc::channel::<SensoryEvent>(1); // organ A, capacity 1, unconsumed
+        let (b_tx, _b_rx) = mpsc::channel::<SensoryEvent>(1); // organ B, its own channel
+        a_tx.try_send(ev(Modality::Vision, "motion", 0, 180)).unwrap(); // fill A
+        assert!(a_tx.try_send(ev(Modality::Vision, "motion", 1, 180)).is_err()); // A is now full…
+        // …yet B is completely unaffected — its producer sends freely.
+        assert!(b_tx.try_send(ev(Modality::Audio, "speech_start", 2, 200)).is_ok());
     }
 }

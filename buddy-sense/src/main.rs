@@ -79,15 +79,9 @@ async fn main() {
     let url = std::env::var("BUDDY_SENSE_BRIDGE_URL").unwrap_or_else(|_| "ws://127.0.0.1:8129".to_string());
     let wav = std::env::args().skip(1).find(|a| a.ends_with(".wav"));
 
-    // Sense → thalamus (bounded = backpressure). Thalamus → consumers (broadcast).
-    let (sense_tx, sense_rx) = mpsc::channel::<SensoryEvent>(32);
+    // Thalamus → consumers (broadcast). The per-organ sense channels are created below (one per
+    // ACTIVE organ, for isolation) and the thalamus is spawned over all of them via run_multi.
     let (bcast_tx, _keep) = broadcast::channel::<SensoryEvent>(128);
-
-    let thalamus = bus::Thalamus::new(64, 200);
-    {
-        let tx = bcast_tx.clone();
-        tokio::spawn(async move { thalamus.run(sense_rx, tx).await });
-    }
 
     // Which organs (senses) run — chosen at RUNTIME among the ones this binary was COMPILED with.
     // `available` reflects the compiled features; `BUDDY_SENSE_ORGANS` (csv) narrows it (Vital is
@@ -119,6 +113,11 @@ async fn main() {
         tokio::spawn(async move { bridge::run_bridge(url, token, rx).await });
     }
 
+    // PER-ORGAN channels → the thalamus. Each active organ gets its OWN bounded channel, so a burst
+    // on one organ fills only its queue and never parks another organ's producer (organ isolation:
+    // no cross-organ head-of-line blocking). Collected here, merged by the thalamus (run_multi).
+    let mut organ_rx: Vec<mpsc::Receiver<SensoryEvent>> = Vec::new();
+
     // Vital sense — the autonomic heartbeat, ALWAYS on and in PARALLEL with the
     // other senses (like a real heartbeat, independent of sight/hearing).
     let heartbeat_ms = std::env::var("BUDDY_SENSE_HEARTBEAT_MS")
@@ -130,14 +129,16 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse::<u64>().ok());
     if organ_active(Organ::Vital) {
-        let tx = sense_tx.clone();
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
         tokio::spawn(async move { senses::vital::run(tx, heartbeat_ms, heartbeat_count).await });
     }
 
     // Screen sense — light event-driven screen-change detection (opt-in build).
     #[cfg(feature = "live-screen")]
     if organ_active(Organ::Screen) {
-        let tx = sense_tx.clone();
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
         let screen_ms = std::env::var("BUDDY_SENSE_SCREEN_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(1000);
         let screen_threshold = std::env::var("BUDDY_SENSE_SCREEN_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.02);
         eprintln!("[buddy-sense] screen sense active ({screen_ms}ms, threshold {screen_threshold})");
@@ -147,7 +148,8 @@ async fn main() {
     // Camera sense — live webcam motion detection (the robot's eyes), opt-in build.
     #[cfg(feature = "live-vision")]
     if organ_active(Organ::Vision) {
-        let tx = sense_tx.clone();
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
         let device = std::env::var("BUDDY_SENSE_CAMERA").unwrap_or_else(|_| "/dev/video0".to_string());
         let cam_ms = std::env::var("BUDDY_SENSE_CAMERA_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(1500);
         let cam_threshold = std::env::var("BUDDY_SENSE_CAMERA_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.04);
@@ -158,7 +160,8 @@ async fn main() {
     // UI sense — semantic accessibility events (active app / focus), opt-in build.
     #[cfg(feature = "live-ui")]
     if organ_active(Organ::Ui) {
-        let tx = sense_tx.clone();
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
         eprintln!("[buddy-sense] ui sense active (AT-SPI)");
         tokio::spawn(async move { senses::ui::live::run(tx).await });
     }
@@ -170,7 +173,8 @@ async fn main() {
     // LD_LIBRARY_PATH set to its own directory (where the prebuilt .so are copied).
     #[cfg(feature = "live-audio")]
     if organ_active(Organ::LiveAudio) {
-        let tx = sense_tx.clone();
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
         let source = std::env::var("BUDDY_SENSE_MIC_SOURCE").unwrap_or_else(|_| "default".to_string());
         let threshold = std::env::var("BUDDY_SENSE_MIC_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(senses::live_audio::DEFAULT_MIC_THRESHOLD);
         let endpoint_ms = std::env::var("BUDDY_SENSE_MIC_ENDPOINT_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(senses::live_audio::DEFAULT_MIC_ENDPOINT_MS);
@@ -178,14 +182,32 @@ async fn main() {
         tokio::spawn(async move { senses::live_audio::run(tx, source, threshold, endpoint_ms).await });
     }
 
+    // Audio-batch (WAV) source — its own channel too, so it's isolated like a live organ. Option so
+    // the None (no-WAV) daemon doesn't create an idle channel.
+    let audio_batch_tx = if wav.is_some() {
+        let (tx, rx) = mpsc::channel::<SensoryEvent>(32);
+        organ_rx.push(rx);
+        Some(tx)
+    } else {
+        None
+    };
+
+    // Drive the thalamus over ALL per-organ channels (merged fairly; ingress isolated per organ).
+    {
+        let thalamus = bus::Thalamus::new(64, 200);
+        let tx = bcast_tx.clone();
+        tokio::spawn(async move { thalamus.run_multi(organ_rx, tx).await });
+    }
+
     match wav {
         Some(path) => {
-            // Audio runs concurrently with the heartbeat — both feed the thalamus.
+            // Audio runs concurrently with the heartbeat — both feed the thalamus (its own channel).
+            let audio_tx = audio_batch_tx.expect("audio_batch_tx is Some when wav is Some");
             match audio_events_for(&path) {
                 Ok(events) => {
                     eprintln!("[buddy-sense] audio: {} VAD event(s) from {path}", events.len());
                     for ev in events {
-                        if sense_tx.send(ev).await.is_err() {
+                        if audio_tx.send(ev).await.is_err() {
                             break;
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

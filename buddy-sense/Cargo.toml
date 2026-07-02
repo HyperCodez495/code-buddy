@@ -30,7 +30,8 @@ ort-sys = { version = "=2.0.0-rc.6", optional = true }
 # Live UI sense via AT-SPI (accessibility). zbus is pure-Rust D-Bus → no system
 # deps. The pure mapper builds + tests without it.
 atspi = { version = "0.30", optional = true, features = ["tokio"] }
-tokio-stream = { version = "0.1", optional = true }
+# Non-optional: the thalamus merges the per-organ channels via StreamMap (organ isolation).
+tokio-stream = "0.1"
 
 # In-process STT (sherpa-onnx offline transducer) is opt-in behind `stt`. sherpa-rs's
 # default `download-binaries` feature fetches the prebuilt sherpa-onnx + onnxruntime
@@ -53,4 +54,4 @@ live-audio = ["stt"]
 live-vision = []
 live-screen = ["dep:xcap"]
 neural-vad = ["dep:vad-rs", "dep:ort", "dep:ort-sys"]
-live-ui = ["dep:atspi", "dep:tokio-stream"]
+live-ui = ["dep:atspi"]
