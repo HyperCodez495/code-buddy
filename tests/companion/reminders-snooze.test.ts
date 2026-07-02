@@ -13,6 +13,7 @@ import {
   snoozeReminder,
   dueSnoozes,
   resetSnoozes,
+  loadSnoozes,
   resetAcks,
   openAck,
   pendingAcks,
@@ -22,10 +23,12 @@ import { runReminderTick } from '../../src/companion/reminder-runner.js';
 
 let dir: string;
 let counter = 0;
+const flush = () => new Promise((r) => setTimeout(r, 40)); // let the fire-and-forget persist land
 beforeEach(() => {
   dir = path.join(os.tmpdir(), `cb-snooze-${process.pid}-${counter++}`);
   process.env.CODEBUDDY_REMINDERS_FILE = path.join(dir, 'reminders.json');
   process.env.CODEBUDDY_REMINDER_LOG_FILE = path.join(dir, 'log.jsonl');
+  process.env.CODEBUDDY_REMINDER_SNOOZE_FILE = path.join(dir, 'snoozes.json');
   process.env.CODEBUDDY_REMINDER_ACK_WINDOW_MS = '300000';
   resetAcks();
   resetSnoozes();
@@ -34,6 +37,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
   delete process.env.CODEBUDDY_REMINDERS_FILE;
   delete process.env.CODEBUDDY_REMINDER_LOG_FILE;
+  delete process.env.CODEBUDDY_REMINDER_SNOOZE_FILE;
   delete process.env.CODEBUDDY_REMINDER_ACK_WINDOW_MS;
 });
 
@@ -64,6 +68,23 @@ describe('snoozePending / isSnoozeCommand', () => {
     expect(res).toMatchObject({ id: 'r1', label: 'médicaments', delayMs: 15 * 60_000 });
     expect(pendingAcks(1000)).toHaveLength(0); // ack closed → no re-nag/missed
     expect(dueSnoozes(1000 + 15 * 60_000)).toEqual([{ id: 'r1', label: 'médicaments' }]); // due later
+  });
+});
+
+describe('snooze persistence — survive a restart mid-deferral (health safety)', () => {
+  it('a snooze is reloaded from disk after the in-memory registry is lost', async () => {
+    snoozeReminder('r1', 'médicaments', 5000);
+    await flush(); // the async persist
+    resetSnoozes(); // simulate the process dying (memory gone)
+    expect(dueSnoozes(10_000)).toHaveLength(0); // nothing in memory
+
+    await loadSnoozes(); // the new process restores from disk
+    expect(dueSnoozes(4000)).toHaveLength(0); // not due yet
+    expect(dueSnoozes(10_000)).toEqual([{ id: 'r1', label: 'médicaments' }]); // survived the restart
+  });
+
+  it('loadSnoozes never throws when the file is absent', async () => {
+    await expect(loadSnoozes()).resolves.toBeUndefined();
   });
 });
 

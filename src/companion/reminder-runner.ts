@@ -144,8 +144,9 @@ export function wireReminderRunner(deps: ReminderRunnerDeps = {}): () => void {
   // Restore pending acks first: a reminder that fired before a restart must still be re-nagged or
   // escalated to a logged 'missed' — never silently dropped (health safety).
   void (async () => {
-    const { loadPendingAcks } = await import('./reminders.js');
+    const { loadPendingAcks, loadSnoozes } = await import('./reminders.js');
     await loadPendingAcks();
+    await loadSnoozes(); // restore deferred reminders so a restart mid-snooze still re-announces
   })();
   const timer = setInterval(() => {
     void runReminderTick(new Date(), deps);

@@ -672,14 +672,53 @@ interface SnoozedReminder {
 }
 const snoozes = new Map<string, SnoozedReminder>();
 
+// Snoozes PERSIST (like the pending-ack registry): a `buddy server` restart between a "dans 10 min"
+// deferral and its re-announce must NOT silently drop the reminder — for a meds dose that's a missed
+// dose. Mirrored to disk on every mutation and reloaded at runner start.
+function snoozesFile(): string {
+  return (
+    process.env.CODEBUDDY_REMINDER_SNOOZE_FILE || join(homedir(), '.codebuddy', 'companion', 'snoozes.json')
+  );
+}
+async function saveSnoozes(): Promise<void> {
+  try {
+    const file = snoozesFile();
+    await mkdir(join(file, '..'), { recursive: true });
+    await writeFile(file, JSON.stringify([...snoozes.values()]), 'utf8');
+  } catch (err) {
+    logger.warn(`[reminders] could not persist snoozes: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Restore the snooze registry from disk (call at runner start). Never-throws. */
+export async function loadSnoozes(): Promise<void> {
+  try {
+    const raw = (await readFile(snoozesFile(), 'utf8')).trim();
+    if (!raw) return;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return;
+    for (const s of list) {
+      if (s && typeof s.id === 'string' && Number.isFinite(s.fireAt)) {
+        snoozes.set(s.id, { id: s.id, label: typeof s.label === 'string' ? s.label : s.id, fireAt: s.fireAt });
+      }
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      logger.warn(`[reminders] could not load snoozes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
 /** Schedule a reminder to re-announce at `fireAtMs`. */
 export function snoozeReminder(id: string, label: string, fireAtMs: number): void {
   snoozes.set(id, { id, label, fireAt: fireAtMs });
+  void saveSnoozes();
 }
 /** Snoozed reminders now due to re-announce (returned + removed). */
 export function dueSnoozes(nowMs: number): Array<{ id: string; label: string }> {
   const due = [...snoozes.values()].filter((s) => nowMs >= s.fireAt);
   for (const s of due) snoozes.delete(s.id);
+  if (due.length) void saveSnoozes();
   return due.map((s) => ({ id: s.id, label: s.label }));
 }
 /** Test seam. */
