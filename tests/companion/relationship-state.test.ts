@@ -10,6 +10,7 @@ import {
   markMilestonesUpTo,
 } from '../../src/companion/relationship-state.js';
 import { runPresenceTick, resetPresenceState } from '../../src/companion/presence-loop.js';
+import { _resetConductorForTests } from '../../src/companion/orchestrator.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -54,6 +55,7 @@ describe('relationship presence moments (via the tick)', () => {
 
   beforeEach(() => {
     resetPresenceState();
+    _resetConductorForTests(); // fresh conductor floor each test (singleton uses real time)
     process.env.CODEBUDDY_COMPANION_PRESENCE = 'true';
     dir = mkdtempSync(path.join(os.tmpdir(), 'rel-tick-'));
     statePath = path.join(dir, 'relationship-state.json');

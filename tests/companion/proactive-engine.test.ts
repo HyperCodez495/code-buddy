@@ -22,6 +22,7 @@ import {
   type ProactiveContext,
 } from '../../src/companion/proactive-engine.js';
 import { saveRelationshipState, loadRelationshipState } from '../../src/companion/relationship-state.js';
+import { _resetConductorForTests } from '../../src/companion/orchestrator.js';
 
 const DAY = 24 * 3600_000;
 
@@ -107,6 +108,7 @@ describe('runProactiveTick — end to end (injected delivery seams, no model)', 
     statePath = join(tmp, 'proactive-state.json');
     relPath = join(tmp, 'relationship-state.json');
     process.env.CODEBUDDY_COMPANION_PROACTIVE = 'true';
+    _resetConductorForTests(); // fresh floor each test (the singleton uses real time)
   });
   afterEach(() => {
     delete process.env.CODEBUDDY_COMPANION_PROACTIVE;
@@ -153,6 +155,24 @@ describe('runProactiveTick — end to end (injected delivery seams, no model)', 
     expect(line).toContain('3');
     expect(tg).toHaveBeenCalledTimes(1);
     expect(say).not.toHaveBeenCalled();
+  });
+
+  it('yields to the conductor when present (another voice has the floor)', async () => {
+    saveRelationshipState({ firstSeenAt: NOW - 30 * DAY, lastPresentAt: NOW, celebratedMilestones: [7] }, relPath);
+    const say = vi.fn(async () => {});
+    const line = await runProactiveTick({
+      now: () => NOW,
+      present: async () => true,
+      say,
+      statePath,
+      relationshipStatePath: relPath,
+      recentHearing: async () => [],
+      conductor: { claim: () => false },
+    });
+    expect(line).toBeNull();
+    expect(say).not.toHaveBeenCalled();
+    // Nothing persisted → it will retry on a later tick.
+    expect(loadProactiveState(statePath).lastSentAt).toBeUndefined();
   });
 
   it('persists the cooldown anchor after sending', async () => {

@@ -27,6 +27,7 @@ import {
   REUNION_DAYS,
 } from './relationship-state.js';
 import { dueFollowUp, markFired } from './event-followups.js';
+import { getCompanionConductor } from './orchestrator.js';
 
 export interface PresenceCtx {
   now: Date;
@@ -82,6 +83,8 @@ export interface PresenceDeps {
   /** Override the event-followups file path (tests). Setting it (or CODEBUDDY_COMPANION_EVENT_FOLLOWUPS)
    *  enables the due-follow-up read each tick. Default path: ~/.codebuddy/companion/event-followups.json. */
   eventFollowUpsPath?: string;
+  /** The shared conductor (arbitrates who speaks). Default: the singleton. Injectable for tests. */
+  conductor?: { claim: (surface: 'presence') => boolean };
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
@@ -300,6 +303,13 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       if (nowMs - last < moment.cooldownMs) continue;
       const line = moment.generate(ctx);
       if (!line) continue;
+      // Yield to the conductor: if another companion surface just spoke, stay silent this tick (the
+      // moment is NOT marked fired, so it retries next tick).
+      const conductor = deps.conductor ?? getCompanionConductor();
+      if (!conductor.claim('presence')) {
+        logger.info('[presence] yielded to the conductor (another voice has the floor)');
+        return null;
+      }
       lastFiredByMoment.set(moment.id, nowMs);
       firedTimestamps.push(nowMs);
       await (deps.say ?? defaultSay)(line);

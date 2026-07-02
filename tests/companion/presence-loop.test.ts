@@ -22,6 +22,9 @@ function baseDeps(over: Partial<PresenceDeps> = {}): PresenceDeps {
     projectThread: async () => null,
     // Isolate relationship-state I/O to a temp file so tests never touch the real home dir.
     relationshipStatePath: path.join(stateDir, 'relationship-state.json'),
+    // These tests exercise the presence LOGIC (rails/cooldown/cap), not the shared conductor — a
+    // permissive conductor keeps them decoupled from the real-time singleton. Arbitration has its own test.
+    conductor: { claim: () => true },
     ...over,
   };
 }
@@ -104,6 +107,16 @@ describe('presence loop — the conductor speaks only when it warms (rails)', ()
   it('never throws (a moment that explodes → silent)', async () => {
     const m: Moment = { id: 'boom', cooldownMs: 0, generate: () => { throw new Error('nope'); } };
     await expect(runPresenceTick(baseDeps({ moments: [m] }))).resolves.toBeNull();
+  });
+
+  it('yields to the conductor — stays silent when another surface has the floor', async () => {
+    const say = vi.fn(async () => {});
+    // A warranted moment (frustration) that WOULD speak, but the conductor denies the floor.
+    const line = await runPresenceTick(
+      baseDeps({ say, recentHearing: async () => ["j'en peux plus"], conductor: { claim: () => false } }),
+    );
+    expect(line).toBeNull();
+    expect(say).not.toHaveBeenCalled();
   });
 
   it('asks how a due event went (follow-up), opens the window, and marks it asked once', async () => {

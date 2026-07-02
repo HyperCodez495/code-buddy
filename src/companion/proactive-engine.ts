@@ -27,6 +27,7 @@ import {
   markMilestonesUpTo,
 } from './relationship-state.js';
 import { dueFollowUp, markFired } from './event-followups.js';
+import { getCompanionConductor } from './orchestrator.js';
 
 /** The closed set of reasons Lisa might reach out. */
 export type ProactiveTrigger = 'milestone' | 'inactivity' | 'followUp' | 'encouragement' | 'morning' | 'evening';
@@ -216,6 +217,8 @@ export interface ProactiveDeps {
   relationshipStatePath?: string;
   /** Enables the due-follow-up read (env or an injected path), mirroring the presence loop. */
   eventFollowUpsPath?: string;
+  /** The shared conductor (arbitrates who speaks). Default: the singleton. Injectable for tests. */
+  conductor?: { claim: (surface: 'proactive') => boolean };
 }
 
 async function defaultPresent(): Promise<boolean> {
@@ -297,9 +300,13 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
       }
     }
 
-    // Deliver: aloud if he's here, otherwise reach his phone.
+    // Deliver: aloud if he's here, otherwise reach his phone. A SPOKEN ritual yields to the conductor
+    // (so it doesn't collide with a presence moment / greeting); a Telegram note when he's away does
+    // not compete for the mouth, so it isn't gated.
     const present = await (deps.present ?? defaultPresent)();
     if (present) {
+      const conductor = deps.conductor ?? getCompanionConductor();
+      if (!conductor.claim('proactive')) return null; // another voice has the floor → retry next tick
       await (deps.say ?? defaultSay)(line);
     } else {
       await (deps.telegramVoice ?? defaultTelegramVoice)(line);
