@@ -544,16 +544,19 @@ export class ContextManagerV2 {
     messages: CodeBuddyMessage[],
     stats: ContextStats
   ): CodeBuddyMessage[] {
-    // Extract system message if present
-    const systemMsg = messages.find(m => m.role === 'system');
+    // Extract ALL leading system messages, not just the first: the context
+    // pipeline injects several (workspace, lessons, decisions, code_graph,
+    // todo). The old `find(...)` kept one and `filter(role !== system)`
+    // silently dropped the rest — losing injected guidance on compaction.
+    const systemMsgs = messages.filter(m => m.role === 'system');
     const conversationMsgs = messages.filter(m => m.role !== 'system');
 
     // Apply compression strategies
     let optimizedMsgs = this.applyStrategies(conversationMsgs);
 
-    // Reconstruct with system message
-    if (systemMsg) {
-      optimizedMsgs = [systemMsg, ...optimizedMsgs];
+    // Reconstruct with the system messages first, order preserved.
+    if (systemMsgs.length > 0) {
+      optimizedMsgs = [...systemMsgs, ...optimizedMsgs];
     }
 
     // Track token reduction for metrics
@@ -893,6 +896,11 @@ export class ContextManagerV2 {
     this.config = { ...this.config, ...config };
     if (config.model) {
       this.tokenCounter = createTokenCounter(config.model);
+      // The stats cache is keyed only by message shape (length/content/tool
+      // calls), not the tokenizer — so a model swap that keeps the same
+      // messages would otherwise return a stale count from the OLD tokenizer.
+      this._cachedStatsFingerprint = '';
+      this._cachedStatsTokenCount = 0;
     }
   }
 

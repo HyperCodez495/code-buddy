@@ -330,6 +330,79 @@ describe('ContextManagerV2 (gap coverage)', () => {
   });
 
   // --------------------------------------------------------------------------
+  // updateConfig cache invalidation (audit finding 3)
+  // --------------------------------------------------------------------------
+
+  describe('updateConfig() stats cache', () => {
+    it('invalidates the token-count cache when the model changes', () => {
+      const mgr = createManager({ autoCompactThreshold: 999999 });
+      const msgs = makeMessages(20, 100);
+      const before = mgr.getStats(msgs).totalTokens; // populates the cache
+
+      // Swap to a different tokenizer while the messages stay identical: the
+      // shape-only fingerprint would otherwise serve the stale count.
+      mgr.updateConfig({ model: 'claude-opus-4-6' });
+      const after = mgr.getStats(msgs).totalTokens;
+
+      expect(before).toBeGreaterThan(0);
+      expect(after).toBeGreaterThan(0);
+      // The cache was cleared, so this count came from the NEW tokenizer
+      // (a fresh manager on the new model computes the same value).
+      const fresh = new ContextManagerV2({
+        maxContextTokens: 2000,
+        responseReserveTokens: 200,
+        recentMessagesCount: 5,
+        enableSummarization: false,
+        model: 'claude-opus-4-6',
+      });
+      expect(after).toBe(fresh.getStats(msgs).totalTokens);
+      mgr.dispose();
+      fresh.dispose();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Legacy compaction preserves ALL system messages (audit finding 6)
+  // --------------------------------------------------------------------------
+
+  describe('legacy compaction — system message preservation', () => {
+    it('keeps every leading system message, not just the first', () => {
+      const mgr = new ContextManagerV2({
+        maxContextTokens: 600,
+        responseReserveTokens: 100,
+        recentMessagesCount: 3,
+        enableSummarization: false,
+        enableEnhancedCompression: false, // force the legacy path
+        model: 'gpt-4',
+      });
+      const messages: CodeBuddyMessage[] = [
+        { role: 'system', content: 'base prompt' },
+        { role: 'system', content: '<context type="lessons">rule A</context>' },
+        { role: 'system', content: '<context type="workspace">layout</context>' },
+      ];
+      for (let i = 0; i < 40; i++) {
+        messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turn ${i}: ${'x'.repeat(120)}` });
+      }
+
+      const compacted = mgr.prepareMessages(messages);
+      const systems = compacted.filter(m => m.role === 'system').map(m => m.content);
+
+      expect(compacted.length).toBeLessThan(messages.length); // compaction happened
+      // All three ORIGINAL system messages survive, in order, at the front
+      // (a compaction summary marker may be appended after them — that's fine).
+      expect(systems.slice(0, 3)).toEqual([
+        'base prompt',
+        '<context type="lessons">rule A</context>',
+        '<context type="workspace">layout</context>',
+      ]);
+      expect(compacted[0]!.role).toBe('system');
+      expect(compacted[1]!.role).toBe('system');
+      expect(compacted[2]!.role).toBe('system');
+      mgr.dispose();
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Enhanced compression API
   // --------------------------------------------------------------------------
 
