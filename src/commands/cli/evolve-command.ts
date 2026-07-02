@@ -2,7 +2,8 @@
  * `buddy evolve` — git-versioned evolutionary self-improvement CLI (Phase E).
  *
  * The loop EVALUATES + RANKS candidate variants; keeping one is HUMAN-GATED — `keep` merges only
- * with explicit --confirm, and only into the current branch (never auto, never forced onto main).
+ * with explicit --confirm, only into the current branch, and NEVER onto a protected branch
+ * (main/master) — that invariant is enforced in code (`assertMergeTargetAllowed`), not convention.
  *
  *   evolve run --goal "<weakness>"   author + evaluate candidate variant(s) (gated by CODEBUDDY_EVOLVE)
  *   evolve list                      list evaluated variants (ranked)
@@ -41,6 +42,29 @@ interface EvolveOptions {
 
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
+/** Branches self-evolved code must NEVER be merged onto directly. */
+const PROTECTED_MERGE_BRANCHES = new Set(['main', 'master']);
+
+/**
+ * Enforce the "never onto main" invariant in CODE, not just convention: `evolve
+ * keep` merges into the CURRENT branch, so refuse when that is a protected
+ * branch. A maintainer must land self-evolved code via an integration branch
+ * (then open a normal reviewed PR), never straight onto main/master.
+ */
+export function assertMergeTargetAllowed(currentBranch: string): { ok: boolean; reason?: string } {
+  const name = currentBranch.trim();
+  if (PROTECTED_MERGE_BRANCHES.has(name)) {
+    return {
+      ok: false,
+      reason:
+        `refusing to merge self-evolved code directly onto '${name}'. ` +
+        `Check out an integration branch first (e.g. \`git checkout -b evolve/keep-<id>\`), ` +
+        `keep there, then open a normal reviewed PR.`,
+    };
+  }
+  return { ok: true };
 }
 
 function fmtVariant(v: VariantRecord): string {
@@ -131,6 +155,12 @@ export function registerEvolveCommands(program: Command): void {
         return;
       }
       const current = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+      const target = assertMergeTargetAllowed(current);
+      if (!target.ok) {
+        logger.error(target.reason ?? `refusing to merge onto '${current}'.`);
+        process.exitCode = 1;
+        return;
+      }
       if (!options.confirm) {
         logger.info(`Preview: keep ${v.id} (${v.branch}) → merge into '${current}'.`);
         logger.info(`  fitness=${v.score.toFixed(3)}  passedAll=${v.passedAll}  regressions=[${v.regressions.join(', ')}]`);
