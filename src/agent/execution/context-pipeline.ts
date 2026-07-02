@@ -267,12 +267,14 @@ export async function injectNextRoundContext(
   }
 
   // Knowledge graph stays gated on complexity — it can be large and is
-  // less universally relevant than lessons.
+  // less universally relevant than lessons. Use the SAME smart formatter as
+  // round-0 (formatContextBlockSmart) so the block's shape is consistent across
+  // rounds; the singleton was already loaded at round-0 for a complex query.
   if (deps.queryComplexity === 'complex') {
     try {
       const { getKnowledgeGraph } = await import('../../memory/knowledge-graph.js');
       const kg = getKnowledgeGraph();
-      const kgBlock = kg.formatContextBlock(deps.message, 600);
+      const kgBlock = kg.formatContextBlockSmart(deps.message, 600);
       if (kgBlock) {
         preparedMessages.push({ role: 'system', content: kgBlock });
       }

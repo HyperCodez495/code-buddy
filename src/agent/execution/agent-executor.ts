@@ -789,22 +789,25 @@ export class AgentExecutor {
         const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(message);
         logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
 
-        await injectInitialContext(preparedMessages, {
-          message,
-          cwd: process.cwd(),
-          ctxLevel,
-          loadWorkspaceContext: lazyGetWorkspaceContext,
-          decisionContextProvider: this.getDecisionContextProvider(),
-          icmBridgeProvider: this.getICMBridgeProvider(),
-          codeGraphContextProvider: this.getCodeGraphContextProvider(),
-          docsContextProvider: this.getDocsContextProvider(),
-        });
-
-        // Décision #4 du plan task #5 — injection between-rounds promue depuis
-        // le sequential path. Lessons + KG (si complex) + todo réinjectés à
-        // chaque round > 0 pour préserver la qualité des conversations
-        // multi-round dans le streaming. Sentinel `TODO #4` couvre cet invariant.
-        if (toolRounds > 0) {
+        // Round-0 gets the FULL workspace/lessons/KG/decision/ICM/code-graph
+        // injection; rounds ≥1 get the lighter between-rounds refresh. These are
+        // mutually exclusive: injectInitialContext must NOT run every round or
+        // lessons/todo/KG/user-model would be injected TWICE per request on
+        // every round >0, and the expensive workspace/decision/ICM providers
+        // (each with a 3s timeout) would re-run on every tool round.
+        // Sentinel `TODO #4` covers the between-rounds invariant.
+        if (toolRounds === 0) {
+          await injectInitialContext(preparedMessages, {
+            message,
+            cwd: process.cwd(),
+            ctxLevel,
+            loadWorkspaceContext: lazyGetWorkspaceContext,
+            decisionContextProvider: this.getDecisionContextProvider(),
+            icmBridgeProvider: this.getICMBridgeProvider(),
+            codeGraphContextProvider: this.getCodeGraphContextProvider(),
+            docsContextProvider: this.getDocsContextProvider(),
+          });
+        } else {
           await injectNextRoundContext(preparedMessages, {
             message,
             cwd: process.cwd(),

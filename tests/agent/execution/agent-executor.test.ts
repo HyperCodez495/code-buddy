@@ -54,12 +54,16 @@ jest.mock('../../../src/agent/execution/context-pipeline.js', async () => {
   );
   return {
     ...actual,
+    injectInitialContext: jest.fn(actual.injectInitialContext),
     injectNextRoundContext: jest.fn(actual.injectNextRoundContext),
   };
 });
 
-// Late import so the mocked symbol is captured.
-import { injectNextRoundContext as injectNextRoundContextMock } from '../../../src/agent/execution/context-pipeline.js';
+// Late import so the mocked symbols are captured.
+import {
+  injectInitialContext as injectInitialContextMock,
+  injectNextRoundContext as injectNextRoundContextMock,
+} from '../../../src/agent/execution/context-pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Helpers to create mock dependencies
@@ -2020,6 +2024,39 @@ describe('AgentExecutor', () => {
       );
       const streamCallCount = nextRoundMock.mock.calls.length;
       expect(streamCallCount).toBeGreaterThanOrEqual(1);
+    });
+
+    // L1 — injectInitialContext is round-0 ONLY. It previously ran every round
+    // (no toolRounds===0 guard), double-injecting lessons/todo/KG/user-model and
+    // re-running the workspace/decision/ICM providers (3s timeouts) on every tool
+    // round. Pin: exactly ONE call across a multi-round turn, on both paths.
+    it('L1: injectInitialContext runs exactly once across a multi-round turn (both paths)', async () => {
+      const initialMock = injectInitialContextMock as unknown as jest.Mock;
+      const nextRoundMock = injectNextRoundContextMock as unknown as jest.Mock;
+      expect(jest.isMockFunction(initialMock)).toBe(true);
+
+      const complexMsg = 'implement multi-round fix and refactor the queue';
+
+      // Sequential
+      initialMock.mockClear();
+      nextRoundMock.mockClear();
+      const depsSeq = createMockDeps();
+      setupSequentialMultiRound(depsSeq);
+      await new AgentExecutor(depsSeq, createMockConfig()).processUserMessage(complexMsg, [], []);
+      expect(initialMock.mock.calls.length).toBe(1);
+      // between-rounds injection still fires on rounds >0
+      expect(nextRoundMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+      // Streaming
+      initialMock.mockClear();
+      nextRoundMock.mockClear();
+      const depsStream = createMockDeps();
+      setupStreamingMultiRound(depsStream);
+      await collectChunks(
+        new AgentExecutor(depsStream, createMockConfig()).processUserMessageStream(complexMsg, [], [], null)
+      );
+      expect(initialMock.mock.calls.length).toBe(1);
+      expect(nextRoundMock.mock.calls.length).toBeGreaterThanOrEqual(1);
     });
 
     // -------------------------------------------------------------------------
