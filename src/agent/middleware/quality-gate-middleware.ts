@@ -237,10 +237,18 @@ export class QualityGateMiddleware implements ConversationMiddleware {
       if (entry === undefined) continue;
       if (entry.type === 'assistant') {
         const content = typeof entry.content === 'string' ? entry.content : '';
-        // If the assistant response contains code blocks or file changes,
-        // it was likely doing implementation. No tool calls = wrapping up.
-        const hasToolCalls = content.includes('tool_call') || content.includes('function_call');
-        return !hasToolCalls && content.length > 50;
+        // Implementation is "complete" when the latest assistant turn made NO
+        // tool calls (it's wrapping up with prose). Detect calls from the
+        // STRUCTURED entry.toolCalls field — not by scanning the content text
+        // for the literal "tool_call" (tool calls live in a separate field, so
+        // the text scan almost never matched and the gate could fire
+        // prematurely, mid-implementation, right after a tool round). The text
+        // fallback is kept for entries that serialize calls into content.
+        const madeToolCalls =
+          (entry.toolCalls?.length ?? 0) > 0 ||
+          content.includes('tool_call') ||
+          content.includes('function_call');
+        return !madeToolCalls && content.length > 50;
       }
     }
 

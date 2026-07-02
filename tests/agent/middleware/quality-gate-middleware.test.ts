@@ -185,6 +185,46 @@ describe('QualityGateMiddleware', () => {
   });
 });
 
+// ── Implementation-complete detection uses structured tool calls ───
+// The detector scanned assistant CONTENT text for "tool_call" (which lives in a
+// separate field, so it never matched) and would report "complete" mid-work,
+// firing the gate prematurely right after a tool round.
+
+describe('detectImplementationComplete uses entry.toolCalls', () => {
+  function assistantWithToolCalls(content: string): ChatEntry {
+    return {
+      type: 'assistant',
+      content,
+      timestamp: new Date(),
+      toolCalls: [{ id: 'c1', type: 'function', function: { name: 'str_replace_editor', arguments: '{}' } }],
+    };
+  }
+  const detect = (mw: QualityGateMiddleware, ctx: MiddlewareContext): boolean =>
+    (mw as unknown as { detectImplementationComplete(c: MiddlewareContext): boolean }).detectImplementationComplete(ctx);
+
+  it('is NOT complete when the latest assistant turn made structured tool calls', () => {
+    const mw = new QualityGateMiddleware();
+    const ctx = makeContext({
+      history: [assistantWithToolCalls('Editing the file to add the new function and wiring it up now.')],
+    });
+    expect(detect(mw, ctx)).toBe(false); // still working — gate must not fire
+  });
+
+  it('IS complete when the latest assistant turn is prose with no tool calls', () => {
+    const mw = new QualityGateMiddleware();
+    const ctx = makeContext({
+      history: [assistantEntry('I have finished implementing the feature and all edits are applied.')],
+    });
+    expect(detect(mw, ctx)).toBe(true);
+  });
+
+  it('is NOT complete for a trivial prose reply (<50 chars)', () => {
+    const mw = new QualityGateMiddleware();
+    const ctx = makeContext({ history: [assistantEntry('done')] });
+    expect(detect(mw, ctx)).toBe(false);
+  });
+});
+
 // ── V3: changedFiles drives gate selection ─────────────────────────
 // The gate scraped tool_result TEXT for verbs (wrote/created/…), but editors
 // emit unified diffs, so changedFiles was always empty → security-review never
