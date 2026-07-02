@@ -82,7 +82,9 @@ export async function injectInitialContext(
   }
 
   if (deps.ctxLevel.lessons) {
-    const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock();
+    // Budgeted + ranked against the current message (BM25) — the block used
+    // to inject EVERY lesson unconditionally on every turn.
+    const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock({ query: deps.message });
     if (lessonsBlock) {
       preparedMessages.push({
         role: 'system',
@@ -222,7 +224,7 @@ export async function injectNextRoundContext(
   // already content-bounded (autoDecay + buildContextBlock 5s cache).
   // Activated alongside the lessons system-prompt directive shipped in
   // the same commit.
-  const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock();
+  const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock({ query: deps.message });
   if (lessonsBlock) {
     preparedMessages.push({
       role: 'system',

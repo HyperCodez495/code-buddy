@@ -21,6 +21,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
 import { getLessonProvenanceIndex } from './lesson-provenance.js';
+import { BM25Index } from '../search/bm25.js';
 
 // ============================================================================
 // Types
@@ -36,6 +37,17 @@ export interface LessonItem {
   createdAt: number;
   source: 'user_correction' | 'self_observed' | 'manual';
 }
+
+/** Options for the per-turn lessons context block. */
+export interface LessonsContextOptions {
+  /** Rank lessons against this text (BM25) within each category; default = recency. */
+  query?: string;
+  /** Character budget for the lesson lines (default 2000). */
+  maxChars?: number;
+}
+
+/** Default per-turn character budget for `<lessons_context>`. */
+export const DEFAULT_LESSONS_CONTEXT_CHARS = 2000;
 
 export type LessonConceptSource = 'context' | 'wiki_link' | 'markdown_link' | 'tag' | 'related' | 'keyword';
 export type LessonGraphRenderFormat = 'summary' | 'json' | 'markdown' | 'mermaid';
@@ -342,6 +354,7 @@ export class LessonsTracker {
   private items: LessonItem[] = [];
   private loaded = false;
   private _cachedBlock: string | null = null;
+  private _cachedKey = '';
   private _cacheTime = 0;
   /**
    * Serialized write chain (F33).
@@ -628,37 +641,44 @@ export class LessonsTracker {
   /**
    * Build the per-turn context block injected BEFORE the todo suffix.
    * Returns null when there are no lessons (avoids noisy injections).
+   *
+   * BUDGETED: the block used to emit EVERY active lesson on EVERY turn (and
+   * again on every round) — an unbounded per-turn token tax that grows as
+   * lessons accumulate. It now packs a character budget in priority order:
+   * category first (RULE is contractual and always outranks INSIGHT), then
+   * BM25 relevance to the current message when provided, else recency.
+   * Packing stops at the first overflow so a low-priority lesson can never
+   * displace a higher-priority one, and the dropped count is stated honestly
+   * instead of silently truncating.
    */
-  buildContextBlock(): string | null {
-    if (this._cachedBlock !== null && Date.now() - this._cacheTime < 5000) {
+  buildContextBlock(options: LessonsContextOptions = {}): string | null {
+    const maxChars = options.maxChars ?? DEFAULT_LESSONS_CONTEXT_CHARS;
+    const cacheKey = `${maxChars}|${options.query ?? ''}`;
+    if (this._cachedBlock !== null && this._cachedKey === cacheKey && Date.now() - this._cacheTime < 5000) {
       return this._cachedBlock;
     }
     this.load();
     if (this.items.length === 0) return null;
 
-    // Record usage off the hot path
-    const workDir = this.workDir;
-    const lessonIds = this.items.map(item => item.id);
-    Promise.resolve().then(async () => {
+    // Relevance ranking within categories: BM25 against the current message
+    // (transient index, small corpus — same pattern as the CKG's hybrid leg).
+    let relevance: Map<string, number> | null = null;
+    if (options.query?.trim() && this.items.length > 1) {
       try {
-        const { RunStore } = await import('../observability/run-store.js');
-        const activeRunId = RunStore.getInstance().getCurrentRunId();
-        if (activeRunId) {
-          const index = getLessonProvenanceIndex(workDir);
-          for (const id of lessonIds) {
-            index.recordUsage(id, activeRunId);
-          }
-        }
-      } catch (err) {
-        logger.debug('[lessons] failed to record usage in background', { error: String(err) });
+        const index = new BM25Index();
+        index.addDocuments(this.items.map(item => ({ id: item.id, content: `${item.context ?? ''} ${item.content}` })));
+        relevance = new Map(index.search(options.query, this.items.length).map(r => [r.id, r.score]));
+      } catch {
+        relevance = null; // lexical ranking is best-effort — recency still applies
       }
-    });
-
-    const lines = [
-      '<lessons_context>',
-      '## Active Lessons (apply to this turn)',
-      '',
-    ];
+    }
+    const byRankThenRecency = (a: LessonItem, b: LessonItem): number => {
+      if (relevance) {
+        const diff = (relevance.get(b.id) ?? 0) - (relevance.get(a.id) ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return b.createdAt - a.createdAt;
+    };
 
     const grouped = new Map<LessonCategory, LessonItem[]>();
     for (const item of this.items) {
@@ -667,19 +687,61 @@ export class LessonsTracker {
       grouped.set(item.category, arr);
     }
 
+    const lines = [
+      '<lessons_context>',
+      '## Active Lessons (apply to this turn)',
+      '',
+    ];
+    const shownIds: string[] = [];
+    let used = 0;
+    let overflowed = false;
     const order: LessonCategory[] = ['RULE', 'PATTERN', 'CONTEXT', 'INSIGHT'];
     for (const cat of order) {
-      const catItems = grouped.get(cat);
-      if (!catItems || catItems.length === 0) continue;
+      if (overflowed) break;
+      const catItems = (grouped.get(cat) ?? []).slice().sort(byRankThenRecency);
       for (const item of catItems) {
         const ctx = item.context ? ` _(${item.context})_` : '';
-        lines.push(`**[${item.category}]**${ctx} ${item.content}`);
+        const line = `**[${item.category}]**${ctx} ${item.content}`;
+        if (used + line.length > maxChars) {
+          overflowed = true;
+          break;
+        }
+        lines.push(line);
+        used += line.length;
+        shownIds.push(item.id);
       }
     }
-
+    const dropped = this.items.length - shownIds.length;
+    if (dropped > 0) {
+      lines.push(
+        '',
+        `_(+${dropped} lesson${dropped > 1 ? 's' : ''} over the ${maxChars}-char budget, ranked ${relevance ? 'by relevance to this message' : 'by recency'} — see /lessons)_`,
+      );
+    }
     lines.push('</lessons_context>');
+
+    // Record usage off the hot path — only for the lessons actually INJECTED
+    // (the old version claimed usage for every lesson every turn, which would
+    // skew provenance stats once budgeting drops some).
+    const workDir = this.workDir;
+    Promise.resolve().then(async () => {
+      try {
+        const { RunStore } = await import('../observability/run-store.js');
+        const activeRunId = RunStore.getInstance().getCurrentRunId();
+        if (activeRunId) {
+          const index = getLessonProvenanceIndex(workDir);
+          for (const id of shownIds) {
+            index.recordUsage(id, activeRunId);
+          }
+        }
+      } catch (err) {
+        logger.debug('[lessons] failed to record usage in background', { error: String(err) });
+      }
+    });
+
     const result = lines.join('\n');
     this._cachedBlock = result;
+    this._cachedKey = cacheKey;
     this._cacheTime = Date.now();
     return result;
   }
