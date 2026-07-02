@@ -143,6 +143,19 @@ export function makeHybridReply(options: HybridReplyOptions = {}): ReplyFn {
 
   return async (heard: string): Promise<string> => {
     try {
+      // Evolve Lisa's inner state by the emotional colour of what he just said (opt-in relational
+      // layer). Env-gated BEFORE the dynamic import so the default path stays untouched; best-effort.
+      if (process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+        try {
+          const { detectRelationalSignal } = await import('../companion/reply-augment.js');
+          const { loadRelationshipState, saveRelationshipState, evolveTraits } = await import(
+            '../companion/relationship-state.js'
+          );
+          saveRelationshipState(evolveTraits(loadRelationshipState(), detectRelationalSignal(heard)));
+        } catch {
+          /* trait drift is optional — never block a reply */
+        }
+      }
       await ensureDeps();
       const fast = fastReply!(heard);
       if (fast) {

@@ -535,6 +535,9 @@ export interface VoiceHistoryTurn {
  *  Mirrors the local-inference pattern of vision-reaction.ts. Best-effort: any failure → '' (silence).
  *  `history` (optional) carries recent spoken turns so follow-ups have context. Exported so the
  *  hybrid reply can reuse the exact same persona-voiced warm path for small talk. */
+/** Recent reply openings (first few words), so the companion doesn't reuse the same entry twice. */
+let recentReplyOpeners: string[] = [];
+
 export async function defaultReply(heard: string, history: VoiceHistoryTurn[] = []): Promise<string> {
   const fast = fastCompanionReply(heard);
   if (fast) {
@@ -558,6 +561,18 @@ export async function defaultReply(heard: string, history: VoiceHistoryTurn[] = 
         const { buildRelationalContext } = await import('../companion/relational-context.js');
         const rel = await buildRelationalContext();
         if (rel) systemPrompt = `${systemPrompt}\n\n${rel}`;
+        // Emotion-aware tone (the caring.md playbook: soften on frustration, be present) + vary the
+        // opening so replies don't all start the same way.
+        const { detectRelationalSignal, registerGuidanceForSignal, avoidOpenersGuidance } = await import(
+          '../companion/reply-augment.js'
+        );
+        const guidance = [
+          registerGuidanceForSignal(detectRelationalSignal(heard)),
+          avoidOpenersGuidance(recentReplyOpeners),
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (guidance) systemPrompt = `${systemPrompt}\n\n${guidance}`;
       } catch {
         /* keep the plain persona prompt */
       }
@@ -570,7 +585,17 @@ export async function defaultReply(heard: string, history: VoiceHistoryTurn[] = 
       ] as never,
       [],
     );
-    return (resp?.choices?.[0]?.message?.content ?? '').trim();
+    const reply = (resp?.choices?.[0]?.message?.content ?? '').trim();
+    // Remember this opening so the next reply varies its entry (opt-in relational layer only).
+    if (reply && process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+      try {
+        const { pushOpener } = await import('../companion/reply-augment.js');
+        recentReplyOpeners = pushOpener(recentReplyOpeners, reply);
+      } catch {
+        /* best-effort */
+      }
+    }
+    return reply;
   } catch (err) {
     logger.warn(`[voice] local reply failed: ${err instanceof Error ? err.message : String(err)}`);
     return '';
