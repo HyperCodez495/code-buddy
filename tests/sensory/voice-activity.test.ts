@@ -40,4 +40,27 @@ describe('voice-activity — half-duplex speaking guard', () => {
     expect(isSpeaking(1100)).toBe(true); // within tail after the last
     expect(isSpeaking(1000 + 60_000)).toBe(false); // past tail
   });
+
+  it('serializes concurrent spoken output — the mouth never plays over itself', async () => {
+    const order: string[] = [];
+    let releaseA!: () => void;
+    const aBlocked = new Promise<void>((r) => {
+      releaseA = r;
+    });
+    // Two independent callers (e.g. a reminder + an arrival greeting) speak at once.
+    const pA = withSpeakingGuard(async () => {
+      order.push('A-start');
+      await aBlocked; // hold the mouth
+      order.push('A-end');
+    });
+    const pB = withSpeakingGuard(async () => {
+      order.push('B-start');
+    });
+    // A is playing; B must be QUEUED behind it, not overlapping.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(['A-start']);
+    releaseA();
+    await Promise.all([pA, pB]);
+    expect(order).toEqual(['A-start', 'A-end', 'B-start']); // B started only after A finished
+  });
 });

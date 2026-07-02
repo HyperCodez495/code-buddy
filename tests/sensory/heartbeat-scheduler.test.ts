@@ -20,8 +20,12 @@ describe('HeartbeatScheduler — heartbeat-paced treatments', () => {
     s.register({ name: 'every3', everyBeats: 3, handler: (ctx) => void fired.push(ctx.beat) });
     s.start();
     try {
-      for (let n = 1; n <= 6; n++) beat(n);
-      await tick();
+      // Beats are spaced (as they are in reality, ~1s apart) so each is processed before the next —
+      // a synchronous burst would be the overlap case the in-flight guard deliberately collapses.
+      for (let n = 1; n <= 6; n++) {
+        beat(n);
+        await tick();
+      }
       expect(fired).toEqual([3, 6]); // fired on beats 3 and 6
     } finally {
       s.stop();
@@ -36,8 +40,10 @@ describe('HeartbeatScheduler — heartbeat-paced treatments', () => {
     s.register({ name: 'every2', everyBeats: 2, handler: (ctx) => { lastLoad = ctx.load1; } });
     s.start();
     try {
-      for (let n = 1; n <= 4; n++) beat(n);
-      await tick();
+      for (let n = 1; n <= 4; n++) {
+        beat(n);
+        await tick();
+      }
       expect(fast).toEqual([1, 2, 3, 4]); // every beat
       expect(lastLoad).toBe(0.5); // vital sign reached the treatment
     } finally {
@@ -67,6 +73,39 @@ describe('HeartbeatScheduler — heartbeat-paced treatments', () => {
   it('rejects an invalid cadence', () => {
     const s = new HeartbeatScheduler();
     expect(() => s.register({ name: 'bad', everyBeats: 0, handler: () => {} })).toThrow();
+  });
+
+  it('skips a beat while a slow treatment is still running (no self-overlap)', async () => {
+    const s = new HeartbeatScheduler();
+    const runs: number[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    s.register({
+      name: 'slow',
+      everyBeats: 1,
+      handler: async (ctx) => {
+        runs.push(ctx.beat);
+        await gate; // hold the beat "in flight" past the next beat
+      },
+    });
+    s.start();
+    try {
+      beat(1); // starts the slow treatment
+      await tick();
+      beat(2); // arrives while beat 1 is still running → must be skipped (no overlap/race)
+      await tick();
+      expect(runs).toEqual([1]);
+      release(); // let beat 1 finish
+      await tick();
+      beat(3); // a fresh, non-overlapping beat runs normally
+      await tick();
+      expect(runs).toEqual([1, 3]);
+    } finally {
+      release();
+      s.stop();
+    }
   });
 
   it('isolates a throwing treatment — the pacemaker keeps the others running', async () => {

@@ -33,18 +33,34 @@ export function isSpeaking(now: number = Date.now()): boolean {
   return activePlays > 0 || now < speakingUntilMs;
 }
 
-/** Run a blocking play under the speaking guard. */
+/** Serializes the mouth: the tail of the last queued spoken output. */
+let mouthChain: Promise<void> = Promise.resolve();
+
+/**
+ * Run a blocking play under the speaking guard, SERIALIZED against every other spoken output — so
+ * concurrent callers (a reminder `sayNow`, an arrival greeting, a voice reply) queue instead of
+ * playing OVER each other (the robot talking over itself). Each call waits its turn, then raises the
+ * half-duplex guard for exactly its own playback. The guard's echo tail bridges the gap between
+ * queued plays, so the ear stays muted across the whole spoken sequence.
+ */
 export async function withSpeakingGuard(play: () => Promise<void>): Promise<void> {
-  beginSpeaking();
-  try {
-    await play();
-  } finally {
-    endSpeaking();
-  }
+  const run = mouthChain.then(async () => {
+    beginSpeaking();
+    try {
+      await play();
+    } finally {
+      endSpeaking();
+    }
+  });
+  // Keep the chain alive even if this play throws, so one failure doesn't wedge the mouth; the
+  // caller still sees the rejection via `run`.
+  mouthChain = run.catch(() => {});
+  return run;
 }
 
 /** Test helper: reset the guard state. */
 export function _resetVoiceActivityForTests(): void {
   activePlays = 0;
   speakingUntilMs = 0;
+  mouthChain = Promise.resolve();
 }

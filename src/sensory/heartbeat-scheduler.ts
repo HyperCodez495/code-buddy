@@ -40,6 +40,8 @@ interface HeartbeatPayload {
 export class HeartbeatScheduler {
   private readonly tasks = new Map<string, HeartbeatTask>();
   private listenerId?: string;
+  /** True while a beat's treatments are still running — prevents a slow beat overlapping the next. */
+  private beatInFlight = false;
 
   /** Register a treatment to run every N beats. Re-registering replaces it. */
   register(task: HeartbeatTask): void {
@@ -66,7 +68,17 @@ export class HeartbeatScheduler {
       if (m?.modality !== 'vital' || m?.kind !== 'heartbeat') return;
       const beat = Number(m.payload?.beat ?? 0);
       if (!Number.isFinite(beat) || beat < 1) return;
-      void this.onBeat({ beat, uptimeMs: m.payload?.uptime_ms, load1: m.payload?.load1 });
+      // Don't let a slow beat's treatments (e.g. dreaming draining the shared sensory buffer)
+      // overlap the next beat — two concurrent onBeat runs race on that shared buffer. Skip beats
+      // while one is still in flight; the pacemaker resumes on the next non-overlapping beat.
+      if (this.beatInFlight) {
+        logger.debug(`[heartbeat] beat ${beat} skipped — previous beat still processing`);
+        return;
+      }
+      this.beatInFlight = true;
+      void this.onBeat({ beat, uptimeMs: m.payload?.uptime_ms, load1: m.payload?.load1 }).finally(() => {
+        this.beatInFlight = false;
+      });
     });
   }
 
