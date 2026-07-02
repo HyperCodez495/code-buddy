@@ -175,7 +175,11 @@ export const DANGEROUS_CODE_PATTERNS: DangerousPattern[] = [
   { pattern: /\bexec\s*\(/, severity: 'high', description: 'Command execution', name: 'exec', category: 'code_execution', appliesTo: ['skill', 'code'] },
 
   // --- Filesystem dangers ---
-  { pattern: /\brm\s+-rf\b/, severity: 'critical', description: 'Recursive force delete', name: 'rm-rf', category: 'filesystem_destruction', appliesTo: ['skill', 'code'] },
+  // Recursive+force delete in skill/code content. Broadened from `-rf` only to any single short
+  // flag carrying both r and f in either order (`-fr`, `-Rf`, `-rvf`) and the separated long form
+  // (`--recursive … --force`), bounded to one statement. Still requires BOTH recursive and force,
+  // so `rm -f` / `rm -r` alone stay unflagged (no new false positives).
+  { pattern: /\brm\s+-[a-z]*r[a-z]*f[a-z]*\b|\brm\s+-[a-z]*f[a-z]*r[a-z]*\b|\brm\b[^;&|\n]*--recursive\b[^;&|\n]*--force\b|\brm\b[^;&|\n]*--force\b[^;&|\n]*--recursive\b/i, severity: 'critical', description: 'Recursive force delete', name: 'rm-rf', category: 'filesystem_destruction', appliesTo: ['skill', 'code'] },
   { pattern: /\bunlinkSync\s*\(/, severity: 'medium', description: 'Synchronous file deletion', name: 'unlinkSync', category: 'filesystem_destruction', appliesTo: ['skill', 'code'] },
   { pattern: /\bwriteFileSync\s*\(/, severity: 'low', description: 'Synchronous file write', name: 'writeFileSync', category: 'filesystem_destruction', appliesTo: ['skill'] },
   { pattern: /\brmdirSync\s*\(/, severity: 'medium', description: 'Directory removal', name: 'rmdirSync', category: 'filesystem_destruction', appliesTo: ['skill', 'code'] },

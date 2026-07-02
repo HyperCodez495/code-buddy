@@ -122,6 +122,17 @@ describe('Dangerous Patterns Registry', () => {
       expect(pattern!.pattern.test("password = 'mysecretpassword123'")).toBe(true);
     });
 
+    it('should detect recursive force delete in code regardless of flag order (bypass regression)', () => {
+      const pattern = DANGEROUS_CODE_PATTERNS.find(p => p.name === 'rm-rf')!;
+      for (const cmd of ['rm -rf /tmp', 'rm -fr ~', 'rm -Rf x', 'rm -rvf d', 'rm --recursive --force /d', 'rm --force --recursive /d']) {
+        expect(pattern.pattern.test(cmd), `expected "${cmd}" flagged`).toBe(true);
+      }
+      // force-only / recursive-only are NOT the destructive combo → stay unflagged
+      for (const cmd of ['rm -f file.txt', 'rm -r dir', 'rmdir foo', 'npm rm pkg']) {
+        expect(pattern.pattern.test(cmd), `expected "${cmd}" NOT flagged`).toBe(false);
+      }
+    });
+
     it('should detect private keys', () => {
       const pattern = DANGEROUS_CODE_PATTERNS.find(p => p.name === 'private-key');
       expect(pattern).toBeDefined();
