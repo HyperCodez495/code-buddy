@@ -9,7 +9,7 @@
  * (PowerShell/screencapture/ImageMagick) for screenshots.
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { readFileSync, unlinkSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -79,6 +79,18 @@ export function parseKeyCombination(keys: string): { modifiers: string[]; key: s
   return { modifiers, key };
 }
 
+/**
+ * Validate a mouse coordinate / count is a finite, non-negative integer before
+ * it is handed to a subprocess. The model supplies x/y/amount, so a NaN, a
+ * negative, or a non-number must never reach the OS automation layer.
+ */
+function assertScreenInteger(value: number, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid ${label}: expected a non-negative finite number, got ${String(value)}`);
+  }
+  return Math.round(value);
+}
+
 // ============================================================================
 // Platform screenshot helpers
 // ============================================================================
@@ -114,21 +126,21 @@ export function captureScreenshotNative(region?: GuiToolInput['region']): string
       ].join('; ');
       execSync(`powershell -NoProfile -NonInteractive -Command "${script}"`, { timeout: 15000 });
     } else if (process.platform === 'darwin') {
-      execSync(`screencapture -x "${outPath}"`, { timeout: 10000 });
+      execFileSync('screencapture', ['-x', outPath], { timeout: 10000 });
     } else {
       // Linux: try scrot, then import (ImageMagick), then gnome-screenshot
       const hasScrot = ((): boolean => {
-        try { execSync('which scrot', { stdio: 'ignore' }); return true; } catch { return false; }
+        try { execFileSync('which', ['scrot'], { stdio: 'ignore' }); return true; } catch { return false; }
       })();
       const hasImport = ((): boolean => {
-        try { execSync('which import', { stdio: 'ignore' }); return true; } catch { return false; }
+        try { execFileSync('which', ['import'], { stdio: 'ignore' }); return true; } catch { return false; }
       })();
       if (hasScrot) {
-        execSync(`scrot "${outPath}"`, { timeout: 10000 });
+        execFileSync('scrot', [outPath], { timeout: 10000 });
       } else if (hasImport) {
-        execSync(`import -window root "${outPath}"`, { timeout: 10000 });
+        execFileSync('import', ['-window', 'root', outPath], { timeout: 10000 });
       } else {
-        execSync(`gnome-screenshot -f "${outPath}"`, { timeout: 10000 });
+        execFileSync('gnome-screenshot', ['-f', outPath], { timeout: 10000 });
       }
     }
 
@@ -165,9 +177,16 @@ async function performClick(x: number, y: number, button: 'left' | 'right' | 'mi
   const nut = await getNutjs();
   if (!nut) {
     if (process.platform === 'linux') {
+      const sx = assertScreenInteger(x, 'x');
+      const sy = assertScreenInteger(y, 'y');
       const btn = button === 'right' ? '3' : button === 'middle' ? '2' : '1';
-      const repeatFlag = doubleClick ? '--repeat 2 --delay 100 ' : '';
-      execSync(`xdotool mousemove ${x} ${y} click ${repeatFlag}${btn}`, { timeout: 5000 });
+      // execFileSync (no shell) — model-controlled coords are validated integers
+      // above and passed as discrete argv entries, so no shell metacharacter can
+      // reach a subprocess.
+      const args = ['mousemove', String(sx), String(sy), 'click'];
+      if (doubleClick) args.push('--repeat', '2', '--delay', '100');
+      args.push(btn);
+      execFileSync('xdotool', args, { timeout: 5000 });
     } else {
       throw new Error('nutjs not available and no fallback for click on this platform');
     }
@@ -187,7 +206,10 @@ async function performType(text: string): Promise<void> {
   const nut = await getNutjs();
   if (!nut) {
     if (process.platform === 'linux') {
-      execSync(`xdotool type --clearmodifiers -- ${JSON.stringify(text)}`, { timeout: 10000 });
+      // execFileSync (no shell): `text` is a single argv entry after the `--`
+      // terminator, so a payload like `$(rm -rf ~)` is typed literally, never
+      // evaluated by a shell.
+      execFileSync('xdotool', ['type', '--clearmodifiers', '--', text], { timeout: 10000 });
     } else {
       throw new Error('nutjs not available for type action');
     }
@@ -202,13 +224,21 @@ async function performKey(keys: string): Promise<void> {
 
   if (!nut) {
     if (process.platform === 'linux') {
+      // execFileSync (no shell): `combo` (e.g. "ctrl+c") is a single argv entry
+      // to `xdotool key`; an invalid keysym is rejected by xdotool, and no shell
+      // metacharacter (`;`, `|`, `$(…)`) is ever interpreted.
       const combo = [...modifiers, key].join('+');
-      execSync(`xdotool key ${combo}`, { timeout: 5000 });
+      execFileSync('xdotool', ['key', combo], { timeout: 5000 });
     } else if (process.platform === 'darwin') {
       const modMap: Record<string, string> = { ctrl: 'control', meta: 'command', alt: 'option', shift: 'shift' };
       const osModifiers = modifiers.map((m) => modMap[m] ?? m);
       const modStr = osModifiers.length > 0 ? `using {${osModifiers.map((m) => `${m} down`).join(', ')}}` : '';
-      execSync(`osascript -e 'tell application "System Events" to keystroke "${key}" ${modStr}'`, { timeout: 5000 });
+      // execFileSync passes the whole AppleScript as one `-e` arg (no shell), and
+      // `key` is escaped for the AppleScript string literal so a payload can't
+      // break out of the "keystroke" quotes into arbitrary AppleScript.
+      const escapedKey = key.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const script = `tell application "System Events" to keystroke "${escapedKey}" ${modStr}`;
+      execFileSync('osascript', ['-e', script], { timeout: 5000 });
     } else {
       throw new Error('nutjs not available for key action');
     }
@@ -262,10 +292,15 @@ async function performScroll(x: number, y: number, direction: 'up' | 'down' | 'l
   const nut = await getNutjs();
   if (!nut) {
     if (process.platform === 'linux') {
+      const sx = assertScreenInteger(x, 'x');
+      const sy = assertScreenInteger(y, 'y');
+      const sAmount = assertScreenInteger(amount, 'amount');
       // xdotool buttons: 4=up, 5=down, 6=left, 7=right
       const btnMap: Record<string, number> = { up: 4, down: 5, left: 6, right: 7 };
       const btn = btnMap[direction];
-      execSync(`xdotool mousemove ${x} ${y} click --repeat ${amount} ${btn}`, { timeout: 5000 });
+      if (btn === undefined) throw new Error(`Invalid scroll direction: ${direction}`);
+      // execFileSync (no shell): all args are validated integers / a fixed button.
+      execFileSync('xdotool', ['mousemove', String(sx), String(sy), 'click', '--repeat', String(sAmount), String(btn)], { timeout: 5000 });
     } else {
       throw new Error('nutjs not available for scroll action');
     }

