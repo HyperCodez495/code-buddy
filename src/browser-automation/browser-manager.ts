@@ -93,6 +93,25 @@ export class BrowserManager extends EventEmitter {
   private consoleBuffer: ConsoleEntry[] = [];
   private static readonly MAX_CONSOLE_ENTRIES = 500;
 
+  // Leak guard: every launched manager is tracked so a process signal can close
+  // the underlying Chromium (and its temp profile) instead of leaking it. The
+  // process listeners are registered exactly once across all instances.
+  private static liveManagers = new Set<BrowserManager>();
+  private static cleanupRegistered = false;
+
+  private static ensureProcessCleanup(): void {
+    if (BrowserManager.cleanupRegistered) return;
+    BrowserManager.cleanupRegistered = true;
+    const cleanup = (): void => {
+      for (const m of BrowserManager.liveManagers) {
+        void m.close().catch(() => { /* best-effort on shutdown */ });
+      }
+    };
+    process.once('SIGINT', cleanup);
+    process.once('SIGTERM', cleanup);
+    process.once('exit', cleanup);
+  }
+
   // Mouse position tracking for human-like movement
   private lastMouseX = 0;
   private lastMouseY = 0;
@@ -156,6 +175,23 @@ export class BrowserManager extends EventEmitter {
       this.currentPageId = pageId;
       this.setupPageListeners(pageId, page);
 
+      // If the browser process dies/crashes, clear internal state so the next
+      // call relaunches cleanly instead of erroring against a dead handle.
+      this.browser.on('disconnected', () => {
+        logger.warn('Browser disconnected — clearing state');
+        this.browser = null;
+        this.context = null;
+        this.pages.clear();
+        this.pendingDialogs.clear();
+        this.currentPageId = null;
+        BrowserManager.liveManagers.delete(this);
+      });
+
+      // Track for process-exit cleanup (prevents leaking Chromium + temp profile
+      // on an abnormal exit / Ctrl-C).
+      BrowserManager.liveManagers.add(this);
+      BrowserManager.ensureProcessCleanup();
+
       logger.info('Browser launched', { browser: this.config.browser, headless: this.config.headless });
     } catch (error) {
       logger.error('Failed to launch browser', { error });
@@ -209,6 +245,7 @@ export class BrowserManager extends EventEmitter {
       this.pages.clear();
       this.pendingDialogs.clear();
       this.currentPageId = null;
+      BrowserManager.liveManagers.delete(this);
       logger.info('Browser closed');
     }
   }

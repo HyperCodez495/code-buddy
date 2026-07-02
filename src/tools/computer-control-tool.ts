@@ -224,6 +224,14 @@ export interface ComputerControlInput {
   // Mouse params
   x?: number;
   y?: number;
+  /**
+   * When true, x/y are interpreted as a 0-1000 NORMALIZED coordinate and scaled
+   * to the primary screen. Default (false/undefined) treats x/y as absolute
+   * pixels — the natural interpretation when reading coordinates off a
+   * screenshot. Previously this was auto-detected from the 0-1000 range, which
+   * mis-scaled every genuine pixel click in the top-left 1000×1000 region.
+   */
+  normalized?: boolean;
   width?: number;
   height?: number;
   button?: 'left' | 'right' | 'middle';
@@ -3273,17 +3281,14 @@ if ($clickButtonName) {
       const height = primaryScreen?.bounds?.height || 1080;
       const scaleFactor = primaryScreen?.scaleFactor || 1;
 
-      // Coordinate scaling logic (relative 0-1000 scale)
-      // Check if coordinates look normalized / relative
-      const isRelative = input.x !== undefined && input.y !== undefined &&
-        input.x >= 0 && input.x <= 1000 &&
-        input.y >= 0 && input.y <= 1000 &&
-        !(width <= 1000 && height <= 1000);
-
-      if (isRelative && input.x !== undefined && input.y !== undefined) {
+      // Coordinate scaling: ONLY when the caller explicitly opts into normalized
+      // 0-1000 coordinates. The previous auto-heuristic ("looks like 0-1000")
+      // mis-scaled every real pixel click in the top-left 1000×1000 region — a
+      // model reading coordinates off a screenshot systematically mis-clicked.
+      if (input.normalized === true && input.x !== undefined && input.y !== undefined) {
         targetX = Math.round((input.x / 1000) * width);
         targetY = Math.round((input.y / 1000) * height);
-        logger.info(`Mapped relative coordinates (${input.x}, ${input.y}) to absolute (${targetX}, ${targetY}) on primary screen of size ${width}x${height}`);
+        logger.info(`Mapped normalized coordinates (${input.x}, ${input.y}) to absolute (${targetX}, ${targetY}) on primary screen of size ${width}x${height}`);
       }
 
       // Adjust coordinates by scaleFactor if coordinates represent physical pixels (e.g. from screenshot)
@@ -3303,6 +3308,13 @@ if ($clickButtonName) {
     } catch (err) {
       logger.debug('Failed to get screen info for coordinate scaling', { error: err });
     }
+
+    // Guard against negative coordinates reaching the OS input layer (applies
+    // even if screen-info lookup above threw). Upper bounds are intentionally
+    // NOT capped — a coordinate beyond the primary screen can be a legitimate
+    // point on a secondary monitor.
+    targetX = Math.max(0, Math.round(targetX));
+    targetY = Math.max(0, Math.round(targetY));
 
     return { x: targetX, y: targetY };
   }

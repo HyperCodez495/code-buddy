@@ -56,12 +56,18 @@ interface RawParsedContent {
 export class OmniParserRunner {
   private baseUrl: string;
   private apiKey: string | undefined;
+  private timeoutMs: number;
 
   constructor() {
     // OMNIPARSER_API_URL is the server base (scheme://host:port); endpoints are derived.
     const raw = process.env.OMNIPARSER_API_URL || 'http://localhost:8000';
     this.baseUrl = raw.replace(/\/+$/, '');
     this.apiKey = process.env.OMNIPARSER_API_KEY;
+    // Bound every call — a server that accepts the connection but never responds
+    // would otherwise hang snapshot_with_screenshot (and the whole tool loop)
+    // indefinitely. Configurable via OMNIPARSER_TIMEOUT_MS (default 20s).
+    const parsed = Number.parseInt(process.env.OMNIPARSER_TIMEOUT_MS ?? '', 10);
+    this.timeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 20_000;
   }
 
   private get parseUrl(): string {
@@ -96,6 +102,7 @@ export class OmniParserRunner {
         headers,
         // OmniParser v2 ParseRequest expects the field `base64_image`.
         body: JSON.stringify({ base64_image: imageBase64 }),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
 
       if (!response.ok) {
@@ -162,7 +169,11 @@ export class OmniParserRunner {
       if (this.apiKey) {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
-      const response = await fetch(this.probeUrl, { method: 'GET', headers });
+      const response = await fetch(this.probeUrl, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
       return response.ok;
     } catch {
       return false;
