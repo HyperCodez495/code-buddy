@@ -6,6 +6,7 @@ import {
   QualityGateMiddleware,
   createQualityGateMiddleware,
   DEFAULT_QUALITY_GATE_CONFIG,
+  extractStructuredFindings,
 } from '../../../src/agent/middleware/quality-gate-middleware.js';
 import type { MiddlewareContext } from '../../../src/agent/middleware/types.js';
 import type { ChatEntry } from '../../../src/agent/types.js';
@@ -181,5 +182,67 @@ describe('QualityGateMiddleware', () => {
       expect(sr!.filePatterns!.some(p => p.test('.env'))).toBe(true);
       expect(sr!.filePatterns!.some(p => p.test('password-utils.ts'))).toBe(true);
     });
+  });
+});
+
+// ── Structured findings extraction ─────────────────────────────────
+// The middleware used to DISCARD the agents' structured data and re-parse
+// their prose with regexes; these pins guarantee the structure is read.
+
+describe('extractStructuredFindings', () => {
+  it('maps SecurityReview findings (severity/title/description/file/line/recommendation)', () => {
+    const findings = extractStructuredFindings({
+      findings: [
+        {
+          id: 'sec-1',
+          title: 'Hardcoded credential',
+          severity: 'critical',
+          category: 'secrets',
+          description: 'an AWS key is committed',
+          file: 'src/config.ts',
+          line: 12,
+          recommendation: 'move it to the environment',
+        },
+      ],
+      summary: { critical: 1 },
+    })!;
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toEqual({
+      severity: 'critical',
+      message: 'Hardcoded credential — an AWS key is committed',
+      file: 'src/config.ts',
+      line: 12,
+      recommendation: 'move it to the environment',
+    });
+  });
+
+  it('maps CodeGuardian issues and normalises error/warning severities', () => {
+    const findings = extractStructuredFindings({
+      issues: [
+        { type: 'bug', severity: 'error', file: 'a.ts', line: 3, message: 'null deref', suggestion: 'guard it' },
+        { type: 'style', severity: 'warning', file: 'a.ts', message: 'long function' },
+        { type: 'note', severity: 'info', file: 'b.ts', message: 'consider a test' },
+      ],
+    })!;
+
+    expect(findings.map(f => f.severity)).toEqual(['high', 'medium', 'info']);
+    expect(findings[0]!.recommendation).toBe('guard it');
+    expect(findings[0]!.line).toBe(3);
+  });
+
+  it('returns null on unstructured data so the caller can fall back to text parsing', () => {
+    expect(extractStructuredFindings(undefined)).toBeNull();
+    expect(extractStructuredFindings('just prose')).toBeNull();
+    expect(extractStructuredFindings({ report: 'text' })).toBeNull();
+    expect(extractStructuredFindings({ findings: [] })).toBeNull();
+    expect(extractStructuredFindings({ findings: [{ severity: 'high' }] })).toBeNull(); // no message
+  });
+
+  it('accepts a bare array of issue-shaped objects', () => {
+    const findings = extractStructuredFindings([
+      { severity: 'low', message: 'nit' },
+    ])!;
+    expect(findings).toEqual([{ severity: 'low', message: 'nit' }]);
   });
 });

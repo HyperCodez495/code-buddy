@@ -72,10 +72,79 @@ export const DEFAULT_QUALITY_GATE_CONFIG: QualityGateConfig = {
 
 // ── Gate Result ────────────────────────────────────────────────────
 
+export type QualityFindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+/** One normalised finding — the agents' STRUCTURED output, not re-parsed prose. */
+export interface QualityFinding {
+  severity: QualityFindingSeverity;
+  message: string;
+  file?: string;
+  line?: number;
+  recommendation?: string;
+}
+
 interface GateResult {
   gateId: string;
   passed: boolean;
-  findings: string[];
+  findings: QualityFinding[];
+  /** True when the findings came from the agent's structured data (vs text re-parse). */
+  structured: boolean;
+}
+
+const SEVERITY_ORDER: Record<QualityFindingSeverity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4,
+};
+
+/** Map heterogeneous agent severities (CodeIssue 'error'/'warning', SecurityFinding levels) onto one scale. */
+function normalizeSeverity(raw: unknown): QualityFindingSeverity {
+  const v = String(raw ?? '').toLowerCase();
+  if (v === 'critical') return 'critical';
+  if (v === 'high' || v === 'error') return 'high';
+  if (v === 'medium' || v === 'warning' || v === 'major') return 'medium';
+  if (v === 'low' || v === 'minor') return 'low';
+  return 'info';
+}
+
+/**
+ * Extract STRUCTURED findings from an agent result's `data` — CodeGuardian
+ * returns `issues: CodeIssue[]` (severity/file/line/message/suggestion),
+ * SecurityReview returns `findings: SecurityFinding[]` (severity/title/
+ * description/file/line/recommendation). Returns null when no structured
+ * shape is recognisable, so the caller can fall back to text parsing —
+ * the structure used to be discarded entirely and re-parsed from prose
+ * with regexes.
+ */
+export function extractStructuredFindings(data: unknown): QualityFinding[] | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const list = (Array.isArray(d.findings) && d.findings) || (Array.isArray(d.issues) && d.issues) || (Array.isArray(data) && data) || null;
+  if (!list) return null;
+
+  const findings: QualityFinding[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    const f = raw as Record<string, unknown>;
+    const message =
+      [f.title, f.description].filter((x) => typeof x === 'string' && x).join(' — ') ||
+      (typeof f.message === 'string' ? f.message : '');
+    if (!message) continue;
+    findings.push({
+      severity: normalizeSeverity(f.severity),
+      message,
+      ...(typeof f.file === 'string' && f.file ? { file: f.file } : {}),
+      ...(Number.isFinite(f.line) ? { line: Math.floor(f.line as number) } : {}),
+      ...(typeof f.recommendation === 'string' && f.recommendation
+        ? { recommendation: f.recommendation }
+        : typeof f.suggestion === 'string' && f.suggestion
+          ? { recommendation: f.suggestion }
+          : {}),
+    });
+  }
+  return findings.length > 0 ? findings : null;
 }
 
 // ── Middleware ──────────────────────────────────────────────────────
@@ -245,6 +314,7 @@ export class QualityGateMiddleware implements ConversationMiddleware {
           gateId: gate.id,
           passed: true,
           findings: [],
+          structured: false,
         });
       }
     }
@@ -272,21 +342,39 @@ export class QualityGateMiddleware implements ConversationMiddleware {
         return {
           gateId: gate.id,
           passed: !gate.required,
-          findings: agentResult.error ? [agentResult.error] : [],
+          findings: agentResult.error
+            ? [{ severity: 'high' as const, message: agentResult.error }]
+            : [],
+          structured: false,
         };
       }
 
-      // Parse findings from agent output
-      const findings = this.parseFindings(agentResult.output || '');
+      // Structured findings FIRST — the agents return typed issues/findings
+      // that this middleware used to throw away and re-parse from prose.
+      const structured = extractStructuredFindings(agentResult.data);
+      if (structured) {
+        // A gate fails on actionable severities only: an 'info' note must
+        // not fail a required gate.
+        const blocking = structured.some(
+          (f) => f.severity === 'critical' || f.severity === 'high',
+        );
+        return { gateId: gate.id, passed: !blocking, findings: structured, structured: true };
+      }
 
+      // Text fallback (legacy agents without structured data).
+      const findings = this.parseFindings(agentResult.output || '').map((message) => ({
+        severity: 'info' as const,
+        message,
+      }));
       return {
         gateId: gate.id,
         passed: findings.length === 0,
         findings,
+        structured: false,
       };
     } catch {
       // Module not available — pass silently
-      return { gateId: gate.id, passed: true, findings: [] };
+      return { gateId: gate.id, passed: true, findings: [], structured: false };
     }
   }
 
@@ -320,12 +408,27 @@ export class QualityGateMiddleware implements ConversationMiddleware {
       const status = result.passed ? 'PASSED (with suggestions)' : 'FAILED';
       lines.push(`**${result.gateId}** — ${status}`);
 
-      for (const finding of result.findings.slice(0, 10)) {
-        lines.push(`  ${finding}`);
+      // Severity-ranked, deduped, file:line-anchored — actionable for the
+      // agent instead of raw re-parsed prose lines.
+      const seen = new Set<string>();
+      const ordered = result.findings
+        .slice()
+        .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+        .filter((f) => {
+          const key = `${f.file ?? ''}:${f.line ?? ''}:${f.message}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+      for (const finding of ordered.slice(0, 10)) {
+        const anchor = finding.file ? ` ${finding.file}${finding.line ? ':' + finding.line : ''}` : '';
+        const fix = finding.recommendation ? ` (fix: ${finding.recommendation})` : '';
+        lines.push(`  [${finding.severity}]${anchor} — ${finding.message}${fix}`);
       }
 
-      if (result.findings.length > 10) {
-        lines.push(`  ... and ${result.findings.length - 10} more`);
+      if (ordered.length > 10) {
+        lines.push(`  ... and ${ordered.length - 10} more`);
       }
 
       lines.push('');
