@@ -548,7 +548,20 @@ export async function defaultReply(heard: string, history: VoiceHistoryTurn[] = 
     logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     // The active personality shapes the spoken character (else the default companion prompt).
-    const systemPrompt = (await getActivePersonaVoiceAsync()).spokenPrompt || SPEAK_SYSTEM_PROMPT;
+    let systemPrompt = (await getActivePersonaVoiceAsync()).spokenPrompt || SPEAK_SYSTEM_PROMPT;
+    // Relational context (opt-in): what Lisa knows about Patrice (accepted facts) + her own mood +
+    // who's present, so a chitchat reply reflects the relationship instead of guessing blind. The env
+    // gate is checked BEFORE the dynamic import so the (heavy) user-model graph is never loaded when
+    // the feature is off. Best-effort: any failure keeps the plain persona prompt.
+    if (process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+      try {
+        const { buildRelationalContext } = await import('../companion/relational-context.js');
+        const rel = await buildRelationalContext();
+        if (rel) systemPrompt = `${systemPrompt}\n\n${rel}`;
+      } catch {
+        /* keep the plain persona prompt */
+      }
+    }
     const resp = await client.chat(
       [
         { role: 'system', content: systemPrompt },

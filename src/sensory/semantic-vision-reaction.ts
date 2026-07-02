@@ -139,12 +139,26 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
               } catch {
                 /* memory context optional */
               }
+              // Relational context (opt-in): accepted facts about him + Lisa's mood + presence, so the
+              // opener can reference the relationship, not just the last things heard. The env gate is
+              // checked BEFORE the dynamic import so the (heavy) user-model graph is never loaded when
+              // the feature is off — keeps the default path import-free and fast. Best-effort.
+              let relationalContext = '';
+              if (process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+                try {
+                  const { buildRelationalContext } = await import('../companion/relational-context.js');
+                  relationalContext = await buildRelationalContext(options.cwd ? { cwd: options.cwd } : {});
+                } catch {
+                  /* relational context optional */
+                }
+              }
               const llmLine = await buildLlmArrivalOpener({
                 now: t,
                 lastSeenAt: state.lastSeenAt ?? null,
                 recentTexts: [...(state.recentSpoken ?? []), ...state.recent],
                 recentHeard,
                 ...(persona.spokenPrompt ? { personaPrompt: persona.spokenPrompt } : {}),
+                ...(relationalContext ? { relationalContext } : {}),
                 ...(process.env.CODEBUDDY_USER_NAME ? { name: process.env.CODEBUDDY_USER_NAME } : {}),
                 ...(options.llmChat ? { chat: options.llmChat } : {}),
               });

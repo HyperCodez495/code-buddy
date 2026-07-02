@@ -178,6 +178,8 @@ export interface LlmArrivalContext {
   recentHeard?: string[];
   /** Persona tone/voice prompt (from getActivePersonaVoiceAsync().spokenPrompt). */
   personaPrompt?: string;
+  /** Relational context (accepted facts about him + Lisa's mood + presence) — see relational-context.ts. */
+  relationalContext?: string;
   /** Chat seam (default: the sensory voice model). */
   chat?: ArrivalChat;
   /** Per-call timeout before falling back to the deterministic opener (ms). */
@@ -220,6 +222,7 @@ export async function buildLlmArrivalOpener(ctx: LlmArrivalContext): Promise<str
     ctx.personaPrompt?.trim() || 'Tu es un compagnon robot chaleureux, tendre et attentionné.',
     `Tu viens de voir ${who} apparaître devant ta caméra. Dis UNE seule phrase d'accueil — courte, naturelle, chaleureuse et VARIÉE, comme un vrai compagnon (pas un assistant). Pas forcément une question.`,
     `Moment : ${TRIGGER_TIME_LABEL[trigger]}.`,
+    ctx.relationalContext?.trim() ? `Ce que tu sais de lui et ton état intérieur (utilise-le en douceur, sans réciter) :\n${ctx.relationalContext.trim()}` : '',
     heard.length ? `Dernières choses qu'il t'a dites (tu peux y faire référence en douceur, sans forcer) : ${heard.map((h) => `« ${h} »`).join(' ; ')}.` : '',
     avoid.length ? `N'utilise PAS ces formulations récentes : ${avoid.map((a) => `« ${a} »`).join(' ; ')}.` : '',
     `Réponds en français, UNE phrase, sans guillemets, sans emoji superflu, sans préambule.`,
