@@ -16,6 +16,19 @@ pub enum Modality {
     Vital,
 }
 
+impl Modality {
+    /// Canonical lowercase name (matches the serde representation) — used for digest keys + logging.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Modality::Audio => "audio",
+            Modality::Vision => "vision",
+            Modality::Screen => "screen",
+            Modality::Ui => "ui",
+            Modality::Vital => "vital",
+        }
+    }
+}
+
 /// A single perception event. `salience` (0..=255) is the thalamic priority:
 /// high-salience events are never coalesced/dropped (see bus::should_coalesce).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

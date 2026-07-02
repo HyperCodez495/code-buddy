@@ -47,6 +47,23 @@ impl Memory {
     pub fn len(&self, m: Modality) -> usize {
         self.buffers.get(&m).map_or(0, |b| b.len())
     }
+
+    /// A compact snapshot of short-term memory — per-modality event count + the most recent kind.
+    /// This is what makes the ring USED (not write-only overhead): the thalamus broadcasts it as a
+    /// `memory/digest` event so the brain gets short-term recall FROM THE BODY.
+    pub fn digest(&self) -> serde_json::Value {
+        let mut modalities = serde_json::Map::new();
+        for (m, buf) in &self.buffers {
+            modalities.insert(
+                m.as_str().to_string(),
+                serde_json::json!({
+                    "count": buf.len(),
+                    "last_kind": buf.back().map(|e| e.kind.as_str()),
+                }),
+            );
+        }
+        serde_json::json!({ "modalities": modalities })
+    }
 }
 
 /// Should `ev` be dropped as redundant, given the immediately-preceding event of
@@ -93,6 +110,19 @@ impl Thalamus {
         &self.memory
     }
 
+    /// Build a `memory/digest` event summarizing short-term memory. Broadcast periodically (bypassing
+    /// `admit` so it neither coalesces nor recurses into the ring). Low salience — it's a background
+    /// snapshot, served after real perceptions by the attention batch.
+    fn memory_digest(&self) -> SensoryEvent {
+        SensoryEvent {
+            modality: Modality::Vital,
+            kind: "memory/digest".into(),
+            ts_ms: crate::event::now_ms(),
+            salience: 3,
+            payload: self.memory.digest(),
+        }
+    }
+
     /// Drive the thalamus from PER-ORGAN channels merged fairly (`StreamMap`), instead of one shared
     /// queue. This is the organ-isolation fix: a burst on one organ fills only ITS channel and never
     /// parks another organ's producer (no cross-organ head-of-line blocking). The thalamus still
@@ -115,6 +145,11 @@ impl Thalamus {
             map.insert(i, ReceiverStream::new(rx));
         }
 
+        // Emit a short-term-memory digest into the global workspace every N admitted events, so the
+        // per-modality ring is actually consumed by the brain (not write-only overhead).
+        const DIGEST_EVERY: usize = 20;
+        let mut since_digest = 0usize;
+
         // Block for the next event, then greedily gather whatever is IMMEDIATELY ready into a bounded
         // batch and serve it highest-salience-first — real attention, so a salient event isn't stuck
         // behind a backlog of low-salience motion. Stable sort → equal salience keeps arrival order;
@@ -131,6 +166,11 @@ impl Thalamus {
             for ev in batch {
                 if let Some(out) = self.admit(ev) {
                     let _ = tx.send(out);
+                    since_digest += 1;
+                    if since_digest >= DIGEST_EVERY {
+                        since_digest = 0;
+                        let _ = tx.send(self.memory_digest());
+                    }
                 }
             }
         }
@@ -180,6 +220,21 @@ mod tests {
         let recent = t.memory().recent(Modality::Vital, 2);
         assert_eq!(recent[0].ts_ms, 4); // most recent first
         assert_eq!(recent[1].ts_ms, 3);
+    }
+
+    #[test]
+    fn memory_digest_reflects_per_modality_counts() {
+        let mut t = Thalamus::new(8, 0); // window 0 → no coalescing
+        t.admit(ev(Modality::Vision, "motion", 0, 180));
+        t.admit(ev(Modality::Vision, "motion", 1, 180));
+        t.admit(ev(Modality::Audio, "speech_start", 2, 200));
+        let d = t.memory_digest();
+        assert_eq!(d.kind, "memory/digest");
+        assert_eq!(d.modality, Modality::Vital);
+        let mods = d.payload.get("modalities").unwrap();
+        assert_eq!(mods.get("vision").unwrap().get("count").unwrap(), 2);
+        assert_eq!(mods.get("audio").unwrap().get("count").unwrap(), 1);
+        assert_eq!(mods.get("vision").unwrap().get("last_kind").unwrap(), "motion");
     }
 
     #[tokio::test]
