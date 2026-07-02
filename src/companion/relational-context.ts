@@ -30,17 +30,33 @@ export interface RelationalContextOptions {
   includePersonality?: boolean;
   /** Include the live camera-presence block. Default true. */
   includePresence?: boolean;
+  /** Include the recent-episode block ("what we talked about"). Default true. */
+  includeEpisode?: boolean;
   /** Injectable seams (tests) — each defaults to the real source above. */
   factsBlock?: () => string | null;
   personalitySummary?: () => string;
   presenceBlock?: () => Promise<string>;
+  episodeBlock?: () => Promise<string | null>;
   /** Override the relationship-state file (tests). */
   relationshipStatePath?: string;
 }
 
+/** Read the consolidated recent conversation episode from persistent memory (see episodic-journal.ts). */
+async function defaultReadEpisode(): Promise<string | null> {
+  try {
+    const { getMemoryManager } = await import('../memory/persistent-memory.js');
+    const manager = getMemoryManager();
+    await manager.initialize();
+    return manager.recall('episode:recent', 'project');
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Compose the relational context string. Returns '' when nothing useful is available (caller can
- * splice unconditionally). Order: what she knows about him → her own state → who's present now.
+ * splice unconditionally). Order: what she knows about him → what they talked about recently → her
+ * own state → who's present now.
  */
 export async function buildRelationalContext(options: RelationalContextOptions = {}): Promise<string> {
   const parts: string[] = [];
@@ -53,6 +69,15 @@ export async function buildRelationalContext(options: RelationalContextOptions =
       if (facts && facts.trim()) parts.push(facts.trim());
     } catch {
       /* best-effort — no facts is fine */
+    }
+  }
+
+  if (options.includeEpisode !== false) {
+    try {
+      const episode = options.episodeBlock ? await options.episodeBlock() : await defaultReadEpisode();
+      if (episode && episode.trim()) parts.push(`<recent_episode>\n${episode.trim()}\n</recent_episode>`);
+    } catch {
+      /* best-effort — no episode is fine */
     }
   }
 

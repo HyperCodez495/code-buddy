@@ -16,24 +16,46 @@ import { getUserModel, resetUserModels } from '../../src/memory/user-model.js';
 import { buildLlmArrivalOpener } from '../../src/sensory/arrival-opener.js';
 
 describe('buildRelationalContext — composition', () => {
-  it('composes facts → personality → presence, in order', async () => {
+  it('composes facts → recent episode → personality → presence, in order', async () => {
     const ctx = await buildRelationalContext({
       factsBlock: () => '<user_model>\n- aime TypeScript\n</user_model>',
+      episodeBlock: async () => 'Récemment, on a parlé de : le bug du train.',
       personalitySummary: () => 'Humeur actuelle : joyeuse (72/100). Lien : complice.',
       presenceBlock: async () => '<presence>\n  Patrice est devant la caméra.\n</presence>',
     });
     const iFacts = ctx.indexOf('user_model');
+    const iEp = ctx.indexOf('recent_episode');
     const iState = ctx.indexOf('lisa_state');
     const iPres = ctx.indexOf('presence');
     expect(iFacts).toBeGreaterThanOrEqual(0);
-    expect(iState).toBeGreaterThan(iFacts);
+    expect(iEp).toBeGreaterThan(iFacts);
+    expect(iState).toBeGreaterThan(iEp);
     expect(iPres).toBeGreaterThan(iState);
-    expect(ctx).toContain('joyeuse (72/100)');
+    expect(ctx).toContain('le bug du train');
+  });
+
+  it('wraps a recent episode in <recent_episode>, omits it when there is none', async () => {
+    const withEp = await buildRelationalContext({
+      includeFacts: false,
+      includePersonality: false,
+      includePresence: false,
+      episodeBlock: async () => 'Récemment, on a parlé de : la refonte.',
+    });
+    expect(withEp).toBe('<recent_episode>\nRécemment, on a parlé de : la refonte.\n</recent_episode>');
+
+    const noEp = await buildRelationalContext({
+      includeFacts: false,
+      includePersonality: false,
+      includePresence: false,
+      episodeBlock: async () => null,
+    });
+    expect(noEp).toBe('');
   });
 
   it('wraps the personality summary in <lisa_state>', async () => {
     const ctx = await buildRelationalContext({
       includeFacts: false,
+      includeEpisode: false,
       includePresence: false,
       personalitySummary: () => 'Humeur actuelle : sereine (60/100). Lien : familier.',
     });
@@ -45,6 +67,9 @@ describe('buildRelationalContext — composition', () => {
       factsBlock: () => {
         throw new Error('boom');
       },
+      episodeBlock: async () => {
+        throw new Error('boom-ep');
+      },
       personalitySummary: () => 'Humeur actuelle : lasse (10/100). Lien : nouveau.',
       presenceBlock: async () => {
         throw new Error('boom2');
@@ -52,12 +77,14 @@ describe('buildRelationalContext — composition', () => {
     });
     expect(ctx).toContain('lasse (10/100)');
     expect(ctx).not.toContain('user_model');
+    expect(ctx).not.toContain('recent_episode');
     expect(ctx).not.toContain('presence');
   });
 
   it('returns empty string when every source is empty', async () => {
     const ctx = await buildRelationalContext({
       factsBlock: () => null,
+      episodeBlock: async () => null,
       personalitySummary: () => '',
       presenceBlock: async () => '',
     });
@@ -67,6 +94,7 @@ describe('buildRelationalContext — composition', () => {
   it('respects include flags', async () => {
     const ctx = await buildRelationalContext({
       includeFacts: false,
+      includeEpisode: false,
       includePersonality: false,
       presenceBlock: async () => '<presence>seul</presence>',
     });
@@ -89,17 +117,17 @@ describe('buildRelationalContext — real user-model (accepted-only + privacy, n
     const model = getUserModel(tmp);
     // A proposed (pending) observation is NOT in the active model yet.
     const { observation } = model.observe({ kind: 'preference', content: 'prefere TypeScript strict, pas de mocks' });
-    const before = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false });
+    const before = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
     expect(before).not.toContain('TypeScript strict');
 
     // Human acceptance → now it surfaces.
     model.accept(observation.id, { reviewedBy: 'patrice' });
-    const after = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false });
+    const after = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
     expect(after).toContain('TypeScript strict');
 
     // A sensitive fact is refused by the real privacy screen at WRITE time → never enters the model.
     expect(() => model.observe({ kind: 'trait', content: 'his salary is 400 eur per day' })).toThrow();
-    const stillClean = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false });
+    const stillClean = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
     expect(stillClean).not.toMatch(/salary|400/i);
   });
 });
