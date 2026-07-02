@@ -68,6 +68,13 @@ describe('Omission Placeholder Detection', () => {
   it('should NOT flag real prose that merely mentions "the rest" without an omission ellipsis', () => {
     expect(detectOmissionPlaceholders('// the rest is computed in utils.ts\nconst x = 1;').hasOmissions).toBe(false);
     expect(detectOmissionPlaceholders('// rest of the config lives in env vars, see below\nconst x = 1;').hasOmissions).toBe(false);
+    expect(detectOmissionPlaceholders('// the rest is history.\nconst x = 1;').hasOmissions).toBe(false);
+  });
+
+  it('should detect phrase-first omissions with an arbitrary noun + trailing ellipsis', () => {
+    // Nouns NOT in the prefix set (logic/handlers), phrase before the ellipsis.
+    expect(detectOmissionPlaceholders('function f() {\n  // rest of the logic ...\n}').hasOmissions).toBe(true);
+    expect(detectOmissionPlaceholders('class C {\n  // remaining of the handlers ...\n}').hasOmissions).toBe(true);
   });
 
   it('should NOT detect ... in string literals', () => {

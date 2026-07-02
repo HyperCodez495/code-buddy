@@ -49,6 +49,10 @@ const OMISSION_PATTERNS: RegExp[] = [
   /\(\s*(rest|remaining)\s+of\s+(code|methods?|implementation|file)\s*(unchanged|omitted|same)?\s*\)/i,
   // "... more methods/code here"
   /\.{2,}\s*(more|other|additional)\s+(methods?|code|functions?|implementation)\s*(here)?/i,
+  // Phrase-FIRST with an arbitrary noun + a trailing ellipsis: "rest of the logic ...",
+  // "remaining of the methods ...". The prefix set only enumerates specific nouns; this generalizes
+  // it. The bounded `[^.\n]{0,40}` before the dots keeps it from matching long real prose.
+  /\b(?:the\s+)?(rest|remainder|remaining)\s+of\s+(?:the\s+)?[a-z]+\b[^.\n]{0,40}\.{2,}/i,
 ];
 
 export interface OmissionDetectionResult {
