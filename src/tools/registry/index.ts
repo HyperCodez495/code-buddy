@@ -41,6 +41,9 @@ export {
   createSelfDescribeTools,
 } from './self-describe-tools.js';
 
+// Tool Adapters - Remind (dated reminders — the agent's proper path vs shelling `buddy remind add`)
+export { RemindTool, createRemindTools } from './remind-tools.js';
+
 // Tool Adapters - Search
 export {
   UnifiedSearchTool,
@@ -614,6 +617,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createBashTools(),
     ...createLsTools(),
     ...createSelfDescribeTools(),
+    ...createRemindTools(),
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
@@ -684,6 +688,7 @@ import { createTextEditorTools } from './text-editor-tools.js';
 import { createBashTools } from './bash-tools.js';
 import { createLsTools } from './ls-tools.js';
 import { createSelfDescribeTools } from './self-describe-tools.js';
+import { createRemindTools } from './remind-tools.js';
 import { createSearchTools } from './search-tools.js';
 import { createWebTools } from './web-tools.js';
 import { createTodoTools } from './todo-tools.js';
