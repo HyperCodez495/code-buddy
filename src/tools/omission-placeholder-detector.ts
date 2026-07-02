@@ -37,12 +37,12 @@ const OMITTED_PREFIXES = new Set([
 
 /** Patterns that indicate truncated/omitted content */
 const OMISSION_PATTERNS: RegExp[] = [
-  // Single-line comments with ellipsis: // ... rest of code
-  /\/\/\s*\.{2,}\s*(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
+  // Single-line comments with ellipsis: // ... rest of code  /  // ... the rest of the code
+  /\/\/\s*\.{2,}\s*(?:the\s+)?(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
   // Block comments: /* ... unchanged methods */
-  /\/\*\s*\.{2,}\s*(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
+  /\/\*\s*\.{2,}\s*(?:the\s+)?(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
   // Hash comments (Python/Ruby/Shell): # ... rest of code
-  /#\s*\.{2,}\s*(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
+  /#\s*\.{2,}\s*(?:the\s+)?(rest|remaining|existing|unchanged|other|previous|original|same)\b/i,
   // Explicit truncation markers
   /\/\/\s*(TODO|FIXME|XXX)?\s*:?\s*(code|methods?|implementation|logic)\s*(omitted|removed|truncated|skipped)/i,
   // Parenthetical: (rest of code unchanged)
@@ -106,8 +106,10 @@ function normalizePlaceholder(line: string): string | null {
   // Extract prefix before ellipsis
   const prefix = content.slice(0, idx).trim().toLowerCase().replace(/\s+/g, ' ');
 
-  // Check if prefix is a known omission phrase
-  if (prefix.length > 0 && OMITTED_PREFIXES.has(prefix)) {
+  // Check if prefix is a known omission phrase. Tolerate an interstitial "the"
+  // ("rest of the code" ≡ "rest of code") — a very common LLM phrasing the raw set misses.
+  const prefixNoThe = prefix.replace(/\bthe\b/g, '').replace(/\s+/g, ' ').trim();
+  if (prefix.length > 0 && (OMITTED_PREFIXES.has(prefix) || OMITTED_PREFIXES.has(prefixNoThe))) {
     // Suffix after ellipsis should be empty, dots, or close-parens
     const suffix = content.slice(idx + 3).trim();
     if (suffix === '' || /^[.)}\]]*$/.test(suffix) || /^\.+$/.test(suffix)) {

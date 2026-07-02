@@ -50,10 +50,24 @@ describe('Omission Placeholder Detection', () => {
     expect(result.hasOmissions).toBe(true);
   });
 
+  it('should detect the "the" variants ("rest of THE code")', () => {
+    // phrase-first: // rest of the code ...
+    expect(detectOmissionPlaceholders('class F {\n  // rest of the code ...\n}').hasOmissions).toBe(true);
+    // ellipsis-first: // ... the rest of the methods
+    expect(detectOmissionPlaceholders('class F {\n  // ... the rest of the methods\n}').hasOmissions).toBe(true);
+    // hash comment with "the"
+    expect(detectOmissionPlaceholders('def f():\n  # rest of the file ...\n  pass').hasOmissions).toBe(true);
+  });
+
   it('should NOT detect regular comments', () => {
     const content = '// This function returns the result\nconst x = 1;';
     const result = detectOmissionPlaceholders(content);
     expect(result.hasOmissions).toBe(false);
+  });
+
+  it('should NOT flag real prose that merely mentions "the rest" without an omission ellipsis', () => {
+    expect(detectOmissionPlaceholders('// the rest is computed in utils.ts\nconst x = 1;').hasOmissions).toBe(false);
+    expect(detectOmissionPlaceholders('// rest of the config lives in env vars, see below\nconst x = 1;').hasOmissions).toBe(false);
   });
 
   it('should NOT detect ... in string literals', () => {
