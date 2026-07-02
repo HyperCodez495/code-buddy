@@ -98,7 +98,12 @@ export const DANGEROUS_COMMANDS: ReadonlySet<string> = new Set([
  */
 export const DANGEROUS_BASH_PATTERNS: DangerousPattern[] = [
   // --- Filesystem destruction ---
-  { pattern: /rm\s+(-rf?|--recursive)\s+[/~]/i, severity: 'critical', description: 'Recursive force delete from root or home', name: 'rm-rf-root', category: 'filesystem_destruction', appliesTo: ['bash', 'command'] },
+  // Recursive delete targeting root/home. Hardened to survive flag reordering and forms that
+  // the old `-rf?` catcher missed: `rm -fr ~`, `rm -r -f ~`, `rm --recursive --force ~`, and
+  // `$HOME`/`${HOME}` targets (all as destructive as `rm -rf /`). The lookahead asserts a recursive
+  // flag is present in the same command (any short flag containing `r`, or `--recursive`); the tail
+  // asserts a root/home target. Relative paths (`rm -rf ./build`, `node_modules`) stay unflagged.
+  { pattern: /\brm\b(?=[^|;&\n]*(?:\s-[a-z]*r[a-z]*\b|--recursive\b))[^|;&\n]*\s(?:[/~]|\$\{?HOME\}?)/i, severity: 'critical', description: 'Recursive delete targeting root/home (any flag order/form, incl. $HOME)', name: 'rm-rf-root', category: 'filesystem_destruction', appliesTo: ['bash', 'command'] },
   { pattern: /rm\s+.*\/\s*$/i, severity: 'high', description: 'Delete ending with directory path', name: 'rm-dir-path', category: 'filesystem_destruction', appliesTo: ['bash', 'command'] },
   { pattern: />\s*\/dev\/sd[a-z]/i, severity: 'critical', description: 'Write to disk device', name: 'write-disk-device', category: 'filesystem_destruction', appliesTo: ['bash', 'command'] },
   { pattern: /dd\s+.*if=.*of=\/dev/i, severity: 'critical', description: 'dd to disk device', name: 'dd-device', category: 'filesystem_destruction', appliesTo: ['bash', 'command'] },

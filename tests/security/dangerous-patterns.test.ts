@@ -49,6 +49,41 @@ describe('Dangerous Patterns Registry', () => {
       expect(pattern!.severity).toBe('critical');
     });
 
+    // Regression: the old `-rf?` catcher only matched `rm -rf /` / `rm -r /` — swapped flags,
+    // separated flags, long-form flags, and `$HOME` targets slipped through (all as destructive
+    // as `rm -rf /`). Prove they're now caught end-to-end via the registry matcher.
+    it('should detect recursive rm on root/home regardless of flag order/form (bypass regression)', () => {
+      const bypasses = [
+        'rm -fr ~', // swapped short flags
+        'rm -r -f ~', // separated short flags
+        'rm --recursive --force ~', // separated long flags
+        'rm -rf $HOME', // variable target
+        'rm -rf ${HOME}', // braced variable target
+        'rm -vrf ~', // extra verbose flag around the r
+        'rm -fR /', // swapped + capital
+      ];
+      for (const cmd of bypasses) {
+        const match = matchDangerousPattern(cmd, 'bash');
+        expect(match, `expected "${cmd}" to be flagged`).not.toBeNull();
+        expect(match!.severity).toBe('critical');
+      }
+    });
+
+    it('should NOT flag legitimate recursive deletes of relative/project paths (no false positive)', () => {
+      const legit = [
+        'rm -rf ./build',
+        'rm -rf node_modules',
+        'rm -rf dist',
+        'rm -rf ../sibling/tmp',
+        'rm -f file.txt',
+        'rm file.txt',
+      ];
+      const rmRoot = DANGEROUS_BASH_PATTERNS.find(p => p.name === 'rm-rf-root')!;
+      for (const cmd of legit) {
+        expect(rmRoot.pattern.test(cmd), `expected "${cmd}" NOT flagged by rm-rf-root`).toBe(false);
+      }
+    });
+
     it('should detect curl | sh', () => {
       const pattern = DANGEROUS_BASH_PATTERNS.find(p => p.name === 'curl-pipe-sh');
       expect(pattern).toBeDefined();
