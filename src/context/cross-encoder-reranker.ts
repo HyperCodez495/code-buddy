@@ -285,7 +285,11 @@ class CrossEncoderScorer {
     // Split by common delimiters and filter
     const terms = text
       .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
+      // Unicode-aware: `\w` is ASCII-only, so `[^\w\s]` deleted accents
+      // ("déployer" → "ployer", "française" → "fran"+"aise"), which — combined
+      // with the substring partial-match below — polluted rerank term overlap
+      // for French content. Keep letters/digits/underscore (`_` for snake_case).
+      .replace(/[^\p{L}\p{N}_\s]/gu, ' ')
       .split(/\s+/)
       .filter(t => t.length > 2)
       .filter(t => !this.isStopWord(t));
@@ -527,8 +531,9 @@ export class CrossEncoderReranker extends EventEmitter {
    * Calculate similarity between two documents
    */
   private calculateSimilarity(doc1: string, doc2: string): number {
-    const terms1 = new Set(doc1.toLowerCase().split(/\W+/).filter(t => t.length > 2));
-    const terms2 = new Set(doc2.toLowerCase().split(/\W+/).filter(t => t.length > 2));
+    // Unicode-aware split (see extractTerms): `\W` fragments accented words.
+    const terms1 = new Set(doc1.toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(t => t.length > 2));
+    const terms2 = new Set(doc2.toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(t => t.length > 2));
 
     const intersection = new Set([...terms1].filter(t => terms2.has(t)));
     const union = new Set([...terms1, ...terms2]);
