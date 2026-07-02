@@ -643,3 +643,44 @@ describe('Aggregator — aggregateParallelResults', () => {
     expect(result).toContain('Source 1');
   });
 });
+
+describe('SagaStore — crash-leaked staging temp files', () => {
+  it('atomic write leaves no .tmp file behind on success', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(false) });
+    await store.completeStep(saga.id, 0, 'done');
+    const leftovers = fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp.'));
+    expect(leftovers).toEqual([]);
+  });
+
+  it('list() sweeps orphaned .tmp.* files (crash between write and rename) and ignores them as sagas', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(false) });
+    // Simulate a crash-leaked staging file (both the legacy pid-only and the
+    // new pid.random shapes).
+    const orphanA = path.join(tmpDir, `${saga.id}.json.tmp.99999`);
+    const orphanB = path.join(tmpDir, `${saga.id}.json.tmp.99999.deadbeef`);
+    fs.writeFileSync(orphanA, '{"partial":');
+    fs.writeFileSync(orphanB, '{"partial":');
+
+    const listed = await store.list();
+
+    expect(listed.map((s) => s.id)).toEqual([saga.id]); // the temp files are NOT parsed as sagas
+    expect(fs.existsSync(orphanA)).toBe(false); // swept
+    expect(fs.existsSync(orphanB)).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, `${saga.id}.json`))).toBe(true); // real saga untouched
+  });
+
+  it('delete() removes the saga, its lock, and any leaked temps for that id', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(false) });
+    const orphan = path.join(tmpDir, `${saga.id}.json.tmp.12345.cafebabe`);
+    fs.writeFileSync(orphan, '{"partial":');
+
+    const deleted = await store.delete(saga.id);
+
+    expect(deleted).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, `${saga.id}.json`))).toBe(false);
+    expect(fs.existsSync(orphan)).toBe(false);
+  });
+});

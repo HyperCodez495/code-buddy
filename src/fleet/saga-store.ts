@@ -23,6 +23,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { withSessionLock } from '../persistence/session-lock.js';
 import { logger } from '../utils/logger.js';
 import { getCodeBuddyPath } from '../utils/codebuddy-home.js';
@@ -319,6 +320,13 @@ export class SagaStore {
     const files = await fs.promises.readdir(this.dir);
     const records: SagaRecord[] = [];
     for (const f of files) {
+      // Opportunistic self-heal: sweep `.tmp.*` staging files leaked by a
+      // crash between writeFile and rename (they'd otherwise accumulate
+      // forever on a long-running fleet server). Never touch `.json`/`.lock`.
+      if (/\.tmp\.\d+\.[0-9a-f]+$/.test(f) || /\.tmp\.\d+$/.test(f)) {
+        await fs.promises.unlink(path.join(this.dir, f)).catch(() => {});
+        continue;
+      }
       if (!f.endsWith('.json')) continue;
       const id = f.slice(0, -5);
       const r = await this.load(id);
@@ -345,7 +353,7 @@ export class SagaStore {
     });
   }
 
-  /** Delete a saga (and its lockfile). */
+  /** Delete a saga (its file, lockfile, and any leaked staging temps). */
   async delete(sagaId: string): Promise<boolean> {
     const file = this.fileFor(sagaId);
     if (!fs.existsSync(file)) return false;
@@ -357,6 +365,17 @@ export class SagaStore {
       } catch {
         /* lock might be held by another process */
       }
+    }
+    // Sweep any `<id>.json.tmp.*` staging files this saga leaked on a crash.
+    const base = `${sagaId}.json.tmp.`;
+    try {
+      for (const f of await fs.promises.readdir(this.dir)) {
+        if (f.startsWith(base)) {
+          await fs.promises.unlink(path.join(this.dir, f)).catch(() => {});
+        }
+      }
+    } catch {
+      /* dir listing best-effort */
     }
     return true;
   }
@@ -386,9 +405,18 @@ export class SagaStore {
 
   private async writeUnlocked(record: SagaRecord): Promise<void> {
     const file = this.fileFor(record.id);
-    const tmp = `${file}.tmp.${process.pid}`;
-    await fs.promises.writeFile(tmp, JSON.stringify(record, null, 2));
-    await fs.promises.rename(tmp, file);
+    // Unique per write (pid + random): a bare `.tmp.<pid>` could collide with
+    // a leaked temp from a previous crashed run that recycled the same PID,
+    // and rename would then clobber an unrelated file.
+    const tmp = `${file}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
+    try {
+      await fs.promises.writeFile(tmp, JSON.stringify(record, null, 2));
+      await fs.promises.rename(tmp, file);
+    } catch (err) {
+      // Never leak the staging file when the write/rename fails.
+      await fs.promises.unlink(tmp).catch(() => {});
+      throw err;
+    }
   }
 
   private buildInitialSteps(plan: DispatchPlan): SagaStep[] {
