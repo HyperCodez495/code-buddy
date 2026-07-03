@@ -1,7 +1,18 @@
 # Hermes Agent & OpenClaw — parity and gaps (canonical)
 
 **Date: 2026-07-03** (supersedes 2026-06-09/13/14) · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified
-against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.1`.
+against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.11` (upgraded in place from 2026.6.1 on
+2026-07-03 and re-validated live).
+
+> **2026-07-03 OpenClaw drift re-audit — ten versions, zero integration drift.** The local install was upgraded
+> 2026.6.1 → **2026.6.11** (npm latest stable) and every integration surface re-validated LIVE against the new
+> version: `validate-upstream --apply` passes **8/8 checks** (discovery, gateway lockfile, WS `protocol:4`
+> handshake with signed paired-device auth, CLI status interop, secret redaction, `node.pair.list`), and the
+> migrator dry-run still lands **8 imports** — including the three readers exercised earlier today
+> (workspace MEMORY.md, nested `mcp.servers`, cron from `state/openclaw.sqlite:cron_jobs` — the table grew to
+> 67 columns but our reader only selects `job_json`, robust by construction). The 2026.6.2→2026.6.11 changelog
+> is robustness fixes; the one schema change (`stdio` added to the MCP transport union, #95102) is pass-through
+> for our verbatim-merge reader. No new code gap vs OpenClaw.
 
 > **2026-07-03 upstream drift re-audit — the parity target moved.** The manifest's audit anchor was
 > `5921d667`/v2026.5.29.2; upstream Hermes is now at **v2026.7.1** (origin/main `1c4cc00f7`, fetched into the local
@@ -68,12 +79,12 @@ against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.1`.
   accounts, product decisions, or genuinely absent source data — **none on missing Code Buddy code**. The former
   `partial` (openclaw-migration) flipped on 2026-07-03 after its last unexercised readers were exercised against the
   populated live install (§4). Nothing was ever flipped on a mock.
-- **Vs OpenClaw** — the gateway bridge + CLI `validate-upstream` are **validated against a live OpenClaw 2026.6.1 daemon**
-  (`openclaw gateway status --json`, exitCode 0, and raw WS `protocol:4` `connect.challenge` -> signed `req(connect)` ->
-  `res` -> `req(status)` -> `res`). **The live `node.pair.list` check now passes too** (2026-07-03: the paired CLI device
-  was granted `operator.pairing`; `validate-upstream --apply` reports 8/8 checks passed incl. `pending-node-list`
-  returning a redacted summary). Code Buddy's AI-to-AI substrate (`peer.*` + A2A/ACP/MCP) is **richer** than
-  OpenClaw's.
+- **Vs OpenClaw** — the gateway bridge + CLI `validate-upstream` are **validated against a live OpenClaw 2026.6.11
+  daemon** (upgraded in place 2026-07-03; previously proven on 2026.6.1): `openclaw gateway status --json` exitCode 0,
+  raw WS `protocol:4` `connect.challenge` -> signed `req(connect)` -> `res` -> `req(status)` -> `res`, **and the live
+  `node.pair.list` check passes** (the paired CLI device holds `operator.pairing`; `validate-upstream --apply` reports
+  8/8 checks incl. `pending-node-list` returning a redacted summary). Ten upstream versions brought zero integration
+  drift. Code Buddy's AI-to-AI substrate (`peer.*` + A2A/ACP/MCP) is **richer** than OpenClaw's.
 - **The OpenClaw migrator's two schema-drift reader bugs are now fixed** (`src/agent/hermes-claw-migrate.ts`, 2026-06-08):
   the default model (`agents.defaults.model.primary`) now **imports** and the custom-provider catalog (`models.providers`)
   is now **detected and archived 0600** — validated against the live 2026.6.1 install (import 1 / archive 5 / skip 30, was
@@ -130,7 +141,7 @@ Code Buddy absorbed OpenClaw patterns rather than forking it. AI-to-AI, it **exc
 |---|---|---|
 | Gateway discovery (real 2026.6.x `openclaw.json` + `devices/paired.json` layout) | **Covered / validated 2026-06-08** | `src/openclaw/gateway-bridge.ts::discoverOpenClawGateway` |
 | CLI `validate-upstream` interop (`openclaw gateway status --json`, exitCode 0) | **Covered / validated** | `gateway-bridge.ts::validateOpenClawUpstreamCompatibility` |
-| Raw WS `protocol:4` handshake + signed paired-device auth | **Covered / live-validated 2026-06-09** — `connect.challenge`, signed device-token connect, and `status` pass against OpenClaw 2026.6.1 | `gateway-bridge.ts` |
+| Raw WS `protocol:4` handshake + signed paired-device auth | **Covered / live-validated 2026-06-09, re-validated 2026-07-03 against 2026.6.11** — `connect.challenge`, signed device-token connect, and `status` pass | `gateway-bridge.ts` |
 | Node pairing RPCs (`node.pair.list|approve|reject`) | **Covered / live-validated 2026-07-03** — current method names, safe summaries; live `node.pair.list` passes now that the paired device holds `operator.pairing` (redacted summary returned) | `gateway-bridge.ts` |
 | Companion gateway inbox + Fleet handoff + approved reply (Telegram/Slack…) | **Covered, supervised** (local draft, never auto-dispatch) | `src/companion/gateway.ts`, `gateway-inbox.ts` |
 | Per-skill `SKILL.md` Ed25519 signatures | **Covered** (2026-06-07) | `src/skills/hub-signing.ts` |
@@ -254,7 +265,7 @@ npx tsx src/index.ts hermes parity --json            # expect 15 covered / 5 cov
 # Already-shipped fleet primitives (sanity — these are NOT gaps)
 grep -nE "isClaimExpired|areDependenciesMet|nextClaimable" src/fleet/colab-store.ts
 
-# OpenClaw bridge interop against the live 2026.6.1 daemon
+# OpenClaw bridge interop against the live daemon (2026.6.11 since 2026-07-03)
 npx tsx src/index.ts hermes claw bridge validate-upstream --openclaw-bin "$(command -v openclaw)"
 
 # The migrator against the populated live install — memory/mcp/cron all import

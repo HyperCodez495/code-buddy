@@ -656,6 +656,12 @@ const FEATURES: HermesParityFeature[] = [
       'job is never silently activated after import. Full real round-trip proven: dry-run plan + --apply landed ' +
       'mcpServers.filesystem, a disabled cronJobs entry, and the appended memory block in a throwaway target. ' +
       'Regression-locked with sanitized real-shape fixtures (incl. a real-DDL sqlite fixture). ' +
+      'DRIFT RE-AUDIT (2026-07-03, same day): the local install was upgraded in place 2026.6.1 -> 2026.6.11 (npm ' +
+      'latest stable, ten versions) and everything re-validated LIVE: bridge validate-upstream 8/8 checks incl. ' +
+      'node.pair.list, migrator dry-run still 8 imports (memory/mcp/cron readers included — cron_jobs grew to 67 ' +
+      'columns but the reader only selects job_json, robust by construction), config top-level keys unchanged, and ' +
+      'the one upstream schema change in the range (stdio added to the MCP transport union, #95102) is pass-through ' +
+      'for the verbatim-merge MCP reader. Zero integration drift across ten upstream versions. ' +
       'ADDENDUM (2026-07-03, same day): the legacy pre-sqlite `cron/jobs.json` file reader is now written too — ' +
       'not blind: its shape ({version:1, jobs:[...]}, same job objects as the sqlite job_json) was verified against ' +
       'OpenClaw\'s OWN migration reader (loadLegacyCronStoreForMigration/saveCronJobsStore in the installed 2026.6.1 ' +
