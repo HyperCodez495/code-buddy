@@ -126,10 +126,7 @@ import { ActivityFeed } from './activity/activity-feed';
 import { BookmarksService } from './bookmarks/bookmarks-service';
 import { registerSnippetsIpcHandlers } from './ipc/snippets-ipc';
 import { registerCustomCommandsIpcHandlers } from './ipc/custom-commands-ipc';
-import {
-  getWorkspacePresetsService,
-  type WorkspacePreset,
-} from './workspace/workspace-presets-service';
+import { registerWorkspacePresetsIpcHandlers } from './ipc/workspace-presets-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -5147,36 +5144,7 @@ ipcMain.handle('preview.get', async (_event, filePath: string) => {
 });
 
 // Workspace presets — Claude Cowork parity Phase 3 step 9
-ipcMain.handle('workspacePresets.list', async () => {
-  try {
-    return getWorkspacePresetsService().list();
-  } catch (err) {
-    logError('[workspacePresets.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle(
-  'workspacePresets.save',
-  async (
-    _event,
-    preset: Omit<WorkspacePreset, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
-  ) => {
-    try {
-      return getWorkspacePresetsService().save(preset);
-    } catch (err) {
-      return { success: false, error: (err as Error).message };
-    }
-  }
-);
-
-ipcMain.handle('workspacePresets.delete', async (_event, id: string) => {
-  try {
-    return getWorkspacePresetsService().delete(id);
-  } catch (_err) {
-    return { success: false };
-  }
-});
+registerWorkspacePresetsIpcHandlers();
 
 // A2A remote agent registry — Claude Cowork parity Phase 3 step 19
 ipcMain.handle('a2a.list', async () => {
