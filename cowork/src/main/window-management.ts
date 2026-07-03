@@ -1,7 +1,6 @@
 // cowork/src/main/window-management.ts
-import { app, BrowserWindow, Menu, nativeTheme, Tray } from 'electron';
+import { app, BrowserWindow, nativeTheme, Tray } from 'electron';
 import { join, dirname } from 'path';
-import * as fs from 'fs';
 import { URL } from 'url';
 import { localPathFromAppUrlPathname, localPathFromFileUrl } from '../shared/local-file-path';
 import { configStore, type AppTheme } from './config/config-store';
@@ -59,145 +58,11 @@ export function getTray(): Tray | null {
   return tray;
 }
 
-export function buildMacMenu() {
-  if (process.platform !== 'darwin') return;
-
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        {
-          label: 'Preferences…',
-          accelerator: 'CmdOrCtrl+,',
-          click: () =>
-            mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
-        },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'togglefullscreen' },
-        { type: 'separator' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { role: 'resetZoom' },
-      ],
-    },
-    {
-      label: 'Window',
-      submenu: [{ role: 'minimize' }, { role: 'close' }, { type: 'separator' }, { role: 'front' }],
-    },
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
-export function setupTray() {
-  if (tray) return;
-
-  // Use .ico on Windows for proper multi-resolution tray support; fall back to .png if absent
-  const iconName =
-    process.platform === 'darwin'
-      ? 'tray-iconTemplate.png'
-      : process.platform === 'win32'
-        ? 'tray-icon.ico'
-        : 'tray-icon.png';
-  // tray-icon.ico is generated from tray-icon.png by scripts/build-tray-icon.js
-  // (run as part of `npm run build` and available as `npm run build:tray-icon`).
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, iconName)
-    : join(__dirname, '../../resources', iconName);
-
-  // On Windows, fall back to .png if the .ico file has not been created yet
-  const resolvedIconPath =
-    process.platform === 'win32' && !fs.existsSync(iconPath)
-      ? app.isPackaged
-        ? join(process.resourcesPath, 'tray-icon.png')
-        : join(__dirname, '../../resources', 'tray-icon.png')
-      : iconPath;
-
-  // Gracefully skip tray if icon is missing (e.g. dev environment)
-  if (!fs.existsSync(resolvedIconPath)) {
-    log('[Tray] Icon not found at', resolvedIconPath, '— skipping tray setup');
-    return;
-  }
-
-  tray = new Tray(resolvedIconPath);
-  tray.setToolTip('Open Cowork');
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show / Hide Window',
-      click: () => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          createWindow();
-        } else if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
-    {
-      label: 'New Session',
-      click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-          mainWindow.focus();
-          sendToRenderer({ type: 'new-session' });
-        }
-      },
-    },
-    {
-      label: 'Settings',
-      click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-          mainWindow.focus();
-          sendToRenderer({ type: 'navigate', payload: 'settings' });
-        }
-      },
-    },
-    { type: 'separator' },
-    { label: 'Quit', role: 'quit' },
-  ]);
-  tray.setContextMenu(contextMenu);
-
-  tray.on('click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      createWindow();
-    } else if (mainWindow.isVisible()) {
-      mainWindow.hide();
-    } else {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-}
+// NOTE: buildMacMenu/setupTray used to be DUPLICATED here (exported but never
+// imported — src/main/index.ts calls its own copies). Two live copies in the
+// exact file pair that caused the rc.8 dual-mainWindow regression is how
+// drift happens; the dead copies were removed 2026-07-03. index.ts owns the
+// menu + tray; this module owns the canonical mainWindow/tray REFS only.
 
 export function getSavedThemePreference(): AppTheme {
   const theme = configStore.get('theme');

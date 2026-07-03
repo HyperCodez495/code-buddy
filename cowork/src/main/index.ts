@@ -330,6 +330,17 @@ app.setName(APP_NAME);
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
 
+// Global error handlers for the PRIVILEGED process: an unhandled rejection or
+// uncaught exception in main must land in the log file, never vanish (or take
+// the app down silently). ~17 fire-and-forget `void <promise>` sites exist in
+// this file alone — this is their backstop.
+process.on('unhandledRejection', (reason) => {
+  logError('[main] Unhandled promise rejection:', reason instanceof Error ? reason.stack ?? reason.message : reason);
+});
+process.on('uncaughtException', (err) => {
+  logError('[main] Uncaught exception:', err.stack ?? err.message);
+});
+
 // Load .env file from project root (for development)
 const envPath = resolve(__dirname, '../../.env');
 log('[dotenv] Loading from:', envPath);
@@ -2462,16 +2473,24 @@ ipcMain.handle('workspace.readDir', async (_event, dirPath: string) => {
 
 // ── Permission mode IPC handler ───────────────────────────────────────
 ipcMain.handle('permission.setMode', async (_event, mode: string) => {
+  // Never swallow failures here: this is the autonomy/permission POSTURE. A
+  // silently-failed setMode leaves the user believing the mode changed when it
+  // didn't — a false-safety failure. Callers get an honest {ok, error}.
   try {
     const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) return;
+    if (!enginePath) {
+      logError('[IPC] permission.setMode failed: CODEBUDDY_ENGINE_PATH not configured');
+      return { ok: false, error: 'engine path not configured' };
+    }
     const { getPermissionModeManager } = await import(
       /* webpackIgnore: true */ resolve(enginePath, 'security', 'permission-modes.js')
     );
     getPermissionModeManager().setMode(mode);
     log('[IPC] Permission mode set to:', mode);
-  } catch {
-    /* ignore */
+    return { ok: true };
+  } catch (err) {
+    logError('[IPC] permission.setMode failed:', err instanceof Error ? err.message : err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 });
 
