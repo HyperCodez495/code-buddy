@@ -73,6 +73,7 @@ import { registerMcpIpcHandlers } from './ipc/mcp-ipc';
 import { registerCostIpcHandlers } from './ipc/cost-ipc';
 import { registerRulesIpcHandlers } from './ipc/rules-ipc';
 import { registerGitIpcHandlers } from './ipc/git-ipc';
+import { registerCheckpointIpcHandlers } from './ipc/checkpoint-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -109,7 +110,6 @@ import { SessionBranchingBridge } from './session/session-branching';
 import { GlobalSearchService } from './search/global-search-service';
 import { PreviewService } from './preview/preview-service';
 import { parseUnifiedDiff, revertHunks, type ParsedHunk } from './diff/hunk-diff-service';
-import { getGitBridge } from './git/git-bridge';
 import { getModelCapabilities } from './config/model-capability-bridge';
 import { TemplateService } from './project/template-service';
 import { WorkflowBridge } from './workflows/workflow-bridge';
@@ -2393,74 +2393,7 @@ ipcMain.handle('get-version', () => {
 });
 
 // ── Checkpoint IPC handlers ────────────────────────────────────────────
-ipcMain.handle('checkpoint.list', async () => {
-  try {
-    const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) return null;
-    const { getGhostSnapshotManager } = await import(
-      /* webpackIgnore: true */ resolve(enginePath, 'checkpoints', 'ghost-snapshot.js')
-    );
-    const gsm = getGhostSnapshotManager();
-    return gsm.getTimeline();
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle('checkpoint.undo', async () => {
-  try {
-    const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) return null;
-    const { getGhostSnapshotManager } = await import(
-      /* webpackIgnore: true */ resolve(enginePath, 'checkpoints', 'ghost-snapshot.js')
-    );
-    const gsm = getGhostSnapshotManager();
-    return await gsm.undoLastTurn();
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle('checkpoint.redo', async () => {
-  try {
-    const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) return null;
-    const { getGhostSnapshotManager } = await import(
-      /* webpackIgnore: true */ resolve(enginePath, 'checkpoints', 'ghost-snapshot.js')
-    );
-    const gsm = getGhostSnapshotManager();
-    return await gsm.redoLastTurn();
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle('checkpoint.restore', async (_event, snapshotId: string) => {
-  try {
-    const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) return null;
-    const { getGhostSnapshotManager } = await import(
-      /* webpackIgnore: true */ resolve(enginePath, 'checkpoints', 'ghost-snapshot.js')
-    );
-    const gsm = getGhostSnapshotManager();
-    return await gsm.restoreSnapshot(snapshotId);
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle(
-  'checkpoint.compare',
-  async (_event, cwd: string, fromCommit: string, toCommit: string) => {
-    try {
-      if (!cwd || !fromCommit || !toCommit) return [];
-      return getGitBridge().compareCommits(cwd, fromCommit, toCommit);
-    } catch (err) {
-      logError('[checkpoint.compare] failed:', err);
-      return [];
-    }
-  }
-);
+registerCheckpointIpcHandlers();
 
 // ── Workspace IPC handlers ────────────────────────────────────────────
 ipcMain.handle('workspace.readDir', async (_event, dirPath: string) => {
