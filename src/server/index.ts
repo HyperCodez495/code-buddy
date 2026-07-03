@@ -42,6 +42,7 @@ import {
   toolsRoutes,
   sessionsRoutes,
   memoryRoutes,
+  lessonsRoutes,
   healthRoutes,
   metricsRoutes,
   createWorkflowApiRouter,
@@ -276,6 +277,7 @@ function createApp(config: ServerConfig): Application {
   app.use('/api/tools', toolsRoutes);
   app.use('/api/sessions', sessionsRoutes);
   app.use('/api/memory', memoryRoutes);
+  app.use('/api/lessons', lessonsRoutes);
   app.use('/api/workflows', createWorkflowApiRouter());
   app.use('/api/acp', createACPRoutes());
   app.use('/api/cloud/tasks', createCloudTaskRoutes());
