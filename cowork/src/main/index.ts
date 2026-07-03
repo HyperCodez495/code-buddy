@@ -137,6 +137,7 @@ import { registerPersonaIpcHandlers } from './ipc/persona-ipc';
 import { registerSessionInsightsIpcHandlers } from './ipc/session-insights-ipc';
 import { registerPluginsIpcHandlers } from './ipc/plugins-ipc';
 import { registerTestRunnerIpcHandlers } from './ipc/test-runner-ipc';
+import { registerMemoryIpcHandlers } from './ipc/memory-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -2547,57 +2548,10 @@ ipcMain.handle(
   }
 );
 
-// ── Memory listing for MemoryBrowser (Claude Cowork parity) ──────────
-ipcMain.handle('memory.list', async (_event, projectId?: string) => {
-  if (!projectManager || !projectMemoryServiceRef) return [];
-  const id = projectId ?? projectManager.getActiveId();
-  if (!id) return [];
-  return projectMemoryServiceRef.listMemoryEntries(id);
-});
-
-// Phase 2 step 17: memory CRUD for inline editor
-ipcMain.handle(
-  'memory.add',
-  async (
-    _event,
-    category: 'preference' | 'pattern' | 'context' | 'decision',
-    content: string,
-    projectId?: string
-  ) => {
-    if (!projectManager || !projectMemoryServiceRef) {
-      return { success: false, error: 'Memory service unavailable' };
-    }
-    const id = projectId ?? projectManager.getActiveId();
-    if (!id) return { success: false, error: 'No active project' };
-    return projectMemoryServiceRef.addMemoryEntry(id, category, content);
-  }
-);
-
-ipcMain.handle(
-  'memory.update',
-  async (
-    _event,
-    entryIndex: number,
-    newContent: string,
-    newCategory?: 'preference' | 'pattern' | 'context' | 'decision',
-    projectId?: string
-  ) => {
-    if (!projectManager || !projectMemoryServiceRef) {
-      return { success: false, error: 'Memory service unavailable' };
-    }
-    const id = projectId ?? projectManager.getActiveId();
-    if (!id) return { success: false, error: 'No active project' };
-    return projectMemoryServiceRef.updateMemoryEntry(id, entryIndex, newContent, newCategory);
-  }
-);
-
-ipcMain.handle('memory.delete', async (_event, entryIndex: number, projectId?: string) => {
-  if (!projectManager || !projectMemoryServiceRef) {
-    return { success: false, error: 'Memory service unavailable' };
-  }
-  const id = projectId ?? projectManager.getActiveId();
-  if (!id) return { success: false, error: 'No active project' };
-  return projectMemoryServiceRef.deleteMemoryEntry(id, entryIndex);
+// ── Memory listing + CRUD for MemoryBrowser — extracted to ipc/memory-ipc.ts
+registerMemoryIpcHandlers({
+  getProjectManager: () => projectManager,
+  getProjectMemoryService: () => projectMemoryServiceRef,
 });
 
 // ── Autonomy: read-only snapshot of the fleet colab queue ───────────────
