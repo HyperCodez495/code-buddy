@@ -724,6 +724,25 @@ export class PersistentMemoryManager extends EventEmitter {
   }
 
   /**
+   * Non-reinforcing single-entry read. Unlike `recall()`, this does NOT bump
+   * `accessCount`/`lastAccessedAt`, so surface reads (REST GET, listings)
+   * don't distort the Ebbinghaus forgetting curve. With no scope, project is
+   * checked first, then user — the same precedence as `recall()`.
+   */
+  get(key: string, scope?: MemoryScope): (Memory & { scope: MemoryScope }) | undefined {
+    const normalizedKey = key.trim();
+    if (!scope || scope === "project") {
+      const memory = this.projectMemories.get(normalizedKey);
+      if (memory) return { ...memory, scope: "project" };
+    }
+    if (!scope || scope === "user") {
+      const memory = this.userMemories.get(normalizedKey);
+      if (memory) return { ...memory, scope: "user" };
+    }
+    return undefined;
+  }
+
+  /**
    * Forget something (remove from memory)
    */
   async forget(key: string, scope: "project" | "user" = "project"): Promise<boolean> {
