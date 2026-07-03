@@ -107,6 +107,7 @@ import { PreviewService } from './preview/preview-service';
 import { registerDiffIpcHandlers } from './ipc/diff-ipc';
 import { registerServerIpcHandlers } from './ipc/server-ipc';
 import { registerHooksIpcHandlers } from './ipc/hooks-ipc';
+import { registerReasoningIpcHandlers } from './ipc/reasoning-ipc';
 import { getModelCapabilities } from './config/model-capability-bridge';
 import { TemplateService } from './project/template-service';
 import { WorkflowBridge } from './workflows/workflow-bridge';
@@ -5253,35 +5254,7 @@ ipcMain.handle('a2a.listTasks', async () => {
 });
 
 // Reasoning trace viewer — Claude Cowork parity Phase 3 step 17
-ipcMain.handle('reasoning.listTraces', async () => {
-  try {
-    const { getReasoningBridge } = await import('./reasoning/reasoning-bridge');
-    return getReasoningBridge().listTraces();
-  } catch (err) {
-    logError('[reasoning.listTraces] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('reasoning.getTrace', async (_event, toolUseId: string) => {
-  try {
-    const { getReasoningBridge } = await import('./reasoning/reasoning-bridge');
-    return getReasoningBridge().getTrace(toolUseId);
-  } catch (err) {
-    logError('[reasoning.getTrace] failed:', err);
-    return null;
-  }
-});
-
-ipcMain.handle('reasoning.clear', async () => {
-  try {
-    const { getReasoningBridge } = await import('./reasoning/reasoning-bridge');
-    getReasoningBridge().clear();
-    return { success: true };
-  } catch (_err) {
-    return { success: false };
-  }
-});
+registerReasoningIpcHandlers();
 
 // Hooks editor — Claude Cowork parity Phase 3 step 13
 registerHooksIpcHandlers();
