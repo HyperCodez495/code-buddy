@@ -71,6 +71,7 @@ import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-i
 import { registerWorkflowServiceIpcHandlers } from './ipc/workflow-service-ipc';
 import { registerMcpIpcHandlers } from './ipc/mcp-ipc';
 import { registerCostIpcHandlers } from './ipc/cost-ipc';
+import { registerRulesIpcHandlers } from './ipc/rules-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -3486,62 +3487,10 @@ registerMcpIpcHandlers({
 registerCostIpcHandlers({ getCostBridge: () => costBridge });
 
 // ── Rules editor IPC handlers (Claude Cowork parity Phase 2) ────────
-function resolveRulesWorkspace(projectId?: string): string {
-  if (projectManager) {
-    const project = projectId ? projectManager.get(projectId) : projectManager.getActive();
-    if (project?.workspacePath) return project.workspacePath;
-  }
-  return process.cwd();
-}
-
-ipcMain.handle('rules.list', async (_event, projectId?: string) => {
-  if (!rulesBridge) return { allow: [], deny: [] };
-  return rulesBridge.list(resolveRulesWorkspace(projectId));
+registerRulesIpcHandlers({
+  getRulesBridge: () => rulesBridge,
+  getProjectManager: () => projectManager,
 });
-
-ipcMain.handle(
-  'rules.add',
-  async (_event, bucket: 'allow' | 'deny', rule: string, projectId?: string) => {
-    if (!rulesBridge) {
-      return { success: false, error: 'Rules bridge unavailable' };
-    }
-    return rulesBridge.add(resolveRulesWorkspace(projectId), bucket, rule);
-  }
-);
-
-ipcMain.handle(
-  'rules.remove',
-  async (_event, bucket: 'allow' | 'deny', rule: string, projectId?: string) => {
-    if (!rulesBridge) {
-      return { success: false, error: 'Rules bridge unavailable' };
-    }
-    return rulesBridge.remove(resolveRulesWorkspace(projectId), bucket, rule);
-  }
-);
-
-ipcMain.handle(
-  'rules.update',
-  async (
-    _event,
-    bucket: 'allow' | 'deny',
-    oldRule: string,
-    newRule: string,
-    projectId?: string
-  ) => {
-    if (!rulesBridge) {
-      return { success: false, error: 'Rules bridge unavailable' };
-    }
-    return rulesBridge.update(resolveRulesWorkspace(projectId), bucket, oldRule, newRule);
-  }
-);
-
-ipcMain.handle(
-  'rules.test',
-  async (_event, toolName: string, toolArgs: Record<string, unknown>, projectId?: string) => {
-    if (!rulesBridge) return { decision: 'ask' as const };
-    return rulesBridge.test(resolveRulesWorkspace(projectId), toolName, toolArgs);
-  }
-);
 
 // ── Session branching IPC handlers (Claude Cowork parity Phase 2) ──
 ipcMain.handle('session.branches', async (_event, sessionId: string) => {
