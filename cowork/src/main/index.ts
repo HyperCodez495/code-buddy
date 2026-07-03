@@ -135,6 +135,7 @@ import { registerCkgIpcHandlers } from './ipc/ckg-ipc';
 import { registerAuditIpcHandlers } from './ipc/audit-ipc';
 import { registerPersonaIpcHandlers } from './ipc/persona-ipc';
 import { registerSessionInsightsIpcHandlers } from './ipc/session-insights-ipc';
+import { registerPluginsIpcHandlers } from './ipc/plugins-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -5242,94 +5243,9 @@ ipcMain.handle('skills.openStoragePath', async () => {
   return { success: true, path: storagePath };
 });
 
-ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    return await pluginRuntimeService.listCatalog(options);
-  } catch (error) {
-    logError('[Plugins] Error listing catalog:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.listInstalled', async () => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    return pluginRuntimeService.listInstalled();
-  } catch (error) {
-    logError('[Plugins] Error listing installed plugins:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.install', async (_event, pluginName: string) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.install(pluginName);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error installing plugin:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('plugins.setEnabled', async (_event, pluginId: string, enabled: boolean) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.setEnabled(pluginId, enabled);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error toggling plugin:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle(
-  'plugins.setComponentEnabled',
-  async (
-    _event,
-    pluginId: string,
-    component: 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp',
-    enabled: boolean
-  ) => {
-    try {
-      if (!pluginRuntimeService) {
-        throw new Error('PluginRuntimeService not initialized');
-      }
-      const result = await pluginRuntimeService.setComponentEnabled(pluginId, component, enabled);
-      if (component === 'skills') {
-        sessionManager?.invalidateSkillsSetup();
-      }
-      return result;
-    } catch (error) {
-      logError('[Plugins] Error toggling plugin component:', error);
-      throw error;
-    }
-  }
-);
-
-ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
-  try {
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.uninstall(pluginId);
-    sessionManager?.invalidateSkillsSetup();
-    return result;
-  } catch (error) {
-    logError('[Plugins] Error uninstalling plugin:', error);
-    throw error;
-  }
+registerPluginsIpcHandlers({
+  getPluginRuntimeService: () => pluginRuntimeService,
+  getSessionManager: () => sessionManager,
 });
 
 // Window control IPC handlers
