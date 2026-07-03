@@ -127,6 +127,7 @@ import { BookmarksService } from './bookmarks/bookmarks-service';
 import { registerSnippetsIpcHandlers } from './ipc/snippets-ipc';
 import { registerCustomCommandsIpcHandlers } from './ipc/custom-commands-ipc';
 import { registerWorkspacePresetsIpcHandlers } from './ipc/workspace-presets-ipc';
+import { registerBookmarksIpcHandlers } from './ipc/bookmarks-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -5921,64 +5922,7 @@ registerCustomCommandsIpcHandlers();
 registerSnippetsIpcHandlers();
 
 // Starred/bookmarked messages — Claude Cowork parity Phase 3 step 4
-ipcMain.handle(
-  'bookmarks.toggle',
-  async (
-    _event,
-    entry: {
-      sessionId: string;
-      projectId?: string | null;
-      messageId: string;
-      preview: string;
-      role?: string;
-    }
-  ) => {
-    try {
-      if (!bookmarksService) return { bookmarked: false };
-      return bookmarksService.toggle(entry);
-    } catch (err) {
-      logError('[bookmarks.toggle] failed:', err);
-      return { bookmarked: false };
-    }
-  }
-);
-
-ipcMain.handle('bookmarks.list', async (_event, projectId?: string | null, limit?: number) => {
-  try {
-    if (!bookmarksService) return [];
-    return bookmarksService.list(projectId ?? null, limit ?? 100);
-  } catch (err) {
-    logError('[bookmarks.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('bookmarks.forSession', async (_event, sessionId: string) => {
-  try {
-    if (!bookmarksService) return [];
-    return bookmarksService.getBookmarkedMessageIds(sessionId);
-  } catch (_err) {
-    return [];
-  }
-});
-
-ipcMain.handle('bookmarks.updateNote', async (_event, id: number, note: string) => {
-  try {
-    if (!bookmarksService) return { success: false };
-    return { success: bookmarksService.updateNote(id, note) };
-  } catch (_err) {
-    return { success: false };
-  }
-});
-
-ipcMain.handle('bookmarks.remove', async (_event, id: number) => {
-  try {
-    if (!bookmarksService) return { success: false };
-    return { success: bookmarksService.remove(id) };
-  } catch (_err) {
-    return { success: false };
-  }
-});
+registerBookmarksIpcHandlers({ getBookmarksService: () => bookmarksService });
 
 // Model capabilities lookup — Claude Cowork parity Phase 3 step 3
 ipcMain.handle('model.capabilities', async (_event, model: string) => {
