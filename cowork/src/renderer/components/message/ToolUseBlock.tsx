@@ -71,6 +71,17 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const isError = toolResult?.isError === true;
   const isSuccess = toolResult && !isError;
 
+  // Live output while running — tool_stream deltas accumulated on the trace
+  // step by the store. The card streams instead of hiding behind the spinner.
+  const liveOutput = isRunning
+    ? traceSteps.find((s) => s.id === block.id)?.toolOutput
+    : undefined;
+  const liveLastLine = liveOutput
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1);
+
   const label = getToolLabel(block.name, block.input);
   const isMCPTool = block.name.startsWith('mcp__');
   const mcpServerName = isMCPTool ? block.name.match(/^mcp__(.+?)__/)?.[1] : null;
@@ -148,6 +159,11 @@ export const ToolUseBlock = memo(function ToolUseBlock({
             {summary}
           </span>
         )}
+        {isRunning && liveLastLine && !expanded && (
+          <span className="text-[11px] font-mono text-text-muted truncate max-w-[180px] flex-shrink-0">
+            {liveLastLine}
+          </span>
+        )}
         {duration !== undefined && (
           <span className="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
             {duration < 1000 ? `${duration}ms` : `${(duration / 1000).toFixed(1)}s`}
@@ -174,6 +190,26 @@ export const ToolUseBlock = memo(function ToolUseBlock({
               {JSON.stringify(block.input, null, 2)}
             </pre>
           </div>
+
+          {/* Live streaming output while the tool runs */}
+          {!toolResult && liveOutput && (
+            <div className="px-3 py-2 border-t border-border/50">
+              <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">
+                Output (streaming…)
+              </div>
+              {BASH_TOOLS.has(block.name) ? (
+                <TerminalOutput
+                  command={typeof block.input?.command === 'string' ? block.input.command : undefined}
+                  output={liveOutput}
+                  isError={false}
+                />
+              ) : (
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto text-text-secondary bg-surface-muted">
+                  {liveOutput}
+                </pre>
+              )}
+            </div>
+          )}
 
           {/* Output section */}
           {toolResult && (

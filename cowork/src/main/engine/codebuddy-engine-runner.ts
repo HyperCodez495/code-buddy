@@ -305,7 +305,9 @@ export class CodeBuddyEngineRunner {
                   payload: {
                     sessionId: session.id,
                     stepId: event.tool.id,
-                    updates: { toolOutput: event.tool.delta },
+                    // Delta, not replacement — the store concatenates
+                    // toolOutputDelta onto the accumulated toolOutput.
+                    updates: { toolOutputDelta: event.tool.delta },
                   },
                 });
               }

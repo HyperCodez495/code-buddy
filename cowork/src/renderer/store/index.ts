@@ -123,6 +123,9 @@ const DEFAULT_SESSION_STATE: SessionState = {
 
 const MISSION_RUNTIME_EVENT_LIMIT = 200;
 
+// Tail cap for live tool output accumulated from tool_stream deltas.
+const STREAMED_TOOL_OUTPUT_CAP = 100_000;
+
 function isSameMissionRuntimeEvent(a: MissionRuntimeEvent, b: MissionRuntimeEvent): boolean {
   return a.ts === b.ts && a.type === b.type && a.message === b.message;
 }
@@ -1447,9 +1450,24 @@ export const useAppStore = create<AppState>((set) => ({
       const ss = getSession(state.sessionStates, sessionId);
       return {
         sessionStates: patchSession(state.sessionStates, sessionId, {
-          traceSteps: ss.traceSteps.map((step) =>
-            step.id === stepId ? { ...step, ...updates } : step
-          ),
+          traceSteps: ss.traceSteps.map((step) => {
+            if (step.id !== stepId) return step;
+            // toolOutputDelta is an APPEND instruction (tool_stream events):
+            // concatenate onto the accumulated output instead of replacing
+            // it — a plain spread would keep only the last chunk. tool_end
+            // still sets the authoritative full toolOutput via a plain
+            // update. Tail-capped so a runaway stream can't grow unbounded.
+            const { toolOutputDelta, ...rest } = updates;
+            const next = { ...step, ...rest };
+            if (toolOutputDelta) {
+              const merged = (step.toolOutput ?? '') + toolOutputDelta;
+              next.toolOutput =
+                merged.length > STREAMED_TOOL_OUTPUT_CAP
+                  ? merged.slice(-STREAMED_TOOL_OUTPUT_CAP)
+                  : merged;
+            }
+            return next;
+          }),
         }),
       };
     }),

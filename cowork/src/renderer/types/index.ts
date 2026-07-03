@@ -1194,6 +1194,12 @@ export interface TraceStep {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   toolOutput?: string;
+  /**
+   * Transient append instruction (streaming): the store CONCATENATES this
+   * onto toolOutput instead of replacing it, then drops the field. Never
+   * persisted on a stored step.
+   */
+  toolOutputDelta?: string;
   isError?: boolean;
   timestamp: number;
   duration?: number;
