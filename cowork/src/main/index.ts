@@ -60,12 +60,7 @@ import { registerLiveLauncherIpcHandlers } from './ipc/live-launcher-ipc';
 import { registerPermissionIpcHandlers } from './ipc/permission-ipc';
 import { registerConfigModelIpcHandlers } from './ipc/config-model-ipc';
 import { registerLogsIpcHandlers } from './ipc/logs-ipc';
-import {
-  createBackupForReview,
-  listBackupsForReview,
-  restoreBackupForReview,
-  verifyBackupForReview,
-} from './tools/backup-bridge';
+import { registerBackupIpcHandlers } from './ipc/backup-ipc';
 import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
 import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-ipc';
 import { registerWorkflowServiceIpcHandlers } from './ipc/workflow-service-ipc';
@@ -2481,12 +2476,7 @@ registerLiveLauncherIpcHandlers();
 registerProfilesIpcHandlers();
 
 // ── .codebuddy/ backups (same core handler as `buddy backup`) ────────────
-ipcMain.handle('backup.list', async () => listBackupsForReview());
-ipcMain.handle('backup.create', async (_event, options?: { onlyConfig?: boolean }) =>
-  createBackupForReview(options ?? {})
-);
-ipcMain.handle('backup.verify', async (_event, file: string) => verifyBackupForReview(file));
-ipcMain.handle('backup.restore', async (_event, file: string) => restoreBackupForReview(file));
+registerBackupIpcHandlers();
 
 // ── Task dispatch IPC (mobile/remote → background session) ───────────
 ipcMain.handle('dispatch.task', async (_event, request: DispatchRequest) => {
