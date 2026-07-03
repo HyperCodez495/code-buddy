@@ -8,12 +8,16 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Layers, Loader2 } from 'lucide-react';
+import { X, Layers, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useAppStore } from '../store';
 
 interface BatchExecutionDialogProps {
   onClose: () => void;
 }
+
+// Stable empty reference — a fresh `[]` in the selector would make zustand
+// see a new value every render and loop.
+const NO_SUBAGENTS: never[] = [];
 
 export function BatchExecutionDialog({ onClose }: BatchExecutionDialogProps) {
   const { t } = useTranslation();
@@ -22,6 +26,11 @@ export function BatchExecutionDialog({ onClose }: BatchExecutionDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  // Live sub-agent activity for the active session — the batch decomposes
+  // into these and they stream in while `running`, instead of a bare spinner.
+  const subAgents = useAppStore((s) =>
+    (activeSessionId ? s.subAgents[activeSessionId] : undefined) ?? NO_SUBAGENTS
+  );
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -85,6 +94,30 @@ export function BatchExecutionDialog({ onClose }: BatchExecutionDialogProps) {
             data-testid="batch-goal"
           />
           {error && <p className="text-[11px] text-error">{error}</p>}
+          {running && subAgents.length > 0 && (
+            <div
+              className="max-h-48 overflow-y-auto space-y-1 rounded-md border border-border-subtle bg-surface-muted p-2"
+              data-testid="batch-subagents"
+            >
+              {subAgents.map((agent) => (
+                <div key={agent.id} className="flex items-center gap-2 text-[11px]">
+                  <span className="flex-shrink-0">
+                    {agent.status === 'completed' ? (
+                      <CheckCircle2 size={12} className="text-success" />
+                    ) : agent.status === 'error' ? (
+                      <XCircle size={12} className="text-error" />
+                    ) : (
+                      <Loader2 size={12} className="animate-spin text-accent" />
+                    )}
+                  </span>
+                  <span className="font-medium text-text-secondary flex-shrink-0">{agent.nickname}</span>
+                  <span className="text-text-muted truncate flex-1 min-w-0">
+                    {agent.currentStep ?? agent.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             onClick={submit}
@@ -93,7 +126,11 @@ export function BatchExecutionDialog({ onClose }: BatchExecutionDialogProps) {
             data-testid="batch-submit"
           >
             {running && <Loader2 size={14} className="animate-spin" />}
-            {running ? t('batch.launching', 'Launching…') : t('batch.launch', 'Launch batch')}
+            {running
+              ? subAgents.length > 0
+                ? t('batch.running', '{{count}} sub-agents running…', { count: subAgents.length })
+                : t('batch.launching', 'Launching…')
+              : t('batch.launch', 'Launch batch')}
           </button>
         </div>
       </div>
