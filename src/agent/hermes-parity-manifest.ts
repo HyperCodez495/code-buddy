@@ -406,7 +406,10 @@ const FEATURES: HermesParityFeature[] = [
       'REAL PersistentMemoryManager (key-as-id CRUD, non-reinforcing get() so REST reads don\'t distort the ' +
       'forgetting curve), and `buddy research show/retract` on the CKG (append-only \'retraction\' tombstone, ' +
       'revivable, replay-honored, backward-compatible with old readers). user-model already had full parity. All ' +
-      'proven with real files / real HTTP / real shared-ledger tests + live CLI round-trips.',
+      'proven with real files / real HTTP / real shared-ledger tests + live CLI round-trips. The REST leg is ' +
+      'complete too: /api/lessons (list/show/add/edit/delete on the same tracker primitives, scopes mirroring ' +
+      '/api/memory) — journey wires management through CLI, RPC and REST; Code Buddy now has CLI + REST, with ' +
+      'peer.tool.invoke as the fleet-RPC read surface.',
   },
   {
     id: 'cron-scheduling',
