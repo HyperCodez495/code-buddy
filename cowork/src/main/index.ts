@@ -133,6 +133,7 @@ import { registerClipboardIpcHandlers } from './ipc/clipboard-ipc';
 import { registerA2aIpcHandlers } from './ipc/a2a-ipc';
 import { registerCkgIpcHandlers } from './ipc/ckg-ipc';
 import { registerAuditIpcHandlers } from './ipc/audit-ipc';
+import { registerPersonaIpcHandlers } from './ipc/persona-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -5111,65 +5112,8 @@ ipcMain.handle('test.getState', async () => {
   }
 });
 
-// Persona switcher — Claude Cowork parity Phase 3 step 11
-ipcMain.handle('identity.list', async () => {
-  try {
-    const { getIdentityBridge } = await import('./identity/identity-bridge');
-    return await getIdentityBridge().list();
-  } catch (err) {
-    logError('[identity.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('identity.getDetail', async (_event, id: string) => {
-  try {
-    const { getIdentityBridge } = await import('./identity/identity-bridge');
-    return await getIdentityBridge().getDetail(id);
-  } catch (err) {
-    logError('[identity.getDetail] failed:', err);
-    return null;
-  }
-});
-
-ipcMain.handle('identity.activate', async (_event, id: string) => {
-  try {
-    const { getIdentityBridge } = await import('./identity/identity-bridge');
-    const result = await getIdentityBridge().activate(id);
-    if (result.success) {
-      sendToRenderer({
-        type: 'identity.activated',
-        payload: result.active ?? null,
-      });
-    }
-    return result;
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('identity.deactivate', async () => {
-  try {
-    const { getIdentityBridge } = await import('./identity/identity-bridge');
-    const result = await getIdentityBridge().deactivate();
-    sendToRenderer({
-      type: 'identity.activated',
-      payload: null,
-    });
-    return result;
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('identity.getActive', async () => {
-  try {
-    const { getIdentityBridge } = await import('./identity/identity-bridge');
-    return getIdentityBridge().getActive();
-  } catch (_err) {
-    return null;
-  }
-});
+// Persona switcher — Claude Cowork parity Phase 3 step 11 — extracted to ipc/persona-ipc.ts
+registerPersonaIpcHandlers();
 
 // Audit log — Claude Cowork parity Phase 3 step 10 — extracted to ipc/audit-ipc.ts
 registerAuditIpcHandlers();
