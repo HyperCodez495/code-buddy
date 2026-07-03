@@ -8,6 +8,7 @@ import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
 import { BrowserTool } from '../browser/playwright-tool.js';
 import { BrowserExecuteTool } from './misc-tools.js';
+import { WebTestTool } from './web-test-tool.js';
 
 // ============================================================================
 // Shared browser session — ALL adapters below go through the same
@@ -597,5 +598,6 @@ export function createBrowserTools(): ITool[] {
     new BrowserBackTool(),
     new BrowserPressTool(),
     new BrowserActionTool(),
+    new WebTestTool(),
   ];
 }

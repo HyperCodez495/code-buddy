@@ -857,9 +857,49 @@ The plan sequences web_search, web_fetch, browser.observe, browser.extract, brow
 /**
  * All browser tools
  */
+// One-call structured UI test with evidence (develop → launch → browse → verify)
+export const WEB_TEST_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "web_test",
+    description: "Test a web page in ONE call and get a structured pass/fail report with evidence: navigation, console errors + page errors, server logs (when the URL is app_server-managed), interactive-element snapshot, screenshot, and your declarative assertions. ALWAYS run this after building or changing a web UI — a report with failures is a successful run you must read and fix, then re-run.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Page to test — a dev origin registered via app_server, or any safe public URL"
+        },
+        assertions: {
+          type: "array",
+          description: "Declarative checks: {type: 'text'|'selector'|'title', value: string}",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["text", "selector", "title"] },
+              value: { type: "string" }
+            },
+            required: ["type", "value"]
+          }
+        },
+        screenshot: {
+          type: "boolean",
+          description: "Capture a screenshot as evidence (default true)"
+        },
+        allowConsoleErrors: {
+          type: "boolean",
+          description: "Do not fail on console/page errors (default false)"
+        }
+      },
+      required: ["url"]
+    }
+  }
+};
+
 export const BROWSER_TOOLS: CodeBuddyTool[] = [
   INTERNET_SCOUT_RUN_TOOL,
   INTERNET_SCOUT_PLAN_TOOL,
+  WEB_TEST_TOOL,
   BROWSER_NAVIGATE_TOOL,
   BROWSER_SNAPSHOT_TOOL,
   BROWSER_CLICK_TOOL,

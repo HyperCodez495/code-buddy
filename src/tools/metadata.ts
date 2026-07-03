@@ -399,6 +399,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Automate web browser for navigation, interaction, extraction, observation, and testing'
   },
   {
+    name: 'web_test',
+    category: 'web',
+    keywords: ['web test', 'test ui', 'verify app', 'smoke test', 'e2e', 'console errors', 'check page', 'test app'],
+    priority: 7,
+    description: 'One-call structured UI test with evidence: console + server logs + snapshot + screenshot + assertions'
+  },
+  {
     name: 'browser_operator',
     category: 'web',
     keywords: ['browser operator', 'browser', 'web automation', 'live web', 'navigate', 'login', 'interaction', 'consent', 'stagehand', 'computer use', 'session', 'stop control', 'proof export', 'operator', 'propose'],

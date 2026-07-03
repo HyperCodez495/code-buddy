@@ -246,6 +246,16 @@ export class AppServerTool {
     return getProcessTool().log(pid, opts);
   }
 
+  /** Server-side log tail for a managed origin (web_test's server oracle). */
+  logTailForOrigin(origin: string, lines = 30): string | null {
+    for (const record of this.servers.values()) {
+      if (record.origin === origin) {
+        return this.logTail(record.pid, lines);
+      }
+    }
+    return null;
+  }
+
   /** Stop everything (session end / tests). */
   async stopAll(): Promise<void> {
     for (const pid of [...this.servers.keys()]) {

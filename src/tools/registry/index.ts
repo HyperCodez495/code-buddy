@@ -171,6 +171,7 @@ export {
   createBrowserTools,
   resetBrowserInstance,
 } from './browser-tools.js';
+export { WebTestTool } from './web-test-tool.js';
 
 // Tool Adapters - Process
 export {
