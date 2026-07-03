@@ -80,6 +80,17 @@ const DEFAULT_CONFIG: MemoryConfig = {
 
 export type MemoryScope = "project" | "user";
 
+/** One entry of the recoverable forgetting archive (`*.archive.md`). */
+export interface ArchivedMemory {
+  key: string;
+  value: string;
+  category: MemoryCategory;
+  tags?: string[];
+  /** ISO timestamp of the `## Forgotten <ISO>` section it was archived under. */
+  forgottenAt: string;
+  scope: MemoryScope;
+}
+
 export interface MemoryUsage {
   scope: MemoryScope;
   used: number;
@@ -853,6 +864,140 @@ export class PersistentMemoryManager extends EventEmitter {
   private getArchivePath(scope: MemoryScope): string {
     const filePath = scope === "project" ? this.config.projectMemoryPath : this.config.userMemoryPath;
     return filePath.replace(/\.md$/i, "") + ".archive.md";
+  }
+
+  /**
+   * List the entries the forgetting pass archived (newest first). Parses the
+   * `*.archive.md` sections written by applyForgetting():
+   *   `## Forgotten <ISO>` then `- **key** (category[ [tags]], accessed N×,
+   *   age Dd, retention R): value`.
+   */
+  async listArchived(scope?: MemoryScope): Promise<ArchivedMemory[]> {
+    const scopes: MemoryScope[] = scope ? [scope] : ["project", "user"];
+    const out: ArchivedMemory[] = [];
+    for (const s of scopes) {
+      const parsed = await this.parseArchive(s);
+      out.push(...parsed.map(({ lineIndex: _lineIndex, ...entry }) => entry));
+    }
+    return out.sort((a, b) => (a.forgottenAt < b.forgottenAt ? 1 : a.forgottenAt > b.forgottenAt ? -1 : 0));
+  }
+
+  /**
+   * Restore a forgotten entry from the archive back into live memory — the
+   * "recoverable" half of the Ebbinghaus pass. The LATEST archived version of
+   * the key wins (project checked before user when no scope is given). The
+   * critical action is the re-remember (restoring = re-learning: the curve
+   * restarts fresh); on success the restored line is removed from the archive
+   * (atomic rewrite, best-effort — a cleanup failure never undoes the restore).
+   * Returns null when the key is not in the archive.
+   */
+  async restoreFromArchive(
+    key: string,
+    scope?: MemoryScope,
+  ): Promise<{ result: MemoryWriteResult; restored: ArchivedMemory } | null> {
+    const normalizedKey = key.trim();
+    const scopes: MemoryScope[] = scope ? [scope] : ["project", "user"];
+    for (const s of scopes) {
+      const parsed = await this.parseArchive(s);
+      const matches = parsed.filter((e) => e.key === normalizedKey);
+      if (matches.length === 0) continue;
+      // Latest version wins: sections are appended chronologically, so the
+      // last file occurrence is the most recent forgetting of this key.
+      const entry = matches[matches.length - 1]!;
+      const result = await this.remember(entry.key, entry.value, {
+        scope: s,
+        category: entry.category,
+        ...(entry.tags?.length ? { tags: entry.tags } : {}),
+      });
+      if (result.status === "stored" || result.status === "updated") {
+        await this.removeArchiveLine(s, entry.lineIndex);
+        this.emit("memory:restored", { key: entry.key, scope: s });
+      }
+      const { lineIndex: _lineIndex, ...restored } = entry;
+      return { result, restored };
+    }
+    return null;
+  }
+
+  /** Parse one scope's archive file into entries carrying their raw line index. */
+  private async parseArchive(scope: MemoryScope): Promise<Array<ArchivedMemory & { lineIndex: number }>> {
+    const archivePath = this.getArchivePath(scope);
+    let content: string;
+    try {
+      content = await fs.readFile(archivePath, "utf-8");
+    } catch {
+      return [];
+    }
+    const entries: Array<ArchivedMemory & { lineIndex: number }> = [];
+    let forgottenAt = "";
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const section = line.match(/^## Forgotten (.+)$/);
+      if (section) {
+        forgottenAt = section[1]!.trim();
+        continue;
+      }
+      const entry = line.match(
+        /^- \*\*(.+?)\*\* \((\w+)(?: \[([^\]]*)\])?, accessed \d+×, age \d+d, retention [\d.]+\): (.*)$/,
+      );
+      if (!entry) continue;
+      const [, entryKey, rawCategory, rawTags, value] = entry;
+      if (entryKey === undefined || value === undefined) continue;
+      const category: MemoryCategory = (
+        ["project", "preferences", "decisions", "patterns", "context", "custom"] as const
+      ).includes(rawCategory as MemoryCategory)
+        ? (rawCategory as MemoryCategory)
+        : "custom";
+      const tags = rawTags
+        ?.split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      entries.push({
+        key: entryKey,
+        value,
+        category,
+        ...(tags?.length ? { tags } : {}),
+        forgottenAt,
+        scope,
+        lineIndex: i,
+      });
+    }
+    return entries;
+  }
+
+  /** Drop one restored line from the archive (and any now-empty section), atomically. */
+  private async removeArchiveLine(scope: MemoryScope, lineIndex: number): Promise<void> {
+    const archivePath = this.getArchivePath(scope);
+    try {
+      const lines = (await fs.readFile(archivePath, "utf-8")).split("\n");
+      lines.splice(lineIndex, 1);
+      // Remove sections left with no entry lines before the next section.
+      const cleaned: string[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (/^## Forgotten /.test(line)) {
+          let j = i + 1;
+          let hasEntry = false;
+          while (j < lines.length && !/^## Forgotten /.test(lines[j]!)) {
+            if (lines[j]!.startsWith("- ")) hasEntry = true;
+            j++;
+          }
+          if (!hasEntry) {
+            i = j - 1; // skip the empty section (header + blank filler)
+            continue;
+          }
+        }
+        cleaned.push(line);
+      }
+      const tmpPath = `${archivePath}.tmp`;
+      await fs.writeFile(tmpPath, cleaned.join("\n"), "utf-8");
+      await fs.rename(tmpPath, archivePath);
+    } catch (err) {
+      logger.warn(
+        `[persistent-memory] archive cleanup after restore failed (restore itself succeeded): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**

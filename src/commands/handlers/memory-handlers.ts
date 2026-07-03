@@ -109,6 +109,45 @@ export async function handleMemory(args: string[]): Promise<CommandHandlerResult
         }
         break;
 
+      case "archived": {
+        // The recoverable half of the Ebbinghaus forgetting pass.
+        const scope = args[1] === "user" || args[1] === "project" ? (args[1] as "project" | "user") : undefined;
+        const archived = await persistentMemory.listArchived(scope);
+        if (archived.length === 0) {
+          content = "Archive is empty — nothing has been forgotten" + (scope ? ` in ${scope} scope` : "") + ".";
+        } else {
+          const lines = archived.slice(0, 25).map((e) => {
+            const when = e.forgottenAt.slice(0, 10);
+            return `- **${e.key}** (${e.category}, ${e.scope}, forgotten ${when}): ${e.value.slice(0, 80)}${e.value.length > 80 ? "…" : ""}`;
+          });
+          content =
+            `🗄️ ${archived.length} forgotten memor${archived.length > 1 ? "ies" : "y"}` +
+            (scope ? ` (${scope})` : "") +
+            `:\n${lines.join("\n")}` +
+            (archived.length > 25 ? `\n… and ${archived.length - 25} more.` : "") +
+            `\n\nRestore one: /memory restore <key> [project|user]`;
+        }
+        break;
+      }
+
+      case "restore": {
+        if (!args[1]) {
+          content = `Usage: /memory restore <key> [project|user]`;
+          break;
+        }
+        const key = args[1];
+        const scope = args[2] === "user" || args[2] === "project" ? (args[2] as "project" | "user") : undefined;
+        const restored = await persistentMemory.restoreFromArchive(key, scope);
+        if (!restored) {
+          content = `No archived memory found for "${key}"${scope ? ` in ${scope} scope` : ""}. See /memory archived.`;
+        } else if (restored.result.status === "stored" || restored.result.status === "updated") {
+          content = `♻️ Restored "${key}" to ${restored.restored.scope} memory (was forgotten ${restored.restored.forgottenAt.slice(0, 10)}). The forgetting curve restarts fresh.`;
+        } else {
+          content = `"${key}" is already live in ${restored.restored.scope} memory (${restored.result.status}) — archive left untouched.`;
+        }
+        break;
+      }
+
       case "remember":
       case "store":
         if (args.length >= 3) {
