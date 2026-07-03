@@ -70,6 +70,7 @@ import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
 import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-ipc';
 import { registerWorkflowServiceIpcHandlers } from './ipc/workflow-service-ipc';
 import { registerMcpIpcHandlers } from './ipc/mcp-ipc';
+import { registerCostIpcHandlers } from './ipc/cost-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -3482,51 +3483,7 @@ registerMcpIpcHandlers({
 });
 
 // ── Cost dashboard IPC handlers (Claude Cowork parity Phase 2) ──────
-ipcMain.handle('cost.summary', async () => {
-  if (!costBridge) {
-    return {
-      sessionCost: 0,
-      dailyCost: 0,
-      weeklyCost: 0,
-      monthlyCost: 0,
-      totalCost: 0,
-      sessionTokens: { input: 0, output: 0 },
-      modelBreakdown: {},
-    };
-  }
-  return costBridge.getSummary();
-});
-
-ipcMain.handle('cost.history', (_event, days?: number) => {
-  if (!costBridge) return [];
-  return costBridge.getDailyHistory(days);
-});
-
-ipcMain.handle('cost.modelBreakdown', (_event, days?: number) => {
-  if (!costBridge) return [];
-  return costBridge.getModelBreakdown(days);
-});
-
-ipcMain.handle('cost.setBudget', async (_event, monthlyLimit: number) => {
-  if (!costBridge) return { success: false };
-  await costBridge.setBudget(monthlyLimit);
-  return { success: true };
-});
-
-ipcMain.handle('cost.setDailyLimit', async (_event, limit: number) => {
-  if (!costBridge) return { success: false };
-  await costBridge.setDailyLimit(limit);
-  return { success: true };
-});
-
-ipcMain.handle(
-  'cost.record',
-  async (_event, inputTokens: number, outputTokens: number, model: string, cost?: number) => {
-    if (!costBridge) return { success: false };
-    await costBridge.record(inputTokens, outputTokens, model, cost);
-    return { success: true };
-  }
-);
+registerCostIpcHandlers({ getCostBridge: () => costBridge });
 
 // ── Rules editor IPC handlers (Claude Cowork parity Phase 2) ────────
 function resolveRulesWorkspace(projectId?: string): string {
