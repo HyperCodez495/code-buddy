@@ -69,6 +69,7 @@ import {
 import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
 import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-ipc';
 import { registerWorkflowServiceIpcHandlers } from './ipc/workflow-service-ipc';
+import { registerMcpIpcHandlers } from './ipc/mcp-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -3472,193 +3473,13 @@ ipcMain.handle('ckg.topicsRemove', async (_event, topic: string) => {
   }
 });
 
-// MCP Server IPC handlers
-ipcMain.handle('mcp.getServers', () => {
-  try {
-    return mcpConfigStore.getServers();
-  } catch (error) {
-    logError('[MCP] Error getting servers:', error);
-    return [];
-  }
+// MCP Server + marketplace IPC handlers — extracted to ipc/mcp-ipc.ts
+// (accessor injection for the runtime-reassigned sessionManager +
+// mcpMarketplaceBridge mutables).
+registerMcpIpcHandlers({
+  getSessionManager: () => sessionManager,
+  getMarketplaceBridge: () => mcpMarketplaceBridge,
 });
-
-ipcMain.handle('mcp.getServer', (_event, serverId: string) => {
-  try {
-    return mcpConfigStore.getServer(serverId);
-  } catch (error) {
-    logError('[MCP] Error getting server:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
-  mcpConfigStore.saveServer(config);
-  // Update only this specific server, not all servers
-  if (sessionManager) {
-    const mcpManager = sessionManager.getMCPManager();
-    try {
-      await mcpManager.updateServer(config);
-      sessionManager.invalidateMcpServersCache();
-      log(`[MCP] Server ${config.name} updated successfully`);
-    } catch (err) {
-      logError('[MCP] Failed to update server:', err);
-      // Roll back: save the config with enabled=false so a broken connector
-      // is not retried on next app startup
-      if (config.enabled) {
-        mcpConfigStore.saveServer({ ...config, enabled: false });
-      }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      return { success: false, error: errorMessage };
-    }
-  }
-  return { success: true };
-});
-
-ipcMain.handle('mcp.deleteServer', async (_event, serverId: string) => {
-  mcpConfigStore.deleteServer(serverId);
-  // Remove and disconnect only this specific server
-  if (sessionManager) {
-    const mcpManager = sessionManager.getMCPManager();
-    try {
-      await mcpManager.removeServer(serverId);
-      sessionManager.invalidateMcpServersCache();
-      log(`[MCP] Server ${serverId} removed successfully`);
-    } catch (err) {
-      logError('[MCP] Failed to remove server:', err);
-    }
-  }
-  return { success: true };
-});
-
-ipcMain.handle('mcp.clearOAuthTokens', async (_event, serverId: string) => {
-  try {
-    if (sessionManager) {
-      const mcpManager = sessionManager.getMCPManager();
-      await mcpManager.clearOAuthTokens(serverId);
-      // Drop the live connection so the next connect re-triggers authorization.
-      await mcpManager.removeServer(serverId).catch(() => {});
-      sessionManager.invalidateMcpServersCache();
-    }
-    return { success: true };
-  } catch (error) {
-    logError('[MCP] Failed to clear OAuth tokens:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('mcp.getTools', () => {
-  try {
-    if (!sessionManager) {
-      return [];
-    }
-    const mcpManager = sessionManager.getMCPManager();
-    return mcpManager.getTools();
-  } catch (error) {
-    logError('[MCP] Error getting tools:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('mcp.getServerStatus', () => {
-  try {
-    if (!sessionManager) {
-      return [];
-    }
-    const mcpManager = sessionManager.getMCPManager();
-    return mcpManager.getServerStatus();
-  } catch (error) {
-    logError('[MCP] Error getting server status:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('mcp.getPresets', () => {
-  try {
-    return mcpConfigStore.getPresets();
-  } catch (error) {
-    logError('[MCP] Error getting presets:', error);
-    return {};
-  }
-});
-
-// ── MCP marketplace IPC handlers (Claude Cowork parity Phase 2) ─────
-ipcMain.handle('mcp.registry', () => {
-  if (!mcpMarketplaceBridge) return [];
-  return mcpMarketplaceBridge.list();
-});
-
-ipcMain.handle('mcp.registrySearch', (_event, query: string) => {
-  if (!mcpMarketplaceBridge) return [];
-  return mcpMarketplaceBridge.search(query);
-});
-
-ipcMain.handle('mcp.registryGet', (_event, id: string) => {
-  if (!mcpMarketplaceBridge) return null;
-  return mcpMarketplaceBridge.get(id);
-});
-
-ipcMain.handle(
-  'mcp.registryInstall',
-  async (_event, id: string, envOverrides?: Record<string, string>) => {
-    if (!mcpMarketplaceBridge) {
-      return { success: false, error: 'Marketplace bridge unavailable' };
-    }
-    return mcpMarketplaceBridge.install(id, envOverrides);
-  }
-);
-
-ipcMain.handle('mcp.registryUninstall', async (_event, id: string) => {
-  if (!mcpMarketplaceBridge) {
-    return { success: false, error: 'Marketplace bridge unavailable' };
-  }
-  return mcpMarketplaceBridge.uninstall(id);
-});
-
-ipcMain.handle('mcp.registrySetEnabled', async (_event, id: string, enabled: boolean) => {
-  if (!mcpMarketplaceBridge) {
-    return { success: false, error: 'Marketplace bridge unavailable' };
-  }
-  return mcpMarketplaceBridge.setEnabled(id, enabled);
-});
-
-ipcMain.handle('mcp.registryTools', (_event, id: string) => {
-  if (!mcpMarketplaceBridge) return [];
-  return mcpMarketplaceBridge.getTools(id);
-});
-
-// Phase 3 step 7: MCP tool playground
-ipcMain.handle('mcp.listAllTools', () => {
-  try {
-    if (!mcpMarketplaceBridge) return [];
-    return mcpMarketplaceBridge.listAllTools();
-  } catch (err) {
-    logError('[mcp.listAllTools] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle(
-  'mcp.invokeTool',
-  async (_event, toolName: string, args: Record<string, unknown>) => {
-    try {
-      if (!mcpMarketplaceBridge) {
-        return {
-          success: false,
-          durationMs: 0,
-          error: 'MCP marketplace bridge not ready',
-        };
-      }
-      return await mcpMarketplaceBridge.invokeTool(toolName, args ?? {});
-    } catch (err) {
-      logError('[mcp.invokeTool] failed:', err);
-      return {
-        success: false,
-        durationMs: 0,
-        error: (err as Error).message,
-      };
-    }
-  }
-);
 
 // ── Cost dashboard IPC handlers (Claude Cowork parity Phase 2) ──────
 ipcMain.handle('cost.summary', async () => {
