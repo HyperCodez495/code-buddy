@@ -104,7 +104,7 @@ import { RulesBridge } from './security/rules-bridge';
 import { SessionBranchingBridge } from './session/session-branching';
 import { GlobalSearchService } from './search/global-search-service';
 import { PreviewService } from './preview/preview-service';
-import { parseUnifiedDiff, revertHunks, type ParsedHunk } from './diff/hunk-diff-service';
+import { registerDiffIpcHandlers } from './ipc/diff-ipc';
 import { getModelCapabilities } from './config/model-capability-bridge';
 import { TemplateService } from './project/template-service';
 import { WorkflowBridge } from './workflows/workflow-bridge';
@@ -6197,30 +6197,7 @@ ipcMain.handle('model.capabilities', async (_event, model: string) => {
 registerGitIpcHandlers();
 
 // Hunk diff accept/reject — Claude Cowork parity Phase 3 step 1
-ipcMain.handle('diff.parseHunks', async (_event, excerpt: string) => {
-  try {
-    return parseUnifiedDiff(excerpt ?? '');
-  } catch (err) {
-    logError('[diff.parseHunks] failed:', err);
-    return { hunks: [], preamble: '' };
-  }
-});
-
-ipcMain.handle('diff.revertHunks', async (_event, filePath: string, hunks: ParsedHunk[]) => {
-  try {
-    if (!filePath || !Array.isArray(hunks)) {
-      return { success: false, method: 'none', error: 'Invalid arguments' };
-    }
-    return revertHunks(filePath, hunks);
-  } catch (err) {
-    logError('[diff.revertHunks] failed:', err);
-    return {
-      success: false,
-      method: 'none',
-      error: (err as Error).message ?? 'Unknown error',
-    };
-  }
-});
+registerDiffIpcHandlers();
 
 // Global search (Cmd+K palette) — Claude Cowork parity Phase 2 step 8
 ipcMain.handle('search.global', async (_event, query: string, limit?: number) => {
