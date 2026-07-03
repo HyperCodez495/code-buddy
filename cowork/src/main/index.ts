@@ -129,6 +129,7 @@ import { registerCustomCommandsIpcHandlers } from './ipc/custom-commands-ipc';
 import { registerWorkspacePresetsIpcHandlers } from './ipc/workspace-presets-ipc';
 import { registerBookmarksIpcHandlers } from './ipc/bookmarks-ipc';
 import { registerTemplateIpcHandlers } from './ipc/template-ipc';
+import { registerClipboardIpcHandlers } from './ipc/clipboard-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -3912,46 +3913,8 @@ ipcMain.handle(
   }
 );
 
-/**
- * Clipboard summariser (Lisa-derived). One-shot summarise of the
- * current clipboard text, regardless of length, for the "Summarize
- * Now" button.
- */
-ipcMain.handle('clipboard.summarizeNow', async () => {
-  if (!clipboardWatcher) {
-    return { ok: false, error: 'watcher not initialized' };
-  }
-  try {
-    const payload = await clipboardWatcher.summariseNow();
-    if (!payload) return { ok: false, error: 'clipboard empty or too short' };
-    return { ok: true, payload };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
-  }
-});
-
-ipcMain.handle('clipboard.setMonitoring', async (_event, enabled: boolean) => {
-  if (!clipboardWatcher) return { ok: false };
-  // Persist + apply.
-  const previousConfig = configStore.getAll();
-  configStore.update({
-    clipboard: { ...(previousConfig.clipboard ?? {}), monitoringEnabled: enabled },
-  });
-  if (enabled) {
-    clipboardWatcher.start();
-  } else {
-    clipboardWatcher.stop();
-  }
-  return { ok: true, running: clipboardWatcher.isRunning() };
-});
-
-ipcMain.handle('clipboard.status', async () => {
-  return {
-    running: clipboardWatcher?.isRunning() ?? false,
-    monitoringEnabled: configStore.getAll().clipboard?.monitoringEnabled ?? false,
-  };
-});
+// Clipboard summariser (Lisa-derived) — summarizeNow / setMonitoring / status
+registerClipboardIpcHandlers({ getClipboardWatcher: () => clipboardWatcher });
 
 /**
  * Cross-session message search (Phase 3 — Global search "Messages" tab).
