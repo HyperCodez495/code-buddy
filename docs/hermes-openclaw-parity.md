@@ -1,7 +1,22 @@
 # Hermes Agent & OpenClaw — parity and gaps (canonical)
 
 **Date: 2026-07-03** (supersedes 2026-06-09/13/14) · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified
-against live installs: Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
+against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.1`.
+
+> **2026-07-03 upstream drift re-audit — the parity target moved.** The manifest's audit anchor was
+> `5921d667`/v2026.5.29.2; upstream Hermes is now at **v2026.7.1** (origin/main `1c4cc00f7`, fetched into the local
+> `~/hermes-agent` checkout). The anchor is updated and the new-surface delta is registered per-entry in the manifest
+> (notes dated 2026-07-03). Outcome: **one new gap FILLED same day** — extra HTTP headers for LLM API calls
+> (`CODEBUDDY_LLM_EXTRA_HEADERS` → OpenAI-compat `defaultHeaders`, transport-managed headers dropped, proven with a
+> real loopback HTTP round-trip). **Honestly registered, not yet covered:** per-channel model + system-prompt
+> overrides (session > channel > global), Slack Block Kit rendering, in-channel continuable cron delivery
+> (channels layer — implementable without accounts, live-validation per-platform), the Vertex AI OAuth2 provider
+> (needs a GCP account for any honest validation — not written blind), and a thinner learned-knowledge edit/delete
+> management surface vs upstream's "journey" list/edit/delete. **Covered by existing machinery:** the MoA
+> advisory-fanout pattern maps to `src/council/` + `buddy llm ensemble` (richer: dual-score judge, scoreboard,
+> deliberation-health ledger) — the per-turn ambient-advisor cadence is an architecture difference, not a missing
+> capability. Also recorded: Telegram is live-validated in production here (the `lisa-telegram` systemd service runs
+> the Code Buddy Telegram channel 24/7 with a real bot token).
 
 > **2026-07-03 validation pass — the last `partial` is closed.** The OpenClaw migrator's three unexercised readers
 > (MEMORY/MCP/cron) were finally exercised against the live `~/.openclaw` after populating it **through OpenClaw

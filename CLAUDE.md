@@ -189,6 +189,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 |----------|---------|
 | `GROK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | Provider auto-detect |
 | `GROK_BASE_URL` / `GROK_MODEL` | Custom endpoint / default model |
+| `CODEBUDDY_LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers applied to every OpenAI-compat LLM call (gateways/observability proxies: Helicone, Portkey, corp proxies). Transport-managed headers (`host`, `content-type`, …) are dropped; invalid JSON disables with a warning |
 | `CODEBUDDY_MAX_TOKENS` | Override response token limit |
 | `CODEBUDDY_AUTOCOMPACT_PCT` | Auto-compact threshold as % of context window |
 | `MORPH_API_KEY` | Enables fast file editing |

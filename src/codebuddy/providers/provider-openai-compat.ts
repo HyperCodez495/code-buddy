@@ -79,6 +79,47 @@ export interface OpenAICompatProviderOptions {
   getCircuitBreakerConfig: () => Partial<CircuitBreakerConfig> | undefined;
 }
 
+// Transport-managed headers that extra-header config may never override —
+// clobbering these breaks the HTTP layer itself, not just a provider quirk.
+const FORBIDDEN_EXTRA_HEADERS = new Set(['host', 'content-length', 'content-type', 'connection', 'transfer-encoding']);
+
+/**
+ * Extra HTTP headers applied to every OpenAI-compat LLM API call, for
+ * API gateways and observability proxies (Helicone, Portkey, LiteLLM, corp
+ * proxies with header-based auth).
+ *
+ * Source: `CODEBUDDY_LLM_EXTRA_HEADERS` — a JSON object of string values,
+ * e.g. `{"Helicone-Auth": "Bearer sk-...", "X-Proxy-Tag": "codebuddy"}`.
+ * Transport-managed headers are dropped (warned once); invalid JSON or a
+ * non-object disables the feature with a warning rather than failing chat.
+ */
+export function resolveLlmExtraHeaders(
+  raw: string | undefined = process.env.CODEBUDDY_LLM_EXTRA_HEADERS,
+): Record<string, string> | undefined {
+  if (!raw || !raw.trim()) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    logger.warn('CODEBUDDY_LLM_EXTRA_HEADERS is not valid JSON; ignoring');
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    logger.warn('CODEBUDDY_LLM_EXTRA_HEADERS must be a JSON object of string values; ignoring');
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== 'string' || !key.trim()) continue;
+    if (FORBIDDEN_EXTRA_HEADERS.has(key.trim().toLowerCase())) {
+      logger.warn(`CODEBUDDY_LLM_EXTRA_HEADERS: dropping transport-managed header "${key}"`);
+      continue;
+    }
+    out[key.trim()] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export class OpenAICompatProvider implements Provider {
   private client: OpenAI;
   private apiKey: string;
@@ -124,10 +165,12 @@ export class OpenAICompatProvider implements Provider {
     this.currentModel = opts.model;
     this.defaultMaxTokens = opts.defaultMaxTokens;
     this.getCircuitBreakerConfig = opts.getCircuitBreakerConfig;
+    const extraHeaders = resolveLlmExtraHeaders();
     this.client = new OpenAI({
       apiKey: this.apiKey,
       baseURL: this.baseURL,
       timeout: 360000,
+      ...(extraHeaders ? { defaultHeaders: extraHeaders } : {}),
     });
   }
 
