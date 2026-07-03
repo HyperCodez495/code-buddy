@@ -15,6 +15,8 @@ interface PRComposerProps {
   onClose: () => void;
 }
 
+type PRPhase = 'lint' | 'pr' | null;
+
 export function PRComposer({ onClose }: PRComposerProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -23,8 +25,15 @@ export function PRComposer({ onClose }: PRComposerProps) {
   const [draft, setDraft] = useState(false);
   const [runLint, setRunLint] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<PRPhase>(null);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Live agent draft (lint fix + PR body) streams onto the session's
+  // partialMessage — surface its tail instead of an opaque spinner.
+  const partial = useAppStore((s) =>
+    activeSessionId ? (s.sessionStates[activeSessionId]?.partialMessage ?? '') : ''
+  );
+  const liveTail = submitting && partial ? partial.slice(-600) : '';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -49,8 +58,10 @@ export function PRComposer({ onClose }: PRComposerProps) {
     }
     try {
       if (runLint) {
+        setPhase('lint');
         await api('lint', ['fix'], activeSessionId ?? undefined);
       }
+      setPhase('pr');
       const args = [title.trim()];
       if (draft) args.push('--draft');
       if (body.trim()) args.push('--body', body.trim());
@@ -64,8 +75,16 @@ export function PRComposer({ onClose }: PRComposerProps) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
+      setPhase(null);
     }
   };
+
+  const phaseLabel =
+    phase === 'lint'
+      ? t('pr.phaseLint', 'Running /lint fix…')
+      : phase === 'pr'
+        ? t('pr.phaseDrafting', 'Drafting the pull request…')
+        : t('pr.opening', 'Opening PR…');
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" data-testid="pr-composer">
@@ -111,6 +130,19 @@ export function PRComposer({ onClose }: PRComposerProps) {
             </label>
           </div>
           {error && <p className="text-[11px] text-error">{error}</p>}
+          {submitting && liveTail && (
+            <div
+              className="max-h-40 overflow-y-auto rounded-md border border-border-subtle bg-surface-muted p-2"
+              data-testid="pr-draft-stream"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">
+                {phaseLabel}
+              </div>
+              <pre className="text-[11px] font-mono whitespace-pre-wrap break-words text-text-secondary">
+                {liveTail}
+              </pre>
+            </div>
+          )}
           <button
             type="button"
             onClick={submit}
@@ -119,7 +151,7 @@ export function PRComposer({ onClose }: PRComposerProps) {
             data-testid="pr-submit"
           >
             {submitting && <Loader2 size={14} className="animate-spin" />}
-            {submitting ? t('pr.opening', 'Opening PR…') : t('pr.open', 'Open PR')}
+            {submitting ? phaseLabel : t('pr.open', 'Open PR')}
           </button>
         </div>
       </div>
