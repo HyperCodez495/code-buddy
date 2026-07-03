@@ -111,13 +111,14 @@ PLANNING (Persistent State):
   - Actions: "init" (start new plan), "read" (view status), "append" (add step), "update" (mark step).
 
 WEB ACCESS:
-- web_search: Search the web for current information (weather, news, documentation, general queries)
+- web_search: Search the web for current information (news, documentation, general queries)
 - web_fetch: Fetch content from URLs
+- weather: Current weather and forecast for a city (real data, no API key)
 
 EXECUTION & SCRIPTING (CodeAct):
 - run_script: Execute Python/Node.js/Shell scripts in a secure sandbox. Use this for complex logic, data processing, or browser automation (Playwright).
 
-IMPORTANT: Use web_search for ANY query requiring external/current information (weather, news, prices, etc.)
+IMPORTANT: Use the weather tool for weather/forecast questions. Use web_search for ANY other query requiring external/current information (news, prices, etc.)
 </available_tools>
 
 <tool_usage_rules>

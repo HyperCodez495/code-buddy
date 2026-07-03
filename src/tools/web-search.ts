@@ -746,59 +746,15 @@ export class WebSearchTool {
     return lines.join('\n');
   }
 
-  private isWeatherQuery(query: string): boolean {
-    const weatherKeywords = ['météo', 'meteo', 'weather', 'température', 'temperature', 'forecast', 'prévisions'];
-    const q = query.toLowerCase();
-    return weatherKeywords.some(kw => q.includes(kw));
-  }
-
-  private getWeatherEmoji(text: string): string {
-    const t = text.toLowerCase();
-    if (t.includes('soleil') || t.includes('sunny') || t.includes('ensoleillé')) return '☀️';
-    if (t.includes('pluie') || t.includes('rain') || t.includes('averse')) return '🌧️';
-    if (t.includes('nuage') || t.includes('cloud') || t.includes('couvert')) return '☁️';
-    if (t.includes('neige') || t.includes('snow')) return '❄️';
-    if (t.includes('orage') || t.includes('thunder') || t.includes('storm')) return '⛈️';
-    if (t.includes('brouillard') || t.includes('fog')) return '🌫️';
-    if (t.includes('vent') || t.includes('wind')) return '💨';
-    if (t.includes('éclaircies') || t.includes('partly')) return '⛅';
-    return '🌡️';
-  }
-
-  private formatWeatherResults(results: SearchResult[], query: string): string {
-    const lines: string[] = [];
-    const location = query.replace(/météo|meteo|weather/gi, '').trim();
-    lines.push(`\n🌍 Météo ${location || 'actuelle'}`);
-    lines.push('═'.repeat(40));
-    lines.push('');
-
-    for (const result of results.slice(0, 4)) {
-      const emoji = this.getWeatherEmoji(result.snippet);
-      if (!result.url && result.snippet) {
-        lines.push(`${emoji} ${result.title}: ${result.snippet}`);
-        lines.push('');
-      } else if (result.url) {
-        lines.push(`${emoji} **${result.title}**`);
-        if (result.snippet) {
-          const cleanSnippet = result.snippet.replace(/·/g, '|').replace(/\s+/g, ' ').trim();
-          lines.push(`   ${cleanSnippet}`);
-        }
-        lines.push(`   🔗 ${result.url}`);
-        lines.push('');
-      }
-    }
-
-    lines.push('─'.repeat(40));
-    return lines.join('\n');
-  }
+  // NOTE: the old hardcoded weather presentation (isWeatherQuery/
+  // getWeatherEmoji/formatWeatherResults — a French card faked from generic
+  // search results, with no weather data behind it) was removed 2026-07-03.
+  // Weather questions are served by the dedicated `weather` tool (real
+  // Open-Meteo data); weather-ish searches now get normal result formatting.
 
   private formatResults(results: SearchResult[], query: string): string {
     // Apply domain policy filter (Codex-inspired allowlist/denylist)
     const filtered = results.filter(r => !r.url || isDomainAllowed(r.url));
-
-    if (this.isWeatherQuery(query)) {
-      return this.formatWeatherResults(filtered, query);
-    }
 
     results = filtered;
     const lines: string[] = [];

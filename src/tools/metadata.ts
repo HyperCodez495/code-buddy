@@ -211,9 +211,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'web_search',
     category: 'web',
-    keywords: ['search', 'google', 'web', 'internet', 'online', 'latest', 'news', 'documentation', 'docs', 'how to', 'weather', 'météo', 'meteo', 'forecast', 'temperature', 'info', 'find', 'lookup'],
+    keywords: ['search', 'google', 'web', 'internet', 'online', 'latest', 'news', 'documentation', 'docs', 'how to', 'info', 'find', 'lookup'],
     priority: 8,
-    description: 'Search the web for information including weather, news, documentation, and general queries',
+    description: 'Search the web for information including news, documentation, and general queries',
     fleetSafe: true,
   },
   {
