@@ -125,7 +125,7 @@ import { SessionInsightsBridge } from './session/session-insights-bridge';
 import { ActivityFeed } from './activity/activity-feed';
 import { BookmarksService } from './bookmarks/bookmarks-service';
 import { registerSnippetsIpcHandlers } from './ipc/snippets-ipc';
-import { getCustomCommandsService } from './commands/custom-commands-service';
+import { registerCustomCommandsIpcHandlers } from './ipc/custom-commands-ipc';
 import {
   getWorkspacePresetsService,
   type WorkspacePreset,
@@ -5947,33 +5947,7 @@ ipcMain.handle('audit.exportCsv', async (_event, filter?: Record<string, unknown
 });
 
 // Custom slash commands — Claude Cowork parity Phase 3 step 6
-ipcMain.handle('customCommands.list', async () => {
-  try {
-    return getCustomCommandsService().list();
-  } catch (err) {
-    logError('[customCommands.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle(
-  'customCommands.save',
-  async (_event, cmd: { name: string; description: string; body: string }) => {
-    try {
-      return getCustomCommandsService().save(cmd);
-    } catch (err) {
-      return { success: false, error: (err as Error).message };
-    }
-  }
-);
-
-ipcMain.handle('customCommands.delete', async (_event, name: string) => {
-  try {
-    return getCustomCommandsService().delete(name);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
+registerCustomCommandsIpcHandlers();
 
 // Snippets / prompt library — Claude Cowork parity Phase 3 step 5
 registerSnippetsIpcHandlers();
