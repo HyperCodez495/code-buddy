@@ -134,6 +134,7 @@ import { registerA2aIpcHandlers } from './ipc/a2a-ipc';
 import { registerCkgIpcHandlers } from './ipc/ckg-ipc';
 import { registerAuditIpcHandlers } from './ipc/audit-ipc';
 import { registerPersonaIpcHandlers } from './ipc/persona-ipc';
+import { registerSessionInsightsIpcHandlers } from './ipc/session-insights-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -3857,72 +3858,7 @@ ipcMain.handle('sessions.searchContent', async (_event, query: string, limit?: n
   }
 });
 
-ipcMain.handle('sessionInsights.list', async (_event, limit?: number) => {
-  try {
-    return sessionInsightsBridge?.list(limit ?? 100) ?? [];
-  } catch (err) {
-    logError('[sessionInsights.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('sessionInsights.search', async (_event, query: string, limit?: number) => {
-  try {
-    return sessionInsightsBridge?.search(query ?? '', limit ?? 50) ?? [];
-  } catch (err) {
-    logError('[sessionInsights.search] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('sessionInsights.detail', async (_event, sessionId: string) => {
-  try {
-    return sessionInsightsBridge?.getDetail(sessionId) ?? null;
-  } catch (err) {
-    logError('[sessionInsights.detail] failed:', err);
-    return null;
-  }
-});
-
-ipcMain.handle(
-  'sessionInsights.recallPrefill',
-  async (
-    _event,
-    prompt: string,
-    options?: {
-      currentSessionId?: string;
-      cwd?: string;
-      limit?: number;
-      maxChars?: number;
-      perSessionMaxChars?: number;
-    }
-  ) => {
-    try {
-      return sessionInsightsBridge?.getRecallPrefill(prompt ?? '', options ?? {}) ?? null;
-    } catch (err) {
-      logError('[sessionInsights.recallPrefill] failed:', err);
-      return null;
-    }
-  }
-);
-
-ipcMain.handle('sessionInsights.audit', async (_event, sessionId: string) => {
-  try {
-    return sessionInsightsBridge?.getAudit(sessionId) ?? null;
-  } catch (err) {
-    logError('[sessionInsights.audit] failed:', err);
-    return null;
-  }
-});
-
-ipcMain.handle('sessionInsights.repair', async (_event, sessionId: string) => {
-  try {
-    return sessionInsightsBridge?.repair(sessionId) ?? null;
-  } catch (err) {
-    logError('[sessionInsights.repair] failed:', err);
-    return null;
-  }
-});
+registerSessionInsightsIpcHandlers({ getSessionInsightsBridge: () => sessionInsightsBridge });
 
 // Workflow editor — Claude Cowork parity Phase 2 step 15
 ipcMain.handle('workflow.list', async () => {
