@@ -81,6 +81,7 @@ JavaScript:
 - get_content: Get page HTML content
 - extract: Extract compact page state with URL/title/headings/actions/links/text
 - assert_text: Assert expected text is present; failed assertion means failed test
+- network: List/clear captured network failures (failed requests + 4xx/5xx responses)
 - get_url: Get current URL
 - get_title: Get page title
 
@@ -124,7 +125,7 @@ Download:
             'screenshot', 'pdf',
             'get_cookies', 'set_cookie', 'clear_cookies', 'set_headers', 'set_offline',
             'emulate_device', 'set_geolocation',
-            'evaluate', 'get_content', 'extract', 'assert_text', 'get_url', 'get_title',
+            'evaluate', 'get_content', 'extract', 'assert_text', 'network', 'get_url', 'get_title',
             'drag', 'upload_files', 'wait_for_navigation',
             'get_local_storage', 'set_local_storage', 'get_session_storage', 'set_session_storage',
             'add_route_rule', 'remove_route_rule', 'clear_route_rules',
@@ -320,6 +321,12 @@ Download:
         expression: {
           type: 'string',
           description: 'JavaScript code to evaluate in page',
+        },
+        // Network failures (action=network)
+        networkAction: {
+          type: 'string',
+          enum: ['list', 'clear'],
+          description: 'For action=network: list or clear captured network failures (failed requests + 4xx/5xx responses)',
         },
         // Timeout
         timeout: {
@@ -862,7 +869,7 @@ export const WEB_TEST_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "web_test",
-    description: "Test a web page in ONE call and get a structured pass/fail report with evidence: navigation, console errors + page errors, server logs (when the URL is app_server-managed), interactive-element snapshot, screenshot, and your declarative assertions. ALWAYS run this after building or changing a web UI — a report with failures is a successful run you must read and fix, then re-run.",
+    description: "Test a web page in ONE call and get a structured pass/fail report with evidence: navigation, console errors + page errors, failed network requests (refused connections + 4xx/5xx API responses — catches a UI that renders but whose API calls fail), server logs (when the URL is app_server-managed), interactive-element snapshot, screenshot, and your declarative assertions. ALWAYS run this after building or changing a web UI — a report with failures is a successful run you must read and fix, then re-run.",
     parameters: {
       type: "object",
       properties: {
@@ -889,6 +896,10 @@ export const WEB_TEST_TOOL: CodeBuddyTool = {
         allowConsoleErrors: {
           type: "boolean",
           description: "Do not fail on console/page errors (default false)"
+        },
+        allowNetworkErrors: {
+          type: "boolean",
+          description: "Do not fail on failed network requests / 4xx-5xx responses (default false)"
         }
       },
       required: ["url"]

@@ -71,6 +71,7 @@ export type BrowserAction =
   | 'assert_text'
   | 'get_images'
   | 'console'
+  | 'network'
   | 'dialog'
   // Info
   | 'get_url'
@@ -176,6 +177,8 @@ export interface BrowserToolInput {
   // Console
   consoleAction?: 'list' | 'clear';
   consoleType?: string;
+  // Network failures
+  networkAction?: 'list' | 'clear';
   // Browser dialog
   dialogAction?: 'list' | 'accept' | 'dismiss';
   dialogId?: string;
@@ -452,6 +455,8 @@ export class BrowserTool {
           return this.getImages(input);
         case 'console':
           return this.consoleHistory(input);
+        case 'network':
+          return this.networkFailures(input);
         case 'dialog':
           return this.dialog(input);
 
@@ -1257,6 +1262,44 @@ export class BrowserTool {
         return `[${when}] ${entry.type}${location}: ${entry.text}`;
       }).join('\n'),
       data: { entries },
+    };
+  }
+
+  private async networkFailures(input: BrowserToolInput): Promise<ToolResult> {
+    const networkAction = input.networkAction ?? 'list';
+
+    if (networkAction === 'clear') {
+      this.manager.clearNetworkFailures();
+      return {
+        success: true,
+        output: 'Browser network failure history cleared.',
+        data: { failures: [] },
+      };
+    }
+
+    if (networkAction !== 'list') {
+      return { success: false, error: `Unknown network action: ${networkAction}` };
+    }
+
+    const failures = this.manager.getNetworkFailures(input.limit);
+    if (failures.length === 0) {
+      return {
+        success: true,
+        output: 'No browser network failures.',
+        data: { failures },
+      };
+    }
+
+    return {
+      success: true,
+      output: failures.map((failure) => {
+        const when = failure.timestamp instanceof Date ? failure.timestamp.toISOString() : String(failure.timestamp);
+        const detail = failure.kind === 'httperror'
+          ? `HTTP ${failure.status}`
+          : (failure.errorText || 'request failed');
+        return `[${when}] ${failure.method} ${failure.url} → ${detail}`;
+      }).join('\n'),
+      data: { failures },
     };
   }
 

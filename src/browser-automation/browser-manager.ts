@@ -38,6 +38,7 @@ import {
   BrowserConfig,
   DEFAULT_BROWSER_CONFIG,
   ConsoleEntry,
+  NetworkFailure,
   RouteRule,
   ExtendedDeviceConfig,
 } from './types.js';
@@ -45,8 +46,8 @@ import {
 // Playwright types (lazy loaded) - structural shapes for type safety without importing playwright
 interface PlaywrightDialog { type(): string; message(): string; defaultValue(): string; accept(text?: string): Promise<void>; dismiss(): Promise<void>; }
 interface PlaywrightConsoleMessage { type(): string; text(): string; }
-interface PlaywrightRequest { url(): string; method(): string; headers(): Record<string, string>; postData(): string | null; resourceType(): string; }
-interface PlaywrightResponse { url(): string; status(): number; statusText(): string; headers(): Record<string, string>; }
+interface PlaywrightRequest { url(): string; method(): string; headers(): Record<string, string>; postData(): string | null; resourceType(): string; failure?(): { errorText: string } | null; }
+interface PlaywrightResponse { url(): string; status(): number; statusText(): string; headers(): Record<string, string>; request(): PlaywrightRequest; }
 interface AccessibilityNode {
   role: string;
   name: string;
@@ -92,6 +93,11 @@ export class BrowserManager extends EventEmitter {
   // Console history buffer
   private consoleBuffer: ConsoleEntry[] = [];
   private static readonly MAX_CONSOLE_ENTRIES = 500;
+
+  // Network failure buffer — failed requests + >= 400 HTTP responses. The
+  // network face of a bug (a UI that renders but whose API calls fail).
+  private networkFailures: NetworkFailure[] = [];
+  private static readonly MAX_NETWORK_FAILURES = 200;
 
   // Leak guard: every launched manager is tracked so a process signal can close
   // the underlying Chromium (and its temp profile) instead of leaking it. The
@@ -306,6 +312,25 @@ export class BrowserManager extends EventEmitter {
       });
     });
 
+    // Requests that never completed (connection refused, DNS failure, aborted,
+    // CORS-blocked). Chromium surfaces CORS blocks as a generic requestfailed,
+    // so errorText (e.g. net::ERR_FAILED) is the best signal available.
+    page.on('requestfailed', (request: PlaywrightRequest) => {
+      let errorText: string | undefined;
+      let resourceType: string | undefined;
+      try { errorText = request.failure?.()?.errorText ?? undefined; } catch { /* best-effort */ }
+      try { resourceType = request.resourceType(); } catch { /* best-effort */ }
+      this.pushNetworkFailure({
+        kind: 'requestfailed',
+        url: request.url(),
+        method: request.method(),
+        errorText,
+        resourceType,
+        timestamp: new Date(),
+        pageId,
+      });
+    });
+
     page.on('response', (response: PlaywrightResponse) => {
       this.emit('network-response', {
         url: response.url(),
@@ -315,6 +340,22 @@ export class BrowserManager extends EventEmitter {
         mimeType: response.headers()['content-type'] || '',
         timestamp: Date.now(),
       });
+
+      // HTTP error responses (4xx/5xx) are the other network face of a bug: the
+      // request completed but the server rejected it.
+      const status = response.status();
+      if (status >= 400) {
+        let method = '';
+        try { method = response.request().method(); } catch { /* best-effort */ }
+        this.pushNetworkFailure({
+          kind: 'httperror',
+          url: response.url(),
+          method,
+          status,
+          timestamp: new Date(),
+          pageId,
+        });
+      }
     });
   }
 
@@ -1561,6 +1602,31 @@ export class BrowserManager extends EventEmitter {
     this.consoleBuffer.push(entry);
     if (this.consoleBuffer.length > BrowserManager.MAX_CONSOLE_ENTRIES) {
       this.consoleBuffer.splice(0, this.consoleBuffer.length - BrowserManager.MAX_CONSOLE_ENTRIES);
+    }
+  }
+
+  // ============================================================================
+  // Network Failure History
+  // ============================================================================
+
+  /**
+   * Get captured network failures (failed requests + >= 400 responses).
+   */
+  getNetworkFailures(limit?: number): NetworkFailure[] {
+    return limit ? this.networkFailures.slice(-limit) : [...this.networkFailures];
+  }
+
+  /**
+   * Clear the network failure buffer.
+   */
+  clearNetworkFailures(): void {
+    this.networkFailures = [];
+  }
+
+  private pushNetworkFailure(failure: NetworkFailure): void {
+    this.networkFailures.push(failure);
+    if (this.networkFailures.length > BrowserManager.MAX_NETWORK_FAILURES) {
+      this.networkFailures.splice(0, this.networkFailures.length - BrowserManager.MAX_NETWORK_FAILURES);
     }
   }
 

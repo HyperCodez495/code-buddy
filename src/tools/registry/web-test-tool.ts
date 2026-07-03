@@ -33,6 +33,14 @@ interface ConsoleEntry {
   text: string;
 }
 
+interface NetworkFailureEntry {
+  kind: 'requestfailed' | 'httperror';
+  url: string;
+  method: string;
+  status?: number;
+  errorText?: string;
+}
+
 export class WebTestTool implements ITool {
   readonly name = 'web_test';
   readonly description =
@@ -47,6 +55,7 @@ export class WebTestTool implements ITool {
     const assertions = (input.assertions as WebTestAssertion[] | undefined) ?? [];
     const wantScreenshot = input.screenshot !== false;
     const allowConsoleErrors = input.allowConsoleErrors === true;
+    const allowNetworkErrors = input.allowNetworkErrors === true;
 
     const checks: CheckResult[] = [];
     const push = (name: string, passed: boolean, detail: string) => checks.push({ name, passed, detail });
@@ -58,11 +67,12 @@ export class WebTestTool implements ITool {
       return { success: false, error: `Browser launch failed: ${launched.error}` };
     }
     await this.consoleTool.execute({ action: 'clear' }).catch(() => {});
+    await this.browser.execute({ action: 'network', networkAction: 'clear' }).catch(() => {});
 
     const navigated = await this.browser.execute({ action: 'navigate', url, waitUntil: 'load' });
     push('navigation', navigated.success, navigated.success ? `loaded ${url}` : navigated.error ?? 'failed');
     if (!navigated.success) {
-      return this.report(url, checks, { consoleEntries: [], serverLogs: await this.serverLogsFor(url) });
+      return this.report(url, checks, { consoleEntries: [], networkFailures: [], serverLogs: await this.serverLogsFor(url) });
     }
 
     // Give late console errors (async boot code) a beat to land.
@@ -75,6 +85,17 @@ export class WebTestTool implements ITool {
       'console',
       allowConsoleErrors || errors.length === 0,
       errors.length === 0 ? 'no console/page errors' : `${errors.length} error(s): ${errors.map((e) => e.text).slice(0, 5).join(' | ')}`,
+    );
+
+    // 2b. Network oracle: failed requests + >= 400 responses. A page can render
+    //     fine while its API calls silently fail — a major bug oracle.
+    const networkFailures = await this.readNetwork();
+    push(
+      'network',
+      allowNetworkErrors || networkFailures.length === 0,
+      networkFailures.length === 0
+        ? 'no failed requests'
+        : `${networkFailures.length} request(s) failed: ${networkFailures.map((f) => this.describeFailure(f)).slice(0, 5).join(' | ')}`,
     );
 
     // 3. Declarative assertions, each with its own evidence line.
@@ -99,7 +120,7 @@ export class WebTestTool implements ITool {
     // 6. Server face of the bug, when we manage this origin.
     const serverLogs = await this.serverLogsFor(url);
 
-    return this.report(url, checks, { consoleEntries, serverLogs, snapshotSummary, screenshotPath });
+    return this.report(url, checks, { consoleEntries, networkFailures, serverLogs, snapshotSummary, screenshotPath });
   }
 
   private async readConsole(): Promise<ConsoleEntry[]> {
@@ -107,6 +128,21 @@ export class WebTestTool implements ITool {
     if (!listed.success) return [];
     const entries = (listed.data as { entries?: ConsoleEntry[] } | undefined)?.entries;
     return entries ?? [];
+  }
+
+  private async readNetwork(): Promise<NetworkFailureEntry[]> {
+    const listed = await this.browser.execute({ action: 'network', networkAction: 'list', limit: 50 });
+    if (!listed.success) return [];
+    const failures = (listed.data as { failures?: NetworkFailureEntry[] } | undefined)?.failures;
+    return failures ?? [];
+  }
+
+  private describeFailure(failure: NetworkFailureEntry): string {
+    const method = failure.method || 'GET';
+    if (failure.kind === 'httperror') {
+      return `${method} ${failure.url} → ${failure.status ?? 'error'}`;
+    }
+    return `${method} ${failure.url} → ${failure.errorText || 'request failed'}`;
   }
 
   private async runAssertion(assertion: WebTestAssertion): Promise<{ passed: boolean; detail: string }> {
@@ -136,7 +172,13 @@ export class WebTestTool implements ITool {
   private report(
     url: string,
     checks: CheckResult[],
-    extra: { consoleEntries: ConsoleEntry[]; serverLogs?: string; snapshotSummary?: string; screenshotPath?: string },
+    extra: {
+      consoleEntries: ConsoleEntry[];
+      networkFailures: NetworkFailureEntry[];
+      serverLogs?: string;
+      snapshotSummary?: string;
+      screenshotPath?: string;
+    },
   ): ToolResult {
     const passed = checks.every((check) => check.passed);
     const lines: string[] = [
@@ -145,6 +187,9 @@ export class WebTestTool implements ITool {
     ];
     if (extra.screenshotPath) lines.push(`Screenshot: ${extra.screenshotPath}`);
     if (extra.snapshotSummary) lines.push('', 'Interactive elements:', extra.snapshotSummary);
+    if (extra.networkFailures.length > 0) {
+      lines.push('', 'Failed network requests:', ...extra.networkFailures.slice(0, 10).map((f) => `- ${this.describeFailure(f)}`));
+    }
     if (extra.serverLogs) lines.push('', 'Server logs (app_server):', extra.serverLogs);
     if (!passed) lines.push('', 'Fix the failures above, then re-run web_test to verify.');
 
@@ -158,6 +203,8 @@ export class WebTestTool implements ITool {
         url,
         checks,
         consoleErrorCount: extra.consoleEntries.filter((e) => e.type === 'error' || e.type === 'pageerror').length,
+        networkFailureCount: extra.networkFailures.length,
+        networkFailures: extra.networkFailures,
         screenshotPath: extra.screenshotPath,
       },
     };
@@ -193,6 +240,10 @@ export class WebTestTool implements ITool {
           allowConsoleErrors: {
             type: 'boolean',
             description: 'Do not fail the test on console/page errors (default false)',
+          },
+          allowNetworkErrors: {
+            type: 'boolean',
+            description: 'Do not fail the test on failed network requests / >= 400 responses (default false)',
           },
         },
         required: ['url'],

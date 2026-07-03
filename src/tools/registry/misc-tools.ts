@@ -94,7 +94,7 @@ const BROWSER_ACTIONS = [
   'screenshot', 'pdf',
   'get_cookies', 'set_cookie', 'clear_cookies', 'set_headers', 'set_offline',
   'emulate_device', 'set_geolocation',
-  'evaluate', 'get_content', 'extract', 'assert_text', 'get_images', 'console', 'dialog', 'get_url', 'get_title',
+  'evaluate', 'get_content', 'extract', 'assert_text', 'get_images', 'console', 'network', 'dialog', 'get_url', 'get_title',
 ] as const;
 
 /**
@@ -158,6 +158,7 @@ export class BrowserExecuteTool implements ITool {
           visibleOnly: { type: 'boolean', description: 'Only return visible images for action=get_images' },
           consoleAction: { type: 'string', enum: ['list', 'clear'], description: 'Browser console operation for action=console' },
           consoleType: { type: 'string', description: 'Optional console type filter: log, warn, error, info, debug, pageerror' },
+          networkAction: { type: 'string', enum: ['list', 'clear'], description: 'Browser network-failure operation for action=network (failed requests + >= 400 responses)' },
           dialogAction: { type: 'string', enum: ['list', 'accept', 'dismiss'], description: 'Browser dialog operation for action=dialog' },
           dialogId: { type: 'string', description: 'Pending browser dialog id from browser_dialog list or browser snapshot' },
           promptText: { type: 'string', description: 'Text to enter when accepting a prompt dialog' },

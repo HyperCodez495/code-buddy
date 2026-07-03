@@ -338,6 +338,32 @@ export interface NetworkResponse {
   timestamp: number;
 }
 
+/**
+ * A failed network exchange captured on the active page — either a request
+ * that never completed (`requestfailed`: connection refused, DNS failure,
+ * aborted, CORS-blocked, …) or an HTTP response with a client/server error
+ * status (>= 400). This is the network face of a bug: a UI that renders but
+ * whose API calls fail.
+ */
+export interface NetworkFailure {
+  /** 'requestfailed' = the request never completed; 'httperror' = a >= 400 HTTP response. */
+  kind: 'requestfailed' | 'httperror';
+  /** Request URL */
+  url: string;
+  /** HTTP method (GET, POST, …) */
+  method: string;
+  /** HTTP status for kind='httperror' */
+  status?: number;
+  /** Playwright request.failure() errorText for kind='requestfailed' (e.g. net::ERR_CONNECTION_REFUSED) */
+  errorText?: string;
+  /** Resource type (document, fetch, xhr, script, …) when available */
+  resourceType?: string;
+  /** When the failure was captured */
+  timestamp: Date;
+  /** Browser page that produced the entry */
+  pageId?: string;
+}
+
 // ============================================================================
 // JavaScript Execution
 // ============================================================================

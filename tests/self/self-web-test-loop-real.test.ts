@@ -88,13 +88,16 @@ describe('self-test: the app-testing loop tests Code Buddy itself', () => {
     expect(health.output).toContain('Server logs (app_server)');
 
     // Security posture: the dashboard must stay fail-closed without a token.
-    // The 401 response itself logs a browser console error — expected here,
-    // the assertion on the UNAUTHORIZED body is the actual check.
+    // The 401 response itself logs a browser console error AND registers as a
+    // failed network request — both are EXPECTED here (the fail-closed 401 is
+    // the security behavior under test), so we tolerate both; the assertion on
+    // the UNAUTHORIZED body is the actual check.
     const dashboard = await webTest.execute({
       url: `${base}/__codebuddy__/dashboard/`,
       assertions: [{ type: 'text', value: 'UNAUTHORIZED' }],
       screenshot: false,
       allowConsoleErrors: true,
+      allowNetworkErrors: true,
     });
     expect(dashboard.success, dashboard.error).toBe(true);
     expect((dashboard.data as { passed: boolean }).passed).toBe(true);
