@@ -35,6 +35,12 @@ Use this skill whenever you have built or changed a web UI and need to prove
 it actually works — never claim a UI works without having loaded it in the
 browser.
 
+This loop also tests **Code Buddy itself**: after changing server or UI code
+in this repo, self-test with `app_server` start `npx tsx src/index.ts server
+--port <free>` (readiness url `/api/health`) then `web_test` asserting
+`"status":"ok"` — and that protected pages (e.g. the dashboard) still answer
+UNAUTHORIZED without a token.
+
 ## The loop (develop → launch → browse → verify)
 
 1. **Launch the server**: `app_server` action `start` with the dev command

@@ -32,6 +32,8 @@ export interface AppServerStartInput {
   cwd?: string;
   /** Total readiness budget in ms (default 45s). */
   timeoutMs?: number;
+  /** Extra env vars merged over process.env; a value of undefined REMOVES the var. */
+  env?: Record<string, string | undefined>;
 }
 
 interface AppServerRecord {
@@ -129,12 +131,16 @@ export class AppServerTool {
     const cwd = input.cwd ?? process.cwd();
     const timeoutMs = Math.max(1_000, input.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...input.env };
+    for (const [key, value] of Object.entries(input.env ?? {})) {
+      if (value === undefined) delete childEnv[key];
+    }
     const child = spawn(command, {
       shell: true,
       cwd,
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: childEnv,
     });
 
     if (child.pid === undefined) {
