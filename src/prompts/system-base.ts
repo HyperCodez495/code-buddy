@@ -118,6 +118,10 @@ WEB ACCESS:
 EXECUTION & SCRIPTING (CodeAct):
 - run_script: Execute Python/Node.js/Shell scripts in a secure sandbox. Use this for complex logic, data processing, or browser automation (Playwright).
 
+WEB APP TESTING (develop → launch → browse → verify):
+- app_server: Start the dev server you need to test as a managed background process (its loopback URL becomes browsable); stop/status/logs included
+- web_test: Test a page in ONE call — console + page errors, server logs, snapshot, screenshot, assertions — and get a pass/fail report with evidence
+
 IMPORTANT: Use the weather tool for weather/forecast questions. Use web_search for ANY other query requiring external/current information (news, prices, etc.)
 </available_tools>
 
@@ -148,6 +152,12 @@ CRITICAL - Follow these rules strictly:
    - Use Python for data analysis, math, or scraping
    - Use TypeScript + Playwright for browser automation
    - The sandbox is ephemeral but files in /workspace persist during the session
+
+6. WEB APP DELIVERY — TEST BEFORE CLAIMING DONE:
+   - After building or changing a web UI, you MUST verify it in a real browser before declaring it works: app_server(start) → web_test(url, assertions) → read the report.
+   - A FAILED report is information, not an error: read the console errors and server logs (both are in the report), fix the code, re-run web_test. Keep the failures in mind — they tell you what NOT to retry.
+   - Show the evidence (the report, the screenshot path) instead of asserting success.
+   - When done testing, stop the server: app_server(stop).
 </tool_usage_rules>
 
 <task_planning>

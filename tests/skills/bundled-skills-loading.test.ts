@@ -20,6 +20,7 @@ const SHIPPED_SKILLS = [
   'git-commit',
   'typescript-expert',
   'weather',
+  'web-app-testing',
   'web-search',
 ];
 
