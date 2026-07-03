@@ -57,6 +57,9 @@ import { registerMissionIpcHandlers } from './ipc/mission-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
 import { registerSpecNextIpcHandlers } from './ipc/spec-next-ipc';
 import { registerLiveLauncherIpcHandlers } from './ipc/live-launcher-ipc';
+import { registerPermissionIpcHandlers } from './ipc/permission-ipc';
+import { registerConfigModelIpcHandlers } from './ipc/config-model-ipc';
+import { registerLogsIpcHandlers } from './ipc/logs-ipc';
 import {
   createBackupForReview,
   listBackupsForReview,
@@ -187,15 +190,10 @@ import {
   log,
   logWarn,
   logError,
-  getLogFilePath,
-  getLogsDirectory,
-  getAllLogFiles,
   closeLogFile,
   setDevLogsEnabled,
-  isDevLogsEnabled,
 } from './utils/logger';
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
-import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesProviderReadinessForReview } from './tools/hermes-provider-readiness-bridge';
 import {
   getHermesMemoryProvidersForReview,
@@ -281,13 +279,6 @@ import {
   listSkillCandidatesForReview,
 } from './tools/skill-candidate-review-bridge';
 import { buildLessonsVaultPreview } from './tools/lessons-vault-bridge';
-import { getGeminiOauthTokens, clearGeminiCredentials } from '../../../src/providers/gemini-oauth';
-import {
-  loginInteractive as codexLoginInteractive,
-  clearCodexCredentials,
-  getChatGptAuth,
-  hasCodexCredentials,
-} from '../../../src/providers/codex-oauth';
 import Module from 'module';
 import { createRequire } from 'module';
 
@@ -403,20 +394,6 @@ let projectMemoryServiceRef: ProjectMemoryService | null = null;
 let notificationBridge: NotificationBridge | null = null;
 let icmIntegration: ICMIntegration | null = null;
 let taskDispatch: TaskDispatch | null = null;
-
-function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(value);
-    const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
-    return `${parsed.origin}${pathname}`;
-  } catch {
-    return value.replace(/[?#].*$/, '');
-  }
-}
 
 async function resolveScheduledTaskTitle(
   prompt: string,
@@ -2501,114 +2478,11 @@ ipcMain.handle('workspace.readDir', async (_event, dirPath: string) => {
   }
 });
 
-// ── Permission mode IPC handler ───────────────────────────────────────
-ipcMain.handle('permission.setMode', async (_event, mode: string) => {
-  // Never swallow failures here: this is the autonomy/permission POSTURE. A
-  // silently-failed setMode leaves the user believing the mode changed when it
-  // didn't — a false-safety failure. Callers get an honest {ok, error}.
-  try {
-    const enginePath = process.env.CODEBUDDY_ENGINE_PATH;
-    if (!enginePath) {
-      logError('[IPC] permission.setMode failed: CODEBUDDY_ENGINE_PATH not configured');
-      return { ok: false, error: 'engine path not configured' };
-    }
-    const { getPermissionModeManager } = await import(
-      /* webpackIgnore: true */ resolve(enginePath, 'security', 'permission-modes.js')
-    );
-    getPermissionModeManager().setMode(mode);
-    log('[IPC] Permission mode set to:', mode);
-    return { ok: true };
-  } catch (err) {
-    logError('[IPC] permission.setMode failed:', err instanceof Error ? err.message : err);
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-});
+// ── Permission mode IPC handler (see ipc/permission-ipc.ts) ───────────
+registerPermissionIpcHandlers();
 
-// ── Model switch IPC handler ──────────────────────────────────────────
-ipcMain.handle('config.switchModel', async (_event, model: string) => {
-  try {
-    configStore.update({ model });
-    log('[IPC] Model switched to:', model);
-    return true;
-  } catch {
-    return false;
-  }
-});
-
-// ── Gemini OAuth IPC handlers ─────────────────────────────────────────
-ipcMain.handle('config.geminiOauthLogin', async () => {
-  try {
-    const tokens = await getGeminiOauthTokens(true);
-    return { success: true, tokens };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError('[IPC] Gemini OAuth Login failed:', err);
-    return { success: false, error: message };
-  }
-});
-
-ipcMain.handle('config.geminiOauthClear', async () => {
-  try {
-    await clearGeminiCredentials();
-    return { success: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError('[IPC] Gemini OAuth Clear failed:', err);
-    return { success: false, error: message };
-  }
-});
-
-ipcMain.handle('config.codexOauthLogin', async () => {
-  try {
-    const auth = await codexLoginInteractive((url) => { shell.openExternal(url); });
-    return {
-      success: true,
-      email: auth.email ?? null,
-      plan_type: auth.plan_type ?? null,
-      account_id: auth.account_id ?? null,
-      is_fedramp: auth.is_fedramp,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError('[IPC] Codex OAuth Login failed:', err);
-    return { success: false, error: message };
-  }
-});
-
-ipcMain.handle('config.codexOauthClear', async () => {
-  try {
-    clearCodexCredentials();
-    return { success: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError('[IPC] Codex OAuth Clear failed:', err);
-    return { success: false, error: message };
-  }
-});
-
-ipcMain.handle('config.codexOauthStatus', async () => {
-  try {
-    if (!hasCodexCredentials()) {
-      return { success: true, signedIn: false };
-    }
-    const auth = await getChatGptAuth();
-    if (!auth) {
-      return { success: true, signedIn: false, error: 'credentials present but unreadable' };
-    }
-    return {
-      success: true,
-      signedIn: true,
-      email: auth.email ?? null,
-      plan_type: auth.plan_type ?? null,
-      account_id: auth.account_id ?? null,
-      is_fedramp: auth.is_fedramp,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logError('[IPC] Codex OAuth Status failed:', err);
-    return { success: false, error: message };
-  }
-});
+// ── Model switch + Gemini/Codex OAuth IPC handlers (see ipc/config-model-ipc.ts) ──
+registerConfigModelIpcHandlers();
 
 // ── Project IPC handlers (Claude Cowork parity) ──────────────────────
 registerProjectIpcHandlers(
@@ -7205,239 +7079,12 @@ ipcMain.handle('sandbox.installPythonInLima', async () => {
   }
 });
 
-// Logs IPC handlers
-ipcMain.handle('logs.getPath', () => {
-  try {
-    return getLogFilePath();
-  } catch (error) {
-    logError('[Logs] Error getting log path:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('logs.getDirectory', () => {
-  try {
-    return getLogsDirectory();
-  } catch (error) {
-    logError('[Logs] Error getting logs directory:', error);
-    return null;
-  }
-});
-
-ipcMain.handle('logs.getAll', () => {
-  try {
-    return getAllLogFiles();
-  } catch (error) {
-    logError('[Logs] Error getting all log files:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('logs.export', async () => {
-  try {
-    const logFiles = getAllLogFiles();
-    const diagnosticsSummary = buildDiagnosticsSummary({
-      app: {
-        version: app.getVersion(),
-        isPackaged: app.isPackaged,
-        platform: process.platform,
-        arch: process.arch,
-        nodeVersion: process.version,
-        electronVersion: process.versions.electron,
-        chromeVersion: process.versions.chrome,
-      },
-      runtime: {
-        currentWorkingDir,
-        logsDirectory: getLogsDirectory(),
-        logFileCount: logFiles.length,
-        totalLogSizeBytes: logFiles.reduce((total, file) => total + file.size, 0),
-        devLogsEnabled: isDevLogsEnabled(),
-      },
-      config: {
-        provider: configStore.get('provider'),
-        model: configStore.get('model'),
-        baseUrl: sanitizeDiagnosticBaseUrl(configStore.get('baseUrl') || undefined),
-        customProtocol: configStore.get('customProtocol') || null,
-        sandboxEnabled: !!configStore.get('sandboxEnabled'),
-        thinkingEnabled: !!configStore.get('enableThinking'),
-        apiKeyConfigured: !!configStore.get('apiKey'),
-        claudeCodePathConfigured: !!configStore.get('claudeCodePath'),
-        defaultWorkdir: configStore.get('defaultWorkdir') || null,
-        globalSkillsPathConfigured: !!configStore.get('globalSkillsPath'),
-      },
-      sandbox: {
-        mode: getSandboxAdapter().mode,
-        initialized: getSandboxAdapter().initialized,
-      },
-      sessions: sessionManager ? sessionManager.listSessions() : [],
-      logFiles,
-      deps: {
-        getMessages: (sessionId: string) =>
-          sessionManager ? sessionManager.getMessages(sessionId) : [],
-        getTraceSteps: (sessionId: string) =>
-          sessionManager ? sessionManager.getTraceSteps(sessionId) : [],
-      },
-    });
-
-    // Show save dialog
-    const result = await dialog.showSaveDialog(mainWindow!, {
-      title: 'Export Logs',
-      defaultPath: `opencowork-logs-${new Date().toISOString().split('T')[0]}.zip`,
-      filters: [
-        { name: 'ZIP Archive', extensions: ['zip'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: 'User cancelled' };
-    }
-
-    // Dynamic import archiver
-    const archiver = await import('archiver');
-    const output = fs.createWriteStream(result.filePath);
-    const archive = archiver.default('zip', { zlib: { level: 9 } });
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const settle = (value: {
-        success: boolean;
-        path?: string;
-        size?: number;
-        error?: string;
-      }) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        resolve(value);
-      };
-
-      output.on('close', () => {
-        log('[Logs] Exported logs to:', result.filePath);
-        settle({
-          success: true,
-          path: result.filePath,
-          size: archive.pointer(),
-        });
-      });
-
-      output.on('error', (err: Error) => {
-        logError('[Logs] Error writing exported archive:', err);
-        settle({ success: false, error: err.message });
-      });
-
-      archive.on('error', (err: Error) => {
-        logError('[Logs] Error creating archive:', err);
-        settle({ success: false, error: err.message });
-      });
-
-      archive.pipe(output);
-
-      // Add all log files
-      for (const logFile of logFiles) {
-        archive.file(logFile.path, { name: logFile.name });
-      }
-
-      // Add system info
-      const systemInfo = {
-        platform: process.platform,
-        arch: process.arch,
-        nodeVersion: process.version,
-        electronVersion: process.versions.electron,
-        appVersion: app.getVersion(),
-        exportDate: new Date().toISOString(),
-        logFiles: logFiles.map((f) => ({
-          name: f.name,
-          size: f.size,
-          modified: f.mtime,
-        })),
-      };
-      archive.append(JSON.stringify(systemInfo, null, 2), { name: 'system-info.json' });
-      archive.append(JSON.stringify(diagnosticsSummary, null, 2), {
-        name: 'diagnostics-summary.json',
-      });
-      archive.append(
-        [
-          `${APP_NAME} diagnostic bundle`,
-          `Exported at: ${diagnosticsSummary.exportedAt}`,
-          '',
-          'Included files:',
-          '- Application log files (*.log)',
-          '- system-info.json',
-          '- diagnostics-summary.json',
-          '',
-          'diagnostics-summary.json contains a redacted runtime/config snapshot,',
-          'plus metadata-only session summaries and recent error traces to speed up debugging.',
-        ].join('\n'),
-        { name: 'README.txt' }
-      );
-
-      archive.finalize();
-    });
-  } catch (error) {
-    logError('[Logs] Error exporting logs:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.open', async () => {
-  try {
-    const logsDir = getLogsDirectory();
-    await shell.openPath(logsDir);
-    return { success: true };
-  } catch (error) {
-    logError('[Logs] Error opening logs directory:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.clear', async () => {
-  try {
-    const logFiles = getAllLogFiles();
-
-    // Close current log file
-    closeLogFile();
-
-    // Delete all log files
-    for (const logFile of logFiles) {
-      try {
-        fs.unlinkSync(logFile.path);
-        log('[Logs] Deleted log file:', logFile.name);
-      } catch (err) {
-        logError('[Logs] Failed to delete log file:', logFile.name, err);
-      }
-    }
-
-    // Log will automatically reinitialize on next log call
-    log('[Logs] Log files cleared and reinitialized');
-
-    return { success: true, deletedCount: logFiles.length };
-  } catch (error) {
-    logError('[Logs] Error clearing logs:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.setEnabled', async (_event, enabled: boolean) => {
-  try {
-    setDevLogsEnabled(enabled);
-    configStore.set('enableDevLogs', enabled);
-    log('[Logs] Developer logs', enabled ? 'enabled' : 'disabled');
-    return { success: true, enabled };
-  } catch (error) {
-    logError('[Logs] Error setting dev logs enabled:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-ipcMain.handle('logs.isEnabled', () => {
-  try {
-    return { success: true, enabled: isDevLogsEnabled() };
-  } catch (error) {
-    logError('[Logs] Error getting dev logs enabled:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-  }
+// Logs IPC handlers (see ipc/logs-ipc.ts)
+registerLogsIpcHandlers({
+  appName: APP_NAME,
+  getMainWindow: () => mainWindow,
+  getSessionManager: () => sessionManager,
+  getCurrentWorkingDir: () => currentWorkingDir,
 });
 
 // ============================================================================
