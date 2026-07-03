@@ -5,6 +5,7 @@ export const WorkflowProPanel: React.FC = () => {
   const [status, setStatus] = useState<{ running: boolean; port: number }>({ running: false, port: 8080 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bootLog, setBootLog] = useState<string[]>([]);
 
   const checkStatus = async () => {
     try {
@@ -21,9 +22,31 @@ export const WorkflowProPanel: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // While starting, poll the server's boot log so the panel streams progress
+  // (npm boot lines) instead of a blind "Starting…" spinner.
+  useEffect(() => {
+    if (!loading || !window.electronAPI.workflowBuilder.logs) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await window.electronAPI.workflowBuilder.logs(50);
+        if (!cancelled) setBootLog(res.lines);
+      } catch {
+        // ignore transient errors
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 600);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [loading]);
+
   const handleStart = async () => {
     setLoading(true);
     setError(null);
+    setBootLog([]);
     try {
       const res = await window.electronAPI.workflowBuilder.start();
       if (!res.success) setError(res.error || 'Failed to start WorkflowBuilder');
@@ -102,6 +125,16 @@ export const WorkflowProPanel: React.FC = () => {
             title="WorkflowBuilder Pro"
             allow="clipboard-read; clipboard-write"
           />
+        ) : loading && bootLog.length > 0 ? (
+          <div className="absolute inset-0 flex flex-col p-4" data-testid="workflow-boot-log">
+            <div className="flex items-center gap-2 mb-2 text-text-secondary text-sm">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Starting WorkflowBuilder…
+            </div>
+            <pre className="flex-1 overflow-auto text-[11px] font-mono text-text-muted bg-surface rounded-md border border-border p-2 whitespace-pre-wrap break-words">
+              {bootLog.join('\n')}
+            </pre>
+          </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted">
             <Server className="w-16 h-16 mb-4 opacity-20" />

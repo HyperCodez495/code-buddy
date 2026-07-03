@@ -293,7 +293,12 @@ export function ClawMigrationDialog({ onClose }: ClawMigrationDialogProps) {
                   type="button"
                 >
                   {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                  {t('claw.confirmRun', 'Confirm — write changes')}
+                  {running
+                    ? t('claw.migrating', 'Migrating {{import}} import · {{archive}} archive…', {
+                        import: grouped.import.length,
+                        archive: grouped.archive.length,
+                      })
+                    : t('claw.confirmRun', 'Confirm — write changes')}
                 </button>
               ) : (
                 <button

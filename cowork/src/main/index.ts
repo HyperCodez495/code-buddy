@@ -2889,6 +2889,7 @@ import { WorkflowService } from './workflow-service';
 ipcMain.handle('workflow.start', async () => await WorkflowService.start());
 ipcMain.handle('workflow.stop', async () => await WorkflowService.stop());
 ipcMain.handle('workflow.status', () => WorkflowService.status());
+ipcMain.handle('workflow.logs', (_e, limit?: number) => WorkflowService.logs(limit));
 
 ipcMain.handle(
   'session.exportToFile',

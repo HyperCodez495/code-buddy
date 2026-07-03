@@ -385,6 +385,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('workflow.start'),
     stop: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('workflow.stop'),
     status: (): Promise<{ running: boolean; port: number }> => ipcRenderer.invoke('workflow.status'),
+    logs: (limit?: number): Promise<{ lines: string[] }> => ipcRenderer.invoke('workflow.logs', limit),
   },
 
   // Window control methods
@@ -4537,6 +4538,7 @@ declare global {
         start: () => Promise<{ success: boolean; error?: string }>;
         stop: () => Promise<{ success: boolean; error?: string }>;
         status: () => Promise<{ running: boolean; port: number }>;
+        logs: (limit?: number) => Promise<{ lines: string[] }>;
       };
       window: {
         minimize: () => void;
