@@ -68,6 +68,7 @@ import {
 } from './tools/backup-bridge';
 import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
 import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-ipc';
+import { registerWorkflowServiceIpcHandlers } from './ipc/workflow-service-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -2885,11 +2886,7 @@ ipcMain.handle(
   }
 );
 
-import { WorkflowService } from './workflow-service';
-ipcMain.handle('workflow.start', async () => await WorkflowService.start());
-ipcMain.handle('workflow.stop', async () => await WorkflowService.stop());
-ipcMain.handle('workflow.status', () => WorkflowService.status());
-ipcMain.handle('workflow.logs', (_e, limit?: number) => WorkflowService.logs(limit));
+registerWorkflowServiceIpcHandlers();
 
 ipcMain.handle(
   'session.exportToFile',
