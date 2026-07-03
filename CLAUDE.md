@@ -197,6 +197,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 | `YOLO_MODE` / `MAX_COST` | Full autonomy ($10 default, $100 YOLO) |
 | `JWT_SECRET` | Required in production for API server |
 | `OLLAMA_HOST` / `VLLM_BASE_URL` | Bundled provider auto-detect |
+| `CODEBUDDY_BROWSER_DEV_ORIGINS` | csv of extra **loopback-only** origins the agent browser may visit (e.g. `http://localhost:5173`); non-loopback entries are rejected loudly. Normal path: the `app_server` tool registers/unregisters the origin of the dev server it spawned (port must be free pre-spawn — never adopts a pre-existing service). `src/security/dev-origins.ts`; `web_test` is the one-call verify report (console+page errors, server logs, snapshot, screenshot, assertions) |
 | `CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT` | **Required to enable** `peer.tool.invoke` — fail-closed when unset |
 | `CODEBUDDY_PEER_TOOL_ALLOWLIST` | csv override for default `view_file,list_directory,search` |
 | `CODEBUDDY_PEER_SESSION_IDLE_MS` / `CODEBUDDY_PEER_MAX_DEPTH` / `CODEBUDDY_PEER_ROLE` | Fleet limits |
