@@ -7,6 +7,7 @@
 import D3Node from 'd3-node';
 import type { ChartOptions, PieChartData, CandlestickData } from './types.js';
 import { DEFAULT_CHART_OPTIONS, formatNumber } from './types.js';
+import type { WeatherCondition } from '../weather-conditions.js';
 
 /** Slice data structure for pie chart */
 interface PieSlice {
@@ -261,8 +262,13 @@ export function generateCandlestickChartSVG(data: CandlestickData, options: Char
 
 /**
  * Generate a weather icon.
+ *
+ * Canonical condition vocabulary: `src/renderers/weather-conditions.ts`
+ * (WeatherCondition union + wmoToCondition). The includes() chain below
+ * covers every member of the union; plain strings stay accepted for
+ * ad-hoc callers.
  */
-export function generateWeatherIconSVG(condition: string, options: ChartOptions = {}): string {
+export function generateWeatherIconSVG(condition: WeatherCondition | string, options: ChartOptions = {}): string {
   const opts = { ...DEFAULT_CHART_OPTIONS, width: 80, height: 80, ...options };
   const { width, height } = opts;
 

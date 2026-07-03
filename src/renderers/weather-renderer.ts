@@ -15,6 +15,7 @@ import {
   WeatherCondition,
   isWeatherData,
 } from './types.js';
+import { CONDITION_EMOJI } from './weather-conditions.js';
 
 // ============================================================================
 // ASCII Art Icons
@@ -128,24 +129,9 @@ const WEATHER_ICONS: Record<WeatherCondition, string[]> = {
   ],
 };
 
-// Simple emoji icons for compact display
-const EMOJI_ICONS: Record<WeatherCondition, string> = {
-  'sunny': '☀️',
-  'clear': '🌙',
-  'partly-cloudy': '⛅',
-  'cloudy': '☁️',
-  'overcast': '☁️',
-  'rain': '🌧️',
-  'drizzle': '🌦️',
-  'showers': '🌧️',
-  'thunderstorm': '⛈️',
-  'snow': '❄️',
-  'sleet': '🌨️',
-  'fog': '🌫️',
-  'mist': '🌫️',
-  'windy': '💨',
-  'unknown': '❓',
-};
+// Compact emoji icons come from the canonical vocabulary (weather-conditions.ts);
+// the ASCII art above stays local — it is pure presentation.
+const EMOJI_ICONS: Record<WeatherCondition, string> = CONDITION_EMOJI;
 
 // ============================================================================
 // Renderer Implementation
