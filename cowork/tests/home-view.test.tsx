@@ -7,7 +7,13 @@
 import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Capture startSession from the useIPC hook (the real first-message path).
+const startSessionSpy = vi.fn(async (title: string) => ({ id: 'created', title } as unknown));
+vi.mock('../src/renderer/hooks/useIPC', () => ({
+  useIPC: () => ({ startSession: startSessionSpy }),
+}));
 
 import { useAppStore } from '../src/renderer/store';
 import { HomeView } from '../src/renderer/components/HomeView';
@@ -31,12 +37,15 @@ describe('HomeView', () => {
   let root: Root;
 
   beforeEach(() => {
+    startSessionSpy.mockClear();
     useAppStore.setState({
       sessions: [],
       activeSessionId: null,
       primaryView: 'chat',
       showLiveLauncher: false,
       showSkillsManager: false,
+      workingDir: '/home/me/project',
+      activeProjectId: null,
     });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -95,5 +104,57 @@ describe('HomeView', () => {
     render();
     expect(container.querySelector('[data-testid="home-recents"]')).toBeNull();
     expect(container.querySelector('[data-testid="home-view"]')).toBeTruthy();
+  });
+
+  it('the one input box starts a real session with the typed first message', async () => {
+    render();
+    const input = container.querySelector('[data-testid="home-input"]') as HTMLTextAreaElement;
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value'
+    )!.set!;
+    act(() => {
+      nativeSetter.call(input, 'corrige le bug de login');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const send = container.querySelector('[data-testid="home-send"]') as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    await act(async () => {
+      send.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(startSessionSpy).toHaveBeenCalledTimes(1);
+    const [title, text, cwd] = startSessionSpy.mock.calls[0]!;
+    expect(text).toBe('corrige le bug de login');
+    expect(title).toContain('corrige');
+    expect(cwd).toBe('/home/me/project');
+  });
+
+  it('Enter (without shift) submits the input', async () => {
+    render();
+    const input = container.querySelector('[data-testid="home-input"]') as HTMLTextAreaElement;
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value'
+    )!.set!;
+    act(() => {
+      nativeSetter.call(input, 'crée un tableau de bord');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(startSessionSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send an empty prompt', async () => {
+    render();
+    const send = container.querySelector('[data-testid="home-send"]') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await act(async () => {
+      send.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(startSessionSpy).not.toHaveBeenCalled();
   });
 });

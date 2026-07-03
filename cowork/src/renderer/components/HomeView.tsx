@@ -3,14 +3,16 @@
  * See cowork/REDESIGN.md § "Home = one input box + recent sessions + quick
  * chips".
  *
- * Slice 2: the center of gravity. When Chat has no active session, greet with
- * one heading, three quick-action chips (open the right surface via existing
- * store actions), and the recent sessions to resume — instead of dropping the
- * user straight into the dense workspace. The free-text "one input box" that
- * sends a first message is the next micro-slice (it needs composer wiring);
- * until then the primary call to action resumes/opens chat.
+ * Slice 2 gave the calm layout; slice 3 wires the "one input box": typing a
+ * goal and pressing Enter starts a real session with that first message
+ * (the same startSession path WelcomeView uses), then NewShell swaps Home
+ * for the live chat. Quick chips prefill the input or open the matching
+ * surface; recent sessions resume.
  */
+import { useRef, useState } from 'react';
 import { useAppStore } from '../store';
+import { useIPC } from '../hooks/useIPC';
+import { getInitialSessionTitle } from '../../shared/session-title';
 import type { Session } from '../types';
 
 interface QuickAction {
@@ -57,11 +59,49 @@ export function HomeView() {
   const setPrimaryView = useAppStore((s) => s.setPrimaryView);
   const setShowLiveLauncher = useAppStore((s) => s.setShowLiveLauncher);
   const setShowSkillsManager = useAppStore((s) => s.setShowSkillsManager);
+  const workingDir = useAppStore((s) => s.workingDir);
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
+  const { startSession } = useIPC();
 
-  const openChat = () => setPrimaryView('chat');
+  const [prompt, setPrompt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
   const resume = (id: string) => {
     setActiveSession(id);
     setPrimaryView('chat');
+  };
+
+  // The one input box: start a real session with this first message. Once the
+  // session is active, NewShell swaps Home for DockWorkspace automatically.
+  const send = async () => {
+    const text = prompt.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    try {
+      const session = await startSession(
+        getInitialSessionTitle(text),
+        text,
+        workingDir || undefined,
+        activeProjectId ?? undefined,
+        false
+      );
+      if (session) setPrompt('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  const prefill = (text: string) => {
+    setPrompt(text);
+    inputRef.current?.focus();
   };
 
   const recents = sessions
@@ -71,7 +111,7 @@ export function HomeView() {
     .slice(0, 5);
 
   const quick: QuickAction[] = [
-    { label: 'Coder / corriger', hint: 'Discuter avec l’agent sur ton dossier', run: openChat },
+    { label: 'Coder / corriger', hint: 'Décris le bug ou la fonctionnalité', run: () => prefill('') },
     { label: 'Rechercher', hint: 'Recherche large + flow de planification', run: () => setShowLiveLauncher(true) },
     { label: 'Créer un document', hint: 'Excel, Word, PDF, charts', run: () => setShowSkillsManager(true) },
   ];
@@ -87,6 +127,37 @@ export function HomeView() {
           Dis-le à Code Buddy — il code, cherche et crée sur ton dossier.
         </p>
       </div>
+
+      {/* One input box — the center of gravity (REDESIGN.md § Home). */}
+      <form
+        className="w-full max-w-xl"
+        data-testid="home-composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-soft focus-within:border-accent transition-colors">
+          <textarea
+            ref={inputRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={2}
+            placeholder="Ex : corrige le bug de connexion, ou crée un tableau de bord…"
+            className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+            data-testid="home-input"
+          />
+          <button
+            type="submit"
+            disabled={!prompt.trim() || submitting}
+            className="shrink-0 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-background hover:bg-accent-hover disabled:opacity-40"
+            data-testid="home-send"
+          >
+            {submitting ? '…' : 'Envoyer'}
+          </button>
+        </div>
+      </form>
 
       <div className="w-full max-w-xl grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="home-quick">
         {quick.map((a) => (
