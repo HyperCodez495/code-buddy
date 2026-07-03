@@ -6,6 +6,7 @@
  */
 
 import { logger } from '../utils/logger.js';
+import { TOOL_METADATA } from '../tools/metadata.js';
 
 // ============================================================================
 // Types
@@ -40,6 +41,19 @@ const READ_ONLY_TOOLS = new Set([
   'git_status',
   'git_diff',
 ]);
+
+// The registry's `fleetSafe: true` flag is the MAINTAINED read-only source of
+// truth (~41 tools incl. web_search/web_fetch/tool_search) — the legacy list
+// above only knew 9 file/git tools, so plan mode denied every other read-only
+// tool and the voice companion kept telling Patrice it "can't search in plan
+// mode". Built lazily from the pure-data metadata table (a leaf module).
+let fleetSafeNames: Set<string> | null = null;
+function isFleetSafeTool(toolName: string): boolean {
+  if (!fleetSafeNames) {
+    fleetSafeNames = new Set(TOOL_METADATA.filter((t) => t.fleetSafe === true).map((t) => t.name));
+  }
+  return fleetSafeNames.has(toolName);
+}
 
 const EDIT_TOOLS = new Set([
   'str_replace_editor',
@@ -183,7 +197,7 @@ export class PermissionModeManager {
    * Tool classification
    */
   isReadOnlyTool(toolName: string): boolean {
-    return READ_ONLY_TOOLS.has(toolName);
+    return READ_ONLY_TOOLS.has(toolName) || isFleetSafeTool(toolName);
   }
 
   isEditTool(toolName: string): boolean {

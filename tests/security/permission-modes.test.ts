@@ -373,4 +373,25 @@ describe('PermissionModeManager — Phase T1', () => {
       expect(() => m.setSubagentMode('acceptEdits')).not.toThrow();
     });
   });
+
+  describe('plan mode honors the registry fleetSafe read-only surface', () => {
+    // The voice companion runs under plan posture; the legacy 9-entry
+    // READ_ONLY_TOOLS list denied every OTHER read-only tool, so Lisa kept
+    // answering "je ne peux pas faire de recherche en plan mode". Plan mode
+    // now unions the registry's fleetSafe flag (the maintained read-only
+    // source of truth, ~41 tools).
+    it('allows registry read-only tools (web_search/web_fetch/list_directory) in plan mode', () => {
+      const m = new PermissionModeManager({ mode: 'plan' });
+      for (const tool of ['web_search', 'web_fetch', 'list_directory']) {
+        expect(m.checkPermission(tool, tool).allowed, tool).toBe(true);
+      }
+    });
+
+    it('still denies writes, shell and unknown tools in plan mode', () => {
+      const m = new PermissionModeManager({ mode: 'plan' });
+      for (const tool of ['write_file', 'apply_patch', 'bash', 'delete_file', 'not_a_real_tool']) {
+        expect(m.checkPermission(tool, tool).allowed, tool).toBe(false);
+      }
+    });
+  });
 });
