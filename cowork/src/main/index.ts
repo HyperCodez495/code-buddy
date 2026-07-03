@@ -130,6 +130,7 @@ import { registerWorkspacePresetsIpcHandlers } from './ipc/workspace-presets-ipc
 import { registerBookmarksIpcHandlers } from './ipc/bookmarks-ipc';
 import { registerTemplateIpcHandlers } from './ipc/template-ipc';
 import { registerClipboardIpcHandlers } from './ipc/clipboard-ipc';
+import { registerA2aIpcHandlers } from './ipc/a2a-ipc';
 import { ConfigExportService } from './config/config-export-service';
 import { KnowledgeService } from './knowledge/knowledge-service';
 import { NotificationBridge } from './notification/notification-bridge';
@@ -5079,79 +5080,7 @@ ipcMain.handle('preview.get', async (_event, filePath: string) => {
 registerWorkspacePresetsIpcHandlers();
 
 // A2A remote agent registry — Claude Cowork parity Phase 3 step 19
-ipcMain.handle('a2a.list', async () => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().list();
-  } catch (err) {
-    logError('[a2a.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('a2a.discover', async (_event, url: string) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().discover(url);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('a2a.add', async (_event, url: string) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().add(url);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('a2a.remove', async (_event, id: string) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().remove(id);
-  } catch (_err) {
-    return { success: false };
-  }
-});
-
-ipcMain.handle('a2a.ping', async (_event, id: string) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().ping(id);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('a2a.invoke', async (_event, params: { id: string; message: string }) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().invoke(params.id, params.message);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('a2a.cancelTask', async (_event, params: { id: string; taskId: string }) => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().cancelTask(params.id, params.taskId);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
-
-ipcMain.handle('a2a.listTasks', async () => {
-  try {
-    const { getA2ABridge } = await import('./a2a/a2a-bridge');
-    return await getA2ABridge().listTasks();
-  } catch (err) {
-    logError('[a2a.listTasks] failed:', err);
-    return [];
-  }
-});
+registerA2aIpcHandlers();
 
 // Reasoning trace viewer — Claude Cowork parity Phase 3 step 17
 registerReasoningIpcHandlers();
