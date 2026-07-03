@@ -2310,6 +2310,36 @@ async function cleanupSandboxResources(): Promise<void> {
 }
 
 // Handle app quit - window-all-closed (primary for Windows/Linux)
+// Global policy for EVERY <webview> (the Browser Operator live view renders
+// arbitrary agent-navigated web content): force safe webPreferences at attach
+// time, refuse non-http(s) sources, keep navigation inside http(s), and route
+// window.open to the system browser. The top-level window has its own
+// handlers; this closes the same doors for embedded guest content.
+app.on('web-contents-created', (_event, contents) => {
+  // The HOST contents fires will-attach-webview: force safe webPreferences
+  // and refuse non-http(s) sources before the guest is even created.
+  contents.on('will-attach-webview', (event, webPreferences, params) => {
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    delete (webPreferences as { preload?: string }).preload;
+    if (params.src && !/^https?:\/\//i.test(String(params.src))) {
+      logError('[webview] blocked attach with non-http(s) src:', params.src);
+      event.preventDefault();
+    }
+  });
+  if (contents.getType() !== 'webview') return;
+  contents.on('will-navigate', (event, url) => {
+    if (!/^https?:\/\//i.test(url)) {
+      logError('[webview] blocked non-http(s) navigation:', url);
+      event.preventDefault();
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+});
+
 app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin' || process.env.VITE_DEV_SERVER_URL) {
     // On Windows/Linux, closing all windows means quit.

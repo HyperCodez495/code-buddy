@@ -121,11 +121,15 @@ export const BrowserOperatorOverlay: React.FC = () => {
       </div>
 
       {/* Body: Webview OR Screenshot + Log */}
-      {liveView && currentUrl ? (
+      {liveView && currentUrl && /^https?:\/\//i.test(currentUrl) ? (
         <div className="flex-1 w-full h-full bg-surface">
           <webview
             src={currentUrl}
             className="w-full h-full"
+            // Dedicated session: agent-browsed content must not share cookies/
+            // storage with the app's default session. Main also enforces a
+            // will-attach/will-navigate http(s) policy on every <webview>.
+            partition="persist:browser-operator"
             webpreferences="contextIsolation=yes, sandbox=yes"
           />
         </div>
