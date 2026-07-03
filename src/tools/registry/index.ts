@@ -175,6 +175,7 @@ export {
 // Tool Adapters - Process
 export {
   ProcessOperationTool,
+  AppServerExecuteTool,
   createProcessTools,
   resetProcessInstance,
 } from './process-tools.js';

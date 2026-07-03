@@ -154,14 +154,149 @@ export class ProcessOperationTool implements ITool {
 }
 
 // ============================================================================
+// AppServerExecuteTool
+// ============================================================================
+
+/**
+ * Managed dev-server lifecycle (Manus-style sessioned shell for the
+ * develop → launch → browse → verify loop): start spawns the server in the
+ * background, waits for the loopback URL to answer, and registers the origin
+ * as browsable for exactly as long as the process lives.
+ */
+export class AppServerExecuteTool implements ITool {
+  readonly name = 'app_server';
+  readonly description =
+    'Start/stop a managed local dev server (e.g. "npm run dev") and make its loopback URL browsable so the browser tool can test the app. Actions: start (command + readiness url), stop (pid), status, logs (pid).';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const { getAppServerTool } = await import('../app-server-tool.js');
+    const tool = getAppServerTool();
+    const action = input.action as string;
+
+    switch (action) {
+      case 'start':
+        return await tool.start({
+          command: input.command as string,
+          url: input.url as string,
+          cwd: input.cwd as string | undefined,
+          timeoutMs: input.timeoutMs as number | undefined,
+        });
+      case 'stop':
+        return await tool.stop(input.pid as number);
+      case 'status':
+        return await tool.status();
+      case 'logs':
+        return await tool.logs(input.pid as number, {
+          lines: input.lines as number | undefined,
+          stderr: input.stderr as boolean | undefined,
+        });
+      default:
+        return { success: false, error: `Unknown app_server action: ${action}` };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            description: 'App server action to perform',
+            enum: ['start', 'stop', 'status', 'logs'],
+          },
+          command: {
+            type: 'string',
+            description: 'Shell command that starts the server, e.g. "npm run dev" (start)',
+          },
+          url: {
+            type: 'string',
+            description: 'Loopback URL polled for readiness and made browsable, e.g. http://127.0.0.1:5173/ (start)',
+          },
+          cwd: {
+            type: 'string',
+            description: 'Working directory for the server command (start, default: current)',
+          },
+          timeoutMs: {
+            type: 'number',
+            description: 'Readiness timeout in ms (start, default: 45000)',
+          },
+          pid: {
+            type: 'number',
+            description: 'Managed server pid (stop, logs)',
+          },
+          lines: {
+            type: 'number',
+            description: 'Number of log lines (logs, default: 100)',
+          },
+          stderr: {
+            type: 'boolean',
+            description: 'Show stderr instead of stdout (logs)',
+          },
+        },
+        required: ['action'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const data = input as Record<string, unknown>;
+    const action = data.action;
+    if (typeof action !== 'string' || !['start', 'stop', 'status', 'logs'].includes(action)) {
+      return { valid: false, errors: [`Unknown action: ${String(action)}`] };
+    }
+    if (action === 'start') {
+      if (typeof data.command !== 'string' || data.command.trim() === '') {
+        return { valid: false, errors: ['start requires command (string)'] };
+      }
+      if (typeof data.url !== 'string' || data.url.trim() === '') {
+        return { valid: false, errors: ['start requires url (loopback readiness URL)'] };
+      }
+    }
+    if ((action === 'stop' || action === 'logs') && typeof data.pid !== 'number') {
+      return { valid: false, errors: [`${action} requires pid (number)`] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'system' as ToolCategoryType,
+      keywords: ['dev server', 'app server', 'localhost', 'preview', 'test app', 'npm run dev'],
+      priority: 7,
+      requiresConfirmation: true,
+      modifiesFiles: false,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  dispose(): void {
+    // Server teardown happens via resetAppServerTool()/process exit hook.
+  }
+}
+
+// ============================================================================
 // Factory
 // ============================================================================
 
 export function createProcessTools(): ITool[] {
-  return [new ProcessOperationTool()];
+  return [new ProcessOperationTool(), new AppServerExecuteTool()];
 }
 
 export async function resetProcessInstance(): Promise<void> {
   const { resetProcessTool } = await import('../process-tool.js');
   resetProcessTool();
+  const { resetAppServerTool } = await import('../app-server-tool.js');
+  await resetAppServerTool();
 }

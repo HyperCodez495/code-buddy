@@ -166,6 +166,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Manage system processes (spawn, inspect, logs, terminate)'
   },
   {
+    name: 'app_server',
+    category: 'system',
+    keywords: ['dev server', 'app server', 'localhost', 'preview', 'test app', 'serve', 'npm run dev', 'vite', 'test ui'],
+    priority: 7,
+    description: 'Start/stop a managed local dev server and make its loopback URL browsable for testing the app'
+  },
+  {
     name: 'js_repl',
     category: 'system',
     keywords: ['javascript', 'repl', 'eval', 'node', 'snippet', 'runtime'],

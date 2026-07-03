@@ -554,6 +554,54 @@ export const PROCESS_TOOL: CodeBuddyTool = {
   }
 };
 
+// Managed dev-server lifecycle (develop → launch → browse → verify)
+export const APP_SERVER_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "app_server",
+    description: "Start a local dev server (e.g. 'npm run dev') as a managed background process, wait until its loopback URL answers, and make that origin browsable by the browser tool — use this to TEST a web app you just built. The origin stays browsable only while the server runs. Actions: start, stop, status, logs (server-side stdout/stderr — check them alongside browser_console for both faces of a bug).",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["start", "stop", "status", "logs"],
+          description: "The app server action to perform"
+        },
+        command: {
+          type: "string",
+          description: "Shell command that starts the server, e.g. 'npm run dev' (start)"
+        },
+        url: {
+          type: "string",
+          description: "Loopback readiness URL, e.g. http://127.0.0.1:5173/ — must be localhost/127.x/::1 and the port must be free (start)"
+        },
+        cwd: {
+          type: "string",
+          description: "Working directory for the server command (start)"
+        },
+        timeoutMs: {
+          type: "number",
+          description: "Readiness timeout in ms (start, default 45000)"
+        },
+        pid: {
+          type: "number",
+          description: "Managed server pid (stop, logs)"
+        },
+        lines: {
+          type: "number",
+          description: "Number of log lines (logs, default 100)"
+        },
+        stderr: {
+          type: "boolean",
+          description: "Show stderr instead of stdout (logs)"
+        }
+      },
+      required: ["action"]
+    }
+  }
+};
+
 // JavaScript REPL tool for sandboxed code execution
 export const JS_REPL_TOOL: CodeBuddyTool = {
   type: "function",
@@ -748,6 +796,7 @@ export const ADVANCED_TOOLS: CodeBuddyTool[] = [
   DOCKER_TOOL,
   KUBERNETES_TOOL,
   PROCESS_TOOL,
+  APP_SERVER_TOOL,
   JS_REPL_TOOL,
   REASON_TOOL,
   PLAN_TOOL,
