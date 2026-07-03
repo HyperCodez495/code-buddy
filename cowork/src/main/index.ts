@@ -124,7 +124,7 @@ import { SessionExportService } from './session/session-export-service';
 import { SessionInsightsBridge } from './session/session-insights-bridge';
 import { ActivityFeed } from './activity/activity-feed';
 import { BookmarksService } from './bookmarks/bookmarks-service';
-import { getSnippetsService } from './snippets/snippets-service';
+import { registerSnippetsIpcHandlers } from './ipc/snippets-ipc';
 import { getCustomCommandsService } from './commands/custom-commands-service';
 import {
   getWorkspacePresetsService,
@@ -5976,50 +5976,7 @@ ipcMain.handle('customCommands.delete', async (_event, name: string) => {
 });
 
 // Snippets / prompt library — Claude Cowork parity Phase 3 step 5
-ipcMain.handle('snippets.list', async () => {
-  try {
-    return getSnippetsService().list();
-  } catch (err) {
-    logError('[snippets.list] failed:', err);
-    return [];
-  }
-});
-
-ipcMain.handle('snippets.get', async (_event, id: string) => {
-  try {
-    return getSnippetsService().get(id);
-  } catch (_err) {
-    return null;
-  }
-});
-
-ipcMain.handle(
-  'snippets.save',
-  async (
-    _event,
-    snippet: {
-      id?: string;
-      name: string;
-      description?: string;
-      tags?: string[];
-      body: string;
-    }
-  ) => {
-    try {
-      return getSnippetsService().save(snippet);
-    } catch (err) {
-      return { success: false, error: (err as Error).message };
-    }
-  }
-);
-
-ipcMain.handle('snippets.delete', async (_event, id: string) => {
-  try {
-    return getSnippetsService().delete(id);
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
+registerSnippetsIpcHandlers();
 
 // Starred/bookmarked messages — Claude Cowork parity Phase 3 step 4
 ipcMain.handle(
