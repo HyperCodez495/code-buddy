@@ -16,8 +16,11 @@ against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.1`.
 > `buddy lessons show/rm/edit` (fixing a real resurrection bug: remove() rewrote only the project file),
 > `/api/memory` rewired from an ephemeral in-process Map onto the REAL persistent store (key-as-id CRUD,
 > non-reinforcing reads), and `buddy research show/retract` (append-only CKG tombstone, revivable) — all proven
-> with real files / real HTTP / real shared-ledger tests + live CLI round-trips. **Honestly registered, not
-> covered:** Slack Block Kit rendering + in-channel continuable cron delivery (no Slack in production here) and
+> with real files / real HTTP / real shared-ledger tests + live CLI round-trips. **Also filled (same day, later
+> pass):** opt-in Slack Block Kit rendering (`CODEBUDDY_SLACK_BLOCK_KIT` — headers/code sections + markdown
+> tables as native `table` blocks, schema verified against docs.slack.dev, text kept as the notification
+> fallback; live delivery account-gated). **Honestly registered, not covered:** the Slack in-channel continuable
+> cron delivery surface (Slack-thread-specific; reminders/cron already deliver to Telegram here) and
 > the Vertex AI OAuth2 provider (needs a GCP account for any honest validation — not written blind).
 > **Covered by existing machinery:** the MoA advisory-fanout pattern maps to `src/council/` + `buddy llm
 > ensemble` (richer: dual-score judge, scoreboard, deliberation-health ledger) — the per-turn ambient-advisor

@@ -241,9 +241,13 @@ const FEATURES: HermesParityFeature[] = [
       'single channel dispatch seam (channel-handlers.ts), a /model <name>|reset|show special command per ' +
       'sessionKey, cached-agent reconciliation via setModel (history preserved), and the previously-DROPPED ' +
       'RouteAgentConfig.systemPrompt now reaches the <runtime_persona> append. Proven by a pure resolver suite + 9 ' +
-      'tests through the real registerAIMessageHandler (src/channels/channel-model-override.ts). Still registered, ' +
-      'not covered (low value for this deployment — no Slack in production): opt-in Slack Block Kit rendering ' +
-      '(b080b93ad/7c7b48981) and the flat in-channel continuable cron delivery surface for Slack (4b4349eb9).',
+      'tests through the real registerAIMessageHandler (src/channels/channel-model-override.ts). Slack Block Kit rendering (b080b93ad/7c7b48981) is now FILLED too ' +
+      '(2026-07-03): opt-in CODEBUDDY_SLACK_BLOCK_KIT renders agent markdown to blocks on send() — headers/dividers/' +
+      'code + markdown tables as NATIVE table blocks (schema verified against docs.slack.dev; oversized tables fall ' +
+      'back to a code section, text kept as the notification fallback), prose converted to Slack mrkdwn. Live ' +
+      'delivery remains account-gated (no Slack workspace in production here). Still registered, not covered: the ' +
+      'flat in-channel continuable cron delivery surface for Slack (4b4349eb9) — Slack-thread-specific; Code Buddy ' +
+      'reminders/cron already deliver to the production channel (Telegram).',
   },
   {
     id: 'browser-automation',

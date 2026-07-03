@@ -269,7 +269,26 @@ export type SlackBlock =
   | SlackActionsBlock
   | SlackContextBlock
   | SlackInputBlock
-  | SlackHeaderBlock;
+  | SlackHeaderBlock
+  | SlackTableBlock;
+
+/**
+ * Table block cell (schema per docs.slack.dev/reference/block-kit/blocks/table-block).
+ */
+export interface SlackTableCell {
+  type: 'raw_text';
+  text: string;
+}
+
+/**
+ * Native table block — max 100 rows × 20 columns, ≤10 000 chars across all cells.
+ */
+export interface SlackTableBlock {
+  type: 'table';
+  block_id?: string;
+  rows: SlackTableCell[][];
+  column_settings?: Array<{ align?: 'left' | 'center' | 'right'; is_wrapped?: boolean }>;
+}
 
 /**
  * Section block

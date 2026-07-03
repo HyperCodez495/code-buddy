@@ -529,6 +529,14 @@ export class SlackChannel extends BaseChannel {
         // Build blocks for rich content
         const blocks: SlackBlock[] = [];
 
+        // Opt-in Block Kit rendering of agent markdown (CODEBUDDY_SLACK_BLOCK_KIT=true):
+        // headers/dividers/code sections + markdown tables as NATIVE table blocks,
+        // prose converted to mrkdwn. `text` stays as the notification fallback.
+        if (process.env.CODEBUDDY_SLACK_BLOCK_KIT === 'true' && message.content.trim()) {
+          const { formatResponseAsBlocks } = await import('./block-builder.js');
+          blocks.push(...formatResponseAsBlocks(message.content));
+        }
+
         // Add buttons as action block
         if (message.buttons && message.buttons.length > 0) {
           blocks.push(this.buildActionsBlock(message.buttons));
@@ -548,7 +556,9 @@ export class SlackChannel extends BaseChannel {
         }
 
         if (blocks.length > 0) {
-          params.blocks = blocks;
+          // Slack caps a message at 50 blocks — keep the first 50, the text
+          // fallback still carries the full content.
+          params.blocks = blocks.slice(0, 50);
         }
       }
 

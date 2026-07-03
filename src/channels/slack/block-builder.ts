@@ -13,9 +13,15 @@ import type {
   SlackContextBlock,
   SlackActionsBlock,
   SlackImageBlock,
+  SlackTableBlock,
   SlackTextObject,
   SlackBlockElement,
 } from './types.js';
+
+// Native table block limits (docs.slack.dev/reference/block-kit/blocks/table-block).
+const TABLE_MAX_ROWS = 100;
+const TABLE_MAX_COLS = 20;
+const TABLE_MAX_CHARS = 10_000;
 
 /**
  * Fluent builder for Slack Block Kit messages
@@ -121,11 +127,63 @@ export class SlackBlockBuilder {
   }
 
   /**
+   * Add a NATIVE table block (rows of plain-text cells). Slack caps tables at
+   * 100 rows × 20 columns and 10 000 chars across all cells — an oversized
+   * table falls back to a monospace code section so nothing is silently lost.
+   */
+  table(rows: string[][]): this {
+    const clipped = rows.slice(0, TABLE_MAX_ROWS).map((row) => row.slice(0, TABLE_MAX_COLS));
+    const totalChars = clipped.reduce((sum, row) => sum + row.reduce((s, c) => s + c.length, 0), 0);
+    if (rows.length > TABLE_MAX_ROWS || rows.some((r) => r.length > TABLE_MAX_COLS) || totalChars > TABLE_MAX_CHARS) {
+      const fence = rows.map((row) => row.join(' | ')).join('\n');
+      return this.section('```\n' + fence.slice(0, 2900) + '\n```');
+    }
+    const block: SlackTableBlock = {
+      type: 'table',
+      rows: clipped.map((row) => row.map((text) => ({ type: 'raw_text' as const, text }))),
+    };
+    this.blocks.push(block);
+    return this;
+  }
+
+  /**
    * Build and return the blocks array
    */
   build(): SlackBlock[] {
     return [...this.blocks];
   }
+}
+
+/**
+ * Best-effort standard-markdown → Slack mrkdwn conversion for section text.
+ * Slack's dialect: *bold*, _italic_, ~strike~, <url|label>. Inline code and
+ * fenced blocks pass through untouched.
+ */
+export function toSlackMrkdwn(text: string): string {
+  const segments = text.split(/(```[\s\S]*?```|`[^`\n]*`)/);
+  return segments
+    .map((segment, i) => {
+      if (i % 2 === 1) return segment; // code segment — untouched
+      return segment
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<$2|$1>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+        .replace(/~~([^~\n]+)~~/g, '~$1~');
+    })
+    .join('');
+}
+
+/** Parse one markdown table (header, `|---|` separator, body) into cell rows. */
+function parseMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
 }
 
 /**
@@ -146,12 +204,14 @@ export function formatResponseAsBlocks(content: string): SlackBlock[] {
   function flushBuffer(): void {
     const text = buffer.trim();
     if (text) {
-      builder.section(text);
+      // Code fences keep their exact content; prose is converted to mrkdwn.
+      builder.section(text.startsWith('```') ? text : toSlackMrkdwn(text));
     }
     buffer = '';
   }
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     // Toggle code block
     if (line.trim().startsWith('```')) {
       if (inCodeBlock) {
@@ -170,6 +230,20 @@ export function formatResponseAsBlocks(content: string): SlackBlock[] {
 
     if (inCodeBlock) {
       buffer += line + '\n';
+      continue;
+    }
+
+    // Markdown table (header row + |---| separator) → NATIVE table block.
+    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1]!)) {
+      flushBuffer();
+      const rows: string[][] = [parseMarkdownTableRow(line)];
+      let j = i + 2; // skip the separator line
+      while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j]!)) {
+        rows.push(parseMarkdownTableRow(lines[j]!));
+        j++;
+      }
+      builder.table(rows);
+      i = j - 1;
       continue;
     }
 
