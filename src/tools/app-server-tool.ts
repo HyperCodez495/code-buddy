@@ -44,11 +44,24 @@ interface AppServerRecord {
   cwd: string;
   startedAt: Date;
   running: boolean;
+  tunnel?: {
+    pid: number;
+    url: string;
+    expiresAt: number;
+    ttlTimer: NodeJS.Timeout;
+  };
 }
 
 const READINESS_POLL_MS = 250;
 const DEFAULT_TIMEOUT_MS = 45_000;
 const STOP_GRACE_MS = 3_000;
+const TUNNEL_URL_TIMEOUT_MS = 20_000;
+const DEFAULT_TUNNEL_TTL_MS = 30 * 60_000;
+// cloudflared quick-tunnel banner, or the TUNNEL_URL= contract for custom bins.
+const TUNNEL_URL_PATTERNS = [
+  /TUNNEL_URL=(https:\/\/\S+)/,
+  /(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i,
+];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -167,6 +180,7 @@ export class AppServerTool {
     child.on('exit', (code) => {
       record.running = false;
       unregisterDevOrigin(record.origin);
+      this.killTunnel(record);
       logger.debug(`app_server ${pid} exited (code ${code}); dev origin ${record.origin} unregistered`);
     });
 
@@ -214,6 +228,7 @@ export class AppServerTool {
     }
 
     unregisterDevOrigin(record.origin);
+    this.killTunnel(record);
 
     if (record.running && isProcessAlive(pid)) {
       this.killGroup(pid, 'SIGTERM');
@@ -240,7 +255,10 @@ export class AppServerTool {
     const lines = [...this.servers.values()].map((record) => {
       const alive = record.running && isProcessAlive(record.pid);
       const uptime = Math.round((Date.now() - record.startedAt.getTime()) / 1000);
-      return `pid ${record.pid} [${alive ? `running, ${uptime}s` : 'stopped'}] ${record.origin} — ${record.command}`;
+      const tunnel = record.tunnel
+        ? ` — PUBLIC ${record.tunnel.url} (expires in ${Math.max(0, Math.round((record.tunnel.expiresAt - Date.now()) / 60_000))} min)`
+        : '';
+      return `pid ${record.pid} [${alive ? `running, ${uptime}s` : 'stopped'}] ${record.origin} — ${record.command}${tunnel}`;
     });
     return { success: true, output: lines.join('\n') };
   }
@@ -250,6 +268,138 @@ export class AppServerTool {
       return { success: false, error: `Pid ${pid} is not an app_server-managed server.` };
     }
     return getProcessTool().log(pid, opts);
+  }
+
+  /**
+   * Expose a managed server through a public tunnel (cloudflared quick
+   * tunnel by default). The Manus expose-port kill-chain is the anti-model
+   * here: this NEVER happens implicitly — the tool call goes through the
+   * normal confirmation gate, only servers this tool started can be
+   * exposed, the URL expires after a TTL (default 30 min), and the tunnel
+   * dies with the server.
+   */
+  async expose(pid: number, opts?: { ttlMinutes?: number }): Promise<ToolResult> {
+    const record = this.servers.get(pid);
+    if (!record) {
+      return { success: false, error: `Pid ${pid} is not an app_server-managed server.` };
+    }
+    if (!record.running || !isProcessAlive(pid)) {
+      return { success: false, error: `Server ${pid} is not running — nothing to expose.` };
+    }
+    if (record.tunnel) {
+      return {
+        success: true,
+        output: `Already exposed: ${record.tunnel.url} (expires in ${Math.max(0, Math.round((record.tunnel.expiresAt - Date.now()) / 60_000))} min)`,
+        data: { url: record.tunnel.url },
+      };
+    }
+
+    const bin = process.env.CODEBUDDY_TUNNEL_BIN || 'cloudflared';
+    const ttlMs = Math.min(
+      Math.max(60_000, (opts?.ttlMinutes ?? 0) * 60_000 || Number(process.env.CODEBUDDY_PREVIEW_TTL_MS) || DEFAULT_TUNNEL_TTL_MS),
+      4 * 60 * 60_000,
+    );
+
+    let tunnelChild;
+    try {
+      tunnelChild = spawn(bin, ['tunnel', '--url', record.url], {
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      return { success: false, error: `Cannot spawn tunnel binary "${bin}": ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    const url = await new Promise<string | null>((resolve) => {
+      let buffer = '';
+      const timer = setTimeout(() => resolve(null), TUNNEL_URL_TIMEOUT_MS);
+      const scan = (chunk: Buffer) => {
+        buffer += chunk.toString();
+        for (const pattern of TUNNEL_URL_PATTERNS) {
+          const match = pattern.exec(buffer);
+          if (match?.[1]) {
+            clearTimeout(timer);
+            resolve(match[1]);
+            return;
+          }
+        }
+      };
+      tunnelChild.stdout?.on('data', scan);
+      tunnelChild.stderr?.on('data', scan);
+      tunnelChild.once('error', () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+      tunnelChild.once('exit', () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+
+    if (!url || tunnelChild.pid === undefined) {
+      try {
+        if (tunnelChild.pid !== undefined) this.killGroup(tunnelChild.pid, 'SIGKILL');
+      } catch {
+        // Already gone.
+      }
+      return {
+        success: false,
+        error: `Tunnel did not produce a public URL within ${TUNNEL_URL_TIMEOUT_MS}ms (binary: ${bin}). Is cloudflared installed and outbound network available?`,
+      };
+    }
+
+    const ttlTimer = setTimeout(() => {
+      logger.info(`app_server preview TTL reached for pid ${pid}; closing tunnel ${url}`);
+      const current = this.servers.get(pid);
+      if (current) this.killTunnel(current);
+    }, ttlMs);
+    ttlTimer.unref();
+
+    record.tunnel = { pid: tunnelChild.pid, url, expiresAt: Date.now() + ttlMs, ttlTimer };
+    tunnelChild.on('exit', () => {
+      const current = this.servers.get(pid);
+      const tunnel = current?.tunnel;
+      if (current && tunnel && tunnel.pid === tunnelChild.pid) {
+        clearTimeout(tunnel.ttlTimer);
+        current.tunnel = undefined;
+      }
+    });
+
+    logger.warn(`app_server pid ${pid} (${record.origin}) is now PUBLICLY exposed at ${url} for ${Math.round(ttlMs / 60_000)} min`);
+    return {
+      success: true,
+      output: [
+        `PUBLIC preview URL: ${url}`,
+        `Anyone with this link can reach ${record.origin} until it expires (${Math.round(ttlMs / 60_000)} min) or you run app_server unexpose/stop.`,
+        `Never expose a server handling secrets or private data.`,
+      ].join('\n'),
+      data: { url, expiresAt: record.tunnel.expiresAt },
+    };
+  }
+
+  /** Close the public tunnel, keep the server running. */
+  async unexpose(pid: number): Promise<ToolResult> {
+    const record = this.servers.get(pid);
+    if (!record) {
+      return { success: false, error: `Pid ${pid} is not an app_server-managed server.` };
+    }
+    if (!record.tunnel) {
+      return { success: true, output: `Server ${pid} has no active public tunnel.` };
+    }
+    const url = record.tunnel.url;
+    this.killTunnel(record);
+    return { success: true, output: `Public tunnel closed: ${url} no longer reachable. Server ${pid} still runs locally.` };
+  }
+
+  private killTunnel(record: AppServerRecord): void {
+    if (!record.tunnel) return;
+    clearTimeout(record.tunnel.ttlTimer);
+    try {
+      this.killGroup(record.tunnel.pid, 'SIGTERM');
+    } catch {
+      // Already gone.
+    }
+    record.tunnel = undefined;
   }
 
   /** Server-side log tail for a managed origin (web_test's server oracle). */

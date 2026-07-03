@@ -559,13 +559,13 @@ export const APP_SERVER_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "app_server",
-    description: "Start a local dev server (e.g. 'npm run dev') as a managed background process, wait until its loopback URL answers, and make that origin browsable by the browser tool — use this to TEST a web app you just built. The origin stays browsable only while the server runs. Actions: start, stop, status, logs (server-side stdout/stderr — check them alongside browser_console for both faces of a bug).",
+    description: "Start a local dev server (e.g. 'npm run dev') as a managed background process, wait until its loopback URL answers, and make that origin browsable by the browser tool — use this to TEST a web app you just built. The origin stays browsable only while the server runs. Actions: start, stop, status, logs (server-side stdout/stderr — check them alongside browser_console for both faces of a bug), expose (PUBLIC preview URL via tunnel, TTL-limited — only when the user asks to share/see the app remotely, never for servers handling secrets), unexpose.",
     parameters: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["start", "stop", "status", "logs"],
+          enum: ["start", "stop", "status", "logs", "expose", "unexpose"],
           description: "The app server action to perform"
         },
         command: {
@@ -586,7 +586,7 @@ export const APP_SERVER_TOOL: CodeBuddyTool = {
         },
         pid: {
           type: "number",
-          description: "Managed server pid (stop, logs)"
+          description: "Managed server pid (stop, logs, expose, unexpose)"
         },
         lines: {
           type: "number",
@@ -595,6 +595,10 @@ export const APP_SERVER_TOOL: CodeBuddyTool = {
         stderr: {
           type: "boolean",
           description: "Show stderr instead of stdout (logs)"
+        },
+        ttlMinutes: {
+          type: "number",
+          description: "Public preview lifetime in minutes (expose, default 30, max 240)"
         }
       },
       required: ["action"]

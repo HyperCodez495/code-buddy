@@ -190,6 +190,12 @@ export class AppServerExecuteTool implements ITool {
           lines: input.lines as number | undefined,
           stderr: input.stderr as boolean | undefined,
         });
+      case 'expose':
+        return await tool.expose(input.pid as number, {
+          ttlMinutes: input.ttlMinutes as number | undefined,
+        });
+      case 'unexpose':
+        return await tool.unexpose(input.pid as number);
       default:
         return { success: false, error: `Unknown app_server action: ${action}` };
     }
@@ -205,7 +211,7 @@ export class AppServerExecuteTool implements ITool {
           action: {
             type: 'string',
             description: 'App server action to perform',
-            enum: ['start', 'stop', 'status', 'logs'],
+            enum: ['start', 'stop', 'status', 'logs', 'expose', 'unexpose'],
           },
           command: {
             type: 'string',
@@ -235,6 +241,10 @@ export class AppServerExecuteTool implements ITool {
             type: 'boolean',
             description: 'Show stderr instead of stdout (logs)',
           },
+          ttlMinutes: {
+            type: 'number',
+            description: 'Public preview lifetime in minutes (expose, default 30, max 240)',
+          },
         },
         required: ['action'],
       },
@@ -247,7 +257,7 @@ export class AppServerExecuteTool implements ITool {
     }
     const data = input as Record<string, unknown>;
     const action = data.action;
-    if (typeof action !== 'string' || !['start', 'stop', 'status', 'logs'].includes(action)) {
+    if (typeof action !== 'string' || !['start', 'stop', 'status', 'logs', 'expose', 'unexpose'].includes(action)) {
       return { valid: false, errors: [`Unknown action: ${String(action)}`] };
     }
     if (action === 'start') {
@@ -258,7 +268,7 @@ export class AppServerExecuteTool implements ITool {
         return { valid: false, errors: ['start requires url (loopback readiness URL)'] };
       }
     }
-    if ((action === 'stop' || action === 'logs') && typeof data.pid !== 'number') {
+    if ((action === 'stop' || action === 'logs' || action === 'expose' || action === 'unexpose') && typeof data.pid !== 'number') {
       return { valid: false, errors: [`${action} requires pid (number)`] };
     }
     return { valid: true };
