@@ -1210,6 +1210,11 @@ async function processPromptHeadless(
 
 program
   .name("buddy")
+  // Git-style option scoping: ROOT options must come before the subcommand.
+  // Without this, root flags are consumed from anywhere in argv and shadow
+  // same-named subcommand options — e.g. `buddy lessons add -c RULE
+  // --context ci` silently lost both to the root `-c, --context <patterns>`.
+  .enablePositionalOptions()
   .description(
     "A conversational AI CLI tool powered by AI with text editor capabilities"
   )
