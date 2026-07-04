@@ -283,6 +283,15 @@ describe('runExperimentLoop — hard caps stop the loop (no infinite loop)', () 
 // --------------------------------------------------------------------------
 
 describe('runExperimentLoop — the human gates bracket the loop', () => {
+  // F9: the plan+budget gate must disclose the network is open in isolate mode.
+  it('the plan gate body discloses the open network (isolate does NOT cut egress)', async () => {
+    const h = makeHarness();
+    await runExperimentLoop('x', h.deps, { maxGenerations: 1, parallelism: 1 });
+    expect(h.gate1Prompts).toHaveLength(1);
+    expect(h.gate1Prompts[0]?.body).toContain("réseau n'est PAS coupé");
+    expect(h.gate1Prompts[0]?.body).toContain('--sandbox docker');
+  });
+
   it('GATE #1 declined ⇒ the loop NEVER starts (no execution, no publication)', async () => {
     const h = makeHarness({ gate1: { approved: false, reason: 'non' } });
     const result = await runExperimentLoop('x', h.deps, { maxGenerations: 5 });

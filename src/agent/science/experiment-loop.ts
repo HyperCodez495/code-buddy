@@ -982,8 +982,9 @@ function buildLoopPlanGateBody(goal: string, idea: ScienceIdea, novelty: Novelty
     `  - patience (convergence): ${b.patience} génération(s) sans gain`,
     '',
     '⚠️  Approuver lance une BOUCLE AUTONOME qui exécute du code GÉNÉRÉ dans un bac à sable isolé,',
-    '    sur plusieurs générations, SANS nouvelle question par génération. Une seconde gate vous',
-    '    demandera d\'approuver le MEILLEUR résultat avant toute publication.',
+    '    sur plusieurs générations, SANS nouvelle question par génération. Le réseau n\'est PAS coupé',
+    '    en mode isolate — utilisez --sandbox docker pour couper le réseau sortant. Une seconde gate',
+    '    vous demandera d\'approuver le MEILLEUR résultat avant toute publication.',
   ].join('\n');
 }
 

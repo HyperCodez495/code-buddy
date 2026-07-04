@@ -136,6 +136,16 @@ describe('runExperiment — happy path chaining', () => {
 // --------------------------------------------------------------------------
 
 describe('runExperiment — GATE #1 (fail closed)', () => {
+  // F9: the plan gate must disclose that isolate does NOT cut the network, so a
+  // human never approves believing "isolé = sans réseau".
+  it('the plan gate body discloses that the network is NOT isolated in isolate mode', async () => {
+    const deps = makeDeps();
+    await runExperiment('use focal loss', deps);
+    const prompt = vi.mocked(deps.confirmExperiment).mock.calls[0]?.[0];
+    expect(prompt?.body).toContain("réseau n'est PAS coupé");
+    expect(prompt?.body).toContain('--sandbox docker');
+  });
+
   it('NEVER executes the experiment when the plan gate is declined', async () => {
     const deps = makeDeps({ confirmExperiment: vi.fn(decline) });
     const run = await runExperiment('risky thing', deps);

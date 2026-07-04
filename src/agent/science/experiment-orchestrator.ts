@@ -536,6 +536,8 @@ function buildPlanGateBody(goal: string, idea: ScienceIdea, novelty: NoveltyVerd
     ...(novelty.evidence.length ? ['Preuves :', ...novelty.evidence.map((e) => `  - ${e}`)] : []),
     '',
     "⚠️  Approuver lance l'exécution de code GÉNÉRÉ dans un bac à sable isolé (envMode=isolate).",
+    "    Le réseau n'est PAS coupé en mode isolate — utilisez --sandbox docker pour couper le",
+    '    réseau sortant (ou --require-network-isolation pour refuser à défaut).',
   ].join('\n');
 }
 
