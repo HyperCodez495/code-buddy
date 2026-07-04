@@ -11,7 +11,7 @@
  */
 
 import { findPageNo, findSectionTitle } from './provenance.js';
-import type { ChunkOptions, Passage, StructuredDoc } from './types.js';
+import type { ChunkOptions, PageSpan, Passage, StructuredDoc } from './types.js';
 
 const DEFAULT_TARGET_CHARS = 1000;
 const DEFAULT_OVERLAP_CHARS = 150;
@@ -44,14 +44,26 @@ export function chunkDocument(doc: StructuredDoc, opts: ChunkOptions = {}): Pass
 
     const text = doc.fullText;
     const boundaries = computeBoundaries(text);
+    // Page starts are HARD cut points: a passage must never straddle a page, so
+    // `findPageNo(charStart)` alone is exact (the core "cite the right page"
+    // promise). Without this a window sized by `target` can span several pages
+    // and get mis-attributed to the page it merely BEGAN on.
+    const hardCuts = computeHardCuts(doc.pages, text.length);
     const passages: Passage[] = [];
 
     let start = 0;
     let index = 0;
     while (start < text.length && passages.length < maxPassages) {
-      const end = nextBoundaryAtLeast(boundaries, start + target, text.length);
+      // Bound the window by the next page frontier after `start`: a chunk ends at
+      // the earlier of its natural prose boundary and the next page boundary.
+      const hardEnd = nextHardCutAfter(hardCuts, start, text.length);
+      const end = Math.min(nextBoundaryAtLeast(boundaries, start + target, text.length), hardEnd);
+      // True when this window closed ON a page frontier (not just EOF).
+      const endedOnHardCut = hardEnd < text.length && end === hardEnd;
 
       // Trim whitespace at both edges while KEEPING the slice==text invariant.
+      // The inter-page separator ('\n\n') lands at a window edge here and is
+      // trimmed away, so no empty passage is created for it.
       let s = start;
       let e = end;
       while (s < e && isWhitespace(text.charCodeAt(s))) s++;
@@ -76,8 +88,11 @@ export function chunkDocument(doc: StructuredDoc, opts: ChunkOptions = {}): Pass
 
       // Next window starts `overlap` chars before this window's end, snapped to a
       // boundary. Always make progress (strictly greater than the current start).
+      // When the window closed on a page frontier we DON'T carry overlap back into
+      // the finished page — the overlap stays within its own segment, so the next
+      // passage begins cleanly on the new page (no cross-page bleed).
       let nextStart = end;
-      if (overlap > 0) {
+      if (overlap > 0 && !endedOnHardCut) {
         const candidate = largestBoundaryAtMost(boundaries, end - overlap);
         if (candidate > start) nextStart = candidate;
       }
@@ -112,6 +127,37 @@ function computeBoundaries(text: string): number[] {
   }
 
   return Array.from(set).sort((a, b) => a - b);
+}
+
+/**
+ * Hard cut offsets: the `charStart` of every page after the first (in `]0, len[`),
+ * sorted ascending and unique. A chunk window is never allowed to cross one of
+ * these, so each passage falls entirely within a single page.
+ */
+function computeHardCuts(pages: readonly PageSpan[], len: number): number[] {
+  const set = new Set<number>();
+  for (const page of pages) {
+    if (page.charStart > 0 && page.charStart < len) set.add(page.charStart);
+  }
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+/** Smallest hard cut strictly greater than `start`; `fallback` (text length) when none. */
+function nextHardCutAfter(hardCuts: number[], start: number, fallback: number): number {
+  let lo = 0;
+  let hi = hardCuts.length - 1;
+  let ans = fallback;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const val = hardCuts[mid] ?? fallback;
+    if (val > start) {
+      ans = val;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return ans;
 }
 
 /** Smallest boundary >= threshold; falls back to `fallback` (text length). */

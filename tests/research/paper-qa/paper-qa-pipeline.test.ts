@@ -109,6 +109,35 @@ describe('runPaperQa (chained pipeline)', () => {
     expect(rendered).toContain('photosynthesis.pdf');
   });
 
+  it('cites the page a mid-document fact really lives on (page-boundary chunking)', async () => {
+    // Three short pages whose combined length is under the default 1000-char
+    // target: the pre-fix chunker made ONE cross-page passage and cited page 1
+    // for the page-2 "stroma" fact. The fix cuts on page frontiers → page 2.
+    const CORPUS3: Record<string, string[]> = {
+      '/papers/photosynthesis.pdf': [
+        'Introduction\nPhotosynthesis converts light energy into chemical energy in plant chloroplasts.',
+        'Methods\nThe Calvin cycle occurs in the stroma of the chloroplast and fixes carbon dioxide into glucose.',
+        'Conclusion\nTogether the two stages let plants store solar energy as sugars.',
+      ],
+    };
+
+    const result = await runPaperQa(
+      'Where does the Calvin cycle take place?',
+      Object.keys(CORPUS3),
+      fakeLlm('stroma'), // only the page-2 passage is judged relevant
+      { embedder: bowEmbedder(), pdfDeps: corpusDeps(CORPUS3), topK: 4 },
+    );
+
+    expect(result.answer.sufficient).toBe(true);
+    expect(result.answer.citations.length).toBeGreaterThan(0);
+    // The cited passage resolves to PAGE 2 (where "stroma" lives), not page 1.
+    for (const c of result.answer.citations) {
+      expect(c.page).toBe(2);
+    }
+    const rendered = formatPaperQaOutput(result, deriveSourceLabels(Object.keys(CORPUS3)));
+    expect(rendered).toContain('p.2');
+  });
+
   it('refuses honestly when the evidence is irrelevant', async () => {
     const result = await runPaperQa(
       'What is quantum entanglement?',

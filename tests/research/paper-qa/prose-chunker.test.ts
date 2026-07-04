@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { chunkDocument } from '../../../src/research/paper-qa/prose-chunker.js';
 import { parsePdfStructure } from '../../../src/research/paper-qa/pdf-structure.js';
+import { findPageNo } from '../../../src/research/paper-qa/provenance.js';
 import type { ParsedPdf, StructuredDoc } from '../../../src/research/paper-qa/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -127,6 +128,59 @@ describe('chunkDocument — provenance and invariants', () => {
     for (const p of passages) {
       expect(p.text.length).toBeLessThan(400);
     }
+  });
+});
+
+describe('chunkDocument — page-boundary integrity (regression)', () => {
+  it('never lets a passage cross a page frontier (default target on a small multi-page doc)', async () => {
+    const doc = await docFromPages([
+      'Introduction\nPhotosynthesis converts light energy into chemical energy in plant chloroplasts.',
+      'Methods\nThe Calvin cycle occurs in the stroma of the chloroplast and fixes carbon dioxide into glucose.',
+      'Conclusion\nTogether the two stages let plants store solar energy as sugars.',
+    ]);
+
+    // The whole doc is far under the default target (1000). The pre-fix chunker
+    // produced ONE passage spanning all three pages, mis-attributed to page 1.
+    const passages = chunkDocument(doc);
+    expect(passages.length).toBeGreaterThanOrEqual(3);
+
+    for (const p of passages) {
+      // A passage lives ENTIRELY on one page: its first and last char agree.
+      expect(findPageNo(p.charStart, doc.pages)).toBe(findPageNo(p.charEnd - 1, doc.pages));
+      // ...and that page is exactly the one recorded on the passage.
+      expect(p.page).toBe(findPageNo(p.charStart, doc.pages));
+      // Slice invariant survives the page-bounded windowing.
+      expect(doc.fullText.slice(p.charStart, p.charEnd)).toBe(p.text);
+    }
+
+    // The page-2 fact ("stroma") is attributed to page 2 — not the doc's start page.
+    const stroma = passages.find((p) => p.text.includes('stroma'));
+    expect(stroma).toBeDefined();
+    expect(stroma!.page).toBe(2);
+  });
+
+  it('bounds passages within pages even when a page is longer than the target', async () => {
+    const longPage2 = Array.from(
+      { length: 12 },
+      (_, i) => `Methods sentence number ${i + 1} describes a step of the procedure.`,
+    ).join(' ');
+    const doc = await docFromPages([
+      'Introduction\nA brief opening paragraph on page one for context.',
+      `Methods\n${longPage2}`,
+      'Conclusion\nA short closing note on the final page here.',
+    ]);
+
+    // A small target forces MULTIPLE passages inside page 2; none may leak into
+    // page 1 or page 3.
+    const passages = chunkDocument(doc, { targetChars: 120, overlapChars: 40 });
+    expect(passages.length).toBeGreaterThan(3);
+    for (const p of passages) {
+      expect(findPageNo(p.charStart, doc.pages)).toBe(findPageNo(p.charEnd - 1, doc.pages));
+      expect(doc.fullText.slice(p.charStart, p.charEnd)).toBe(p.text);
+    }
+    // Page 2 is chunked into more than one passage (it exceeds the target).
+    const page2Count = passages.filter((p) => p.page === 2).length;
+    expect(page2Count).toBeGreaterThan(1);
   });
 });
 
