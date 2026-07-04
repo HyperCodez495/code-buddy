@@ -43,6 +43,7 @@ import { getCircuitBreaker, CircuitOpenError } from '../../providers/circuit-bre
 import type { CircuitBreakerConfig } from '../../providers/circuit-breaker.js';
 import { parseRateLimitHeaders, storeRateLimitInfo } from '../../utils/rate-limit-display.js';
 import { mapProviderError } from '../../errors/index.js';
+import { preserveProviderErrorMetadata } from '../provider-error-classifier.js';
 import { getModelInfo } from '../../utils/model-utils.js';
 import {
   injectAnthropicCacheBreakpoints,
@@ -757,7 +758,15 @@ export class OpenAICompatProvider implements Provider {
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(mapProviderError(message, this.detectProviderLabel()));
+      // Re-wrap for an actionable message, but PRESERVE the retry-relevant
+      // metadata (HTTP status, error code/type, parsed Retry-After) from the
+      // raw SDK error — otherwise the downstream `withStreamRetry` classifier
+      // sees only a string and can't tell a fatal quota 429 from a transient
+      // one, nor honour Retry-After.
+      throw preserveProviderErrorMetadata(
+        new Error(mapProviderError(message, this.detectProviderLabel())),
+        error,
+      );
     }
   }
 
@@ -874,7 +883,15 @@ export class OpenAICompatProvider implements Provider {
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(mapProviderError(message, this.detectProviderLabel()));
+      // Re-wrap for an actionable message, but PRESERVE the retry-relevant
+      // metadata (HTTP status, error code/type, parsed Retry-After) from the
+      // raw SDK error — otherwise the downstream `withStreamRetry` classifier
+      // sees only a string and can't tell a fatal quota 429 from a transient
+      // one, nor honour Retry-After.
+      throw preserveProviderErrorMetadata(
+        new Error(mapProviderError(message, this.detectProviderLabel())),
+        error,
+      );
     }
   }
 }
