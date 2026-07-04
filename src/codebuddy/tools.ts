@@ -55,6 +55,8 @@ import {
   ASK_USER_QUESTION_TOOLS,
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
+  MERGE_CONFLICT_TOOLS,
+  VULN_SCANNER_TOOLS,
   SESSION_TOOLS,
   CODE_EXPLORER_TOOLS,
   WINDOWS_TOOLS,
@@ -114,6 +116,8 @@ export function getBuiltinToolNames(): string[] {
     ASK_USER_QUESTION_TOOLS,
     EXIT_PLAN_MODE_TOOLS,
     CODEBASE_REPLACE_TOOLS,
+    MERGE_CONFLICT_TOOLS,
+    VULN_SCANNER_TOOLS,
     SESSION_TOOLS,
     FLEET_TOOLS,
     CODE_EXPLORER_TOOLS,
@@ -226,6 +230,13 @@ export function initializeToolRegistry(): void {
 
   // Codebase replace tools
   registerGroup(CODEBASE_REPLACE_TOOLS);
+
+  // Merge-conflict resolver (resolve_conflicts) + vulnerability scanner
+  // (scan_vulnerabilities). Both are dispatched by ToolHandler.initializeRegistry()
+  // (createMergeConflictTools / createVulnScannerTools) but were never exposed to
+  // the LLM — this closes that gap so the finished features are reachable.
+  registerGroup(MERGE_CONFLICT_TOOLS);
+  registerGroup(VULN_SCANNER_TOOLS);
 
   // Session tools — multi-agent coordination (Phase E wake of SessionToolExecutor).
   // Always available; the SessionRegistry is lazy-instantiated by getSessionRegistry()
