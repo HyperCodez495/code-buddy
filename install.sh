@@ -273,6 +273,17 @@ install_codebuddy() {
   ok "$PACKAGE installed"
 }
 
+# Detect a reachable local Ollama so we can surface the $0 path first.
+detect_ollama() {
+  _oh="${OLLAMA_HOST:-http://localhost:11434}"
+  case "$_oh" in
+    http://*|https://*) : ;;
+    *) _oh="http://$_oh" ;;
+  esac
+  have curl || return 1
+  curl -fsS --max-time 2 "$_oh/api/tags" >/dev/null 2>&1
+}
+
 # --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
@@ -294,13 +305,21 @@ main() {
   fi
 
   info ""
-  printf '%s\n' "${C_BOLD}Next steps${C_RESET}"
-  info "  1. ${C_BOLD}buddy onboard${C_RESET}   — guided setup wizard (pick a model, keys optional)"
-  info "  2. ${C_BOLD}buddy login${C_RESET}     — sign in with ChatGPT Plus/Pro (OAuth, \$0 marginal cost)"
-  info "     ${C_DIM}...or just 'export CODEBUDDY_PROVIDER=ollama' for a free, fully local brain.${C_RESET}"
-  info "  3. ${C_BOLD}buddy${C_RESET}           — start chatting"
+  printf '%s\n' "${C_BOLD}Get started${C_RESET}"
+  # Adapt the first step to what's actually on this machine — one obvious move.
+  if detect_ollama; then
+    ok "Local Ollama detected — start chatting for \$0 right now:"
+    info "    ${C_BOLD}export CODEBUDDY_PROVIDER=ollama && buddy${C_RESET}"
+    info ""
+    info "  ${C_DIM}Prefer a hosted brain? ${C_RESET}${C_BOLD}buddy login${C_RESET}${C_DIM} — ChatGPT Plus/Pro OAuth, \$0 marginal cost.${C_RESET}"
+  else
+    info "  1. ${C_BOLD}buddy login${C_RESET}     — sign in with ChatGPT Plus/Pro (OAuth, \$0 marginal cost)"
+    info "     ${C_DIM}...or 'export CODEBUDDY_PROVIDER=ollama' if you run a local model.${C_RESET}"
+    info "  2. ${C_BOLD}buddy onboard${C_RESET}   — guided setup wizard (pick a model, keys optional)"
+    info "  3. ${C_BOLD}buddy${C_RESET}           — start chatting"
+  fi
   info ""
-  info "${C_DIM}Docs: https://github.com/phuetz/code-buddy#readme${C_RESET}"
+  info "${C_DIM}Full guide: https://github.com/phuetz/code-buddy/blob/main/docs/install.md${C_RESET}"
 }
 
 main "$@"
