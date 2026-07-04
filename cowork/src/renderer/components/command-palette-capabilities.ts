@@ -36,6 +36,7 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   { id: 'cap-lessons-candidates', label: 'Lesson candidates', description: 'Review learned-lesson candidates', run: (s) => s.setShowLessonCandidatePanel(true) },
   { id: 'cap-user-model', label: 'User model', description: 'What Code Buddy learned about you', run: (s) => s.setShowUserModelPanel(true) },
   { id: 'cap-research', label: 'Research / Flow launcher', description: 'Wide research + planning flow', run: (s) => s.setShowLiveLauncher(true) },
+  { id: 'cap-deep-research', label: 'Deep Research', description: 'Multi-source, cited report (deterministic pipeline)', run: (s) => { s.setLiveLauncherDeepIntent(true); s.setShowLiveLauncher(true); } },
   { id: 'cap-reasoning-trace', label: 'Reasoning trace', description: 'Inspect the reasoning tree', run: (s) => { s.setPrimaryView('chat'); s.setShowReasoningViewer(true); } },
   { id: 'cap-insights', label: 'Session insights', description: 'Analysis of this session', run: (s) => s.setShowSessionInsights(true) },
   { id: 'cap-activity', label: 'Activity feed', description: 'Cross-project activity', run: (s) => s.setShowActivityFeed(true) },

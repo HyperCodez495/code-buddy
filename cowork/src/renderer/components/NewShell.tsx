@@ -74,6 +74,14 @@ function AdvancedLauncher() {
     { label: 'Insights', hint: 'Analyse de session', open: () => s.setShowSessionInsights(true) },
   ];
   const labs: LauncherCard[] = [
+    {
+      label: 'Deep Research',
+      hint: 'Recherche multi-sources, cité — rapport avec références',
+      open: () => {
+        s.setLiveLauncherDeepIntent(true);
+        s.setShowLiveLauncher(true);
+      },
+    },
     { label: 'Connaissances', hint: 'Mémoire collective (CKG) + sujets de recherche', open: () => s.setShowKnowledgePanel(true) },
     { label: 'Évolution', hint: 'Versions générées par l’auto-amélioration', open: () => s.setShowEvolutionPanel(true) },
     { label: 'Fleet', hint: 'Multi-agents, pairs, routage', open: () => s.setShowFleetCommandCenter(true) },
