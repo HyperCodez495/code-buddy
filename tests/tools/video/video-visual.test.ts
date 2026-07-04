@@ -130,6 +130,23 @@ describe('dedupConsecutiveFrames (injected perceptual hash)', () => {
     expect(kept).toHaveLength(2);
   });
 
+  it('a FAILED hash does not reset the baseline / force-keep the next frame (#9)', async () => {
+    // A (valid) becomes baseline; B fails (kept, fail-open) but must NOT overwrite the
+    // baseline with ''; C is identical to A → dropped by comparing against A's retained hash.
+    const hashes: Record<string, string> = {
+      A: '1111111100000000',
+      B: '', // hash failure
+      C: '1111111100000000', // identical to A
+    };
+    const frames = [F('A', 0), F('B', 1), F('C', 2)];
+    const kept = await dedupConsecutiveFrames(frames, {
+      computeHash: async (p) => hashes[p]!,
+      threshold: 0.9,
+    });
+    // Without the fix, B's '' baseline would force C to be kept → ['A','B','C'].
+    expect(kept.map((f) => f.path)).toEqual(['A', 'B']);
+  });
+
   it('hashSimilarity: identical → 1, opposite → 0, mismatched length → 0', () => {
     expect(hashSimilarity('1010', '1010')).toBe(1);
     expect(hashSimilarity('1010', '0101')).toBe(0);

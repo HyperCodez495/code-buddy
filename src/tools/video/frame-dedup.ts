@@ -11,10 +11,12 @@
  * cheap perceptual-diff used for screencasts and needs zero extra install. The pixel
  * hasher is injectable so the dedup logic is unit-testable without real images.
  *
- * Dedup is **strictly consecutive**: each frame is compared only to the frame
- * immediately before it, so an identical frame that reappears far later (not adjacent
- * to a twin) is KEPT. Any hashing failure yields an empty hash, treated as distinct
- * (fail-open → we keep the frame rather than wrongly drop it). Never throws.
+ * Dedup is **strictly consecutive**: each frame is compared only to the last VALID
+ * baseline before it (normally the frame immediately before it), so an identical frame
+ * that reappears far later (not adjacent to a twin) is KEPT. Any hashing failure yields
+ * an empty hash, treated as distinct (fail-open → we keep the frame rather than wrongly
+ * drop it) AND does not overwrite the baseline (an empty baseline would force-keep every
+ * following frame). Never throws.
  *
  * @module tools/video/frame-dedup
  */
@@ -98,14 +100,19 @@ export async function dedupConsecutiveFrames(
       logger.debug(`[video] hash error for ${frame.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (prevHash === null) {
+      // No valid baseline yet → keep (fail-open). Adopt this hash as the baseline only
+      // when it is valid, so a failed first hash doesn't poison the comparison.
       kept.push(frame);
-      prevHash = hash;
+      if (hash) prevHash = hash;
       continue;
     }
     const sim = hashSimilarity(hash, prevHash);
     if (sim < threshold) kept.push(frame);
-    // Compare strictly against the previous ORIGINAL frame (consecutive only).
-    prevHash = hash;
+    // Compare strictly against the previous ORIGINAL frame (consecutive only). A FAILED
+    // hash ('') must NOT reset the baseline — otherwise `hashSimilarity(next, '') = 0`
+    // would force-keep every subsequent frame regardless of its content. Retain the last
+    // VALID baseline instead (the frame we couldn't hash is still kept above via sim=0).
+    if (hash) prevHash = hash;
   }
 
   logger.info(`[video] dedup: kept ${kept.length}/${frames.length} distinct frame(s)`);
