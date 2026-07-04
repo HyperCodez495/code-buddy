@@ -39,6 +39,7 @@ import type {
   ReportContext,
   ReviewVerdict,
 } from '../../agent/science/experiment-orchestrator.js';
+import type { ExperimentLoopDeps, MutationContext } from '../../agent/science/experiment-loop.js';
 import {
   createExperimentSandboxRunner,
   type ExperimentSandboxBackend,
@@ -394,5 +395,73 @@ export function buildScienceDeps(config: ScienceDepsConfig): ExperimentDeps {
       : gate,
 
     publish: (report, idea) => publishToCkg(report, idea),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — the BFTS loop's extra boundaries (mutation, metric, store, clock).
+// ---------------------------------------------------------------------------
+
+/** Generate a CHILD hypothesis, a concrete variation of the parent + archive. */
+async function mutateHypothesis(provider: ResolvedCommandProvider, ctx: MutationContext): Promise<ScienceIdea> {
+  const archiveLines = ctx.archive
+    .slice(0, 5)
+    .map((v) => `- score ${v.score.toFixed(3)}: ${v.hypothesis}`)
+    .join('\n');
+  const raw = await chatText(
+    provider,
+    'You are a research scientist running a best-first search. Given a PARENT hypothesis and the best-so-far archive, propose ONE improved CHILD hypothesis that is a concrete VARIATION of the parent (a different mechanism / parameter / approach) likely to score higher. Keep it falsifiable and runnable. Format:\nHYPOTHESIS: <one sentence>\nPLAN: <one sentence>',
+    `Goal: ${ctx.goal}\nParent hypothesis: ${ctx.parentIdea.hypothesis}\nParent score: ${ctx.parent.score.toFixed(3)}\nBest-so-far archive:\n${archiveLines || '(none yet)'}`,
+  );
+  const hMatch = raw.match(/HYPOTHESIS:\s*(.+)/i);
+  const pMatch = raw.match(/PLAN:\s*(.+)/i);
+  const hypothesis = (hMatch?.[1] ?? raw.split('\n')[0] ?? ctx.parentIdea.hypothesis).trim();
+  const rationale = pMatch?.[1]?.trim();
+  return {
+    hypothesis: hypothesis || ctx.parentIdea.hypothesis,
+    source: 'reasoning',
+    ...(rationale ? { rationale } : {}),
+  };
+}
+
+/** CLI knobs for the Phase 3 loop, on top of the shared {@link ScienceDepsConfig}. */
+export interface ScienceLoopDepsConfig extends ScienceDepsConfig {
+  /** Metric key to parse + score every generation on (default 'accuracy'). */
+  metricKey?: string;
+  /** Direction of the metric: default higher-is-better; false for a loss/error. */
+  higherIsBetter?: boolean;
+  /** Optional [min,max] to rescale the raw metric into [0,1]. */
+  min?: number;
+  max?: number;
+  /** Override the variant store path (default `.codebuddy/science/…`). */
+  storePath?: string;
+}
+
+/**
+ * Build the real-brick {@link ExperimentLoopDeps}: the shared Phase-0 boundaries
+ * (via {@link buildScienceDeps}) PLUS the loop's extras — mutation, metric parser,
+ * the append-only variant store, and the injected clock / id / RNG. The two gates
+ * are the SAME fail-closed AskHumanTool gate (GATE #1 = plan+budget, GATE #2 =
+ * publication). Nothing is reimplemented.
+ */
+export function buildScienceLoopDeps(config: ScienceLoopDepsConfig): ExperimentLoopDeps {
+  const base = buildScienceDeps(config);
+  const metricName = config.metricKey ?? 'accuracy';
+  const parseMetric = stdoutNumberMetric(metricName, {
+    higherIsBetter: config.higherIsBetter !== false,
+    ...(config.min !== undefined ? { min: config.min } : {}),
+    ...(config.max !== undefined ? { max: config.max } : {}),
+  });
+  return {
+    ...base,
+    mutate: (ctx) => mutateHypothesis(config.provider, ctx),
+    parseMetric,
+    store: new ExperimentVariantStore(config.storePath),
+    createId: () => randomUUID(),
+    now: () => new Date().toISOString(),
+    // Injected boundaries — no un-injected Date.now()/Math.random() in the loop's
+    // hot path (the loop reads the clock/RNG only through these).
+    clock: () => Date.now(),
+    random: () => Math.random(),
   };
 }

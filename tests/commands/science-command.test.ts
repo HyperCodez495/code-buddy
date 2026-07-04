@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createScienceCommand } from '../../src/commands/science/index.js';
 import { resolveScienceSandbox } from '../../src/commands/science/sandbox-option.js';
+import { resolveLoopBudget, parseDuration } from '../../src/commands/science/loop-option.js';
 
 describe('buddy science — opt-in gate', () => {
   const prev = process.env.CODEBUDDY_AI_SCIENTIST;
@@ -50,8 +51,57 @@ describe('buddy science — opt-in gate', () => {
     // Phase 2 sandbox options.
     expect(help).toContain('--sandbox');
     expect(help).toContain('--require-network-isolation');
+    // Phase 3 loop options.
+    expect(help).toContain('--loop');
+    expect(help).toContain('--max-generations');
+    expect(help).toContain('--max-experiments');
+    expect(help).toContain('--budget');
+    expect(help).toContain('--parallel');
     // The description must flag it as experimental / gated.
     expect(help.toLowerCase()).toContain('experimental');
+  });
+});
+
+// --------------------------------------------------------------------------
+// Phase 3 — loop budget resolution (pure)
+// --------------------------------------------------------------------------
+
+describe('buddy science --loop — Phase 3 budget resolution', () => {
+  it('no flags, no env ⇒ ok with an empty budget (the loop applies conservative defaults)', () => {
+    expect(resolveLoopBudget({}, {})).toEqual({ kind: 'ok', budget: {} });
+  });
+
+  it('parses valid caps from flags', () => {
+    const res = resolveLoopBudget({ maxGenerations: '3', maxExperiments: '7', parallel: '2', budget: '10m' }, {});
+    expect(res).toEqual({
+      kind: 'ok',
+      budget: { maxGenerations: 3, maxExperiments: 7, parallelism: 2, maxWallClockMs: 600_000 },
+    });
+  });
+
+  it('reads caps from CODEBUDDY_SCIENCE_* env when no flag given; flags win over env', () => {
+    expect(resolveLoopBudget({}, { CODEBUDDY_SCIENCE_MAX_GENERATIONS: '4' })).toMatchObject({
+      kind: 'ok',
+      budget: { maxGenerations: 4 },
+    });
+    expect(
+      resolveLoopBudget({ maxGenerations: '9' }, { CODEBUDDY_SCIENCE_MAX_GENERATIONS: '4' }),
+    ).toMatchObject({ budget: { maxGenerations: 9 } });
+  });
+
+  it('rejects a non-numeric / non-positive cap (a typo aborts loudly, no silent default)', () => {
+    expect(resolveLoopBudget({ maxGenerations: 'lots' }, {}).kind).toBe('invalid');
+    expect(resolveLoopBudget({ maxExperiments: '0' }, {}).kind).toBe('invalid');
+    expect(resolveLoopBudget({ parallel: '-1' }, {}).kind).toBe('invalid');
+    expect(resolveLoopBudget({ budget: 'soon' }, {}).kind).toBe('invalid');
+  });
+
+  it('parses durations with unit suffixes', () => {
+    expect(parseDuration('500')).toBe(500); // unitless ⇒ ms
+    expect(parseDuration('30s')).toBe(30_000);
+    expect(parseDuration('10m')).toBe(600_000);
+    expect(parseDuration('2h')).toBe(7_200_000);
+    expect(parseDuration('nope')).toBeNull();
   });
 });
 
