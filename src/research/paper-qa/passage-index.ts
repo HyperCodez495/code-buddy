@@ -177,6 +177,8 @@ export class PassageIndex {
   private readonly embedCharLimit: number;
   private embedder: PassageEmbedder | null;
   private seq = 0;
+  /** Whether the LAST {@link search} actually used its dense (semantic) leg. */
+  private lastSearchSemanticAvailable = true;
 
   constructor(options: PassageIndexOptions = {}) {
     this.embedder = options.embedder ?? null;
@@ -190,6 +192,16 @@ export class PassageIndex {
   /** Number of indexed passages. */
   size(): number {
     return this.passages.length;
+  }
+
+  /**
+   * Whether the LAST {@link search} used its dense (semantic) leg. `false` means
+   * the embedder was unavailable and retrieval silently fell back to BM25
+   * keyword-only ranking — surfaced so a caller can warn the user that semantic
+   * relevance was not applied (finding E). Defaults to `true` before any search.
+   */
+  get lastSemanticAvailable(): boolean {
+    return this.lastSearchSemanticAvailable;
   }
 
   /**
@@ -262,6 +274,12 @@ export class PassageIndex {
         vector: vec,
       };
     });
+
+    // Record whether the dense leg actually contributed: the query embedded AND
+    // at least one candidate carried an embedding. False ⇒ this search degraded
+    // to BM25 keyword-only, which the renderer surfaces to the user (finding E).
+    this.lastSearchSemanticAvailable =
+      qVec !== null && candidates.some((c) => c.semanticScore !== null);
 
     const ranked = hybridMmrRank(candidates, {
       k: topN,

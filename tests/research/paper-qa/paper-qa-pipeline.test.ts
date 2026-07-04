@@ -95,6 +95,8 @@ describe('runPaperQa (chained pipeline)', () => {
     expect(result.retrievedPassages).toBeGreaterThan(0);
     expect(result.answer.sufficient).toBe(true);
     expect(result.answer.citations.length).toBeGreaterThan(0);
+    // Semantic retrieval was available on this run (finding E).
+    expect(result.semanticAvailable).toBe(true);
     // Every citation resolves to page 1 with a stable (hash) docId provenance.
     for (const c of result.answer.citations) {
       expect(c.page).toBe(1);
@@ -136,6 +138,23 @@ describe('runPaperQa (chained pipeline)', () => {
     }
     const rendered = formatPaperQaOutput(result, deriveSourceLabels(Object.keys(CORPUS3)));
     expect(rendered).toContain('p.2');
+  });
+
+  it('surfaces a semantic-unavailable warning when the embedder is down (finding E)', async () => {
+    const downEmbedder: PassageEmbedder = { embed: async () => Promise.reject(new Error('embedder down')) };
+    const result = await runPaperQa(
+      'How does photosynthesis convert light energy?',
+      Object.keys(CORPUS),
+      fakeLlm('photosynthesis'),
+      { embedder: downEmbedder, pdfDeps: corpusDeps(CORPUS), topK: 4 },
+    );
+
+    // Retrieval still works keyword-only (BM25), so an answer is still possible...
+    expect(result.retrievedPassages).toBeGreaterThan(0);
+    // ...but the degradation is reported on the result and rendered in the header.
+    expect(result.semanticAvailable).toBe(false);
+    const rendered = formatPaperQaOutput(result, deriveSourceLabels(Object.keys(CORPUS)));
+    expect(rendered).toContain('recherche sémantique indisponible');
   });
 
   it('refuses honestly when the evidence is irrelevant', async () => {

@@ -76,6 +76,12 @@ export interface PaperQaResult {
   indexedPassages: number;
   /** How many passages the retrieval step surfaced before RCS filtering. */
   retrievedPassages: number;
+  /**
+   * False when retrieval's semantic (dense) leg was unavailable — the embedder
+   * failed and the search silently degraded to BM25 keyword-only (finding E).
+   * `true` when semantic ranking applied (or when nothing was searched).
+   */
+  semanticAvailable: boolean;
 }
 
 // ============================================================================
@@ -132,6 +138,9 @@ export async function runPaperQa(
     pdfPathsConsidered: paths.length,
     indexedPassages,
     retrievedPassages: hits.length,
+    // `lastSemanticAvailable` defaults to true when no search ran (empty index /
+    // empty question), so those cases correctly report "not degraded".
+    semanticAvailable: index.lastSemanticAvailable,
   };
 }
 
@@ -186,10 +195,15 @@ export function formatPaperQaOutput(
       `récupérés : ${result.retrievedPassages} | retenus (RCS) : ${a.retainedCount}`,
     `Synthèse : ${a.llmUsed ? 'LLM' : 'indisponible'} | ` +
       `Statut : ${a.sufficient ? 'répondu (ancré)' : 'refus honnête'} (${a.reason})`,
-    '',
-    '---',
-    '',
   ];
+  if (!result.semanticAvailable) {
+    // The dense leg was down — retrieval ran keyword-only. Tell the user so a
+    // possibly-degraded ranking isn't mistaken for a full semantic search.
+    header.push(
+      'Note : recherche sémantique indisponible (embeddings) — repli BM25 (mots-clés) seul, pertinence possiblement dégradée.',
+    );
+  }
+  header.push('', '---', '');
   const body = relabelSources(a.answer, sourceLabels);
   return truncate(`${header.join('\n')}${body}`);
 }

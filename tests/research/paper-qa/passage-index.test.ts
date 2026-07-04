@@ -117,6 +117,8 @@ describe('PassageIndex — index, search, provenance', () => {
     expect(top.scores.dense).not.toBeNull();
     expect(top.scores.keyword).toBeGreaterThan(0);
     expect(top.scores.final).toBeGreaterThan(0);
+    // The dense leg WAS available on this search (finding E).
+    expect(index.lastSemanticAvailable).toBe(true);
   });
 
   it('BM25 keyword: an exact rare term in one passage surfaces that passage', async () => {
@@ -225,6 +227,9 @@ describe('PassageIndex — degradation and bounds', () => {
       expect(r.scores.dense).toBeNull();
       expect(r.scores.keyword).toBeGreaterThanOrEqual(0);
     }
+    // The degradation is now VISIBLE to callers (finding E): the last search
+    // reports its semantic leg was unavailable.
+    expect(index.lastSemanticAvailable).toBe(false);
   });
 
   it('returns [] for an empty index and an empty question', async () => {
