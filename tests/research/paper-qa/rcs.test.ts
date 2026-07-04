@@ -82,7 +82,7 @@ describe('summarizePassage', () => {
     expect(await summarizePassage(scored, 'q', noRel)).toBeNull();
   });
 
-  it('forces relevance 0 when the summary is NONE (parseable but useless)', async () => {
+  it('forces relevance 0 when a WEAK-relevance passage has a NONE summary (parseable but useless)', async () => {
     const scored = mkScored('An unrelated aside about the weather.');
     const res = await summarizePassage(scored, 'quantum computing', keywordRcsLlm('quantum'));
     expect(res).not.toBeNull();
@@ -90,12 +90,36 @@ describe('summarizePassage', () => {
     expect(res!.summary).toBe('');
   });
 
-  it('tolerates a 0..100 / percent relevance scale', async () => {
+  it('keeps a STRONGLY-relevant passage whose summary is empty, using the raw text (finding C-a)', async () => {
+    const scored = mkScored('The Calvin cycle occurs in the stroma of the chloroplast.');
+    // Strong relevance but the model skipped the summary (SUMMARY: NONE).
+    const strongButNoSummary: PassageQaLlm = async () => 'RELEVANCE: 0.9\nSUMMARY: NONE';
+    const res = await summarizePassage(scored, 'where does the Calvin cycle occur', strongButNoSummary);
+    expect(res).not.toBeNull();
+    // Relevance is NOT zeroed → the passage survives the threshold filter...
+    expect(res!.relevance).toBeCloseTo(0.9);
+    // ...and its raw text stands in as the evidence summary.
+    expect(res!.summary).toContain('Calvin cycle');
+  });
+
+  it('reads an explicit percent as a 0..100 scale', async () => {
     const scored = mkScored('Relevant enough.');
     const pct: PassageQaLlm = async () => 'RELEVANCE: 80%\nSUMMARY: yes';
-    const hundred: PassageQaLlm = async () => 'RELEVANCE: 80\nSUMMARY: yes';
     expect((await summarizePassage(scored, 'q', pct))!.relevance).toBeCloseTo(0.8);
-    expect((await summarizePassage(scored, 'q', hundred))!.relevance).toBeCloseTo(0.8);
+  });
+
+  it('reads a bare 0..10 grade as a /10 scale, not /100 (finding C-b)', async () => {
+    const scored = mkScored('Relevant enough.');
+    // "RELEVANCE: 8" is an 8/10 grade → 0.8, NOT 0.08 (which dropped strong evidence).
+    const grade: PassageQaLlm = async () => 'RELEVANCE: 8\nSUMMARY: yes';
+    expect((await summarizePassage(scored, 'q', grade))!.relevance).toBeCloseTo(0.8);
+  });
+
+  it('clamps a bare number above 10 (no explicit %) to the maximum', async () => {
+    const scored = mkScored('Relevant enough.');
+    // Without a "%" we refuse to assume a 0..100 scale; a bare 80 clamps to 1.
+    const big: PassageQaLlm = async () => 'RELEVANCE: 80\nSUMMARY: yes';
+    expect((await summarizePassage(scored, 'q', big))!.relevance).toBe(1);
   });
 });
 
@@ -126,6 +150,15 @@ describe('summarizePassages', () => {
     // The poison passage is dropped; the two good ones survive.
     expect(retained).toHaveLength(2);
     expect(retained.every((r) => !r.scored.passage.text.includes('POISON'))).toBe(true);
+  });
+
+  it('retains a strong-relevance passage even when its summary is NONE (finding C-a)', async () => {
+    const passages = [mkScored('Ribosomes synthesize proteins from mRNA templates.')];
+    const strong: PassageQaLlm = async () => 'RELEVANCE: 0.9\nSUMMARY: NONE';
+    const retained = await summarizePassages(passages, 'q', strong);
+    expect(retained).toHaveLength(1);
+    expect(retained[0]!.relevance).toBeCloseTo(0.9);
+    expect(retained[0]!.summary).toContain('Ribosomes');
   });
 
   it('returns [] when nothing clears the relevance threshold', async () => {

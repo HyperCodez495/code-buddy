@@ -74,6 +74,13 @@ export interface RcsOptions {
 // ============================================================================
 
 const DEFAULT_RELEVANCE_THRESHOLD = 0.5;
+/**
+ * When a passage parses to a strong relevance but an EMPTY summary, keep the
+ * passage (falling back to its raw text as evidence) rather than zeroing it. At
+ * or above this floor the model's relevance verdict is trusted; below it, an
+ * empty-summary passage is treated as "no useful content" and dropped.
+ */
+const EMPTY_SUMMARY_KEEP_FLOOR = DEFAULT_RELEVANCE_THRESHOLD;
 const DEFAULT_MAX_PASSAGES = 12;
 const MAX_PASSAGES_CAP = 200;
 const DEFAULT_PASSAGE_CHAR_LIMIT = 2000;
@@ -130,7 +137,17 @@ export async function summarizePassage(
 
   const parsed = parseRcsOutput(raw, summaryCharLimit);
   if (!parsed) return null;
-  return { scored, summary: parsed.summary, relevance: parsed.relevance };
+  // Strong relevance but an empty summary (finding C-a): fall back to the raw
+  // passage text so the retained evidence still reaches the synthesizer instead
+  // of being silently discarded. A zeroed (weak) passage keeps its empty summary
+  // — the threshold filter drops it anyway.
+  const summary =
+    parsed.summary.length > 0
+      ? parsed.summary
+      : parsed.relevance > 0
+        ? truncate(scored.passage.text.replace(/\s+/g, ' ').trim(), summaryCharLimit)
+        : '';
+  return { scored, summary, relevance: parsed.relevance };
 }
 
 // ============================================================================
@@ -187,21 +204,36 @@ function parseRcsOutput(
 
   const summary = extractSummary(raw);
   if (summary.length === 0 || /^none\b/i.test(summary)) {
-    // Parseable but the model found nothing useful → keep it distinguishable
-    // from an LLM failure (not null) but force it below any positive threshold.
+    // Parseable relevance but no distilled summary. Don't blindly zero the
+    // relevance: a STRONGLY-relevant passage the model simply didn't summarise
+    // was being silently discarded (finding C-a). Keep the parsed relevance when
+    // it is strong (the caller then falls back to the raw passage text as
+    // evidence); otherwise force it below any positive threshold so genuinely
+    // useless passages still drop, distinct from an LLM failure (null).
+    if (relevance >= EMPTY_SUMMARY_KEEP_FLOOR) return { summary: '', relevance };
     return { summary: '', relevance: 0 };
   }
   return { summary: truncate(summary, summaryCharLimit), relevance };
 }
 
-/** Extract the relevance number; tolerates `%` and a 0..100 scale. */
+/**
+ * Extract the relevance number, clamped to 0..1.
+ *
+ * Scale handling (finding C-b): a `%` sign is an explicit 0..100 scale (÷100).
+ * WITHOUT a `%`, we do NOT assume 0..100 — that turned "RELEVANCE: 8" (an 8/10
+ * grade) into 0.08 and silently dropped strong evidence. A bare number > 1 is
+ * read as the common 0..10 grade (÷10); anything above 10 clamps to the maximum.
+ */
 function parseRelevance(raw: string): number | null {
   const m = raw.match(/relevance\s*[:=]\s*(-?\d+(?:[.,]\d+)?)(\s*%)?/i);
   if (!m || m[1] === undefined) return null;
   let val = Number(m[1].replace(',', '.'));
   if (!Number.isFinite(val)) return null;
-  if (m[2]) val = val / 100; // explicit percent
-  else if (val > 1 && val <= 100) val = val / 100; // tolerate a 0..100 scale
+  if (m[2]) {
+    val = val / 100; // explicit percent → 0..100 scale
+  } else if (val > 1) {
+    val = val <= 10 ? val / 10 : 1; // bare 0..10 grade; clamp above 10
+  }
   return Math.min(1, Math.max(0, val));
 }
 
