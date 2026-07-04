@@ -25,6 +25,7 @@ import { inferTaskType } from '../fleet/model-capability-heuristics.js';
 import { withSpeakingGuard, interruptSpeaking } from './voice-activity.js';
 import { prepareSpeech } from './speech-sanitizer.js';
 import { matchVoiceInteraction, VOICE_INTERACTION_PREWARM_PHRASES } from './voice-interactions.js';
+import { streamToSpeech } from './voice-stream.js';
 
 /**
  * Cancellation handle threaded into the two interruptible steps of a spoken turn: the
@@ -40,6 +41,12 @@ export interface VoiceStepOptions {
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
 export type ReplyFn = (heard: string, opts?: VoiceStepOptions) => Promise<string>;
+/**
+ * Streaming think: yield the reply as token deltas so the voice can be PIPELINED (spoken
+ * sentence-by-sentence as the LLM streams). Yielding nothing signals "not applicable" (a
+ * phatic reply, an unreachable model) — the caller then falls back to the blocking `ReplyFn`.
+ */
+export type StreamReplyFn = (heard: string, opts?: VoiceStepOptions) => AsyncIterable<string>;
 /** Synthesize: turn reply text into a playable WAV file, return its path. */
 export type SynthFn = (text: string) => Promise<string>;
 /** Speak: play a WAV file to the speakers (blocking until done). */
@@ -48,6 +55,16 @@ export type PlayFn = (wav: string, opts?: VoiceStepOptions) => Promise<void>;
 export interface VoiceReplyOptions {
   /** Injectable "think" step. Default: a short companion reply from a local LLM ($0). */
   replyFn?: ReplyFn;
+  /**
+   * Injectable STREAMING "think" step (token deltas) — enables the pipeline that speaks from
+   * the first sentence. When present and it yields content, the reply is spoken
+   * sentence-by-sentence; otherwise the blocking `replyFn` is used. Default: the LLM stream
+   * (`defaultStreamReply`) UNLESS a blocking `replyFn` was injected (then the caller's
+   * blocking contract is honored and no default stream is used).
+   */
+  streamFn?: StreamReplyFn;
+  /** Safety cap: force a sentence break after N chars with no punctuation (streaming). Default 200. */
+  sentenceCap?: number;
   /** Injectable "synthesize" step. Default: Piper neural TTS. */
   synth?: SynthFn;
   /** Injectable "speak" step. Default: aplay / pw-play / ffplay (blocking). */
@@ -621,6 +638,78 @@ export async function defaultReply(
   }
 }
 
+/**
+ * Default STREAMING think: the same short companion reply as `defaultReply`, but yielded as
+ * token deltas so the voice pipeline can speak from the first sentence. Phatic small talk is
+ * NOT streamed — it is answered by the instant canned reply on the blocking path, so this
+ * generator yields nothing for it (the caller falls back). Any failure (unreachable model,
+ * stream error) also yields nothing → graceful fallback to the blocking reply. Never-throws.
+ */
+export async function* defaultStreamReply(
+  heard: string,
+  replyOpts?: VoiceStepOptions,
+): AsyncGenerator<string, void, unknown> {
+  // Phatic → let the blocking path answer with the instant canned reply (non-streamed).
+  if (fastCompanionReply(heard)) return;
+  try {
+    const { CodeBuddyClient } = await import('../codebuddy/client.js');
+    const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
+    const route = await resolveVoiceModel(heard);
+    logger.debug(`[voice] stream reply model: ${route.model} — ${route.reason}`);
+    const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
+    let systemPrompt = (await getActivePersonaVoiceAsync()).spokenPrompt || SPEAK_SYSTEM_PROMPT;
+    // Relational context (opt-in) — mirror defaultReply so the fast path keeps the same persona.
+    if (process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+      try {
+        const { buildRelationalContext } = await import('../companion/relational-context.js');
+        const rel = await buildRelationalContext();
+        if (rel) systemPrompt = `${systemPrompt}\n\n${rel}`;
+        const { detectRelationalSignal, registerGuidanceForSignal, avoidOpenersGuidance } = await import(
+          '../companion/reply-augment.js'
+        );
+        const guidance = [
+          registerGuidanceForSignal(detectRelationalSignal(heard)),
+          avoidOpenersGuidance(recentReplyOpeners),
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (guidance) systemPrompt = `${systemPrompt}\n\n${guidance}`;
+      } catch {
+        /* keep the plain persona prompt */
+      }
+    }
+    let full = '';
+    for await (const chunk of client.chatStream(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: heard },
+      ] as never,
+      [],
+      // Additive: thread the barge-in signal so an interrupt aborts the in-flight stream.
+      replyOpts?.signal ? { signal: replyOpts.signal } : undefined,
+    )) {
+      if (replyOpts?.signal?.aborted) break;
+      const delta = chunk?.choices?.[0]?.delta?.content;
+      if (typeof delta === 'string' && delta.length > 0) {
+        full += delta;
+        yield delta;
+      }
+    }
+    // Remember the opening so the next reply varies its entry (opt-in relational layer only).
+    if (full.trim() && process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
+      try {
+        const { pushOpener } = await import('../companion/reply-augment.js');
+        recentReplyOpeners = pushOpener(recentReplyOpeners, full);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch (err) {
+    logger.warn(`[voice] stream reply failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Yields nothing → the pipeline falls back to the blocking reply.
+  }
+}
+
 /** Default synth: Piper neural TTS via the shared text_to_speech synthesizer. */
 function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
   const resolvedVoice = voice || resolveDefaultPiperVoiceModel();
@@ -803,7 +892,29 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   // Default think step: adapt `defaultReply(heard, history, opts)` to the `ReplyFn(heard, opts)`
   // contract so the barge-in signal reaches the LLM call.
   const replyFn: ReplyFn = options.replyFn ?? ((heard, opts) => defaultReply(heard, [], opts));
+  // Streaming think step (pipeline: speak from the first sentence). Chosen ONLY when a stream
+  // source is available: an explicitly injected `streamFn`, or — when NO blocking `replyFn` was
+  // injected — the LLM stream default. If the caller injected a blocking `replyFn` but no
+  // `streamFn`, we honor their blocking contract (byte-identical to the pre-streaming loop).
+  const streamFn: StreamReplyFn | undefined =
+    options.streamFn ?? (options.replyFn ? undefined : defaultStreamReply);
   const play = options.play ?? defaultPlay;
+
+  // Resolve the Piper voice per-reply so a mid-session `/persona use …` changes the voice live.
+  // Shared by the streaming and blocking paths so voice selection has ONE source of truth.
+  const resolveSynth = async (): Promise<SynthFn> => {
+    if (options.synth) return options.synth;
+    let voice = options.voice;
+    if (!voice) {
+      try {
+        const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
+        voice = (await getActivePersonaVoiceAsync()).voice;
+      } catch {
+        /* keep env default */
+      }
+    }
+    return makeDefaultSynth(voice, options.rootDir);
+  };
 
   // The single in-flight turn's cancellation handle. null while idle.
   let currentAbort: AbortController | null = null;
@@ -817,6 +928,40 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let synthMs = 0;
     let playMs = 0;
     try {
+      // ---- FAST PATH: streaming pipeline — speak from the first sentence ----
+      // Never lets a streaming failure crash the turn; on nothing-spoken it falls through to
+      // the blocking path below (which is the original, unchanged tour-par-tour behavior).
+      if (streamFn) {
+        try {
+          const synth = await resolveSynth();
+          const result = await streamToSpeech({
+            stream: streamFn(heard, { signal }),
+            synth,
+            play,
+            signal,
+            ...(options.sentenceCap !== undefined ? { cap: options.sentenceCap } : {}),
+          });
+          if (signal.aborted) return; // barge-in during the streamed turn → stay silent
+          if (result.played) {
+            logger.info(`[voice] spoke (streamed) → ${result.spoken}`);
+            logger.info(
+              `[voice] streamed ${result.sentences.length} phrase(s) in ${Date.now() - startedAt}ms`,
+            );
+            options.onSpoke?.(result.spoken);
+            return;
+          }
+          // Nothing speakable came through the stream (phatic, empty, all-artifact, or a stream
+          // error) → fall through to the blocking reply below.
+          logger.debug('[voice] stream produced nothing speakable — falling back to blocking reply');
+        } catch (err) {
+          logger.warn(
+            `[voice] streaming path failed, falling back to blocking: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          if (signal.aborted) return;
+        }
+      }
+
+      // ---- BLOCKING FALLBACK: the original tour-par-tour behavior, unchanged ----
       const replyStart = Date.now();
       const rawReply = await replyFn(heard, { signal });
       replyMs = Date.now() - replyStart;
@@ -832,20 +977,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         }
         return; // nothing to say → silence (never an error)
       }
-      // Resolve the voice per-reply so a mid-session `/persona use …` changes the voice live.
-      let synth = options.synth;
-      if (!synth) {
-        let voice = options.voice;
-        if (!voice) {
-          try {
-            const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
-            voice = (await getActivePersonaVoiceAsync()).voice;
-          } catch {
-            /* keep env default */
-          }
-        }
-        synth = makeDefaultSynth(voice, options.rootDir);
-      }
+      const synth = await resolveSynth();
       const synthStart = Date.now();
       const wav = await synth(reply);
       synthMs = Date.now() - synthStart;
