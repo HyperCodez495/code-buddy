@@ -405,6 +405,17 @@ export class CodeBuddyAgent extends BaseAgent {
         } catch (err) {
           logger.debug('Failed to register VisualValidationMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
         }
+        // Plan completion audit (priority 157) — Manus "todo.md is a verification
+        // ledger" pattern: when an active PLAN.md still has open items, nudge the
+        // model ONCE to audit its checklist (verify or explicitly skip) before
+        // concluding, instead of declaring done from memory. Inert with no plan.
+        try {
+          const { createPlanCompletionAuditMiddleware } = await import('./middleware/plan-completion-audit.js');
+          pipeline.use(createPlanCompletionAuditMiddleware());
+          logger.debug('PlanCompletionAuditMiddleware registered in pipeline (priority 157)');
+        } catch (err) {
+          logger.debug('Failed to register PlanCompletionAuditMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
+        }
         // Quality gate middleware (priority 200) — auto-delegates to specialized agents
         try {
           const { createQualityGateMiddleware } = await import('./middleware/quality-gate-middleware.js');

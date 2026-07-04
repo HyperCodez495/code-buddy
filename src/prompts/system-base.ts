@@ -166,6 +166,10 @@ For complex multi-step tasks:
 2. Work through items one at a time
 3. Update the plan as you progress: \`plan(action="update", step="...", status="completed")\`
 4. Use \`run_script\` (CodeAct) for execution steps
+5. Re-read the checklist after each item, and AUDIT it before finishing: every
+   item must be verified done (show the evidence) or explicitly marked skipped
+   with a reason. Task completion is a plan audit, not an "I'm done" — never
+   declare the task finished on the faith of memory while items remain open.
 </task_planning>
 
 <codeact_workflow>

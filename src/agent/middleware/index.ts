@@ -26,3 +26,10 @@ export { QualityGateMiddleware, createQualityGateMiddleware } from './quality-ga
 export type { QualityGateConfig, QualityGate } from './quality-gate-middleware.js';
 export { ReasoningMiddleware, createReasoningMiddleware } from './reasoning-middleware.js';
 export { VisualValidationMiddleware } from './visual-validation-middleware.js';
+export {
+  PlanCompletionAuditMiddleware,
+  createPlanCompletionAuditMiddleware,
+  parsePlanItems,
+  defaultPlanCompletionAuditConfig,
+} from './plan-completion-audit.js';
+export type { PlanCompletionAuditConfig, PlanItem } from './plan-completion-audit.js';
