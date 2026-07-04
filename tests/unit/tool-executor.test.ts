@@ -33,6 +33,9 @@ jest.mock('../../src/tools/index.js', () => ({
     search: jest.fn().mockResolvedValue({ success: true, output: 'web results' }),
     fetchPage: jest.fn().mockResolvedValue({ success: true, output: 'page content' }),
   }; }),
+  WeatherTool: jest.fn().mockImplementation(function() { return {
+    getWeather: jest.fn().mockResolvedValue({ success: true, output: 'weather report' }),
+  }; }),
   MorphEditorTool: jest.fn().mockImplementation(function() { return {
     editFile: jest.fn().mockResolvedValue({ success: true, output: 'File edited' }),
   }; }),
