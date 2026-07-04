@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 import { execFileSync } from 'child_process';
 import { mkdtemp, rm, mkdir, readFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -26,7 +26,7 @@ import {
   downloadAudioWav,
   isDownloadOk,
 } from '../../../src/tools/video/media-fetch.js';
-import { transcribeLong } from '../../../src/tools/video/long-transcribe.js';
+import { transcribeLong, defaultChunkSec } from '../../../src/tools/video/long-transcribe.js';
 import {
   understandVideo,
   isUnderstandOk,
@@ -272,6 +272,104 @@ describe('long-transcribe (real ffmpeg, injected STT)', () => {
       workDir: await mkdtemp(join(tmpdir(), 'buddy-longtx-empty-')),
     });
     expect(segments).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1 — the default chunk must stay under the STT worker timeout so a fully-spoken
+//      chunk is never silently dropped (worker resolves '' on timeout, not throw).
+// ---------------------------------------------------------------------------
+describe('long-transcribe — timeout-safe default chunk (#1)', () => {
+  it('defaultChunkSec sits under the worker timeout budget and scales/clamps with it', () => {
+    const prev = process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS;
+    try {
+      delete process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS;
+      const d = defaultChunkSec();
+      expect(d).toBeGreaterThanOrEqual(8);
+      expect(d).toBeLessThanOrEqual(18); // comfortably below the 20 s default budget
+      // A larger tuned timeout scales the chunk up, but stays clamped to the MAX.
+      process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS = '60000';
+      expect(defaultChunkSec()).toBe(30);
+      // A tiny timeout clamps to the MIN floor.
+      process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS = '2000';
+      expect(defaultChunkSec()).toBe(8);
+    } finally {
+      if (prev === undefined) delete process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS;
+      else process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS = prev;
+    }
+  });
+
+  it('segments with a default chunk_time under the timeout and drops no chunk', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'buddy-longtx-def-'));
+    const segmentArgs: string[] = [];
+    const fakeSpawn = ((_cmd: string, args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: () => void;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      const isSegment = args.includes('segment'); // ffmpeg split; ffprobe never has it
+      setImmediate(() => {
+        if (isSegment) {
+          segmentArgs.push(...args);
+          writeFileSync(join(workDir, 'chunk_0000.wav'), 'x');
+          writeFileSync(join(workDir, 'chunk_0001.wav'), 'x');
+          child.emit('close', 0);
+        } else {
+          child.stdout.emit('data', Buffer.from('15\n')); // ffprobe duration
+          child.emit('close', 0);
+        }
+      });
+      return child;
+    }) as never;
+    const transcriber = vi.fn(async () => 'spoken content');
+    try {
+      const segs = await transcribeLong('/audio.wav', { spawn: fakeSpawn, workDir, transcriber });
+      const segmentTime = Number(segmentArgs[segmentArgs.indexOf('-segment_time') + 1]);
+      expect(segmentTime).toBeGreaterThan(0);
+      expect(segmentTime).toBeLessThanOrEqual(18); // under the 20 s worker timeout
+      // Both spoken chunks captured — nothing silently truncated.
+      expect(segs).toHaveLength(2);
+      expect(transcriber).toHaveBeenCalledTimes(2);
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('still honours an explicit chunkSec verbatim (caller override)', async () => {
+    const workDir = await mkdtemp(join(tmpdir(), 'buddy-longtx-exp-'));
+    const segmentArgs: string[] = [];
+    const fakeSpawn = ((_cmd: string, args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: () => void;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      const isSegment = args.includes('segment');
+      setImmediate(() => {
+        if (isSegment) {
+          segmentArgs.push(...args);
+          writeFileSync(join(workDir, 'chunk_0000.wav'), 'x');
+          child.emit('close', 0);
+        } else {
+          child.stdout.emit('data', Buffer.from('45\n'));
+          child.emit('close', 0);
+        }
+      });
+      return child;
+    }) as never;
+    try {
+      await transcribeLong('/audio.wav', { spawn: fakeSpawn, workDir, transcriber: async () => 'x', chunkSec: 45 });
+      expect(segmentArgs[segmentArgs.indexOf('-segment_time') + 1]).toBe('45');
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 });
 

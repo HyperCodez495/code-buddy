@@ -9,6 +9,16 @@
  * The transcriber is injectable (`Transcriber` from speech-reaction) so the reassembly
  * is unit-testable on a REAL ffmpeg-generated WAV without a real STT engine.
  *
+ * **Silent-drop hazard (fixed here):** the STT worker's per-request timeout
+ * (`CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS`, default 20 000 ms) does NOT throw on expiry —
+ * it `resolve('')`. `transcribeLong` cannot distinguish that empty string from genuine
+ * silence, so a chunk whose wall-clock decode overruns the timeout is treated as silence
+ * (no segment emitted) while `offset` still advances → a gaping hole read as silence.
+ * A fully-spoken chunk decodes in a time that scales with its audio length (faster-whisper
+ * on CPU can approach real-time under load), so the DEFAULT chunk length is derived to sit
+ * safely UNDER the worker's timeout budget (see `defaultChunkSec`). An explicit `chunkSec`
+ * is still honoured (caller's choice); only the default is guaranteed budget-safe.
+ *
  * @module tools/video/long-transcribe
  */
 
@@ -29,7 +39,11 @@ export interface TimedSegment {
 export interface LongTranscribeOptions {
   /** Injectable STT (default: `transcribeWav` from speech-reaction, lazy-loaded). */
   transcriber?: Transcriber;
-  /** Target chunk length in seconds (default 45). */
+  /**
+   * Target chunk length in seconds. Default: derived from the STT worker timeout budget
+   * (`defaultChunkSec()`, ~15 s for the 20 s default) so a spoken chunk never overruns the
+   * worker timeout and gets silently dropped. An explicit value is honoured verbatim.
+   */
   chunkSec?: number;
   /** ffmpeg binary (default 'ffmpeg'). */
   ffmpegBin?: string;
@@ -39,6 +53,31 @@ export interface LongTranscribeOptions {
   workDir?: string;
   /** Injectable spawn (tests). */
   spawn?: typeof realSpawn;
+}
+
+/**
+ * Mirror of speech-reaction's `CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS` default. A chunk whose
+ * STT decode exceeds this wall-clock budget is silently resolved as `''` (dropped), so the
+ * default chunk duration is kept well under it.
+ */
+const DEFAULT_WORKER_TIMEOUT_MS = 20_000;
+/** Fraction of the worker timeout budget we allow a chunk's decode to consume (25 % margin). */
+const CHUNK_BUDGET_FRACTION = 0.75;
+/** Clamp the derived default chunk to a sane range regardless of the configured timeout. */
+const MIN_DEFAULT_CHUNK_SEC = 8;
+const MAX_DEFAULT_CHUNK_SEC = 30;
+
+/**
+ * Derive a default chunk length (seconds) that keeps a fully-spoken chunk's STT decode
+ * inside the worker timeout budget, so it is never silently dropped as timed-out-⇒-empty.
+ * Reads the SAME env var the worker uses (`CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS`) so a tuned
+ * timeout scales the chunk with it. Clamped to `[MIN, MAX]`. Pure.
+ */
+export function defaultChunkSec(): number {
+  const raw = Number.parseInt(process.env.CODEBUDDY_SPEECH_WORKER_TIMEOUT_MS ?? '', 10);
+  const budgetMs = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_WORKER_TIMEOUT_MS;
+  const sec = Math.floor((budgetMs / 1000) * CHUNK_BUDGET_FRACTION);
+  return Math.max(MIN_DEFAULT_CHUNK_SEC, Math.min(MAX_DEFAULT_CHUNK_SEC, sec));
 }
 
 function runProcess(
@@ -101,7 +140,7 @@ export async function transcribeLong(
   audioPath: string,
   options: LongTranscribeOptions = {},
 ): Promise<TimedSegment[]> {
-  const chunkSec = options.chunkSec && options.chunkSec > 0 ? options.chunkSec : 45;
+  const chunkSec = options.chunkSec && options.chunkSec > 0 ? options.chunkSec : defaultChunkSec();
   const ffmpegBin = options.ffmpegBin ?? 'ffmpeg';
   const ffprobeBin = options.ffprobeBin ?? 'ffprobe';
   const spawn = options.spawn ?? realSpawn;
