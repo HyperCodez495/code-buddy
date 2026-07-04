@@ -7,9 +7,9 @@
  * store never calls Date.now()).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import {
   ExperimentVariantStore,
@@ -106,5 +106,41 @@ describe('ExperimentVariantStore', () => {
     // Corrupt it.
     writeFileSync(storePath, '{ not valid json');
     expect(store.list()).toEqual([]);
+  });
+
+  // ── F7: record() is a TRUE append (JSONL), not a full read-modify-write ───────
+  it('appends without rewriting prior records (no concurrent clobber)', () => {
+    const store = new ExperimentVariantStore(storePath);
+    store.record(makeRecord({ id: 'a', createdAt: '2026-07-04T10:00:00.000Z' }));
+    const after1 = readFileSync(storePath, 'utf8');
+    store.record(makeRecord({ id: 'b', createdAt: '2026-07-04T11:00:00.000Z' }));
+    const after2 = readFileSync(storePath, 'utf8');
+
+    // Append-only: the second write STRICTLY appends — the first record's bytes
+    // are untouched. A full rewrite (JSON.stringify(…,2)) would move them.
+    expect(after2.startsWith(after1)).toBe(true);
+    expect(after1.trimEnd().split('\n')).toHaveLength(1); // one JSON line per record
+    expect(after2.trimEnd().split('\n')).toHaveLength(2);
+
+    // Two independent store instances on the same path both see both records —
+    // the last writer cannot erase the other's variant.
+    expect(new ExperimentVariantStore(storePath).list().map((v) => v.id)).toEqual(['a', 'b']);
+  });
+
+  it('reads back a legacy single-object store and migrates it to JSONL on append', () => {
+    // Simulate a pre-existing store written by the OLD full-rewrite implementation.
+    mkdirSync(dirname(storePath), { recursive: true });
+    writeFileSync(
+      storePath,
+      JSON.stringify({ schemaVersion: 1, variants: [makeRecord({ id: 'legacy' })] }, null, 2),
+    );
+    const store = new ExperimentVariantStore(storePath);
+    expect(store.list().map((v) => v.id)).toEqual(['legacy']); // legacy still readable
+
+    store.record(makeRecord({ id: 'fresh', createdAt: '2026-07-04T12:00:00.000Z' }));
+    // The legacy variant is preserved (migrated, not stranded) and the new one added.
+    expect(store.list().map((v) => v.id)).toEqual(['legacy', 'fresh']);
+    // Post-migration the file is JSONL (one line each), so further appends are pure.
+    expect(readFileSync(storePath, 'utf8').trimEnd().split('\n')).toHaveLength(2);
   });
 });

@@ -1,10 +1,18 @@
 /**
  * AI-Scientist-lite — Phase 1: the experiment variant store.
  *
- * An append-only record of SCORED experiment variants, calqued on
+ * A genuinely APPEND-ONLY record of SCORED experiment variants (JSONL — one
+ * variant per line, appended with O_APPEND), calqued on
  * `CodeVariantStore`/`EvolutionaryArchive` but DECOUPLED from the repo: a record
  * carries the experiment's hypothesis + code + execution summary + measured
  * metric + fitness + lineage (`parentId`), NOT a git branch/sha of Code Buddy.
+ *
+ * JSONL append (like the CKG ledger) is why two `buddy science` runs in the same
+ * cwd no longer clobber each other: `record()` appends a single line instead of
+ * rewriting the whole file, so a concurrent writer can't erase another's variant
+ * (the old full read-modify-write was last-writer-wins). A legacy single-object
+ * store (`{schemaVersion,variants:[…]}`) is still read back and is migrated to
+ * JSONL on the next append.
  *
  * It records and reads back; it NEVER "publishes" a variant. `kept` flips to true
  * ONLY after the human keep-gate approves (Phase 1 §4) — a rejected/ungated
@@ -14,7 +22,7 @@
  * @module agent/science/experiment-variant-store
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { logger } from '../../utils/logger.js';
 import type { ExecuteCodeLanguage } from '../../tools/execute-code-runner.js';
@@ -76,20 +84,20 @@ export interface ExperimentBestOptions {
   requireKept?: boolean;
 }
 
+/** The legacy single-object store format, still read back for backward-compat. */
 interface StoreFile {
   schemaVersion: number;
   variants: ExperimentVariantRecord[];
 }
-
-const SCHEMA_VERSION = 1;
 
 function defaultStorePath(): string {
   return join(process.cwd(), '.codebuddy', 'science', 'experiment-variants.json');
 }
 
 /**
- * Append-only store for scored experiment variants. Mirrors `CodeVariantStore`:
- * `record()` appends, `list()`/`get()` read back, `best()` selects. never-throws.
+ * Append-only JSONL store for scored experiment variants. Mirrors
+ * `CodeVariantStore`: `record()` appends ONE line, `list()`/`get()` read back,
+ * `best()` selects. never-throws. Concurrent-safe (O_APPEND, no full rewrite).
  */
 export class ExperimentVariantStore {
   private readonly path: string;
@@ -104,29 +112,76 @@ export class ExperimentVariantStore {
 
   list(): ExperimentVariantRecord[] {
     if (!existsSync(this.path)) return [];
+    let raw: string;
     try {
-      const data = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<StoreFile>;
-      return Array.isArray(data?.variants) ? (data.variants as ExperimentVariantRecord[]) : [];
+      raw = readFileSync(this.path, 'utf8');
     } catch (err) {
       logger.warn(`[science] experiment variant store unreadable: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    // Backward-compat: an older single-object store `{schemaVersion,variants:[…]}`.
+    if (trimmed.startsWith('{') && trimmed.includes('"variants"')) {
+      try {
+        const data = JSON.parse(trimmed) as Partial<StoreFile>;
+        if (Array.isArray(data?.variants)) return data.variants as ExperimentVariantRecord[];
+      } catch {
+        // Not parseable as a legacy object — fall through to best-effort JSONL.
+      }
+    }
+    // JSONL: one variant per line. A torn/corrupt line is skipped (never-throws)
+    // rather than nuking the whole store.
+    const out: ExperimentVariantRecord[] = [];
+    for (const line of trimmed.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        out.push(JSON.parse(t) as ExperimentVariantRecord);
+      } catch {
+        /* skip a corrupt line */
+      }
+    }
+    return out;
   }
 
   get(id: string): ExperimentVariantRecord | null {
     return this.list().find((v) => v.id === id) ?? null;
   }
 
-  /** Append a variant record (best-effort, never throws). */
+  /**
+   * Append a variant record as one JSONL line (best-effort, never throws). This
+   * is a true append (O_APPEND), so concurrent `buddy science` runs in the same
+   * cwd cannot clobber each other's variants.
+   */
   record(rec: ExperimentVariantRecord): void {
     try {
-      const variants = this.list();
-      variants.push(rec);
       mkdirSync(dirname(this.path), { recursive: true });
-      const file: StoreFile = { schemaVersion: SCHEMA_VERSION, variants };
-      writeFileSync(this.path, JSON.stringify(file, null, 2));
+      // One-time migration of a legacy single-object store to JSONL, so the
+      // append below does not strand the pre-existing variants.
+      this.migrateLegacyIfNeeded();
+      appendFileSync(this.path, `${JSON.stringify(rec)}\n`);
     } catch (err) {
       logger.warn(`[science] experiment variant store write failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * If the store is still in the legacy `{schemaVersion,variants:[…]}` format,
+   * rewrite it as JSONL ONCE so subsequent appends stay pure appends. A
+   * non-parseable legacy blob is left untouched (never-throws; `list()` still
+   * best-effort-parses lines). Called only from `record()`.
+   */
+  private migrateLegacyIfNeeded(): void {
+    if (!existsSync(this.path)) return;
+    const trimmed = readFileSync(this.path, 'utf8').trim();
+    if (!(trimmed.startsWith('{') && trimmed.includes('"variants"'))) return;
+    try {
+      const data = JSON.parse(trimmed) as Partial<StoreFile>;
+      const variants = Array.isArray(data?.variants) ? (data.variants as ExperimentVariantRecord[]) : [];
+      writeFileSync(this.path, variants.map((v) => JSON.stringify(v)).join('\n') + (variants.length ? '\n' : ''));
+    } catch {
+      /* leave a non-parseable legacy file as-is */
     }
   }
 
