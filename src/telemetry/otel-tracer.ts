@@ -12,6 +12,7 @@
 
 import * as crypto from 'crypto';
 import { logger } from '../utils/logger.js';
+import { scrubSecrets } from '../security/secret-scrubber.js';
 
 // ============================================================================
 // Types
@@ -61,7 +62,7 @@ function generateId(bytes: number): string {
 }
 
 function nowNano(): string {
-  const [sec, nsec] = process.hrtime();
+  const [, nsec] = process.hrtime();
   const ms = Date.now();
   // Combine wall-clock ms with hrtime nanoseconds for sub-ms precision
   const nanos = BigInt(ms) * BigInt(1_000_000) + BigInt(nsec % 1_000_000);
@@ -70,7 +71,9 @@ function nowNano(): string {
 
 function toAttribute(key: string, value: string | number | boolean): OtelAttribute {
   if (typeof value === 'string') {
-    return { key, value: { stringValue: value } };
+    // Central choke point for every span attribute — redact secrets before the
+    // value is buffered and exported to the OTLP endpoint.
+    return { key, value: { stringValue: scrubSecrets(value) } };
   }
   if (typeof value === 'number') {
     return { key, value: { intValue: value } };

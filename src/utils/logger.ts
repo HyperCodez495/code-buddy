@@ -14,6 +14,7 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
+import { scrubSecrets, scrubValue } from '../security/secret-scrubber.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFormat = 'text' | 'json';
@@ -269,11 +270,14 @@ export class Logger {
       return;
     }
 
+    // Scrub secrets from the message and any structured context BEFORE the
+    // entry is stored, printed, or written to disk. Secret-free values are
+    // returned reference-identical, so normal logs are byte-for-byte unchanged.
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
       level,
-      message,
-      context,
+      message: scrubSecrets(message),
+      context: context ? (scrubValue(context) as LogContext) : context,
       source: this.options.source,
     };
 
@@ -285,7 +289,10 @@ export class Logger {
 
     // Output to console
     if (!this.options.silent) {
-      const formatted = this.formatEntry(entry);
+      // Re-scrub the fully rendered line as a final guard: safeStringify may
+      // surface Error message/stack (non-enumerable, so invisible to
+      // scrubValue) that could still carry a token. Idempotent + fast-path.
+      const formatted = scrubSecrets(this.formatEntry(entry));
       // Route all log levels to stderr to avoid polluting stdout
       // (important for headless --output json mode)
       console.error(formatted);
@@ -293,13 +300,13 @@ export class Logger {
 
     // Output to file (always JSON for easy parsing)
     if (this.fileStream) {
-      const jsonEntry = this.safeStringify({
+      const jsonEntry = scrubSecrets(this.safeStringify({
         timestamp: entry.timestamp,
         level: entry.level,
         source: entry.source,
         message: entry.message,
         ...entry.context,
-      });
+      }));
       this.fileStream.write(jsonEntry + '\n');
 
       // Check log rotation every ROTATION_CHECK_INTERVAL writes

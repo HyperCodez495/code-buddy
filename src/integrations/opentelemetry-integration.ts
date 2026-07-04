@@ -12,6 +12,7 @@
 import { EventEmitter } from 'events';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
+import { scrubSecrets } from '../security/secret-scrubber.js';
 import { getMetrics, type MetricsCollector, type MetricLabels } from '../metrics/metrics-collector.js';
 import { TIMEOUT_CONFIG, URL_CONFIG, LIMIT_CONFIG } from '../config/constants.js';
 
@@ -510,7 +511,7 @@ export class OpenTelemetryIntegration extends EventEmitter {
       })),
       status: {
         code: span.status.code === 'error' ? 2 : span.status.code === 'ok' ? 1 : 0,
-        message: span.status.message,
+        message: span.status.message ? scrubSecrets(span.status.message) : span.status.message,
       },
     };
   }
@@ -534,7 +535,8 @@ export class OpenTelemetryIntegration extends EventEmitter {
    */
   private formatAttributeValue(value: AttributeValue): object {
     if (typeof value === 'string') {
-      return { stringValue: value };
+      // Central export choke point for span + event attribute strings.
+      return { stringValue: scrubSecrets(value) };
     } else if (typeof value === 'number') {
       return Number.isInteger(value) ? { intValue: value } : { doubleValue: value };
     } else if (typeof value === 'boolean') {
@@ -546,7 +548,7 @@ export class OpenTelemetryIntegration extends EventEmitter {
         },
       };
     }
-    return { stringValue: String(value) };
+    return { stringValue: scrubSecrets(String(value)) };
   }
 
   /**
@@ -613,7 +615,7 @@ export class OpenTelemetryIntegration extends EventEmitter {
     const dataPoints = metrics.map(m => ({
       attributes: Object.entries(m.attributes || {}).map(([key, value]) => ({
         key,
-        value: { stringValue: value },
+        value: { stringValue: scrubSecrets(value) },
       })),
       timeUnixNano: m.timestamp * 1000000,
       asDouble: m.value,

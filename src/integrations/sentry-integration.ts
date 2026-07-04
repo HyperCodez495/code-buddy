@@ -11,6 +11,7 @@
 import { EventEmitter } from 'events';
 import * as os from 'os';
 import { logger } from '../utils/logger';
+import { scrubValue } from '../security/secret-scrubber.js';
 
 export interface SentryConfig {
   /** Sentry DSN */
@@ -203,7 +204,9 @@ export class SentryIntegration extends EventEmitter {
     // Apply beforeSend hook
     const processedEvent = this.config.beforeSend(event);
     if (processedEvent) {
-      this.eventQueue.push(processedEvent);
+      // Final redaction pass before the event is queued for network egress —
+      // scrubs message, exception values, tags, and extra in one deep sweep.
+      this.eventQueue.push(scrubValue(processedEvent) as SentryEvent);
       if (this.eventQueue.length > 1000) {
         this.eventQueue.splice(0, this.eventQueue.length - 500);
       }
@@ -244,7 +247,9 @@ export class SentryIntegration extends EventEmitter {
 
     const processedEvent = this.config.beforeSend(event);
     if (processedEvent) {
-      this.eventQueue.push(processedEvent);
+      // Final redaction pass before the event is queued for network egress —
+      // scrubs message, exception values, tags, and extra in one deep sweep.
+      this.eventQueue.push(scrubValue(processedEvent) as SentryEvent);
       if (this.eventQueue.length > 1000) {
         this.eventQueue.splice(0, this.eventQueue.length - 500);
       }
@@ -258,8 +263,9 @@ export class SentryIntegration extends EventEmitter {
    * Add a breadcrumb
    */
   addBreadcrumb(breadcrumb: Omit<SentryBreadcrumb, 'timestamp'>): void {
+    // Breadcrumbs are attached to outgoing events — scrub their message/data.
     this.breadcrumbs.push({
-      ...breadcrumb,
+      ...(scrubValue(breadcrumb) as Omit<SentryBreadcrumb, 'timestamp'>),
       timestamp: Date.now() / 1000,
     });
 
