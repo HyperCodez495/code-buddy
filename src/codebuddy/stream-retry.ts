@@ -31,12 +31,23 @@
  * Standalone module: pure function, easily testable, opt-in at the
  * call site. Does NOT modify `CodeBuddyClient.chatStream()` itself —
  * zero risk to existing callers.
+ *
+ * HTTP-aware classification (2026-07)
+ * -----------------------------------
+ * Retryability now delegates to `classifyProviderError` (see
+ * `provider-error-classifier.ts`), so the predicate is no longer blind to
+ * HTTP status codes: 408/425/429/5xx are retryable, while a *fatal* 429
+ * (`insufficient_quota` / auth / invalid request) fails fast instead of
+ * re-knocking on a closed door. When the error carries a `Retry-After`, the
+ * back-off waits exactly that (bounded) instead of the blind exponential.
  */
 
 /**
  * Options controlling the retry behavior. Mirrors Gemini CLI's
  * `MID_STREAM_RETRY_OPTIONS` shape with sensible defaults.
  */
+import { classifyProviderError } from './provider-error-classifier.js';
+
 export interface StreamRetryOptions {
   /** Max retry attempts (the initial call counts as attempt 1; default 4 = 1 initial + 3 retries). */
   maxAttempts?: number;
@@ -66,41 +77,23 @@ const DEFAULT_OPTIONS: Required<Omit<StreamRetryOptions, 'signal' | 'onRetry'>> 
 };
 
 /**
- * Default heuristic for retryability. Matches the patterns we see in
- * the wild from undici / node fetch / ws libs.
+ * Default heuristic for retryability. Delegates to the HTTP-aware
+ * `classifyProviderError` so the predicate covers both the classic network
+ * errors (ECONNRESET, socket hang up, undici stream terminated …) AND HTTP
+ * status codes (408/425/429/5xx retryable; fatal 429/quota/auth/invalid fail
+ * fast). A fatal error is, by construction, `retryable === false`.
  */
 function defaultIsRetryable(err: unknown): boolean {
-  if (!err) return false;
-  const e = err as { code?: string; name?: string; message?: string };
-  // Common Node network error codes worth retrying
-  if (typeof e.code === 'string') {
-    const code = e.code;
-    if (
-      code === 'ECONNRESET' ||
-      code === 'ECONNREFUSED' ||
-      code === 'ETIMEDOUT' ||
-      code === 'ENOTFOUND' ||
-      code === 'EAI_AGAIN' ||
-      code === 'EPIPE' ||
-      code === 'UND_ERR_SOCKET'
-    ) {
-      return true;
-    }
-  }
-  // Undici-style error names
-  if (typeof e.name === 'string') {
-    const name = e.name;
-    if (name === 'AbortError' && (e.message ?? '').toLowerCase().includes('network')) return true;
-    if (name === 'FetchError' || name === 'NetworkError' || name === 'TimeoutError') return true;
-  }
-  // Loose message-level fallback
-  if (typeof e.message === 'string') {
-    const m = e.message.toLowerCase();
-    if (m.includes('socket hang up')) return true;
-    if (m.includes('terminated') && m.includes('stream')) return true;
-    if (m.includes('upstream connect error')) return true;
-  }
-  return false;
+  return classifyProviderError(err).retryable;
+}
+
+/**
+ * Server-instructed back-off (ms) for this error, if any, already bounded to
+ * a sane max by the classifier. Used to override the blind exponential delay
+ * when the provider sent a `Retry-After`.
+ */
+function retryAfterDelayMs(err: unknown): number | undefined {
+  return classifyProviderError(err).retryAfterMs;
 }
 
 /**
@@ -152,11 +145,18 @@ export async function* withStreamRetry<T>(
       if (!opts.isRetryable(err)) {
         throw err;
       }
-      // Exponential backoff: initial * 2^(attempt-1), capped at max.
-      const delay = Math.min(
-        opts.initialDelayMs * Math.pow(2, attempt - 1),
-        opts.maxDelayMs,
-      );
+      // Honour a server-sent Retry-After (already bounded to MAX_RETRY_AFTER_MS
+      // by the classifier) — it overrides the blind exponential back-off,
+      // including opts.maxDelayMs, since the server told us exactly how long to
+      // wait. Otherwise fall back to exponential: initial * 2^(attempt-1),
+      // capped at max.
+      const serverDelay = retryAfterDelayMs(err);
+      const delay = serverDelay !== undefined
+        ? serverDelay
+        : Math.min(
+            opts.initialDelayMs * Math.pow(2, attempt - 1),
+            opts.maxDelayMs,
+          );
       opts.onRetry?.(attempt, delay, err);
       await waitWithAbort(delay, opts.signal);
     }
@@ -196,3 +196,16 @@ async function waitWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** Test-only: re-export the default isRetryable predicate for direct testing. */
 export const _defaultIsRetryableForTests = defaultIsRetryable;
+
+/**
+ * Re-export the HTTP-aware classifier so callers wiring their own predicate
+ * (or inspecting a fatal/quota verdict) can reach it from the stream-retry
+ * module without a second import.
+ */
+export {
+  classifyProviderError,
+  parseRetryAfter,
+  preserveProviderErrorMetadata,
+  MAX_RETRY_AFTER_MS,
+  type ProviderErrorClassification,
+} from './provider-error-classifier.js';
