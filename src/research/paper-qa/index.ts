@@ -19,6 +19,7 @@ export { PassageIndex, InMemoryEmbeddingCache } from './passage-index.js';
 export { buildCorpusIndex } from './corpus.js';
 export { summarizePassage, summarizePassages } from './rcs.js';
 export { answerFromPassages } from './answer.js';
+export { runPaperQa, formatPaperQaOutput, deriveSourceLabels } from './paper-qa-pipeline.js';
 export type {
   StructuredDoc,
   PageSpan,
@@ -48,3 +49,4 @@ export type {
   GroundedAnswerReason,
   AnswerOptions,
 } from './answer.js';
+export type { PaperQaPipelineOptions, PaperQaResult } from './paper-qa-pipeline.js';
