@@ -22,9 +22,14 @@
  */
 
 import { readFile } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import type { ResolvedCommandProvider } from '../llm-provider-resolution.js';
 import type { ExecuteCodeLanguage } from '../../tools/execute-code-runner.js';
 import { executeCode } from '../../tools/execute-code-runner.js';
+import { ExperimentVariantStore } from '../../agent/science/experiment-variant-store.js';
+import { stdoutNumberMetric } from '../../agent/science/experiment-fitness.js';
+import type { EmpiricalScoringConfig } from '../../agent/science/experiment-empirical-gate.js';
+import type { FitnessReport } from '../../agent/self-improvement/evolution/variant-fitness.js';
 import type {
   ExperimentDeps,
   GateDecision,
@@ -236,6 +241,64 @@ async function publishToCkg(report: { report: string }, idea: ScienceIdea): Prom
     abstract: report.report.slice(0, 2000),
     source: 'ai-scientist-phase0',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 — empirical scoring config (opt-in via `--score`).
+// ---------------------------------------------------------------------------
+
+/** CLI knobs for the Phase 1 empirical scoring / keep-gate. */
+export interface EmpiricalCliConfig {
+  /** Metric key to parse from the experiment's stdout (e.g. 'accuracy'). */
+  metricKey: string;
+  /** Direction: default higher-is-better; set false for a loss/error. */
+  higherIsBetter?: boolean;
+  /** Optional [min,max] to rescale the raw metric into [0,1]. */
+  min?: number;
+  max?: number;
+  /** Experiment baseline score to beat (NEVER `main` — an experiment number). */
+  baselineScore?: number;
+  /** Genealogy: the parent variant id. */
+  parentId?: string;
+  /** Override the variant store path (default `.codebuddy/science/…`). */
+  storePath?: string;
+}
+
+/**
+ * Build the {@link EmpiricalScoringConfig} from CLI knobs. The keep-gate reuses
+ * the same fail-closed AskHumanTool gate; the metric parser is the stdout number
+ * parser; the store is the append-only experiment variant store. DECOUPLED: the
+ * baseline is an EXPERIMENT score, never the repo/`main`.
+ */
+export function buildEmpiricalScoringConfig(cli: EmpiricalCliConfig): EmpiricalScoringConfig {
+  const metricName = cli.metricKey;
+  const parseMetric = stdoutNumberMetric(metricName, {
+    higherIsBetter: cli.higherIsBetter !== false,
+    ...(cli.min !== undefined ? { min: cli.min } : {}),
+    ...(cli.max !== undefined ? { max: cli.max } : {}),
+  });
+  const store = new ExperimentVariantStore(cli.storePath);
+  const baseline: FitnessReport | undefined =
+    typeof cli.baselineScore === 'number'
+      ? {
+          score: cli.baselineScore,
+          passedAll: true,
+          regressions: [],
+          components: [
+            { name: metricName, weight: 1, score: cli.baselineScore, passed: true, detail: `baseline ${cli.baselineScore}` },
+          ],
+        }
+      : undefined;
+  return {
+    parseMetric,
+    store,
+    confirmKeep: makeGate(),
+    createId: () => randomUUID(),
+    now: () => new Date().toISOString(),
+    metricName,
+    ...(baseline ? { baseline } : {}),
+    ...(cli.parentId ? { parentId: cli.parentId } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

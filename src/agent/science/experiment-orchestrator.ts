@@ -40,6 +40,18 @@ import type {
   ExecuteCodeResult,
   ExecuteCodeRunnerOptions,
 } from '../../tools/execute-code-runner.js';
+import { resolveGate } from './human-gate.js';
+import type { GateDecision, HumanGateFn } from './human-gate.js';
+import {
+  applyEmpiricalScoring,
+  type EmpiricalOutcome,
+  type EmpiricalScoringConfig,
+} from './experiment-empirical-gate.js';
+
+// The human-gate primitives live in `./human-gate.js` (shared with the Phase 1
+// empirical gate). Re-exported here so existing consumers keep importing them
+// from the orchestrator module — a pure relocation, behaviour unchanged.
+export type { GateDecision, HumanGateFn, HumanGatePrompt } from './human-gate.js';
 
 // ============================================================================
 // Data types (deliberately small — the orchestrator owns the SHAPE, the CLI
@@ -92,23 +104,6 @@ export interface ReviewVerdict {
   evidence: string;
 }
 
-/** A human gate decision. Only `approved === true` proceeds (fail closed). */
-export interface GateDecision {
-  approved: boolean;
-  /** Optional human-supplied reason / note. */
-  reason?: string;
-}
-
-/** What a gate presents to the human before they decide. */
-export interface HumanGatePrompt {
-  gate: 'plan' | 'publish';
-  title: string;
-  body: string;
-}
-
-/** A human-gate boundary. MAY throw / time out — the orchestrator fails closed. */
-export type HumanGateFn = (prompt: HumanGatePrompt) => Promise<GateDecision>;
-
 /** Context handed to the report synthesizer. */
 export interface ReportContext {
   goal: string;
@@ -158,6 +153,15 @@ export interface ExperimentOptions {
   experimentTimeoutMs?: number;
   /** Progress callback (never allowed to break the run). */
   onStage?: (log: ExperimentStageLog) => void;
+  /**
+   * Phase 1 OPT-IN empirical scoring. When set, AFTER the experiment executes +
+   * is analysed, the orchestrator scores the experiment's metric, records a
+   * variant, applies the empirical keep/reject decision + the human keep-gate.
+   * DECOUPLED from the repo: the scoring targets the experiment folder + metric,
+   * never `src/` / `main` / the repo's tests. UNSET ⇒ Phase 0 byte-identical
+   * (the fitness component + store are never even constructed).
+   */
+  empirical?: EmpiricalScoringConfig;
 }
 
 // ============================================================================
@@ -181,6 +185,10 @@ export type ExperimentStageName =
   | 'author'
   | 'execute'
   | 'analyze'
+  // Phase 1 empirical scoring stages — only emitted when `options.empirical` is set.
+  | 'score'
+  | 'decide'
+  | 'keep-gate'
   | 'report'
   | 'review'
   | 'publish-gate'
@@ -206,6 +214,11 @@ export interface ExperimentRun {
   published: boolean;
   status: ExperimentStatus;
   stages: ExperimentStageLog[];
+  /**
+   * Phase 1 empirical outcome — PRESENT ONLY when `options.empirical` was set.
+   * Undefined otherwise (Phase 0 result is byte-identical without the option).
+   */
+  empirical?: EmpiricalOutcome;
   /** Set when a hard stage failed (status === 'failed'). */
   error?: string;
 }
@@ -361,6 +374,31 @@ export async function runExperiment(
     if (!run.analysis) run.analysis = degradedAnalysis(run.execution, 'analysis returned nothing');
     stage({ stage: 'analyze', ok: true, detail: run.analysis.summary });
 
+    // ── Phase 1 (OPT-IN): empirical scoring / keep-gate / archive ────────────
+    // Additive and DECOUPLED: only runs when `options.empirical` is set; scores
+    // the experiment's own metric in the experiment folder (never the repo).
+    // never-throws — a scoring failure degrades and the Phase 0 pass continues.
+    if (options.empirical) {
+      try {
+        const empirical = await applyEmpiricalScoring(
+          {
+            hypothesis: run.idea.hypothesis,
+            code: run.experimentCode.code,
+            language: run.experimentCode.language,
+            execution: run.execution,
+          },
+          options.empirical,
+        );
+        run.empirical = empirical;
+        for (const s of empirical.stages) {
+          stage({ stage: s.stage, ok: s.ok, detail: s.detail });
+        }
+      } catch (err) {
+        // applyEmpiricalScoring never throws, but guard defensively anyway.
+        stage({ stage: 'score', ok: false, detail: `empirical scoring failed: ${errMsg(err)}` });
+      }
+    }
+
     // ── 6. Synthesize the cited report (degrades to a deterministic report) ──
     const reportCtx: ReportContext = {
       goal: trimmedGoal,
@@ -432,30 +470,6 @@ export async function runExperiment(
       /* logging must never break the pass */
     }
     return run;
-  }
-}
-
-// ============================================================================
-// Gate helper — fail closed on decline / throw / non-explicit approval.
-// ============================================================================
-
-/**
- * Resolve a human gate, defaulting to REFUSED. Only an explicit
- * `approved === true` proceeds; a thrown error, timeout, or any other shape is
- * treated as a decline (fail closed).
- */
-async function resolveGate(fn: HumanGateFn, prompt: HumanGatePrompt): Promise<GateDecision> {
-  try {
-    const decision = await fn(prompt);
-    if (decision && decision.approved === true) {
-      return { approved: true, ...(decision.reason ? { reason: decision.reason } : {}) };
-    }
-    return {
-      approved: false,
-      ...(decision && decision.reason ? { reason: decision.reason } : {}),
-    };
-  } catch (err) {
-    return { approved: false, reason: `gate error (fail-closed): ${errMsg(err)}` };
   }
 }
 

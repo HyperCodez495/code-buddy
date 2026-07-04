@@ -38,6 +38,12 @@ interface ScienceCliOptions {
   report?: string;
   /** Commander sets this false when --no-publish is passed. */
   publish?: boolean;
+  /** Phase 1: empirically score + keep-gate the experiment metric. */
+  score?: boolean;
+  metricKey?: string;
+  baselineScore?: string;
+  /** Commander sets this false when --lower-is-better is passed. */
+  higherIsBetter?: boolean;
 }
 
 /** Human-readable one-pass summary. */
@@ -52,6 +58,13 @@ function renderRun(run: ExperimentRun): string {
     lines.push(`  ${s.ok ? '✓' : '✗'} ${s.stage.padEnd(12)} ${s.detail}`);
   }
   if (run.review) lines.push(`\nRevue: ${run.review.verdict}`);
+  if (run.empirical) {
+    const e = run.empirical;
+    lines.push(
+      `\nEmpirique: fitness ${e.fitness.score.toFixed(3)} · décision ${e.decision.keep ? 'keep' : 'reject'} (${e.decision.reason}) · gardé=${e.kept}`,
+    );
+    if (e.variantId) lines.push(`  variant archivé: ${e.variantId}`);
+  }
   if (run.error) lines.push(`\nErreur: ${run.error}`);
   return lines.join('\n');
 }
@@ -69,6 +82,10 @@ export function createScienceCommand(): Command {
     .option('--timeout <ms>', 'Experiment execution timeout in ms (clamped to the runner cap)')
     .option('-r, --report <file>', 'Write the final Markdown report to a file')
     .option('--no-publish', 'Never publish (still runs + reviews; GATE #2 auto-declines)')
+    .option('--score', 'Phase 1: empirically score the experiment metric, record a variant, human keep-gate it (decoupled from the repo)')
+    .option('--metric-key <key>', 'Metric key to parse from the experiment stdout (with --score)', 'accuracy')
+    .option('--baseline-score <n>', 'Experiment baseline score to beat (with --score); omit to keep the first stepping-stone')
+    .option('--no-higher-is-better', 'Treat the metric as lower-is-better, e.g. a loss (with --score)')
     .action(async (goal: string, opts: ScienceCliOptions) => {
       // ── OPT-IN gate (default OFF = zero behaviour change) ─────────────────
       if (process.env.CODEBUDDY_AI_SCIENTIST !== 'true') {
@@ -100,7 +117,7 @@ export function createScienceCommand(): Command {
       }
 
       const timeoutMs = opts.timeout ? Number(opts.timeout) : undefined;
-      const { buildScienceDeps } = await import('./deps.js');
+      const { buildScienceDeps, buildEmpiricalScoringConfig } = await import('./deps.js');
       const deps = buildScienceDeps({
         provider,
         language: language as ExecuteCodeLanguage,
@@ -109,11 +126,29 @@ export function createScienceCommand(): Command {
         ...(opts.publish === false ? { noPublish: true } : {}),
       });
 
-      logger.info(`AI-Scientist Phase 0 — goal: ${goal}`);
-      logger.info('Two human gates will ask for your approval (plan, then publication). Both fail closed.\n');
+      // ── Phase 1 (OPT-IN via --score): empirical scoring / keep-gate ────────
+      const baselineScore = opts.baselineScore !== undefined ? Number(opts.baselineScore) : undefined;
+      if (opts.baselineScore !== undefined && !Number.isFinite(baselineScore)) {
+        logger.error(`Invalid --baseline-score "${opts.baselineScore}" (must be a number).`);
+        process.exitCode = 1;
+        return;
+      }
+      const empirical = opts.score
+        ? buildEmpiricalScoringConfig({
+            metricKey: opts.metricKey ?? 'accuracy',
+            higherIsBetter: opts.higherIsBetter !== false,
+            ...(baselineScore !== undefined && Number.isFinite(baselineScore) ? { baselineScore } : {}),
+          })
+        : undefined;
+
+      logger.info(`AI-Scientist Phase ${empirical ? '1' : '0'} — goal: ${goal}`);
+      logger.info('Two human gates will ask for your approval (plan, then publication). Both fail closed.');
+      if (empirical) logger.info('A third keep-gate will ask before an experiment variant is kept. It also fails closed.');
+      logger.info('');
 
       const run = await runExperiment(goal, deps, {
         ...(timeoutMs && Number.isFinite(timeoutMs) ? { experimentTimeoutMs: timeoutMs } : {}),
+        ...(empirical ? { empirical } : {}),
         onStage: (s) => logger.info(`  [${s.ok ? 'ok' : '..'}] ${s.stage}: ${s.detail}`),
       });
 
