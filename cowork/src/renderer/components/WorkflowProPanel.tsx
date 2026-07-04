@@ -123,7 +123,9 @@ export const WorkflowProPanel: React.FC = () => {
             src={`http://localhost:${status.port}`}
             className="absolute inset-0 w-full h-full border-none bg-surface"
             title="WorkflowBuilder Pro"
-            allow="clipboard-read; clipboard-write"
+            // Untrusted self-hosted server content: run it sandboxed (scripts +
+            // same-origin so the editor still works) and drop the clipboard grant.
+            sandbox="allow-scripts allow-same-origin"
           />
         ) : loading && bootLog.length > 0 ? (
           <div className="absolute inset-0 flex flex-col p-4" data-testid="workflow-boot-log">
