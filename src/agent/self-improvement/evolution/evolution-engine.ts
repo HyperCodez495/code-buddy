@@ -217,6 +217,43 @@ async function listBanditCandidates(env: NodeJS.ProcessEnv): Promise<LlmCandidat
   }
 }
 
+/** The bandit's model selector signature (candidates + scoreboard → chosen model id). */
+export type BanditModelSelector = (
+  candidates: readonly LlmCandidate[],
+  scoreboard: BanditScoreboard,
+) => string | undefined;
+
+/** The default cost-aware UCB selector (scoped to the `evolve` task category). */
+export const defaultEvolveSelector: BanditModelSelector = (cands, sb) =>
+  pickModelUCB(cands, sb, { taskType: 'evolve' });
+
+/**
+ * Wrap a base selector so a batch of CONCURRENT cycles picks DISTINCT models. All cycles of a round
+ * read the SAME scoreboard before any of them records the first outcome — so with an empty scoreboard
+ * every arm looks `n===0` and `pickModelUCB`'s deterministic tie-break hands the SAME (cheapest) model
+ * to all of them, defeating UCB's "try each arm once". This shared-`inFlight` wrapper excludes models
+ * already dispensed this round (wrapping around for a fresh pass once every arm has been used), so the
+ * concurrent batch round-robins across the catalog instead of collapsing onto one model. The wrapper
+ * body is synchronous (no `await`), so its `inFlight` mutation cannot interleave across cycles. Pure
+ * apart from the passed-in set; never throws (delegates all failure handling to the base selector).
+ */
+export function makeInFlightAwareSelector(
+  base: BanditModelSelector,
+  inFlight: Set<string>,
+): BanditModelSelector {
+  return (candidates, scoreboard) => {
+    let available = candidates.filter((c) => !inFlight.has(c.model));
+    if (available.length === 0) {
+      // Every arm has been dispensed once this round → wrap around for a fresh pass.
+      inFlight.clear();
+      available = [...candidates];
+    }
+    const chosen = base(available, scoreboard);
+    if (chosen) inFlight.add(chosen);
+    return chosen;
+  };
+}
+
 /**
  * Decide the mutator's model via the cost-aware UCB bandit. Returns `null` when the bandit is OFF
  * (the common case → static model, byte-identical path) OR when nothing could be chosen (empty
@@ -232,8 +269,7 @@ export async function resolveBanditModel(
       opts.scoreboard ?? (await import('../../../fleet/model-scoreboard.js')).getModelScoreboard();
     const candidates = opts.banditCandidates ?? (await listBanditCandidates(env));
     if (candidates.length === 0) return null;
-    const select =
-      opts.modelSelector ?? ((cands, sb) => pickModelUCB(cands, sb, { taskType: 'evolve' }));
+    const select = opts.modelSelector ?? defaultEvolveSelector;
     const chosen = select(candidates, scoreboard);
     if (!chosen) return null;
     const cand = candidates.find((c) => c.model === chosen);
@@ -477,6 +513,24 @@ export interface EvolutionRoundOptions extends Omit<EvolutionCycleOptions, 'vari
 export async function runEvolutionRound(opts: EvolutionRoundOptions): Promise<EvolutionCycleResult[]> {
   const { rounds, concurrency = 2, idPrefix = `evo-${Date.now().toString(36)}`, ...cycleOpts } = opts;
   const ids = Array.from({ length: Math.max(1, rounds) }, (_, i) => `${idPrefix}-${i + 1}`);
+  const poolSize = Math.min(Math.max(1, concurrency), ids.length);
+
+  // When the cost-aware bandit is ON and cycles ACTUALLY overlap (poolSize > 1), wrap the model
+  // selector with a round-level in-flight tracker so the concurrent batch — which all read the SAME
+  // (often empty) scoreboard before any records the first outcome — picks DISTINCT models instead of
+  // all collapsing onto the cheapest unseen arm. Sequential rounds (poolSize === 1) and the bandit-OFF
+  // path are left byte-identical (selector untouched, and OFF never consults it at all).
+  const cycleTemplate: Omit<EvolutionCycleOptions, 'variantId'> =
+    cycleOpts.useModelBandit && poolSize > 1
+      ? {
+          ...cycleOpts,
+          modelSelector: makeInFlightAwareSelector(
+            cycleOpts.modelSelector ?? defaultEvolveSelector,
+            new Set<string>(),
+          ),
+        }
+      : cycleOpts;
+
   const results: EvolutionCycleResult[] = [];
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -484,13 +538,13 @@ export async function runEvolutionRound(opts: EvolutionRoundOptions): Promise<Ev
       const i = next++;
       if (i >= ids.length) return;
       try {
-        results.push(await runEvolutionCycle({ ...cycleOpts, variantId: ids[i] as string }));
+        results.push(await runEvolutionCycle({ ...cycleTemplate, variantId: ids[i] as string }));
       } catch (err) {
         logger.warn(`[evolve] candidate ${ids[i]} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   };
-  const pool = Array.from({ length: Math.min(Math.max(1, concurrency), ids.length) }, () => worker());
+  const pool = Array.from({ length: poolSize }, () => worker());
   await Promise.all(pool);
   return results.sort((a, b) => b.report.score - a.report.score);
 }
