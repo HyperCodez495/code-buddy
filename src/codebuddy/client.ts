@@ -127,6 +127,13 @@ export interface ChatOptions {
   /** Disable Hermes-style cross-provider fallback for this one request. */
   disableProviderFallback?: boolean;
   /**
+   * Abort this request mid-flight (barge-in / cancellation). Threaded to the
+   * transport (undici/fetch) via the OpenAI SDK's per-request `RequestOptions.signal`
+   * on the OpenAI-compat strategy. Additive: when omitted, the call is unchanged.
+   * (Gemini-native / ChatGPT-Responses / Gemini-CLI strategies currently ignore it.)
+   */
+  signal?: AbortSignal;
+  /**
    * Enable Gemini's native server-side Google Search grounding for this
    * request. Only affects the GeminiNativeProvider — ignored by the
    * OpenAI-compat path. When on, the response includes citation metadata

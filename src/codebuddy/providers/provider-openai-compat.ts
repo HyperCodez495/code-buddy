@@ -683,6 +683,11 @@ export class OpenAICompatProvider implements Provider {
             async () => {
               return await this.client.chat.completions.create(
                 requestPayload as unknown as ChatCompletionCreateParamsNonStreaming,
+                // Additive: thread the caller's AbortSignal to the transport so a
+                // barge-in / cancellation aborts the in-flight HTTP request. When
+                // opts.signal is undefined this is `create(payload, undefined)` —
+                // byte-identical to the pre-signal `create(payload)`.
+                opts.signal ? { signal: opts.signal } : undefined,
               );
             },
             {
@@ -833,6 +838,8 @@ export class OpenAICompatProvider implements Provider {
           async () => {
             return await this.client.chat.completions.create(
               streamingPayload as unknown as ChatCompletionCreateParamsStreaming,
+              // Additive AbortSignal threading (see chat()). Undefined ⇒ unchanged.
+              opts.signal ? { signal: opts.signal } : undefined,
             );
           },
           {
