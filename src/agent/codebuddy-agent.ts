@@ -741,6 +741,32 @@ Look at the screenshot and find the element matching the user's intent. Output o
       }));
     }).catch((e) => { logger.debug('Verify tool provider wire failed (optional)', { error: String(e) }); });
 
+    // Wire the delegate_agent tool's LLM bridge so the built-in specialized
+    // agents are REACHABLE at runtime. The deterministic agents (pdf/excel/
+    // data_analysis/sql/archive) need no bridge; the LLM-driven SWE agent needs
+    // an llmCall + executeTool — built from the agent's own client + tool
+    // executor, exactly the same plumbing as the `verify` tool above (this is
+    // the single tolerated contact point, identical to setVerifyToolProvider).
+    import('../tools/registry/delegate-agent-tools.js').then(({ setDelegateAgentProvider }) => {
+      setDelegateAgentProvider(() => ({
+        llmCall: async (messages, tools) => {
+          const resp = await this.codebuddyClient.chat(
+            messages as unknown as CodeBuddyMessage[],
+            tools as unknown as CodeBuddyTool[],
+          );
+          const msg = resp.choices?.[0]?.message;
+          return {
+            content: msg?.content ?? '',
+            tool_calls: msg?.tool_calls ?? [],
+          };
+        },
+        executeTool: async (name, args) => {
+          const r = await this.executeToolByName(name, args);
+          return { success: r.success, output: r.output, error: r.error };
+        },
+      }));
+    }).catch((e) => { logger.debug('Delegate-agent tool provider wire failed (optional)', { error: String(e) }); });
+
     // Phase (d).21 ship 3 — wake NotificationManager via default sink.
     // Idempotent. Once wired, anyone in the codebase can call notify()
     // / notifyQuick() and it will gate + log + emit on the manager bus.

@@ -1223,6 +1223,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     // No fleetSafe: the Verifier drives execution tools (bash/app_server) — not peer-exposable.
   },
 
+  // Delegate agent (single tool that reaches the built-in specialized agents)
+  {
+    name: 'delegate_agent',
+    category: 'utility' as ToolCategory,
+    keywords: ['delegate', 'agent', 'specialized', 'pdf', 'excel', 'xlsx', 'csv', 'data', 'analysis', 'sql', 'database', 'query', 'archive', 'zip', 'tar', 'swe', 'refactor', 'debug', 'pivot', 'correlate'],
+    priority: 6,
+    description: 'Delegate a bounded multi-step task to a built-in specialized agent (pdf/excel/data_analysis/sql/archive/swe)'
+    // No fleetSafe: swe/excel-write/sql-import/archive-create can write — not peer-exposable.
+  },
+
   // Fleet — multi-Claude orchestration via peer-RPC (Phase (d).17)
   {
     name: 'peer_delegate',

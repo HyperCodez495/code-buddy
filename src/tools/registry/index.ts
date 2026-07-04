@@ -400,6 +400,20 @@ export type {
   VerifyExecuteTool,
 } from './verify-tools.js';
 
+// Tool Adapters - Delegate Agent (reaches the built-in specialized agents)
+export {
+  DelegateAgentTool,
+  createDelegateAgentTools,
+  resetDelegateAgentInstances,
+  setDelegateAgentProvider,
+  resetDelegateAgentProvider,
+} from './delegate-agent-tools.js';
+export type {
+  DelegateAgentProvider,
+  DelegateLlmCall,
+  DelegateExecuteTool,
+} from './delegate-agent-tools.js';
+
 // Tool Adapters - Fleet (peer_delegate, list_peers, route_peer)
 export {
   PeerDelegateTool,

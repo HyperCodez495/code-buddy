@@ -52,6 +52,7 @@ import {
   SECRETS_TOOLS,
   ADVISOR_TOOLS,
   VERIFY_TOOLS,
+  DELEGATE_AGENT_TOOLS,
   ASK_USER_QUESTION_TOOLS,
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
@@ -113,6 +114,7 @@ export function getBuiltinToolNames(): string[] {
     SECRETS_TOOLS,
     ADVISOR_TOOLS,
     VERIFY_TOOLS,
+    DELEGATE_AGENT_TOOLS,
     ASK_USER_QUESTION_TOOLS,
     EXIT_PLAN_MODE_TOOLS,
     CODEBASE_REPLACE_TOOLS,
@@ -218,6 +220,12 @@ export function initializeToolRegistry(): void {
 
   // Verify tool (explicit delegation to the independent Verifier agent)
   registerGroup(VERIFY_TOOLS);
+
+  // delegate_agent — reaches the built-in specialized agents (pdf/excel/
+  // data_analysis/sql/archive/swe) via AgentRegistry.executeOn(). DataAnalysis
+  // and SQL have no covering single-shot tool, so this closes a real capability
+  // gap; the LLM bridge for the SWE agent is wired at boot (setDelegateAgentProvider).
+  registerGroup(DELEGATE_AGENT_TOOLS);
 
   // AskUserQuestion tool (structured multi-option mid-task questions)
   registerGroup(ASK_USER_QUESTION_TOOLS);

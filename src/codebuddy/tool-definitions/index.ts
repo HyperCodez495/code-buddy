@@ -289,6 +289,13 @@ export {
   VERIFY_TOOLS,
 } from './verify-tools.js';
 
+// Delegate-agent tool (reaches the built-in specialized agents: pdf, excel,
+// data_analysis, sql, archive, swe)
+export {
+  DELEGATE_AGENT_TOOL,
+  DELEGATE_AGENT_TOOLS,
+} from './delegate-agent-tools.js';
+
 // AskUserQuestion tool (structured multi-option mid-task questions)
 export {
   ASK_USER_QUESTION_TOOL,

@@ -93,6 +93,10 @@ import {
   // "Unknown tool" once the key was present. Registered here so interactive
   // dispatch ⊇ exposition. Inert without the key (isAvailable gates it).
   createFirecrawlTools,
+  // delegate_agent → reaches the built-in specialized agents (pdf/excel/
+  // data_analysis/sql/archive/swe). Interactive-only, mirroring the `verify`
+  // delegation tool. Its LLM bridge is wired at boot via setDelegateAgentProvider.
+  createDelegateAgentTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
 import { createRegisterToolTool } from "../tools/register-tool-handler.js";
@@ -417,6 +421,7 @@ export class ToolHandler {
       ...createXSearchTools(),
       ...createSecretsTools(),
       ...createFirecrawlTools(),
+      ...createDelegateAgentTools(),
       // Self-improvement: the agent can author its own tools (opt-in only).
       ...(process.env.CODEBUDDY_SELF_IMPROVE === 'true' ? [createRegisterToolTool()] : []),
     ];
