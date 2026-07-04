@@ -132,9 +132,10 @@ export {
   WEB_TOOLS,
 } from './web-tools.js';
 
-// Research tools (Deep/Wide/STORM)
+// Research tools (Deep/Wide/STORM + Paper QA)
 export {
   DEEP_RESEARCH_TOOL,
+  PAPER_QA_TOOL,
   RESEARCH_TOOLS,
 } from './research-tools.js';
 

@@ -245,6 +245,17 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Bounded multi-source cited research pipeline (deep/wide/STORM) returning a report with references',
   },
   {
+    name: 'paper_qa',
+    category: 'web',
+    keywords: [
+      'paper', 'papers', 'pdf', 'scientific', 'science', 'article', 'articles', 'corpus',
+      'cite', 'citation', 'cited', 'page', 'section', 'papier', 'papiers', 'scientifique',
+      'cite la source', 'preuves', 'grounded', 'publication', 'étude', 'research paper',
+    ],
+    priority: 7,
+    description: 'Grounded, cited QA over a local corpus of scientific PDFs (page/section provenance, honest refusal)',
+  },
+  {
     name: 'web_fetch',
     category: 'web',
     keywords: ['fetch', 'url', 'website', 'page', 'download', 'http', 'https', 'link', 'read'],
