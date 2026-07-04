@@ -793,6 +793,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Generate a video through the configured video backend and cache returned media when possible'
   },
   {
+    name: 'understand_video',
+    category: 'media',
+    keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'vidéo', 'résume vidéo', 'summarize', 'watch', 'movie', 'mp4'],
+    priority: 8,
+    description: 'Understand a video (YouTube/URL/local file) via a timestamped local transcript'
+  },
+  {
     name: 'ocr',
     category: 'media',
     keywords: ['ocr', 'text', 'extract', 'image', 'recognize', 'read'],

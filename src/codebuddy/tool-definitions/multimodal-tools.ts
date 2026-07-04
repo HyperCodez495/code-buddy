@@ -224,6 +224,33 @@ export const VIDEO_ANALYZE_TOOL: CodeBuddyTool = {
   }
 };
 
+// Video Understanding Tool - transcript-first comprehension of a YouTube/URL/local video
+export const UNDERSTAND_VIDEO_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "understand_video",
+    description: "Understand what a video SAYS by producing a timestamped transcript, local-first and $0. Accepts a YouTube URL (tries free captions first, then downloads audio with yt-dlp and transcribes locally with Whisper), a direct media URL, or a local video/audio file path. Returns the structured transcript and persists it to .codebuddy/video/. Use this to summarize or answer a question about a video's spoken content. Does NOT analyze on-screen visuals (that is a separate capability).",
+    parameters: {
+      type: "object",
+      properties: {
+        source: {
+          type: "string",
+          description: "YouTube URL (youtube.com/watch?v=… or youtu.be/…), a direct media URL, or a local video/audio file path"
+        },
+        question: {
+          type: "string",
+          description: "Optional question to answer about the video; recorded with the transcript so you can answer it from the transcript"
+        },
+        language: {
+          type: "string",
+          description: "Optional preferred caption/transcription language code (e.g. 'en', 'fr'). Tried first, then en/fr."
+        }
+      },
+      required: ["source"]
+    }
+  }
+};
+
 // Hermes Video Generation Tool - Generate videos through the configured backend
 export const VIDEO_GENERATE_TOOL: CodeBuddyTool = {
   type: "function",
@@ -919,6 +946,7 @@ export const MULTIMODAL_TOOLS: CodeBuddyTool[] = [
   IMAGE_GENERATE_TOOL,
   VIDEO_TOOL,
   VIDEO_ANALYZE_TOOL,
+  UNDERSTAND_VIDEO_TOOL,
   VIDEO_GENERATE_TOOL,
   SCREENSHOT_TOOL,
   CAMERA_SNAPSHOT_TOOL,

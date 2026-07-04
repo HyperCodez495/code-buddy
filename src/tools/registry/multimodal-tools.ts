@@ -23,6 +23,10 @@ import {
 import {
   analyzeVideoWithModel,
 } from '../video-analysis-tool.js';
+import {
+  understandVideo,
+  isUnderstandOk,
+} from '../video/video-understanding.js';
 
 // ============================================================================
 // Lazy-loaded tool instances
@@ -452,6 +456,91 @@ export class VideoAnalyzeTool implements ITool {
       description: this.description,
       category: 'media' as ToolCategoryType,
       keywords: ['video', 'analyze', 'vision', 'gemini', 'openai', 'hermes'],
+      priority: 8,
+      modifiesFiles: true,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
+// UnderstandVideoTool
+// ============================================================================
+
+export class UnderstandVideoTool implements ITool {
+  readonly name = 'understand_video';
+  readonly description = 'Understand a video (YouTube/URL/local file) by producing a timestamped transcript, local-first and $0.';
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    try {
+      const result = await understandVideo({
+        source: requiredString(input, 'source'),
+        question: optionalString(input, 'question'),
+        language: optionalString(input, 'language'),
+      }, {
+        ...(context?.cwd ? { cwd: context.cwd } : {}),
+      });
+      if (!isUnderstandOk(result)) {
+        return { success: false, error: result.error };
+      }
+      return {
+        success: true,
+        output: result.output,
+        data: {
+          segments: result.segments,
+          transcriptPath: result.transcriptPath,
+          source: result.source,
+          method: result.method,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            description: 'YouTube URL, direct media URL, or local video/audio file path.',
+          },
+          question: {
+            type: 'string',
+            description: 'Optional question to answer about the video (recorded with the transcript).',
+          },
+          language: {
+            type: 'string',
+            description: "Optional preferred language code (e.g. 'en', 'fr').",
+          },
+        },
+        required: ['source'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) return { valid: false, errors: ['Input must be an object'] };
+    const data = input as Record<string, unknown>;
+    if (typeof data.source !== 'string' || !data.source.trim()) return { valid: false, errors: ['source is required'] };
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'summarize', 'watch'],
       priority: 8,
       modifiesFiles: true,
       makesNetworkRequests: true,
@@ -1193,6 +1282,7 @@ export function createMultimodalTools(): ITool[] {
     new TextToSpeechTool(),
     new ImageGenerateTool(),
     new VideoAnalyzeTool(),
+    new UnderstandVideoTool(),
     new VideoGenerateTool(),
     new VideoExecuteTool(),
     new PDFExecuteTool(),
