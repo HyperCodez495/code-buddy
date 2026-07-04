@@ -87,6 +87,7 @@ export function createResearchCommand(): Command {
     .option('--iterations <n>', 'Deep Research (Phase B) gap-loop rounds: 1 = single round (default, = Phase A), 2-3 iterates research→gap-analysis→re-search until convergence (max 5). Only with --deep', '1')
     .option('--perspectives <n>', 'Deep Research (Phase C, STORM): research the topic from N diversified personas (praticien/sceptique/historique/architecte…) in parallel, then co-write an outline-first cited article. Default 0 = off. Implies --deep. Takes precedence over --iterations. Clamped [2,6]', '0')
     .option('--storm', 'Deep Research (Phase C, STORM) with the default perspective count (4). Alias for --perspectives 4. Implies --deep', false)
+    .option('--ckg', 'Deep Research (Phase D): bridge the run to the Collective Knowledge Graph — recall prior collective knowledge (injected as a distinct "Mémoire collective" section) and ingest the deduped sources for cross-run/agent accumulation. Also enabled by CODEBUDDY_COLLECTIVE_MEMORY=true. Rides on --deep; combinable with --iterations/--perspectives', false)
     .action(async (topic: string, opts, command) => {
       // The root program also declares a global `-m, --model`; depending on
       // argv order Commander can bind it there — merge so either wins.
@@ -135,6 +136,10 @@ export function createResearchCommand(): Command {
       const stormRequested = Boolean(opts.storm) || perspectivesN > 0;
       const stormPerspectives = stormRequested ? perspectivesN || 4 : undefined;
       const deepEnabled = Boolean(opts.deep) || stormRequested; // STORM implies --deep
+      // Phase D (CKG bridge): opt-in via --ckg OR the shared CODEBUDDY_COLLECTIVE_MEMORY
+      // gate. Rides on the deep path (inert without --deep). Off ⇒ A/B/C byte-identical.
+      const { resolveCkgEnabled } = await import('../../agent/deep-research-ckg.js');
+      const ckgEnabled = resolveCkgEnabled({ ckg: Boolean(opts.ckg) });
       const deepHandled = await maybeRunDeepResearch({ deep: deepEnabled }, () =>
         runDeepResearchCli(topic, apiKey, providerConfig, {
           deep: true,
@@ -143,6 +148,7 @@ export function createResearchCommand(): Command {
           deepOptions: { rounds: deepRounds },
           storm: stormRequested,
           perspectives: stormPerspectives,
+          ckg: ckgEnabled,
         }),
       );
       if (deepHandled) return;

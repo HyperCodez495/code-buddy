@@ -28,6 +28,7 @@ import type { ToolResult } from '../types/index.js';
 import type {
   DeepResearchLoopOptions,
   DeepResearchLoopResult,
+  DeepResearchResult,
   DeepResearchBoundaries,
   DeepResearchStage,
   DeepLlmMessage,
@@ -40,6 +41,7 @@ import type {
   StormStage,
   StormProgress,
 } from './deep-research-storm.js';
+import type { CkgBridge, CkgRunOptions } from './deep-research-ckg.js';
 
 // ============================================================================
 // Types
@@ -380,19 +382,23 @@ export class WideResearchOrchestrator extends EventEmitter {
     providerConfig?: Record<string, unknown>,
     deepOptions?: DeepResearchLoopOptions,
     boundariesOverride?: Partial<DeepResearchBoundaries>,
+    ckg?: CkgRunOptions,
   ): Promise<DeepResearchLoopResult> {
     const { runDeepResearchLoop } = await import('./deep-research.js');
 
     const real = await this.buildDeepBoundaries(apiKey, providerConfig);
     const boundaries: DeepResearchBoundaries = { ...real, ...boundariesOverride };
+    const emit = (stage: DeepResearchStage): void => {
+      this.emit('progress', { type: 'deep', ...stage } satisfies DeepResearchProgress);
+    };
 
-    return runDeepResearchLoop(
-      question,
-      boundaries,
-      deepOptions ?? {},
-      (stage: DeepResearchStage) => {
-        this.emit('progress', { type: 'deep', ...stage } satisfies DeepResearchProgress);
-      },
+    // Phase D (CKG bridge) — opt-in, additive. OFF ⇒ the exact Phase-A/B path
+    // runs, byte-identically (no recall, no ingest, an untouched report).
+    if (!ckg?.enabled) {
+      return runDeepResearchLoop(question, boundaries, deepOptions ?? {}, emit);
+    }
+    return this.runWithCkgBridge(question, boundaries, ckg, (teed) =>
+      runDeepResearchLoop(question, teed, deepOptions ?? {}, emit),
     );
   }
 
@@ -422,20 +428,101 @@ export class WideResearchOrchestrator extends EventEmitter {
     providerConfig?: Record<string, unknown>,
     stormOptions?: StormResearchOptions,
     boundariesOverride?: Partial<StormBoundaries>,
+    ckg?: CkgRunOptions,
   ): Promise<StormResearchResult> {
     const { runStormResearch } = await import('./deep-research-storm.js');
 
     const real = await this.buildDeepBoundaries(apiKey, providerConfig);
     const boundaries: StormBoundaries = { ...real, ...boundariesOverride };
+    const emit = (stage: StormStage): void => {
+      this.emit('progress', { type: 'storm', ...stage } satisfies StormProgress);
+    };
 
-    return runStormResearch(
-      question,
-      boundaries,
-      stormOptions ?? {},
-      (stage: StormStage) => {
-        this.emit('progress', { type: 'storm', ...stage } satisfies StormProgress);
-      },
+    // Phase D (CKG bridge) — opt-in, additive. OFF ⇒ the exact Phase-C path runs,
+    // byte-identically (no recall, no ingest, an untouched article).
+    if (!ckg?.enabled) {
+      return runStormResearch(question, boundaries, stormOptions ?? {}, emit);
+    }
+    return this.runWithCkgBridge(question, boundaries, ckg, (teed) =>
+      runStormResearch(question, teed, stormOptions ?? {}, emit),
     );
+  }
+
+  /**
+   * Phase D (CKG) shared plumbing for both Deep (A/B) and STORM (C): tee the
+   * scrape boundary to capture per-source content, resolve the CKG bridge (the
+   * injected one, else the default over the process-wide collective graph), and
+   * run the base pipeline under the Phase-D wrapper (recall → run → ingest →
+   * augment). Never throws — the wrapper degrades silently on any CKG failure.
+   */
+  private async runWithCkgBridge<TResult extends DeepResearchResult, B extends DeepResearchBoundaries>(
+    question: string,
+    boundaries: B,
+    ckg: CkgRunOptions,
+    runBase: (teed: B) => Promise<TResult>,
+  ): Promise<TResult> {
+    const { runDeepResearchWithCkg, teeScrapeBoundary } = await import('./deep-research-ckg.js');
+    const contentByUrl = new Map<string, string>();
+    const teed = teeScrapeBoundary(boundaries, contentByUrl);
+    const bridge = ckg.bridge ?? (await this.buildCkgBridge());
+    return runDeepResearchWithCkg<TResult>({
+      question,
+      options: { ...ckg, enabled: true, bridge },
+      runBase: () => runBase(teed),
+      collectSourcesForIngest: (result) =>
+        result.sources.map((s) => ({
+          url: s.url,
+          title: s.title,
+          content: contentByUrl.get(s.url) ?? '',
+        })),
+    });
+  }
+
+  /**
+   * Default CKG bridge over the process-wide collective graph — used when Phase D
+   * is enabled and no bridge is injected. `recall` maps `recallHybrid` hits to
+   * memory sources; `ingest` stores each deduped web source as a `discovery` node
+   * (url as stable name ⇒ the CKG's contentHash reinforces/supersedes instead of
+   * duplicating). Both legs never throw.
+   */
+  private async buildCkgBridge(): Promise<CkgBridge> {
+    const { getCollectiveKnowledgeGraph } = await import('../memory/collective-knowledge-graph.js');
+    const ckg = getCollectiveKnowledgeGraph();
+    return {
+      recall: async (query, k) => {
+        try {
+          const hits = await ckg.recallHybrid(query, { limit: k });
+          return hits.map((h) => ({
+            id: h.id,
+            text: h.text,
+            type: h.type,
+            ...(h.agentId ? { agentId: h.agentId } : {}),
+            ...(h.source ? { source: h.source } : {}),
+            ...(h.similarity !== undefined ? { similarity: h.similarity } : {}),
+          }));
+        } catch {
+          return [];
+        }
+      },
+      ingest: async (sources, meta) => {
+        let n = 0;
+        for (const s of sources) {
+          try {
+            const res = await ckg.ingest({
+              type: 'discovery',
+              name: s.url,
+              text: `${s.title}. ${s.content}`.trim(),
+              source: meta.source,
+              ...(meta.agentId ? { agentId: meta.agentId } : {}),
+            });
+            if (res) n++;
+          } catch {
+            /* skip this source, keep going */
+          }
+        }
+        return n;
+      },
+    };
   }
 
   /** Construct the real Deep Research boundaries (LLM / search / scrape / batching). */

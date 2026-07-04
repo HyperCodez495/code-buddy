@@ -37,6 +37,13 @@ export interface DeepResearchCliOptions {
   storm?: boolean;
   /** Phase C: number of diversified perspectives (only read when `storm`). */
   perspectives?: number;
+  /** Phase D: bridge the run to the Collective Knowledge Graph (recall + ingest). */
+  ckg?: boolean;
+}
+
+/** Minimal CKG activation surface passed to the orchestrator (keeps the fake tiny). */
+export interface DeepCkgArg {
+  enabled: boolean;
 }
 
 /** Minimal orchestrator surface used by the CLI (keeps the injected fake tiny). */
@@ -47,6 +54,8 @@ export interface DeepOrchestratorLike {
     apiKey: string,
     providerConfig?: Record<string, unknown>,
     deepOptions?: DeepResearchLoopOptions,
+    boundariesOverride?: undefined,
+    ckg?: DeepCkgArg,
   ): Promise<DeepResearchResult>;
   /** Phase C (STORM) — present only on the real orchestrator; optional for fakes. */
   stormResearch?(
@@ -54,6 +63,8 @@ export interface DeepOrchestratorLike {
     apiKey: string,
     providerConfig?: Record<string, unknown>,
     stormOptions?: StormResearchOptions,
+    boundariesOverride?: undefined,
+    ckg?: DeepCkgArg,
   ): Promise<StormResearchResult>;
 }
 
@@ -186,16 +197,24 @@ export async function runDeepResearchCli(
   });
 
   try {
+    // Phase D (CKG bridge) is opt-in: activated when `--ckg` (or the shared env
+    // gate) is set. Absent ⇒ `ckgArg` is undefined and the orchestrator's off-path
+    // runs, byte-identically (no recall, no ingest). Rides on the deep path.
+    const ckgArg: DeepCkgArg | undefined = opts.ckg ? { enabled: true } : undefined;
     // Phase C (STORM) is opt-in: routed ONLY when `storm` is set AND the
     // orchestrator exposes `stormResearch`. Absent ⇒ the exact Phase-A/B
     // `deepResearch` path runs, byte-identically.
     const result: DeepResearchResult =
       opts.storm && typeof orchestrator.stormResearch === 'function'
-        ? await orchestrator.stormResearch(topic, apiKey, providerConfig, {
-            ...opts.deepOptions,
-            perspectives: opts.perspectives,
-          })
-        : await orchestrator.deepResearch(topic, apiKey, providerConfig, opts.deepOptions);
+        ? await orchestrator.stormResearch(
+            topic,
+            apiKey,
+            providerConfig,
+            { ...opts.deepOptions, perspectives: opts.perspectives },
+            undefined,
+            ckgArg,
+          )
+        : await orchestrator.deepResearch(topic, apiKey, providerConfig, opts.deepOptions, undefined, ckgArg);
     const content = buildDeepReportFile(topic, result, opts.providerLabel);
 
     if (reportPath) {
@@ -247,6 +266,13 @@ export function buildDeepReportFile(
     ? `Outline: ${storm.outline?.sections.length ?? 0} section(s) | ` +
       `Article: ${storm.coWritten ? 'outline-first co-written' : 'flat fallback'}`
     : undefined;
+  // Phase-D (CKG) metadata is present only when the bridge ran; read it optionally
+  // so a run WITHOUT `--ckg` renders exactly as before (no "Mémoire collective" line).
+  const ckg = (result as Partial<{ ckg: { enabled: boolean; recalled: number; ingested: number } }>).ckg;
+  const ckgLine =
+    ckg?.enabled
+      ? `Mémoire collective (CKG): ${ckg.recalled} rappelée(s), ${ckg.ingested} ingérée(s)`
+      : undefined;
   return [
     `# Deep Research: ${topic}`,
     '',
@@ -257,6 +283,7 @@ export function buildDeepReportFile(
     roundsLine,
     perspectivesLine,
     outlineLine,
+    ckgLine,
     `Planner: ${result.plannerLlmUsed ? 'LLM' : 'deterministic'} | ` +
       `Synthesis: ${result.synthesisLlmUsed ? 'LLM' : 'deterministic'}`,
     `Duration: ${(result.durationMs / 1000).toFixed(1)}s`,
