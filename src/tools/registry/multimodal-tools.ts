@@ -481,6 +481,7 @@ export class UnderstandVideoTool implements ITool {
         language: optionalString(input, 'language'),
         ...(optionalBoolean(input.visual) !== undefined ? { visual: optionalBoolean(input.visual) } : {}),
         ...(optionalBoolean(input.ocr) !== undefined ? { ocr: optionalBoolean(input.ocr) } : {}),
+        ...(optionalBoolean(input.cloud) !== undefined ? { cloud: optionalBoolean(input.cloud) } : {}),
       }, {
         ...(context?.cwd ? { cwd: context.cwd } : {}),
       });
@@ -495,6 +496,7 @@ export class UnderstandVideoTool implements ITool {
           transcriptPath: result.transcriptPath,
           source: result.source,
           method: result.method,
+          ...(result.cloud ? { cloud: result.cloud } : {}),
         },
       };
     } catch (error) {
@@ -532,6 +534,10 @@ export class UnderstandVideoTool implements ITool {
             type: 'boolean',
             description: 'With visual:true, also OCR each keyframe (best for on-screen code). Default false.',
           },
+          cloud: {
+            type: 'boolean',
+            description: 'OPT-IN: also send the video/URL to a cloud model (Gemini) for a joint audio+visual, timestamped answer. Sends data to Google — public/non-sensitive videos only. Needs GEMINI_API_KEY; degrades to the local transcript on any failure. Default false.',
+          },
         },
         required: ['source'],
       },
@@ -550,7 +556,7 @@ export class UnderstandVideoTool implements ITool {
       name: this.name,
       description: this.description,
       category: 'media' as ToolCategoryType,
-      keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'summarize', 'watch', 'visual', 'screencast', 'frames', 'ocr', 'on-screen'],
+      keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'summarize', 'watch', 'visual', 'screencast', 'frames', 'ocr', 'on-screen', 'cloud', 'gemini'],
       priority: 8,
       modifiesFiles: true,
       makesNetworkRequests: true,

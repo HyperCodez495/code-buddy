@@ -38,6 +38,7 @@ import { transcribeLong, type TimedSegment, type LongTranscribeOptions } from '.
 import type { SampledFrame, FrameSampleDeps } from './frame-sample.js';
 import type { FrameDedupDeps } from './frame-dedup.js';
 import type { DescribeFrameDeps } from './describe-frame.js';
+import type { CloudUnderstandDeps, CloudUnderstandOutcome, CloudSourceKind } from './cloud-understand.js';
 
 export type UnderstandMethod = 'youtube-captions' | 'youtube-audio' | 'local-file' | 'direct-url';
 
@@ -49,6 +50,13 @@ export interface UnderstandVideoInput {
   visual?: boolean;
   /** With `visual`, also OCR each keyframe (best for reading code on screen). */
   ocr?: boolean;
+  /**
+   * Phase 3: OPT-IN cloud understanding (Gemini). Sends the video/URL to Google for a
+   * joint audio+visual, timestamped answer. NEVER default; on any failure (no key, network,
+   * quota) it degrades cleanly to the local transcript. Additive — the local transcript is
+   * always produced alongside.
+   */
+  cloud?: boolean;
 }
 
 /** A transcript segment enriched with what was SHOWN during it (Phase 2). */
@@ -67,6 +75,19 @@ export interface VisualResult {
   note?: string;
 }
 
+/** Cloud (Gemini) understanding result — present only when `cloud: true` was requested. */
+export interface CloudResult {
+  provider: 'gemini';
+  /** Gemini's timestamped answer/summary — present on success. */
+  answer?: string;
+  model?: string;
+  sourceKind?: CloudSourceKind;
+  /** Privacy warning (video sent to Google) — present on success. */
+  warning?: string;
+  /** Present when cloud was requested but couldn't run (degraded to the local transcript). */
+  note?: string;
+}
+
 export interface UnderstandVideoSuccess {
   segments: TimedSegment[];
   transcriptPath: string;
@@ -75,6 +96,8 @@ export interface UnderstandVideoSuccess {
   output: string;
   /** Present only when `visual: true` produced (or attempted) frame analysis. */
   visual?: VisualResult;
+  /** Present only when `cloud: true` produced (or attempted) Gemini understanding. */
+  cloud?: CloudResult;
 }
 
 export interface UnderstandVideoFailure {
@@ -112,6 +135,16 @@ export interface UnderstandVideoDeps {
   describeOptions?: DescribeFrameDeps;
   /** Download the picture track for a remote source (default: `downloadVideoFile`). */
   downloadVideo?: (source: string, outDir: string) => Promise<VideoDownloadResult>;
+
+  // --- Phase 3 (`cloud`) injectables — untouched unless `input.cloud` is set. ---
+  /** Cloud (Gemini) understanding (default: `understandVideoCloud`). Never throws. */
+  understandCloud?: (
+    source: string,
+    question: string | undefined,
+    deps?: CloudUnderstandDeps,
+  ) => Promise<CloudUnderstandOutcome>;
+  /** Options handed to the default cloud understander (env/fetch/callGemini injection). */
+  cloudDeps?: CloudUnderstandDeps;
 }
 
 const DEFAULT_MAX_OUTPUT_CHARS = 6000;
@@ -379,10 +412,19 @@ export async function understandVideo(
     }
   }
 
+  // --- Phase 3: cloud (Gemini) understanding (opt-in). Phase 1/2 STRICTLY untouched otherwise.
+  //     Additive: the local transcript above is always produced; cloud failure degrades to it. ---
+  let cloud: CloudResult | undefined;
+  if (input.cloud) {
+    cloud = await runCloudUnderstanding({ ...input, source }, deps);
+  }
+
   const visualRendered = visual ? renderVisual(visual) : '';
-  const header = `# Transcript\nsource: ${source}\nmethod: ${method}\nsegments: ${segments.length}\n${visual ? `visual: ${visual.framesDistinct}/${visual.framesSampled} frames\n` : ''}${input.question ? `question: ${input.question}\n` : ''}`;
+  const cloudRendered = cloud ? renderCloud(cloud) : '';
+  const header = `# Transcript\nsource: ${source}\nmethod: ${method}\nsegments: ${segments.length}\n${visual ? `visual: ${visual.framesDistinct}/${visual.framesSampled} frames\n` : ''}${cloud ? `cloud: gemini${cloud.answer ? '' : ' (dégradé)'}\n` : ''}${input.question ? `question: ${input.question}\n` : ''}`;
   try {
-    const body = visualRendered ? `${rendered}\n\n## Visuel (ce qui est montré)\n${visualRendered}\n` : `${rendered}\n`;
+    const visualBody = visualRendered ? `${rendered}\n\n## Visuel (ce qui est montré)\n${visualRendered}\n` : `${rendered}\n`;
+    const body = cloudRendered ? `${cloudRendered}\n\n${visualBody}` : visualBody;
     await writeFile(transcriptPath, `${header}\n${body}`, 'utf8');
   } catch (err) {
     logger.warn(`[video] could not persist transcript to ${transcriptPath}: ${err instanceof Error ? err.message : String(err)}`);
@@ -397,10 +439,55 @@ export async function understandVideo(
   } else {
     output = `Transcript horodaté tronqué (${segments.length} segments, méthode: ${method}${visual ? `, visuel: ${visual.framesDistinct} frames distinctes` : ''}). Complet dans ${transcriptPath}:\n\n${bodyForOutput.slice(0, maxChars)}\n\n… [tronqué — transcript complet dans ${transcriptPath}]`;
   }
+  // Cloud answer (when present) leads the output — it's the richest, and carries the privacy warning.
+  if (cloudRendered) output = `${cloudRendered}\n\n${output}`;
 
   const result: UnderstandVideoSuccess = { segments, transcriptPath, source, method, output };
   if (visual) result.visual = visual;
+  if (cloud) result.cloud = cloud;
   return result;
+}
+
+/**
+ * Run the opt-in cloud (Gemini) understanding. Fully injectable, NEVER throws: any failure
+ * (no API key, network, quota, oversized file) returns a degraded `CloudResult` carrying a
+ * `note` so the caller falls back to the local transcript.
+ */
+async function runCloudUnderstanding(
+  input: UnderstandVideoInput,
+  deps: UnderstandVideoDeps,
+): Promise<CloudResult> {
+  const run =
+    deps.understandCloud ??
+    (async (s: string, q: string | undefined, d?: CloudUnderstandDeps) =>
+      (await import('./cloud-understand.js')).understandVideoCloud(s, q, d));
+  try {
+    const outcome = await run(input.source, input.question, deps.cloudDeps);
+    if (outcome.ok) {
+      return {
+        provider: 'gemini',
+        answer: outcome.result.answer,
+        model: outcome.result.model,
+        sourceKind: outcome.result.sourceKind,
+        warning: outcome.result.warning,
+      };
+    }
+    return { provider: 'gemini', note: `${outcome.reason} — dégradé au transcript local` };
+  } catch (err) {
+    // Defensive: even an injected understander that throws must not crash the tool.
+    logger.warn(`[video] cloud understanding error: ${err instanceof Error ? err.message : String(err)}`);
+    return { provider: 'gemini', note: 'cloud en erreur (dégradé au transcript local)' };
+  }
+}
+
+/** Render the cloud (Gemini) result: the timestamped answer + privacy warning, or a degrade note. */
+function renderCloud(cloud: CloudResult): string {
+  if (cloud.answer) {
+    const head = `## Compréhension cloud (Gemini${cloud.model ? ` — ${cloud.model}` : ''})`;
+    const warn = cloud.warning ? `${cloud.warning}\n\n` : '';
+    return `${head}\n${warn}${cloud.answer}`;
+  }
+  return `## Compréhension cloud (Gemini)\n(${cloud.note ?? 'indisponible'})`;
 }
 
 /** Render the fused visual segments as timestamped `SAID … | SHOWN …` lines. */

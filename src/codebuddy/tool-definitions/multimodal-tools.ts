@@ -229,7 +229,7 @@ export const UNDERSTAND_VIDEO_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "understand_video",
-    description: "Understand a video, local-first and $0. By default produces a timestamped transcript of what is SAID (YouTube captions → yt-dlp audio + local Whisper → local file). Set visual:true to ALSO analyze what is SHOWN on screen (samples keyframes, dedups near-identical ones, describes each with a local vision model, fuses one keyframe per transcript segment into {said, shown} tuples) — ideal for code screencasts; set ocr:true to also read on-screen code/text with OCR. Returns the structured transcript and persists it to .codebuddy/video/.",
+    description: "Understand a video, local-first and $0. By default produces a timestamped transcript of what is SAID (YouTube captions → yt-dlp audio + local Whisper → local file). Set visual:true to ALSO analyze what is SHOWN on screen (samples keyframes, dedups near-identical ones, describes each with a local vision model, fuses one keyframe per transcript segment into {said, shown} tuples) — ideal for code screencasts; set ocr:true to also read on-screen code/text with OCR. Set cloud:true (OPT-IN) to also send the video/URL to Gemini for a joint audio+visual timestamped answer — this sends data to Google (public/non-sensitive videos only) and degrades to the local transcript if unavailable. Returns the structured transcript and persists it to .codebuddy/video/.",
     parameters: {
       type: "object",
       properties: {
@@ -252,6 +252,10 @@ export const UNDERSTAND_VIDEO_TOOL: CodeBuddyTool = {
         ocr: {
           type: "boolean",
           description: "With visual:true, also OCR each keyframe (best for reading code/text on screen). Default false."
+        },
+        cloud: {
+          type: "boolean",
+          description: "OPT-IN cloud fallback: also send the video/URL to Gemini for a joint audio+visual, timestamped answer. Sends data to Google — public/non-sensitive videos only. Requires GEMINI_API_KEY; degrades to the local transcript on any failure. Default false."
         }
       },
       required: ["source"]
