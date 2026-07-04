@@ -219,12 +219,33 @@ export class CollectiveKnowledgeGraph {
   private readonly embCache = new Map<string, Float32Array>();
   private readonly embeddingModel: string;
   private embedder: CkgEmbedder | null = null;
+  /** Rust engine client (lazy) — used only when CODEBUDDY_CKG_ENGINE=rust and the binary exists.
+   *  Writes go to the SAME ledger, so the TS path stays consistent and falls back transparently. */
+  private engine: import('./buddy-memory-client.js').BuddyMemoryClient | null = null;
+  private engineTried = false;
 
   constructor(options: CollectiveKnowledgeGraphOptions = {}) {
     this.ledgerPath = options.ledgerPath ?? join(getCodeBuddyHome(), 'collective', 'ckg-ledger.jsonl');
     this.agentId = options.agentId ?? safeAgentId();
     this.embeddingModel = options.embeddingModel ?? CKG_EMBEDDING_MODEL;
     this.embedder = options.embedder ?? null;
+  }
+
+  /** The Rust engine client when opted-in (CODEBUDDY_CKG_ENGINE=rust) and available, else null.
+   *  Lazy + cached; any failure → null so callers use the in-process TS implementation. */
+  private async engineClient(): Promise<import('./buddy-memory-client.js').BuddyMemoryClient | null> {
+    if (process.env.CODEBUDDY_CKG_ENGINE !== 'rust') return null;
+    if (this.engineTried) return this.engine;
+    this.engineTried = true;
+    try {
+      const { BuddyMemoryClient } = await import('./buddy-memory-client.js');
+      const c = new BuddyMemoryClient({ ledgerPath: this.ledgerPath, agentId: this.agentId });
+      this.engine = c.available() ? c : null;
+    } catch (err) {
+      logger.debug(`[ckg] engine unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      this.engine = null;
+    }
+    return this.engine;
   }
 
   /** Dedicated multilingual embedder (lazy; isolated from EnhancedMemory's all-MiniLM singleton). */
@@ -312,6 +333,16 @@ export class CollectiveKnowledgeGraph {
       relationClassifier?: RelationClassifier;
     },
   ): Promise<CkgRecallResult | null> {
+    const eng = await this.engineClient();
+    if (eng) {
+      try {
+        // Phase 1 engine: stores the discovery (auto-link/embeddings arrive in Phase 2).
+        const { relationClassifier: _rc, autoLinkK: _k, autoLinkThreshold: _t, ...rest } = input;
+        return ((await eng.call('ingest', { type: 'discovery', ...rest })) as CkgRecallResult) ?? null;
+      } catch (err) {
+        logger.warn(`[ckg] engine ingest failed, TS fallback: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     const stored = this.remember({ type: 'discovery', ...input });
     if (!stored) return null;
     try {
@@ -402,6 +433,19 @@ export class CollectiveKnowledgeGraph {
     query: string,
     opts: { limit?: number; types?: EntityType[]; semanticWeight?: number; mmrLambda?: number } = {},
   ): Promise<CkgRecallResult[]> {
+    const eng = await this.engineClient();
+    if (eng) {
+      try {
+        // Phase 1 engine: keyword recall over the shared ledger (semantic+MMR arrive in Phase 2).
+        return ((await eng.call('recallHybrid', {
+          query,
+          limit: opts.limit ?? 5,
+          ...(opts.types ? { types: opts.types } : {}),
+        })) as CkgRecallResult[]) ?? [];
+      } catch (err) {
+        logger.warn(`[ckg] engine recallHybrid failed, TS fallback: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     this.load();
     const limit = opts.limit ?? 5;
     const typeFilter = opts.types ? new Set(opts.types) : null;
