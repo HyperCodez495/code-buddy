@@ -3312,11 +3312,11 @@ addLazyCommand(
   },
 );
 
-// AI-Scientist-lite (Phase 0) — human-gated, sandboxed experiment pass (opt-in)
+// AI-Scientist-lite (Phases 0-3) — human-gated, sandboxed experiment: single pass or bounded discovery loop (opt-in)
 addLazyCommand(
   program,
   'science',
-  'AI-Scientist-lite (Phase 0, EXPERIMENTAL, opt-in CODEBUDDY_AI_SCIENTIST=true): run ONE human-gated, sandboxed experiment pass',
+  'AI-Scientist-lite (EXPERIMENTAL, opt-in CODEBUDDY_AI_SCIENTIST=true): human-gated, sandboxed experiment — single pass or bounded best-first discovery loop (--loop)',
   async () => {
     const { createScienceCommand } = await import('./commands/science/index.js');
     return createScienceCommand();

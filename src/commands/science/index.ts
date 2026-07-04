@@ -121,7 +121,7 @@ function renderLoop(result: ExperimentLoopResult): string {
 export function createScienceCommand(): Command {
   const cmd = new Command('science')
     .description(
-      'AI-Scientist-lite (Phase 0, EXPERIMENTAL): run ONE human-gated, sandboxed experiment pass (idea → novelty → GATE → run → analyse → report → review → GATE → publish)',
+      'AI-Scientist-lite (EXPERIMENTAL, opt-in CODEBUDDY_AI_SCIENTIST=true): human-gated, sandboxed experiment — a single pass (idea → novelty → GATE → run → analyse → report → review → GATE → publish) or a bounded best-first discovery loop (--loop). Empirical scoring (--score), hardened sandbox (--sandbox docker|e2b).',
     )
     .argument('<goal>', 'The research goal / question to experiment on')
     .option('--hypothesis <text>', 'Supply the hypothesis directly (skips LLM ideation)')
