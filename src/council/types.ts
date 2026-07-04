@@ -194,7 +194,28 @@ export type CouncilProgressEvent =
   | { type: 'conductor'; roles: string[] }
   | { type: 'fleet_no_peers' }
   | { type: 'fleet_consulting'; peerCount: number }
-  | { type: 'answer_failed'; source: string; error: string };
+  | { type: 'answer_failed'; source: string; error: string }
+  /**
+   * Cheap triage verdict (opt-in `CODEBUDDY_COUNCIL_TRIAGE`). `single` = the
+   * question was classified simple enough for one model and the expensive
+   * fan-out was skipped; `council` = the full deliberation runs as usual.
+   */
+  | { type: 'triage'; decision: 'single' | 'council'; model?: string; reason?: string };
+
+/**
+ * A cheap triage-stage model pick — the minimal shape the engine needs to
+ * build a client and short-circuit to a single answer. Structurally a subset
+ * of `fleet/model-selector.ts`'s `ModelSelection` so the default selector
+ * (`selectFastestModel`) adapts trivially.
+ */
+export interface TriageModelSelection {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  baseURL?: string;
+  isLocal: boolean;
+  reason: string;
+}
 
 export interface CouncilEngineDeps {
   /** Thunk (not a value) so hosts keep the lazy registry import until a run actually starts. */
@@ -218,6 +239,17 @@ export interface CouncilEngineDeps {
    * presenter appends to ~/.codebuddy/council-deliberation-health.jsonl).
    */
   healthSink?: (health: DeliberationHealth) => void;
+  /**
+   * Cheap triage-stage model selector, used only when `CODEBUDDY_COUNCIL_TRIAGE`
+   * is on. Defaults to a wrapper over `fleet/model-selector.ts selectFastestModel`
+   * (latency-routed, local/free-preferable). Injected in tests to stay offline.
+   */
+  selectTriageModel?: (
+    task: string,
+    opts: { localOnly?: boolean; preferModel?: string; env?: NodeJS.ProcessEnv },
+  ) => Promise<TriageModelSelection | null>;
+  /** Env source for triage flags (tests inject a plain object). Defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface CouncilRunResult {
@@ -236,6 +268,16 @@ export interface CouncilRunResult {
   learnSkipReason?: string;
   /** Per-run deliberation-health metrics (DHI) — see council/deliberation-health.ts. */
   health: DeliberationHealth;
+  /**
+   * True when the cheap triage stage short-circuited the run to a single model
+   * (no multi-model fan-out). Only ever set when `CODEBUDDY_COUNCIL_TRIAGE` is
+   * on; absent/undefined for every normal deliberation (OFF = unchanged shape).
+   */
+  triaged?: boolean;
+  /** The single model that answered when `triaged` — provenance for consumers. */
+  singleModel?: string;
+  /** The triage classifier's short reason for choosing SINGLE. */
+  triageReason?: string;
 }
 
 export class CouncilError extends Error {

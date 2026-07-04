@@ -38,6 +38,7 @@ import {
 import { gatherPeerAnswers } from './peers.js';
 import { withTimeout } from './with-timeout.js';
 import { computeDeliberationHealth } from './deliberation-health.js';
+import { isCouncilTriageEnabled, runCouncilTriage } from './triage.js';
 import { sanitizeModelOutput } from '../utils/output-sanitizer.js';
 import {
   CouncilError,
@@ -119,6 +120,17 @@ export async function runCouncilPipeline(
   const scoreboard = deps.scoreboard;
   const rng = deps.rng ?? Math.random;
   const timeoutMs = deps.timeoutMs ?? defaultTimeoutMs();
+
+  // 0. Cheap triage gate (opt-in `CODEBUDDY_COUNCIL_TRIAGE`, default OFF ⇒
+  // skipped entirely — behaviour unchanged). One cheap classification call
+  // decides SINGLE vs COUNCIL; a SINGLE verdict returns a well-formed triaged
+  // result and the expensive fan-out below is NEVER reached. Any failure /
+  // ambiguity returns null here, so the full council runs (fail-safe toward
+  // quality — triage can only save cost, never downgrade a hard question).
+  if (isCouncilTriageEnabled(deps.env ?? process.env)) {
+    const triaged = await runCouncilTriage(task, opts, deps, onProgress);
+    if (triaged) return triaged;
+  }
 
   // 1. usable LLMs
   let candidates = (await deps.loadRegistry()).filter((c) => c.apiKey);

@@ -122,11 +122,35 @@ function renderProgress(event: CouncilProgressEvent, out: Emit): void {
     case 'answer_failed':
       out(`  ⚠️ ${event.source}: ${event.error.slice(0, 120)}`);
       break;
+    case 'triage':
+      if (event.decision === 'single') {
+        out(
+          `⚡ Triage — question jugée simple, réponse mono-modèle` +
+            `${event.model ? ` (${event.model})` : ''}` +
+            `${event.reason ? ` : ${event.reason}` : ''} — fan-out council évité.`,
+        );
+      } else {
+        out(`⚡ Triage — question complexe, délibération council complète${event.reason ? ` : ${event.reason}` : ''}.`);
+      }
+      break;
   }
 }
 
 function renderResult(result: CouncilRunResult, opts: CouncilOptions, out: Emit): void {
   const { verdict, signals, consensus } = result;
+
+  // Triaged (single-model) short-circuit: render the answer plainly, no council
+  // scaffolding (no lexical-agreement / DHI lines apply to one answer).
+  if (result.triaged) {
+    const answer = result.answers[0];
+    out(
+      `\n⚡ Réponse mono-modèle (triage${result.singleModel ? ` · ${result.singleModel}` : ''})` +
+        `${result.triageReason ? ` — ${result.triageReason}` : ''}\n`,
+    );
+    out((answer?.content ?? result.finalText).trim());
+    out('\nℹ️  Council complet non convoqué (question jugée simple). Réglez `CODEBUDDY_COUNCIL_TRIAGE` pour changer.');
+    return;
+  }
 
   if (!result.learned) {
     out(`\n📊 Apprentissage council ignoré (${result.learnSkipReason ?? 'signal non fiable'}).`);
@@ -234,7 +258,11 @@ export async function runCouncil(task: string, opts: CouncilOptions, out: Emit):
 
   renderResult(result, opts, out);
   out(`\n${scoreboard.print(result.taskType)}`);
-  await maybeProposeCouncilLesson(task, result, out);
+  // A triaged run had no multi-model deliberation → no disagreement signal to
+  // mine for a lesson candidate. Skip the lesson bridge entirely.
+  if (!result.triaged) {
+    await maybeProposeCouncilLesson(task, result, out);
+  }
 }
 
 /**

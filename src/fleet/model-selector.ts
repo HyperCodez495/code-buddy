@@ -68,6 +68,13 @@ export interface SelectFastestOptions {
   freeOnly?: boolean;
   /** Require reliable structured tool calls (the future spoken-command agent turn). */
   requireToolCalling?: boolean;
+  /**
+   * Prefer a specific model (case-insensitive substring of its id) when it is
+   * among the qualifying candidates — used to pin the council triage model via
+   * `CODEBUDDY_COUNCIL_TRIAGE_MODEL`. Falls through to latency ranking when the
+   * pin matches nothing active (we can't select a model that isn't there).
+   */
+  preferModel?: string;
   /** Inject candidates for tests (skips the registry + local probe). */
   candidates?: LlmCandidate[];
   /** Inject a scoreboard for tests. */
@@ -231,7 +238,11 @@ export async function selectFastestModel(
           a.c.model.localeCompare(b.c.model), // 5. stable
       );
 
-    const top = ranked[0]!;
+    // Honour an explicit pin (CODEBUDDY_COUNCIL_TRIAGE_MODEL) when it matches a
+    // qualifying candidate; otherwise fall through to the latency winner.
+    const pin = opts.preferModel?.trim().toLowerCase();
+    const pinned = pin ? ranked.find((r) => r.c.model.toLowerCase().includes(pin)) : undefined;
+    const top = pinned ?? ranked[0]!;
     const src = top.measured ? 'measured' : 'est';
     return {
       provider: top.c.provider,
