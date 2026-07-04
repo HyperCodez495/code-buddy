@@ -111,7 +111,15 @@ export const DIRECT_ROLE: CouncilRole = {
   focus: ['correctness', 'usefulness', 'clear assumptions'],
 };
 
-const ROLE_SETS: Record<string, CouncilRole[]> = {
+/**
+ * Canonical persona angle definitions per task type. Each role is a distinct
+ * point of view (mission + focus) — the DIVERSITY OF PERSPECTIVES the council
+ * exploits. Exported (read-only data, no behaviour change) so other pipelines
+ * can REUSE the persona angles without importing the council machinery — e.g.
+ * the STORM multi-perspective Deep Research path (`agent/deep-research-storm.ts`)
+ * derives its diversified research perspectives from these exact angles.
+ */
+export const ROLE_SETS: Record<string, CouncilRole[]> = {
   code: [
     {
       id: 'architect',

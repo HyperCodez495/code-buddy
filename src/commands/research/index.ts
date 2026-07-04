@@ -85,6 +85,8 @@ export function createResearchCommand(): Command {
     .option('--wide', 'Force parallel workers even in non-interactive runs (default: direct single-pass)', false)
     .option('--deep', 'Deep Research: deterministic, cited pipeline (plan → search → scrape → dedup → cited synthesis)', false)
     .option('--iterations <n>', 'Deep Research (Phase B) gap-loop rounds: 1 = single round (default, = Phase A), 2-3 iterates research→gap-analysis→re-search until convergence (max 5). Only with --deep', '1')
+    .option('--perspectives <n>', 'Deep Research (Phase C, STORM): research the topic from N diversified personas (praticien/sceptique/historique/architecte…) in parallel, then co-write an outline-first cited article. Default 0 = off. Implies --deep. Takes precedence over --iterations. Clamped [2,6]', '0')
+    .option('--storm', 'Deep Research (Phase C, STORM) with the default perspective count (4). Alias for --perspectives 4. Implies --deep', false)
     .action(async (topic: string, opts, command) => {
       // The root program also declares a global `-m, --model`; depending on
       // argv order Commander can bind it there — merge so either wins.
@@ -126,12 +128,21 @@ export function createResearchCommand(): Command {
       // Phase B: --iterations > 1 turns the single Phase-A round into the bounded
       // gap loop. Default '1' ⇒ Phase A byte-identical (the loop delegates).
       const deepRounds = Math.max(1, Math.min(5, parseInt(opts.iterations, 10) || 1));
-      const deepHandled = await maybeRunDeepResearch(opts, () =>
+      // Phase C (STORM): --perspectives N (or --storm ⇒ 4) turns Deep Research
+      // into the multi-perspective outline-first pipeline. STORM implies --deep
+      // and TAKES PRECEDENCE over --iterations (per-perspective single round).
+      const perspectivesN = Math.max(0, Math.min(6, parseInt(opts.perspectives, 10) || 0));
+      const stormRequested = Boolean(opts.storm) || perspectivesN > 0;
+      const stormPerspectives = stormRequested ? perspectivesN || 4 : undefined;
+      const deepEnabled = Boolean(opts.deep) || stormRequested; // STORM implies --deep
+      const deepHandled = await maybeRunDeepResearch({ deep: deepEnabled }, () =>
         runDeepResearchCli(topic, apiKey, providerConfig, {
           deep: true,
           reportPath,
           providerLabel: resolved.providerLabel,
           deepOptions: { rounds: deepRounds },
+          storm: stormRequested,
+          perspectives: stormPerspectives,
         }),
       );
       if (deepHandled) return;

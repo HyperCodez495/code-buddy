@@ -33,6 +33,13 @@ import type {
   DeepLlmMessage,
   SearchHit,
 } from './deep-research.js';
+import type {
+  StormBoundaries,
+  StormResearchOptions,
+  StormResearchResult,
+  StormStage,
+  StormProgress,
+} from './deep-research-storm.js';
 
 // ============================================================================
 // Types
@@ -385,6 +392,48 @@ export class WideResearchOrchestrator extends EventEmitter {
       deepOptions ?? {},
       (stage: DeepResearchStage) => {
         this.emit('progress', { type: 'deep', ...stage } satisfies DeepResearchProgress);
+      },
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // Deep Research (Phase C) — STORM multi-perspective, opt-in.
+  //
+  // Additive to `deepResearch()`: nothing here runs unless `stormResearch()` is
+  // explicitly called (the CLI only calls it when `--perspectives`/`--storm` is
+  // present). It reuses the SAME real boundaries as Deep Research (LLM / search /
+  // scrape / batching) plus the three STORM seams (perspectives / outline /
+  // section), all injectable, and delegates the pure pipeline to
+  // `deep-research-storm.ts`. Emits `{ type: 'storm', ... }` progress. Never throws.
+  // --------------------------------------------------------------------------
+
+  /**
+   * Run the STORM multi-perspective Deep Research pipeline: N diversified
+   * perspectives research the topic in parallel, their sources merge into a
+   * shared citation registry, then an outline-first article is co-written with
+   * per-section citations. Wires the real boundaries; every one degrades
+   * gracefully. Never throws.
+   *
+   * @param boundariesOverride injected fakes for tests (no network).
+   */
+  async stormResearch(
+    question: string,
+    apiKey: string,
+    providerConfig?: Record<string, unknown>,
+    stormOptions?: StormResearchOptions,
+    boundariesOverride?: Partial<StormBoundaries>,
+  ): Promise<StormResearchResult> {
+    const { runStormResearch } = await import('./deep-research-storm.js');
+
+    const real = await this.buildDeepBoundaries(apiKey, providerConfig);
+    const boundaries: StormBoundaries = { ...real, ...boundariesOverride };
+
+    return runStormResearch(
+      question,
+      boundaries,
+      stormOptions ?? {},
+      (stage: StormStage) => {
+        this.emit('progress', { type: 'storm', ...stage } satisfies StormProgress);
       },
     );
   }

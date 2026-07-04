@@ -21,6 +21,11 @@ import type {
   DeepResearchResult,
   DeepResearchLoopResult,
 } from '../../agent/deep-research.js';
+import type {
+  StormProgress,
+  StormResearchOptions,
+  StormResearchResult,
+} from '../../agent/deep-research-storm.js';
 
 export interface DeepResearchCliOptions {
   deep?: boolean;
@@ -28,17 +33,28 @@ export interface DeepResearchCliOptions {
   reportPath?: string;
   providerLabel?: string;
   deepOptions?: DeepResearchLoopOptions;
+  /** Phase C: route to the STORM multi-perspective pipeline. */
+  storm?: boolean;
+  /** Phase C: number of diversified perspectives (only read when `storm`). */
+  perspectives?: number;
 }
 
 /** Minimal orchestrator surface used by the CLI (keeps the injected fake tiny). */
 export interface DeepOrchestratorLike {
-  on(event: 'progress', listener: (e: DeepResearchProgress) => void): unknown;
+  on(event: 'progress', listener: (e: DeepResearchProgress | StormProgress) => void): unknown;
   deepResearch(
     question: string,
     apiKey: string,
     providerConfig?: Record<string, unknown>,
     deepOptions?: DeepResearchLoopOptions,
   ): Promise<DeepResearchResult>;
+  /** Phase C (STORM) — present only on the real orchestrator; optional for fakes. */
+  stormResearch?(
+    question: string,
+    apiKey: string,
+    providerConfig?: Record<string, unknown>,
+    stormOptions?: StormResearchOptions,
+  ): Promise<StormResearchResult>;
 }
 
 export interface DeepResearchCliIo {
@@ -91,7 +107,42 @@ export async function runDeepResearchCli(
     orchestrator = new WideResearchOrchestrator() as unknown as WideResearchOrchestrator;
   }
 
-  orchestrator.on('progress', (e: DeepResearchProgress) => {
+  orchestrator.on('progress', (e: DeepResearchProgress | StormProgress) => {
+    // Phase C (STORM) progress — its own channel, only emitted on the storm path.
+    if (e.type === 'storm') {
+      switch (e.stage) {
+        case 'perspectives':
+          log('  🎭 Instantiating diversified perspectives...');
+          break;
+        case 'perspectives-ready':
+          log(`  🎭 ${e.count} perspective(s) ready`);
+          break;
+        case 'perspective-done':
+          log(
+            `  ${e.failed ? '⚠️' : '🔭'} Perspective "${e.perspective}": ${e.failed ? 'failed (dropped)' : `${e.sources} source(s)`}`,
+          );
+          break;
+        case 'merged-perspectives':
+          log(`  🧬 Merged perspectives → ${e.total} shared source(s), ${e.dropped} cross-perspective duplicate(s) dropped`);
+          break;
+        case 'outlining':
+          log('  🗂️ Building the article outline...');
+          break;
+        case 'outlined':
+          log(`  🗂️ Outline: ${e.sections} section(s) (${e.llmUsed ? 'LLM' : 'deterministic'})`);
+          break;
+        case 'writing':
+          log('  ✍️ Co-writing sections with per-section citations...');
+          break;
+        case 'written':
+          log(`  ✍️ ${e.sections} section(s) written (${e.coWritten ? 'outline-first' : 'flat fallback'})`);
+          break;
+        case 'storm-done':
+          log(`  ✅ STORM Deep Research complete (${e.sources} cited source(s))`);
+          break;
+      }
+      return;
+    }
     if (e.type !== 'deep') return;
     switch (e.stage) {
       case 'planning':
@@ -135,7 +186,16 @@ export async function runDeepResearchCli(
   });
 
   try {
-    const result = await orchestrator.deepResearch(topic, apiKey, providerConfig, opts.deepOptions);
+    // Phase C (STORM) is opt-in: routed ONLY when `storm` is set AND the
+    // orchestrator exposes `stormResearch`. Absent ⇒ the exact Phase-A/B
+    // `deepResearch` path runs, byte-identically.
+    const result: DeepResearchResult =
+      opts.storm && typeof orchestrator.stormResearch === 'function'
+        ? await orchestrator.stormResearch(topic, apiKey, providerConfig, {
+            ...opts.deepOptions,
+            perspectives: opts.perspectives,
+          })
+        : await orchestrator.deepResearch(topic, apiKey, providerConfig, opts.deepOptions);
     const content = buildDeepReportFile(topic, result, opts.providerLabel);
 
     if (reportPath) {
@@ -175,14 +235,28 @@ export function buildDeepReportFile(
     typeof loop.rounds === 'number' && loop.rounds > 1
       ? `Rounds: ${loop.rounds} (${loop.converged ? 'converged' : 'round cap reached'})`
       : undefined;
+  // STORM (Phase-C) metadata is present only on the storm result; read it
+  // optionally too, so Phase-A/B rendering is untouched (no "Perspectives:" line).
+  const storm = result as Partial<StormResearchResult>;
+  const isStorm = Array.isArray(storm.perspectives) && typeof storm.coWritten === 'boolean';
+  const modeLine = isStorm ? 'Mode: deep (STORM multi-perspective)' : 'Mode: deep';
+  const perspectivesLine = isStorm
+    ? `Perspectives: ${storm.perspectives!.length} (${storm.perspectives!.map((p) => p.perspective.label).join(', ')})`
+    : undefined;
+  const outlineLine = isStorm
+    ? `Outline: ${storm.outline?.sections.length ?? 0} section(s) | ` +
+      `Article: ${storm.coWritten ? 'outline-first co-written' : 'flat fallback'}`
+    : undefined;
   return [
     `# Deep Research: ${topic}`,
     '',
     `Generated: ${new Date().toISOString()}`,
-    'Mode: deep',
+    modeLine,
     providerLabel ? `Provider: ${providerLabel}` : undefined,
     `Sources: ${result.sources.length} (${result.duplicatesDropped} near-duplicate(s) dropped)`,
     roundsLine,
+    perspectivesLine,
+    outlineLine,
     `Planner: ${result.plannerLlmUsed ? 'LLM' : 'deterministic'} | ` +
       `Synthesis: ${result.synthesisLlmUsed ? 'LLM' : 'deterministic'}`,
     `Duration: ${(result.durationMs / 1000).toFixed(1)}s`,
