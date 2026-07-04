@@ -247,7 +247,7 @@ export const UNDERSTAND_VIDEO_TOOL: CodeBuddyTool = {
         },
         visual: {
           type: "boolean",
-          description: "Also analyze what is SHOWN on screen (frames → local vision model), fused per transcript segment. Local-first, slower. Default false (transcript only)."
+          description: "Also analyze what is SHOWN on screen (frames → local vision model), fused per transcript segment. EXPENSIVE and SLOW: it downloads the picture track then describes each keyframe at a local VLM (~1–10 s/frame). Recommended mainly for SHORT videos, or when the on-screen VISUAL content matters (code screencasts, diagrams, slides). For LONG videos prefer the default transcript-only path. Safe either way — the visual leg is wall-clock-bounded (CODEBUDDY_VIDEO_VISUAL_BUDGET_MS, default ~120 s) and degrades gracefully: on a long video it renders the transcript plus a partial/ignored-visual note instead of timing out. Default false (transcript only)."
         },
         ocr: {
           type: "boolean",

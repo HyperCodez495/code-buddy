@@ -136,6 +136,18 @@ export interface UnderstandVideoDeps {
   describeOptions?: DescribeFrameDeps;
   /** Download the picture track for a remote source (default: `downloadVideoFile`). */
   downloadVideo?: (source: string, outDir: string) => Promise<VideoDownloadResult>;
+  /**
+   * Wall-clock budget (ms) for the WHOLE visual leg — download + sample + describe + ocr.
+   * When it runs out the pipeline stops describing further frames and returns what it has
+   * (with a truncation note); the transcript is always rendered. Overrides the
+   * `CODEBUDDY_VIDEO_VISUAL_BUDGET_MS` env / the built-in default. Only affects `visual:true`.
+   */
+  visualBudgetMs?: number;
+  /**
+   * Conservative estimate (ms) of one VLM describe call — the budget guard won't START a
+   * describe the remaining time can't plausibly cover. Injectable for deterministic tests.
+   */
+  visualPerFrameEstimateMs?: number;
 
   // --- Phase 3 (`cloud`) injectables — untouched unless `input.cloud` is set. ---
   /** Cloud (Gemini) understanding (default: `understandVideoCloud`). Never throws. */
@@ -155,6 +167,34 @@ export interface UnderstandVideoDeps {
 }
 
 const DEFAULT_MAX_OUTPUT_CHARS = 6000;
+
+/**
+ * Default wall-clock budget (ms) for the whole visual leg. The visual path (download the
+ * picture track + sample frames + describe each frame at the local VLM ~1–10 s/frame + OCR)
+ * is unbounded per se, so a long video (e.g. 75 min → 100 frames × ~5 s ≈ 500 s) blows any
+ * reasonable timeout and the tool fails instead of returning something useful. This budget
+ * makes the visual leg time-bounded and gracefully degrading (never a hard timeout).
+ * Override via `CODEBUDDY_VIDEO_VISUAL_BUDGET_MS` or `deps.visualBudgetMs`.
+ */
+const DEFAULT_VISUAL_BUDGET_MS = 120_000;
+
+/**
+ * Conservative estimate (ms) of a single local-VLM describe call. The budget guard uses it
+ * so it won't START describing a frame the remaining time can't plausibly cover (simple
+ * estimate — the budget is a soft bound, a mild overshoot on the last frame is acceptable).
+ */
+const DEFAULT_VLM_FRAME_ESTIMATE_MS = 5_000;
+
+/** Resolve the visual wall-clock budget (ms): dep override → env → built-in default. */
+function resolveVisualBudgetMs(deps: UnderstandVideoDeps): number {
+  if (typeof deps.visualBudgetMs === 'number' && deps.visualBudgetMs > 0) return deps.visualBudgetMs;
+  const raw = process.env.CODEBUDDY_VIDEO_VISUAL_BUDGET_MS;
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_VISUAL_BUDGET_MS;
+}
 
 /** Type guard: did understanding succeed? */
 export function isUnderstandOk(result: UnderstandVideoResult): result is UnderstandVideoSuccess {
@@ -351,23 +391,30 @@ async function resolveVideoPath(
   deps: UnderstandVideoDeps,
   outDir: string,
   localVideoPath: string | undefined,
+  downloadTimeoutMs?: number,
 ): Promise<{ videoPath: string } | { note: string }> {
   if (localVideoPath) return { videoPath: localVideoPath };
 
-  // Remote source (YouTube / direct URL): download the picture track.
+  // Remote source (YouTube / direct URL): download the picture track, BOUNDED by the
+  // visual budget so a huge 75-min file can't hang the tool — on timeout/failure we
+  // degrade to the transcript with a "visuel ignoré" note (never a crash/hang).
   if (/^https?:\/\//i.test(input.source) || isYoutubeUrl(input.source)) {
-    const download = deps.downloadVideo ?? ((s: string, d: string) => downloadVideoFile(s, d));
+    const download =
+      deps.downloadVideo ??
+      ((s: string, d: string) =>
+        downloadVideoFile(s, d, downloadTimeoutMs !== undefined ? { timeoutMs: downloadTimeoutMs } : {}));
     const dl = await download(input.source, outDir);
     if (isVideoDownloadOk(dl)) return { videoPath: dl.videoPath };
-    return { note: `visuel indisponible (téléchargement vidéo échoué: ${dl.error})` };
+    return { note: `visuel ignoré : téléchargement vidéo trop long ou échoué (${dl.error}) — transcript rendu` };
   }
 
   return { note: 'visuel indisponible (aucune vidéo locale ni URL téléchargeable)' };
 }
 
-/** The Phase 2 visual pipeline: sample frames → dedup → fuse with the transcript.
- *  Fully injectable, never throws; on any failure returns a degraded VisualResult
- *  (transcript untouched). */
+/** The Phase 2 visual pipeline: sample frames → dedup → fuse with the transcript, under a
+ *  wall-clock BUDGET (download + sample + describe + ocr). Fully injectable, never throws;
+ *  on any failure OR when the budget runs out it returns a degraded/partial VisualResult
+ *  carrying a note (transcript untouched — the visual leg is a pure enrichment). */
 async function runVisualPipeline(
   input: UnderstandVideoInput,
   deps: UnderstandVideoDeps,
@@ -375,10 +422,31 @@ async function runVisualPipeline(
   segments: TimedSegment[],
   localVideoPath: string | undefined,
 ): Promise<VisualResult> {
-  const resolved = await resolveVideoPath(input, deps, outDir, localVideoPath);
+  const now = deps.now ?? Date.now;
+  const budgetMs = resolveVisualBudgetMs(deps);
+  const budgetSec = Math.round(budgetMs / 1000);
+  const startedAt = now();
+  const deadline = startedAt + budgetMs;
+  const transcriptOnly = (note: string): VisualResult => ({
+    fused: segments.map((s) => ({ ...s })),
+    framesSampled: 0,
+    framesDistinct: 0,
+    note,
+  });
+
+  // Bound the download by the time left in the budget (long videos otherwise dominate).
+  const downloadTimeoutMs = Math.max(1000, deadline - now());
+  const resolved = await resolveVideoPath(input, deps, outDir, localVideoPath, downloadTimeoutMs);
   if ('note' in resolved) {
     logger.warn(`[video] ${resolved.note}`);
-    return { fused: segments.map((s) => ({ ...s })), framesSampled: 0, framesDistinct: 0, note: resolved.note };
+    return transcriptOnly(resolved.note);
+  }
+
+  // The download of a long video may already have spent the whole budget → degrade cleanly.
+  if (now() >= deadline) {
+    const note = `visuel ignoré : budget de ${budgetSec} s épuisé au téléchargement — transcript rendu`;
+    logger.warn(`[video] ${note}`);
+    return transcriptOnly(note);
   }
 
   const sampleFramesFn =
@@ -401,10 +469,33 @@ async function runVisualPipeline(
     return { fused: segments.map((s) => ({ ...s })), framesSampled: 0, framesDistinct: 0, note: 'aucune frame échantillonnée' };
   }
   const distinct = await dedupFramesFn(frames);
-  const fused = await fuseTranscriptWithFrames(segments, distinct, (imagePath) =>
-    describeFrameFn(imagePath, undefined, describeOptions),
-  );
-  return { fused, framesSampled: frames.length, framesDistinct: distinct.length };
+
+  // Budgeted describe: the costly per-frame VLM calls (~1–10 s each) are bounded by the
+  // wall-clock budget. We STOP calling the VLM once the remaining time can't cover another
+  // describe, and count N described / M attempted so the output carries a truncation note.
+  const perFrameEstimateMs = deps.visualPerFrameEstimateMs ?? DEFAULT_VLM_FRAME_ESTIMATE_MS;
+  let attempted = 0;
+  let described = 0;
+  let budgetHit = false;
+  const budgetedDescribe = async (imagePath: string): Promise<string> => {
+    attempted++;
+    const remaining = deadline - now();
+    if (remaining <= 0 || remaining < perFrameEstimateMs) {
+      budgetHit = true;
+      return '';
+    }
+    const text = await describeFrameFn(imagePath, undefined, describeOptions);
+    described++;
+    return text;
+  };
+
+  const fused = await fuseTranscriptWithFrames(segments, distinct, budgetedDescribe);
+
+  const result: VisualResult = { fused, framesSampled: frames.length, framesDistinct: distinct.length };
+  if (budgetHit && described < attempted) {
+    result.note = `visuel partiel : ${described}/${attempted} frames décrites — budget de ${budgetSec} s atteint (transcript complet rendu)`;
+  }
+  return result;
 }
 
 /**
@@ -560,5 +651,7 @@ function renderVisual(visual: VisualResult): string {
   if (lines.length === 0) {
     return visual.note ? `(${visual.note})` : '(aucune description visuelle produite)';
   }
-  return lines.join('\n');
+  // A partial/degraded run (e.g. budget hit) carries a note — surface it above the
+  // descriptions so the truncation is visible in the human output.
+  return visual.note ? `(${visual.note})\n${lines.join('\n')}` : lines.join('\n');
 }
