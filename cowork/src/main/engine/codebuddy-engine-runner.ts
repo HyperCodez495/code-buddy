@@ -490,11 +490,21 @@ export class CodeBuddyEngineRunner {
   }
 
   /**
-   * Cancel a running session.
+   * Cancel a running session — aborts the in-flight agent turn via the engine
+   * adapter (which propagates the AbortSignal to the Code Buddy client).
+   *
+   * Reached from barge-in: renderer `interruptSpeech('barge_in')` → the
+   * `useBargeInTurnCancel` listener → `useIPC.stopSession` → `session.stop` →
+   * `SessionManager.stopSession` → here. never-throws so a barge-in with no
+   * running turn (or a flaky adapter) can't crash the main process.
    */
   cancel(sessionId: string): void {
-    this.adapter.cancel(sessionId);
-    log('[CodeBuddyEngineRunner] cancelled', sessionId);
+    try {
+      this.adapter.cancel(sessionId);
+      log('[CodeBuddyEngineRunner] cancelled', sessionId);
+    } catch (error) {
+      logError('[CodeBuddyEngineRunner] cancel failed', error);
+    }
   }
 
   /**
