@@ -473,6 +473,22 @@ function stripTrailingReferences(body: string): string {
   return body.replace(/\n+#{1,6}\s*(références|references|sources|bibliographie)\b[\s\S]*$/i, '').trimEnd();
 }
 
+/**
+ * Remove `[n]` citation markers the LLM fabricated — any number outside `1..validCount`
+ * (0, or higher than the number of real sources). `renderReferences` only ever lists
+ * ids `1..validCount`, so an unstripped `[7]` against 5 sources would be a PHANTOM citation
+ * (unresolvable in the report). Mirrors the anti-hallucination `stripInvalidMarkers` in
+ * `src/research/paper-qa/answer.ts` (which stays untouched — it is not exported). Pure; never throws.
+ */
+export function stripInvalidCitationMarkers(body: string, validCount: number): string {
+  if (typeof body !== 'string' || body.length === 0) return typeof body === 'string' ? body : '';
+  const max = Number.isInteger(validCount) && validCount > 0 ? validCount : 0;
+  return body.replace(/\[(\d{1,5})\]/g, (full, num: string) => {
+    const n = Number(num);
+    return Number.isInteger(n) && n >= 1 && n <= max ? full : '';
+  });
+}
+
 // ============================================================================
 // 5. Objective synthesis (cited)
 // ============================================================================
@@ -537,7 +553,9 @@ export async function synthesize(
       { role: 'system', content: SYNTH_SYSTEM },
       { role: 'user', content: userPrompt },
     ]);
-    const body = stripTrailingReferences((raw || '').trim());
+    // Strip the LLM's own references heading, THEN drop any fabricated `[n]` beyond the real
+    // source count so every surviving marker resolves in the deterministic References section.
+    const body = stripInvalidCitationMarkers(stripTrailingReferences((raw || '').trim()), sources.length);
     if (body.length > 0) {
       return { report: `${body}\n\n${references}`, llmUsed: true };
     }

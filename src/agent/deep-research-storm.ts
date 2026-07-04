@@ -52,6 +52,7 @@ import {
   synthesize,
   toSourceRegistry,
   renderReferences,
+  stripInvalidCitationMarkers,
   resolveDeepResearchOptions,
   type DeepResearchBoundaries,
   type DeepResearchOptions,
@@ -733,7 +734,9 @@ async function coWriteArticle(
   usableOutline.sections.forEach((section, i) => {
     parts.push('', `## ${section.title}`, '', written[i]!.body.trim());
   });
-  const body = stripSectionReferences(parts.join('\n'));
+  // Drop any fabricated `[n]` beyond the shared registry so no co-written section leaves a phantom
+  // citation the single renumbered "## Références" (rendered from `registry`) can't resolve.
+  const body = stripInvalidCitationMarkers(stripSectionReferences(parts.join('\n')), registry.length);
   emit({ stage: 'written', sections: usableOutline.sections.length, coWritten: true });
   return {
     report: `${body}\n\n${references}`,

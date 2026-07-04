@@ -355,6 +355,23 @@ describe('outline-first co-writing', () => {
     expect(result.report).toContain('[1] Alpha — https://a.com');
     expect(result.report).toContain('[2] Beta — https://b.com');
   });
+
+  it('strips a PHANTOM [n] a section writer emits beyond the shared registry', async () => {
+    // Only 2 sources are in the shared registry ([1] Alpha, [2] Beta) → renderReferences lists
+    // [1..2]. A section that cites [7] would leave an unresolvable phantom in the delivered article.
+    const boundaries = twoSourceBoundaries({
+      writeSection: async () => 'Grounded in [1] and also, wrongly, [7].',
+    });
+    const result = await runStormResearch('Topic', boundaries, { perspectives: 2 });
+    expect(result.coWritten).toBe(true);
+    // the phantom marker is gone from the co-written body...
+    expect(result.report).not.toContain('[7]');
+    // ...while the resolvable marker survives and the References stay coherent
+    expect(result.report).toContain('[1]');
+    expect(result.report.match(/## Références/g)).toHaveLength(1);
+    expect(result.report).toContain('[1] Alpha — https://a.com');
+    expect(result.report).toContain('[2] Beta — https://b.com');
+  });
 });
 
 // ==========================================================================

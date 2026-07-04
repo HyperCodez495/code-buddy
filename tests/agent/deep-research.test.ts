@@ -19,6 +19,7 @@ import {
   contentFingerprint,
   fingerprintSimilarity,
   renderReferences,
+  stripInvalidCitationMarkers,
   runDeepResearchPipeline,
   resolveDeepResearchOptions,
   type DeepResearchBoundaries,
@@ -320,6 +321,42 @@ describe('citation tracing + synthesis', () => {
     expect(llmUsed).toBe(false);
     expect(report).toContain('## Références');
     expect(report).toContain('Aucune source');
+  });
+
+  it('stripInvalidCitationMarkers drops fabricated markers beyond the source count', () => {
+    // 5 real sources → [1..5] resolvable; [7] and [0] are phantom → removed; text kept.
+    const out = stripInvalidCitationMarkers('Alpha [3]. Beta [7]. Gamma [0]. Delta [5].', 5);
+    expect(out).toBe('Alpha [3]. Beta . Gamma . Delta [5].');
+    // validCount 0/negative/non-integer strips everything (no resolvable marker exists)
+    expect(stripInvalidCitationMarkers('x [1] y', 0)).toBe('x  y');
+    // never-throws on a non-string
+    expect(stripInvalidCitationMarkers(undefined as unknown as string, 3)).toBe('');
+  });
+
+  it('synthesis removes a PHANTOM [n] the LLM cited beyond the real source count', async () => {
+    // The LLM invents a [7] though only 5 sources exist → renderReferences lists only [1..5],
+    // so [7] would be an unresolvable phantom citation in the delivered report.
+    const boundaries = makeBoundaries({
+      llm: async () => '## TL;DR\n\nAlpha finding [3]. Beta claim [7]. Gamma detail [2].',
+    });
+    const sources = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      url: `https://s${i + 1}.com`,
+      title: `S${i + 1}`,
+      content: `content ${i + 1}`,
+      query: 'q',
+    }));
+    const { report, llmUsed } = await synthesize('Q', { question: 'Q', subQuestions: [] }, sources, boundaries, OPTS);
+    expect(llmUsed).toBe(true);
+    // the phantom marker is gone from the body...
+    expect(report).not.toContain('[7]');
+    // ...while the resolvable markers survive
+    expect(report).toContain('[3]');
+    expect(report).toContain('[2]');
+    // and the References remain coherent (only real, resolvable ids 1..5)
+    expect(report.match(/## Références/g)).toHaveLength(1);
+    expect(report).toContain('[5] S5 — https://s5.com');
+    expect(report).not.toContain('[6]');
   });
 });
 
