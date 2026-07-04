@@ -159,6 +159,26 @@ describe('chunkDocument — page-boundary integrity (regression)', () => {
     expect(stroma!.page).toBe(2);
   });
 
+  it('labels a fact under a canonical heading that follows a page title (finding D1)', async () => {
+    // Page 2 opens with a NON-heading title line ("Mechanisms of Photosynthesis")
+    // BEFORE the canonical "Methods" heading, so the previous section's span
+    // bleeds across the page onto that pre-heading line. The chunk carrying the
+    // Calvin cycle fact must still be labelled "Methods" (a section frontier is a
+    // hard cut) — NOT the bled-in "Introduction".
+    const doc = await docFromPages([
+      'Photosynthesis in Plants\nIntroduction\nPhotosynthesis converts light energy into chemical energy stored in glucose for the whole biosphere.',
+      'Mechanisms of Photosynthesis\nMethods\nThe Calvin cycle occurs in the stroma of the chloroplast and fixes carbon dioxide into glucose using ATP and NADPH.',
+    ]);
+    // Sanity: "Methods" really is a detected section on page 2.
+    expect(doc.sections.map((s) => s.title)).toContain('Methods');
+
+    const passages = chunkDocument(doc, { targetChars: 200, overlapChars: 0 });
+    const calvin = passages.find((p) => p.text.includes('Calvin cycle'));
+    expect(calvin).toBeDefined();
+    expect(calvin!.page).toBe(2);
+    expect(calvin!.section).toBe('Methods');
+  });
+
   it('bounds passages within pages even when a page is longer than the target', async () => {
     const longPage2 = Array.from(
       { length: 12 },

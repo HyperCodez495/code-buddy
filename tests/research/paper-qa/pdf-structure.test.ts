@@ -145,6 +145,33 @@ describe('parsePdfStructure — section heuristics (injected)', () => {
     }
   });
 
+  it('detects a short canonical heading regardless of the following line (finding D1)', async () => {
+    // "Methods" is a canonical marker, so it must be a heading even when the next
+    // line is short (<40 chars) — where the Title-Case lead-in heuristic bails.
+    const page = 'Methods\nShort.\nA slightly longer following sentence of body prose here.';
+    const doc = await parsePdfStructure('/virtual/short-heading.pdf', {
+      readFile: async () => Buffer.from('x'),
+      parsePdf: async () => fakeParsedPdf([page]),
+    });
+    expect((doc as StructuredDoc).sections.map((s) => s.title)).toContain('Methods');
+  });
+
+  it('rejects a sentence that merely opens with a number; keeps real numbered headings (finding D2)', async () => {
+    const page =
+      'Results\n2020 was a record year for solar output across the whole region\n' +
+      '3.2 System Design\nWe describe the apparatus and the pipeline used in the study.';
+    const doc = await parsePdfStructure('/virtual/numbered.pdf', {
+      readFile: async () => Buffer.from('x'),
+      parsePdf: async () => fakeParsedPdf([page]),
+    });
+    const titles = (doc as StructuredDoc).sections.map((s) => s.title);
+    expect(titles).toContain('Results');
+    // A genuine numbered heading (title-cased remainder) survives.
+    expect(titles).toContain('3.2 System Design');
+    // The number-led sentence is NOT promoted to a phantom heading.
+    expect(titles.some((t) => t.startsWith('2020'))).toBe(false);
+  });
+
   it('returns a valid doc with empty sections when nothing looks like a heading', async () => {
     const prose =
       'this is a single run of lowercase prose with no headings at all and it just keeps going as one long paragraph without any structural markers whatsoever.';

@@ -175,9 +175,20 @@ function classifyHeading(trimmed: string, nextTrimmed: string | undefined): Head
   const numbered = /^(\d+(?:\.\d+)*)\.?(?:\s+(\S.*))?$/.exec(trimmed);
   if (numbered && numbered[1]) {
     const depth = numbered[1].split('.').length;
-    // Require a short-ish heading: a numbered line that runs long is prose.
     const rest = numbered[2] ?? '';
-    if (rest.length <= 80 && !/[.!?]$/.test(rest)) {
+    const restWords = rest.length > 0 ? rest.split(/\s+/).filter(Boolean) : [];
+    // A genuine numbered heading is short AND either has no trailing text
+    // ("3."), starts with a capital / bracket (title casing), or is an
+    // ultra-short label (≤3 tokens). Length alone let a sentence that merely
+    // OPENS with a number — "2020 was a record year" — become a phantom heading,
+    // which planted a spurious section frontier (finding D2).
+    const titleLike = /^[A-Z([]/.test(rest);
+    const ultraShort = restWords.length > 0 && restWords.length <= 3;
+    if (
+      rest.length <= 80 &&
+      !/[.!?]$/.test(rest) &&
+      (restWords.length === 0 || titleLike || ultraShort)
+    ) {
       return { title: cleanHeading(trimmed), level: depth, priority: 3, offset: 0 };
     }
   }

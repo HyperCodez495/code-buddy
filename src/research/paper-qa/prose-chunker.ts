@@ -11,7 +11,7 @@
  */
 
 import { findPageNo, findSectionTitle } from './provenance.js';
-import type { ChunkOptions, PageSpan, Passage, StructuredDoc } from './types.js';
+import type { ChunkOptions, PageSpan, Passage, SectionSpan, StructuredDoc } from './types.js';
 
 const DEFAULT_TARGET_CHARS = 1000;
 const DEFAULT_OVERLAP_CHARS = 150;
@@ -48,7 +48,7 @@ export function chunkDocument(doc: StructuredDoc, opts: ChunkOptions = {}): Pass
     // `findPageNo(charStart)` alone is exact (the core "cite the right page"
     // promise). Without this a window sized by `target` can span several pages
     // and get mis-attributed to the page it merely BEGAN on.
-    const hardCuts = computeHardCuts(doc.pages, text.length);
+    const hardCuts = computeHardCuts(doc.pages, doc.sections, text.length);
     const passages: Passage[] = [];
 
     let start = 0;
@@ -130,14 +130,27 @@ function computeBoundaries(text: string): number[] {
 }
 
 /**
- * Hard cut offsets: the `charStart` of every page after the first (in `]0, len[`),
- * sorted ascending and unique. A chunk window is never allowed to cross one of
- * these, so each passage falls entirely within a single page.
+ * Hard cut offsets a chunk window may never cross (in `]0, len[`), sorted unique:
+ *   - the `charStart` of every page after the first, so a passage stays on ONE
+ *     page (`findPageNo(charStart)` is then exact);
+ *   - the `charStart` of every section, so a passage never STRADDLES a section
+ *     boundary and get mis-labelled by its start offset. A previous section's
+ *     span can bleed across a page onto a page's pre-heading title line (e.g. a
+ *     page-2 line before its "Methods" heading), so without a section cut the
+ *     chunk that begins there — and carries the section's real facts — inherits
+ *     the bled-in "Introduction" instead of "Methods" (finding D1).
  */
-function computeHardCuts(pages: readonly PageSpan[], len: number): number[] {
+function computeHardCuts(
+  pages: readonly PageSpan[],
+  sections: readonly SectionSpan[],
+  len: number,
+): number[] {
   const set = new Set<number>();
   for (const page of pages) {
     if (page.charStart > 0 && page.charStart < len) set.add(page.charStart);
+  }
+  for (const section of sections) {
+    if (section.charStart > 0 && section.charStart < len) set.add(section.charStart);
   }
   return Array.from(set).sort((a, b) => a - b);
 }
