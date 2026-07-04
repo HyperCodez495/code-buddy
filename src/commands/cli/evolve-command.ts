@@ -31,6 +31,8 @@ interface EvolveOptions {
   concurrency?: string;
   baseline?: string;
   model?: string;
+  /** Pick the mutator model per-cycle with the cost-aware UCB bandit (opt-in). */
+  modelBandit?: boolean;
   confirm?: boolean;
   /** Commander sets this false when --no-plan is passed (default true → deliberate planning on). */
   plan?: boolean;
@@ -188,6 +190,7 @@ export function registerEvolveCommands(program: Command): void {
     .option('--concurrency <n>', 'How many candidates to evaluate at once', '2')
     .option('--baseline <ref>', 'Baseline ref to branch from + rank against', 'main')
     .option('--model <model>', 'Model for the mutator agent + planner')
+    .option('--model-bandit', 'Pick the mutator model per-cycle with the cost-aware UCB bandit (opt-in; overrides --model per cycle)')
     .option('--no-plan', 'Skip deliberate planning (use the ad-hoc mutator prompt)')
     .option('--compound', 'Branch each candidate off the current best elite (compounding), not the baseline')
     .option('--refresh-model', 'Re-index Code Explorer first so hotspots + feature map are fresh (--auto)')
@@ -281,6 +284,7 @@ export function registerEvolveCommands(program: Command): void {
           baseline,
           store,
           ...(compoundFrom ? { compoundFrom } : {}),
+          ...(options.modelBandit ? { useModelBandit: true } : {}),
         });
         for (const r of results) {
           logger.info(`  ${r.variantId}: fitness=${r.report.score.toFixed(3)} beats=${r.beatsBaseline} kept=${r.kept}`);
