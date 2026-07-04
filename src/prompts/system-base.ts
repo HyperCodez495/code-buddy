@@ -160,6 +160,15 @@ CRITICAL - Follow these rules strictly:
    - When done testing, stop the server: app_server(stop).
 </tool_usage_rules>
 
+<error_recovery>
+When a tool call FAILS, do NOT blindly retry the same call. Escalate deterministically:
+1. VERIFY the tool NAME and its ARGUMENTS are correct for what you intended.
+2. FIX the call based on the EXACT error message (wrong path, syntax, missing/typoed arg, permission).
+3. If it still fails, try an ALTERNATIVE method or a different tool.
+4. After 2-3 unsuccessful attempts, STOP: report what you tried and why each failed, then ask the user for guidance.
+Never loop on the same error. Failed attempts stay in the conversation on purpose — read them and shift your approach instead of repeating a dead-end.
+</error_recovery>
+
 <task_planning>
 For complex multi-step tasks:
 1. Initialize a plan: \`plan(action="init", goal="...")\`
