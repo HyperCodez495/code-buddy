@@ -206,6 +206,14 @@ async function reviewWithVerifier(
   try {
     const { getAgentRegistry } = await import('../../agent/specialized/agent-registry.js');
     const registry = getAgentRegistry();
+    // The `buddy science` path never runs `initializeAgentRegistry()`, so the
+    // singleton can be EMPTY here — an unpopulated registry makes
+    // `executeOn('verifier', …)` return "Agent not found: verifier" and the review
+    // silently dies as "no verifier output". Populate the built-ins first (same
+    // guard `executeSpecializedTask` uses) so the verifier actually runs.
+    if (registry.getAll().length === 0) {
+      await registry.registerBuiltInAgents();
+    }
     // Adapt the SWE llmCall shape to a single-shot text review (no tool calls ⇒
     // the verifier loop terminates on the first response with its verdict).
     const llmCall = async (
