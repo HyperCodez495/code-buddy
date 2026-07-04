@@ -22,7 +22,7 @@
  */
 
 import { spawn as realSpawn } from 'child_process';
-import { mkdtemp, readdir } from 'fs/promises';
+import { mkdir, mkdtemp, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { logger } from '../../utils/logger.js';
@@ -266,24 +266,32 @@ export async function sampleFrames(
       0;
     const budget = deps.budget ?? frameBudgetForDuration(duration);
 
-    // 1) Scene detection.
-    const sceneTemplate = join(outDir, 'frame_%04d.jpg');
+    // 1) Scene detection — into its OWN subdir so a later interval pass can't collide
+    //    with (or leave stale) its files (both passes use the same frame_%04d template).
+    const sceneDir = join(outDir, 'scene');
+    await mkdir(sceneDir, { recursive: true });
+    const sceneTemplate = join(sceneDir, 'frame_%04d.jpg');
     let frames = await extractWithArgs(
       spawn,
       ffmpegBin,
       buildSceneDetectArgs(videoPath, sceneTemplate, sceneThreshold),
-      outDir,
+      sceneDir,
       readdirFn,
     );
 
-    // 2) Fallback: low-motion screencast → too few scene cuts → even interval pass.
+    // 2) Fallback: low-motion screencast → too few scene cuts → even interval pass, into a
+    //    SEPARATE subdir. Distinct dirs guarantee interval timestamps never get zipped
+    //    against residual scene frames (and scene frames are never overwritten in place).
     if (frames.length < minSceneFrames && duration > 0) {
+      const intervalDir = join(outDir, 'interval');
+      await mkdir(intervalDir, { recursive: true });
+      const intervalTemplate = join(intervalDir, 'frame_%04d.jpg');
       const rate = `${budget}/${Math.max(1, Math.ceil(duration))}`;
       const intervalFrames = await extractWithArgs(
         spawn,
         ffmpegBin,
-        buildIntervalArgs(videoPath, sceneTemplate, rate),
-        outDir,
+        buildIntervalArgs(videoPath, intervalTemplate, rate),
+        intervalDir,
         readdirFn,
       );
       if (intervalFrames.length > frames.length) frames = intervalFrames;

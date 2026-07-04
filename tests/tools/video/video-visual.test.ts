@@ -8,6 +8,7 @@
  * VLM. And `visual:false` is proven to touch NONE of the visual machinery.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { EventEmitter } from 'events';
 import { execFileSync } from 'child_process';
 import { mkdtemp, rm, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -84,6 +85,56 @@ describe('frame budget (auto-scaled by duration)', () => {
 
     const interval = buildIntervalArgs('/v.mp4', '/out/frame_%04d.jpg', '100/1200');
     expect(interval.some((a) => a.includes('fps=100/1200'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #11 — scene + interval passes must not share an output dir (no cross-contamination)
+// ---------------------------------------------------------------------------
+describe('sampleFrames — scene/interval pass isolation (#11)', () => {
+  it('writes the two passes to DISTINCT subdirs and never mixes their frames', async () => {
+    const outDir = await mkdtemp(join(tmpdir(), 'buddy-frames-sep-'));
+    const outTemplates: string[] = [];
+    // Every ffmpeg call: record its output template (last arg) + emit two showinfo timestamps.
+    const spawn = ((_cmd: string, args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: () => void;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      outTemplates.push(args[args.length - 1]!);
+      setImmediate(() => {
+        child.stderr.emit('data', Buffer.from('pts_time:1.0\npts_time:2.0\n'));
+        child.emit('close', 0);
+      });
+      return child;
+    }) as never;
+    // Scene subdir → 1 file (< minSceneFrames=3 → triggers interval fallback);
+    // interval subdir → 2 files → interval wins.
+    const readdirFn = async (dir: string): Promise<string[]> => {
+      if (dir.endsWith('/scene')) return ['frame_0001.jpg'];
+      if (dir.endsWith('/interval')) return ['frame_0001.jpg', 'frame_0002.jpg'];
+      return [];
+    };
+    try {
+      const frames = await sampleFrames('/v.mp4', {
+        spawn,
+        outDir,
+        durationSec: 120,
+        budget: 10,
+        readdir: readdirFn,
+      });
+      expect(outTemplates.some((t) => t.includes('/scene/'))).toBe(true);
+      expect(outTemplates.some((t) => t.includes('/interval/'))).toBe(true);
+      // Interval (2 frames) beat scene (1) → returned frames all come from the interval dir.
+      expect(frames.length).toBe(2);
+      expect(frames.every((f) => f.path.includes('/interval/'))).toBe(true);
+    } finally {
+      await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 });
 
