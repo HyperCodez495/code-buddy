@@ -29,6 +29,7 @@ jest.mock("../../src/tools/index.js", () => ({
   ImageTool: jest.fn().mockImplementation(function() { return {
     processImage: jest.fn().mockResolvedValue({ success: true }),
   }; }),
+  WeatherTool: jest.fn().mockImplementation(function() { return { getWeather: jest.fn().mockResolvedValue({ success: true, output: 'weather report' }) }; }),
   WebSearchTool: jest.fn().mockImplementation(function() { return {
     search: jest.fn().mockResolvedValue({ success: true, output: "web results" }),
     fetchPage: jest.fn().mockResolvedValue({ success: true, output: "page content" }),

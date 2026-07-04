@@ -70,6 +70,7 @@ jest.mock("../../src/tools/index.js", () => ({
   SearchTool: jest.fn().mockImplementation(function() { return {
     execute: jest.fn().mockResolvedValue({ success: true, output: "Found 5 results" }),
   }; }),
+  WeatherTool: jest.fn().mockImplementation(function() { return { getWeather: jest.fn().mockResolvedValue({ success: true, output: 'weather report' }) }; }),
   WebSearchTool: jest.fn().mockImplementation(function() { return {
     execute: jest.fn().mockResolvedValue({ success: true, output: "Web results" }),
   }; }),

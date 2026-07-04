@@ -50,6 +50,7 @@ jest.mock('../../src/tools/index.js', () => ({
   BashTool: jest.fn().mockImplementation(function() { return mockBashInstance; }),
   TodoTool: jest.fn().mockImplementation(function() { return {}; }),
   SearchTool: jest.fn().mockImplementation(function() { return {}; }),
+  WeatherTool: jest.fn().mockImplementation(function() { return { getWeather: jest.fn().mockResolvedValue({ success: true, output: 'weather report' }) }; }),
   WebSearchTool: jest.fn().mockImplementation(function() { return {}; }),
   ImageTool: jest.fn().mockImplementation(function() { return {}; }),
   MorphEditorTool: jest.fn().mockImplementation(function() { return {}; }),
