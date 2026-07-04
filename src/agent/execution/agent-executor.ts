@@ -52,6 +52,7 @@ import { extractEditedFilesFromHistory } from "../middleware/changed-files.js";
 import type { MessageQueue } from "../message-queue.js";
 import { semanticTruncate } from "../../utils/head-tail-truncation.js";
 import { compressWithLmResizer, isLmResizerEnabled } from "../../context/lm-resizer-compressor.js";
+import { compress as tokenJuice, isTokenJuiceEnabled, JUICE_MIN_CHARS } from "../../context/token-juice.js";
 import { getRestorableCompressor } from "../../context/restorable-compression.js";
 import { recordCompactionFork } from "../../context/compaction-fork.js";
 import { getActiveRunStore } from "../../observability/run-store.js";
@@ -60,6 +61,13 @@ import type { ICMBridge } from "../../memory/icm-bridge.js";
 import { shouldCompactBeforeToolExec, estimateToolResultTokens } from "../../context/proactive-compaction.js";
 import { formatTokenUsage, estimateCost } from "../../utils/token-display.js";
 import { classifyQuery } from "./query-classifier.js";
+
+/**
+ * Tools whose (verbose, prose/HTML) output TokenJuice may losslessly compress before it
+ * enters message history. Scoped to web tools on purpose — never structured output the
+ * agent parses. See `context/token-juice.ts`.
+ */
+const JUICE_WEB_TOOLS = new Set(['web_fetch', 'web_search', 'fetch', 'browser_fetch']);
 
 /**
  * Race a promise against a timeout, returning the fallback value if the
@@ -1169,6 +1177,27 @@ export class AgentExecutor {
             // truncation/compression, so the original is always recoverable, not the shrunk copy.
             const rawForRecovery = sanitizeToolResult(result?.success ? result.output || "Success" : result?.error || "Error");
             persistToolResult(toolCall.id, rawForRecovery);
+
+            // TokenJuice (lossless): before the lossy shrink below, dedupe exactly-repeated
+            // blocks + convert any raw HTML → markdown in VERBOSE WEB output (web_fetch/web_search),
+            // where the gain is clear and the risk is low. Scoped to those tools on purpose — never
+            // applied blindly to structured tool output the agent must parse. Only kicks in above a
+            // size threshold; default ON (transforms are exact/semantically-preserving), kill-switch
+            // via CODEBUDDY_TOKEN_JUICE=false. The full original was persisted above (recoverable).
+            if (
+              isTokenJuiceEnabled() &&
+              result?.output &&
+              result.output.length > JUICE_MIN_CHARS &&
+              JUICE_WEB_TOOLS.has(toolCall.function.name)
+            ) {
+              const juiced = tokenJuice(result.output, { html: true, dedupe: true });
+              if (juiced.savedChars > 0) {
+                logger.debug(
+                  `[token-juice] ${toolCall.function.name}: saved ${juiced.savedChars} chars (${juiced.applied.join('+')})`,
+                );
+                result = { ...result, output: juiced.output };
+              }
+            }
 
             // Shrink very large tool output (> 20k chars) before it reaches the LLM. Prefer
             // lm-resizer (signal-preserving, keeps errors/paths, recoverable) when enabled
