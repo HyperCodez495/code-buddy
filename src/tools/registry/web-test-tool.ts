@@ -22,6 +22,28 @@ export interface WebTestAssertion {
   value: string;
 }
 
+/**
+ * A single interaction played AFTER navigation and BEFORE the oracles /
+ * assertions — this is what lets web_test test a FLOW (fill a field, click a
+ * button, verify the result) instead of just "the page loads and shows X".
+ * A page can render fine while its "Send" button does nothing (the Potemkin
+ * interface); a step that clicks it and a network/console oracle running
+ * afterward catch exactly that.
+ */
+export interface WebTestStep {
+  /** click a CSS selector, type a value into an input/textarea, submit a form, or just wait. */
+  action: 'click' | 'type' | 'wait' | 'submit';
+  /** CSS selector for click/type/submit. */
+  selector?: string;
+  /** Value to set for `type`. */
+  value?: string;
+  /** Milliseconds for `wait` (bounded to 5000). */
+  ms?: number;
+}
+
+/** Upper bound for a single `wait` step, so a test can't stall the loop. */
+const MAX_WAIT_MS = 5000;
+
 interface CheckResult {
   name: string;
   passed: boolean;
@@ -53,6 +75,7 @@ export class WebTestTool implements ITool {
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     const url = input.url as string;
     const assertions = (input.assertions as WebTestAssertion[] | undefined) ?? [];
+    const steps = (input.steps as WebTestStep[] | undefined) ?? [];
     const wantScreenshot = input.screenshot !== false;
     const allowConsoleErrors = input.allowConsoleErrors === true;
     const allowNetworkErrors = input.allowNetworkErrors === true;
@@ -75,7 +98,20 @@ export class WebTestTool implements ITool {
       return this.report(url, checks, { consoleEntries: [], networkFailures: [], serverLogs: await this.serverLogsFor(url) });
     }
 
-    // Give late console errors (async boot code) a beat to land.
+    // 1b. Interaction steps — played in order, AFTER navigation and BEFORE the
+    //     oracles/assertions. Each becomes a check with evidence; a failing
+    //     step (e.g. missing selector) stops the sequence and fails the run.
+    //     Whatever a step triggers (a fetch, a console error) is then caught by
+    //     the oracles below — that's the whole point of running them after.
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]!;
+      const result = await this.runStep(step);
+      push(this.describeStep(step, i + 1), result.passed, result.detail);
+      if (!result.passed) break;
+    }
+
+    // Give late console errors (async boot code) and any step-triggered async
+    // work (a fetch fired by a click) a beat to land before the oracles read.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     // 2. Client-side oracle: console + pageerror.
@@ -159,6 +195,65 @@ export class WebTestTool implements ITool {
     return { passed, detail: passed ? 'found' : 'NOT found' };
   }
 
+  /**
+   * Play one interaction via a safe `evaluate` expression — the SAME mechanism
+   * `runAssertion` uses. Selectors/values are serialized with `JSON.stringify`
+   * (never interpolated raw) so a hostile selector can't break out. click/type/
+   * submit throw inside the page when the target is missing, so the step fails
+   * cleanly; `wait` just sleeps (bounded).
+   */
+  private async runStep(step: WebTestStep): Promise<{ passed: boolean; detail: string }> {
+    if (step.action === 'wait') {
+      const ms = Math.max(0, Math.min(Number(step.ms) || 0, MAX_WAIT_MS));
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      return { passed: true, detail: `waited ${ms}ms` };
+    }
+
+    const selector = step.selector;
+    if (typeof selector !== 'string' || selector.trim() === '') {
+      return { passed: false, detail: 'missing selector' };
+    }
+    const sel = JSON.stringify(selector);
+
+    let expression: string;
+    if (step.action === 'click') {
+      expression = `(() => { const el = document.querySelector(${sel}); if (!el) throw new Error("element not found: " + ${sel}); el.click(); return true; })()`;
+    } else if (step.action === 'type') {
+      const val = JSON.stringify(step.value ?? '');
+      // Set .value then dispatch input + change so React/Vue controlled inputs
+      // observe the change (a bare .value assignment is invisible to them).
+      expression = `(() => { const el = document.querySelector(${sel}); if (!el) throw new Error("element not found: " + ${sel}); el.value = ${val}; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`;
+    } else if (step.action === 'submit') {
+      // Resolve to the owning form; prefer requestSubmit so onSubmit handlers fire.
+      expression = `(() => { const el = document.querySelector(${sel}); if (!el) throw new Error("element not found: " + ${sel}); const form = el.tagName === "FORM" ? el : (el.form || (el.closest && el.closest("form"))); if (!form) throw new Error("no form for selector: " + ${sel}); if (typeof form.requestSubmit === "function") { form.requestSubmit(); } else { form.submit(); } return true; })()`;
+    } else {
+      return { passed: false, detail: `unknown action: ${String((step as { action?: unknown }).action)}` };
+    }
+
+    const result = await this.browser.execute({ action: 'evaluate', expression });
+    if (!result.success) {
+      const err = result.error ?? 'failed';
+      return { passed: false, detail: /not found/i.test(err) ? `NOT found (${selector})` : err };
+    }
+    return { passed: true, detail: 'ok' };
+  }
+
+  private describeStep(step: WebTestStep, n: number): string {
+    const sel = step.selector ? `"${step.selector}"` : '';
+    switch (step.action) {
+      case 'wait':
+        return `step ${n} wait ${Math.max(0, Math.min(Number(step.ms) || 0, MAX_WAIT_MS))}ms`;
+      case 'type':
+        return `step ${n} type ${JSON.stringify(step.value ?? '')} into ${sel}`;
+      case 'click':
+        return `step ${n} click ${sel}`;
+      case 'submit':
+        return `step ${n} submit ${sel}`;
+      default:
+        return `step ${n} ${String((step as { action?: unknown }).action)}`;
+    }
+  }
+
   private async serverLogsFor(url: string): Promise<string | undefined> {
     try {
       const origin = new URL(url).origin;
@@ -221,6 +316,21 @@ export class WebTestTool implements ITool {
             type: 'string',
             description: 'Page to test — a dev origin registered via app_server, or any safe public URL',
           },
+          steps: {
+            type: 'array',
+            description:
+              'Optional interactions played in order AFTER navigation and BEFORE the oracles/assertions (order: navigate → steps → console/network/server oracles → assertions). Use them to test a FLOW, not just page load. Each step is a check with evidence; a failing step fails the run. Omit for the original load-and-assert behavior.',
+            items: {
+              type: 'object',
+              properties: {
+                action: { type: 'string', enum: ['click', 'type', 'wait', 'submit'] },
+                selector: { type: 'string', description: 'CSS selector for click/type/submit' },
+                value: { type: 'string', description: 'Value to type (action=type)' },
+                ms: { type: 'number', description: 'Milliseconds to wait (action=wait, max 5000)' },
+              },
+              required: ['action'],
+            },
+          },
           assertions: {
             type: 'array',
             description: 'Declarative checks, each rendered with evidence in the report',
@@ -261,6 +371,9 @@ export class WebTestTool implements ITool {
     }
     if (data.assertions !== undefined && !Array.isArray(data.assertions)) {
       return { valid: false, errors: ['assertions must be an array'] };
+    }
+    if (data.steps !== undefined && !Array.isArray(data.steps)) {
+      return { valid: false, errors: ['steps must be an array'] };
     }
     return { valid: true };
   }

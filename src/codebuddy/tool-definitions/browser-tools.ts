@@ -869,13 +869,27 @@ export const WEB_TEST_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "web_test",
-    description: "Test a web page in ONE call and get a structured pass/fail report with evidence: navigation, console errors + page errors, failed network requests (refused connections + 4xx/5xx API responses — catches a UI that renders but whose API calls fail), server logs (when the URL is app_server-managed), interactive-element snapshot, screenshot, and your declarative assertions. ALWAYS run this after building or changing a web UI — a report with failures is a successful run you must read and fix, then re-run.",
+    description: "Test a web page in ONE call and get a structured pass/fail report with evidence: navigation, optional interaction steps, console errors + page errors, failed network requests (refused connections + 4xx/5xx API responses — catches a UI that renders but whose API calls fail), server logs (when the URL is app_server-managed), interactive-element snapshot, screenshot, and your declarative assertions. Order: navigate → steps → oracles → assertions. Pass `steps` to test a FLOW (fill a field, click a button, verify the result) — a rendered UI whose 'Send' button does nothing is a real bug the oracles catch after the click. ALWAYS run this after building or changing a web UI — a report with failures is a successful run you must read and fix, then re-run.",
     parameters: {
       type: "object",
       properties: {
         url: {
           type: "string",
           description: "Page to test — a dev origin registered via app_server, or any safe public URL"
+        },
+        steps: {
+          type: "array",
+          description: "Optional interactions played in order AFTER navigation and BEFORE the oracles/assertions (order: navigate → steps → console/network/server oracles → assertions). Test a FLOW, not just page load. Each step becomes a check with evidence; a failing step (e.g. missing selector) fails the run. Anything a step triggers (a fetch, a console error) is caught by the oracles that run afterward. Omit for the original load-and-assert behavior.",
+          items: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["click", "type", "wait", "submit"], description: "click a selector, type a value into an input, submit a form, or wait" },
+              selector: { type: "string", description: "CSS selector for click/type/submit" },
+              value: { type: "string", description: "Value to type (action=type)" },
+              ms: { type: "number", description: "Milliseconds to wait (action=wait, max 5000)" }
+            },
+            required: ["action"]
+          }
         },
         assertions: {
           type: "array",
