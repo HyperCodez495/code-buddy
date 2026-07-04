@@ -39,6 +39,7 @@ import type { SampledFrame, FrameSampleDeps } from './frame-sample.js';
 import type { FrameDedupDeps } from './frame-dedup.js';
 import type { DescribeFrameDeps } from './describe-frame.js';
 import type { CloudUnderstandDeps, CloudUnderstandOutcome, CloudSourceKind } from './cloud-understand.js';
+import { ingestVideoUnderstanding, getDefaultVideoCkgBridge, type VideoCkgBridge } from './video-ckg.js';
 
 export type UnderstandMethod = 'youtube-captions' | 'youtube-audio' | 'local-file' | 'direct-url';
 
@@ -145,6 +146,12 @@ export interface UnderstandVideoDeps {
   ) => Promise<CloudUnderstandOutcome>;
   /** Options handed to the default cloud understander (env/fetch/callGemini injection). */
   cloudDeps?: CloudUnderstandDeps;
+
+  // --- Collective Knowledge Graph injectable — untouched unless the shared
+  //     `CODEBUDDY_COLLECTIVE_MEMORY=true` env gate is on (see `ingestVideoCkg` below). ---
+  /** Override the CKG bridge (tests / alternative engines). Default (gate on, no
+   *  override): the real bridge over `getCollectiveKnowledgeGraph()`. */
+  ckgBridge?: VideoCkgBridge;
 }
 
 const DEFAULT_MAX_OUTPUT_CHARS = 6000;
@@ -445,7 +452,34 @@ export async function understandVideo(
   const result: UnderstandVideoSuccess = { segments, transcriptPath, source, method, output };
   if (visual) result.visual = visual;
   if (cloud) result.cloud = cloud;
+
+  // --- Collective Knowledge Graph ingestion (perception → memory, opt-in, additive). ---
+  // Gate: the SAME shared env flag Deep Research's Phase D and `context-pipeline.ts` use
+  // (CODEBUDDY_COLLECTIVE_MEMORY=true) — no new tool parameter, consistent activation
+  // across the app. This is a pure side effect: `result` above is already final and is
+  // returned UNCHANGED below regardless of what happens here.
+  if (process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true') {
+    await ingestVideoCkg({ source, method, segments, answer: cloud?.answer, question: input.question }, deps);
+  }
+
   return result;
+}
+
+/**
+ * Deposit a bounded summary of this video's understanding into the Collective Knowledge
+ * Graph — best-effort, NEVER throws (any failure, including bridge construction, is
+ * caught here so it can never affect `understandVideo`'s return value or control flow).
+ */
+async function ingestVideoCkg(
+  info: { source: string; method: UnderstandMethod; segments: TimedSegment[]; answer?: string; question?: string },
+  deps: UnderstandVideoDeps,
+): Promise<void> {
+  try {
+    const bridge = deps.ckgBridge ?? (await getDefaultVideoCkgBridge());
+    await ingestVideoUnderstanding(info, bridge);
+  } catch (err) {
+    logger.debug(`[video] ckg ingestion skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**
