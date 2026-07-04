@@ -475,13 +475,25 @@ function App() {
       <ExportDialogHost />
 
       {/* Evolution panel (new-shell Labs) — versions from recursive self-improvement. */}
-      {showEvolutionPanel && <EvolutionPanel onClose={() => useAppStore.getState().setShowEvolutionPanel(false)} />}
+      {showEvolutionPanel && (
+        <PanelErrorBoundary name="EvolutionPanel" fallback={null}>
+          <EvolutionPanel onClose={() => useAppStore.getState().setShowEvolutionPanel(false)} />
+        </PanelErrorBoundary>
+      )}
 
       {/* Knowledge panel (new-shell Labs) — the Collective Knowledge Graph + research-ingest topics. */}
-      {showKnowledgePanel && <KnowledgePanel onClose={() => useAppStore.getState().setShowKnowledgePanel(false)} />}
+      {showKnowledgePanel && (
+        <PanelErrorBoundary name="KnowledgePanel" fallback={null}>
+          <KnowledgePanel onClose={() => useAppStore.getState().setShowKnowledgePanel(false)} />
+        </PanelErrorBoundary>
+      )}
 
       {/* AI-Scientist panel (new-shell Labs) — READ-ONLY tracking of `buddy science` experiment variants. */}
-      {showSciencePanel && <SciencePanel onClose={() => useAppStore.getState().setShowSciencePanel(false)} />}
+      {showSciencePanel && (
+        <PanelErrorBoundary name="SciencePanel" fallback={null}>
+          <SciencePanel onClose={() => useAppStore.getState().setShowSciencePanel(false)} />
+        </PanelErrorBoundary>
+      )}
 
       {/* Documentation overlay — the flag had no mounted reader, so the Titlebar/TopMenuBar
           "Documentation" buttons (setShowHelpDocs(true)) were dead clicks. Mount it here. */}
@@ -539,10 +551,18 @@ function App() {
       )}
 
       {/* Security diagnostics panel (P3.4) — Cmd+Shift+D */}
-      {showDiagnostics && <DiagnosticsPanel onClose={() => setShowDiagnostics(false)} />}
+      {showDiagnostics && (
+        <PanelErrorBoundary name="DiagnosticsPanel" fallback={null}>
+          <DiagnosticsPanel onClose={() => setShowDiagnostics(false)} />
+        </PanelErrorBoundary>
+      )}
 
       {/* /btw quick-ask popup (P3.9) — Cmd+Shift+/ */}
-      {showBtwQuickAsk && <BtwQuickAsk onClose={() => setShowBtwQuickAsk(false)} />}
+      {showBtwQuickAsk && (
+        <PanelErrorBoundary name="BtwQuickAsk" fallback={null}>
+          <BtwQuickAsk onClose={() => setShowBtwQuickAsk(false)} />
+        </PanelErrorBoundary>
+      )}
 
       {/* Config Modal */}
       <PanelErrorBoundary name="ConfigModal" fallback={null}>
