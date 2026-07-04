@@ -685,6 +685,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     topicsRemove: (topic: string) => ipcRenderer.invoke('ckg.topicsRemove', topic),
   },
 
+  // AI-Scientist: READ-ONLY tracking of the `buddy science` experiment variant store. Only
+  // `listVariants`/`status` are exposed — there is no run/execute channel (launching an
+  // experiment stays CLI-only for safety).
+  science: {
+    listVariants: (cwd?: string) => ipcRenderer.invoke('science.listVariants', cwd),
+    status: (cwd?: string) => ipcRenderer.invoke('science.status', cwd),
+  },
+
   // Checkpoint operations
   checkpoint: {
     list: () => ipcRenderer.invoke('checkpoint.list'),
@@ -4784,6 +4792,10 @@ declare global {
         topicsList: () => Promise<string[]>;
         topicsAdd: (topic: string) => Promise<string[]>;
         topicsRemove: (topic: string) => Promise<string[]>;
+      };
+      science: {
+        listVariants: (cwd?: string) => Promise<unknown>;
+        status: (cwd?: string) => Promise<unknown>;
       };
       checkpoint: {
         list: () => Promise<unknown>;

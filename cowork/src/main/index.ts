@@ -132,6 +132,7 @@ import { registerTemplateIpcHandlers } from './ipc/template-ipc';
 import { registerClipboardIpcHandlers } from './ipc/clipboard-ipc';
 import { registerA2aIpcHandlers } from './ipc/a2a-ipc';
 import { registerCkgIpcHandlers } from './ipc/ckg-ipc';
+import { registerScienceIpcHandlers } from './ipc/science-ipc';
 import { registerAuditIpcHandlers } from './ipc/audit-ipc';
 import { registerPersonaIpcHandlers } from './ipc/persona-ipc';
 import { registerSessionInsightsIpcHandlers } from './ipc/session-insights-ipc';
@@ -3283,6 +3284,11 @@ ipcMain.handle('evolve.listVariants', async (_event, cwd?: string) => {
 // CKG (Collective Knowledge Graph) — read-only administration surface for the new-shell Knowledge
 // panel — extracted to ipc/ckg-ipc.ts.
 registerCkgIpcHandlers();
+
+// AI-Scientist — READ-ONLY tracking surface for the new-shell "AI-Scientist" panel (lists the
+// scored experiment variants from `buddy science`). No run/execute handler: launching an
+// experiment stays CLI-only — extracted to ipc/science-ipc.ts.
+registerScienceIpcHandlers();
 
 // MCP Server + marketplace IPC handlers — extracted to ipc/mcp-ipc.ts
 // (accessor injection for the runtime-reassigned sessionManager +
