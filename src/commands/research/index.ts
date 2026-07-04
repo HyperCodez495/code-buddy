@@ -84,6 +84,7 @@ export function createResearchCommand(): Command {
     .option('-m, --model <model>', 'Override the model for this research run')
     .option('--wide', 'Force parallel workers even in non-interactive runs (default: direct single-pass)', false)
     .option('--deep', 'Deep Research: deterministic, cited pipeline (plan → search → scrape → dedup → cited synthesis)', false)
+    .option('--iterations <n>', 'Deep Research (Phase B) gap-loop rounds: 1 = single round (default, = Phase A), 2-3 iterates research→gap-analysis→re-search until convergence (max 5). Only with --deep', '1')
     .action(async (topic: string, opts, command) => {
       // The root program also declares a global `-m, --model`; depending on
       // argv order Commander can bind it there — merge so either wins.
@@ -122,11 +123,15 @@ export function createResearchCommand(): Command {
       // FIRST and independently of TTY (it is automation-friendly). Strictly
       // gated: without `--deep`, the Wide/direct paths below run byte-identically.
       const { maybeRunDeepResearch, runDeepResearchCli } = await import('./deep.js');
+      // Phase B: --iterations > 1 turns the single Phase-A round into the bounded
+      // gap loop. Default '1' ⇒ Phase A byte-identical (the loop delegates).
+      const deepRounds = Math.max(1, Math.min(5, parseInt(opts.iterations, 10) || 1));
       const deepHandled = await maybeRunDeepResearch(opts, () =>
         runDeepResearchCli(topic, apiKey, providerConfig, {
           deep: true,
           reportPath,
           providerLabel: resolved.providerLabel,
+          deepOptions: { rounds: deepRounds },
         }),
       );
       if (deepHandled) return;

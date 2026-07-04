@@ -160,6 +160,13 @@ export interface DeepResearchBoundaries {
   fingerprint?(text: string): number[];
   /** Parallel batched map (default: internal chunk + Promise.all). Injected by the orchestrator to reuse its batching. */
   mapBatched?<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]>;
+  /**
+   * Phase B (gap loop) ONLY: examine the current draft + collected sources and
+   * return the identified gaps as new targeted queries. Optional — when absent,
+   * a default implementation drives it through `llm`. MAY throw (the loop stops
+   * cleanly with the current draft on failure).
+   */
+  analyzeGaps?(input: GapAnalysisInput): Promise<GapAnalysis>;
 }
 
 export type DeepResearchStage =
@@ -169,7 +176,16 @@ export type DeepResearchStage =
   | { stage: 'collected'; scraped: number }
   | { stage: 'deduped'; kept: number; dropped: number }
   | { stage: 'synthesizing' }
-  | { stage: 'done'; sources: number };
+  | { stage: 'done'; sources: number }
+  // Phase B (gap loop) — only emitted when rounds > 1.
+  | { stage: 'gap-analysis'; round: number }
+  | { stage: 'gaps'; round: number; gaps: number; queries: number; sufficient: boolean }
+  | { stage: 'merged'; round: number; added: number; dropped: number; total: number }
+  | {
+      stage: 'converged';
+      round: number;
+      reason: 'sufficient' | 'no-new-sources' | 'source-cap' | 'gap-analysis-failed';
+    };
 
 // ============================================================================
 // 1. Query planner
@@ -610,6 +626,372 @@ export async function runDeepResearchPipeline(
   };
   emit({ stage: 'done', sources: kept.length });
   return result;
+}
+
+// ============================================================================
+// Phase B — iterative gap loop (research → draft → gap analysis → re-search)
+//
+// The Phase-A pipeline above is ONE round. Phase B wraps it in a BOUNDED loop:
+// after the initial round produces a draft, a gap-analysis LLM call inspects the
+// draft + sub-questions + collected sources and proposes NEW targeted queries;
+// those feed another DETERMINISTIC fan-out whose sources are deduped AGAINST the
+// already-collected set (same fingerprint mechanism) and merged into the SAME
+// citation registry (ids continue 1,2,…). It repeats until convergence ("no
+// significant gaps"), a marginal-gain-of-zero round, the accumulated-source cap,
+// or the hard round cap. Every stage is never-throws.
+//
+// STRICTLY additive: `rounds <= 1` (the default) DELEGATES to the exact Phase-A
+// `runDeepResearchPipeline`, so `buddy research --deep` without `--iterations`
+// is byte-identical to Phase A. The gap-analysis boundary is only ever touched
+// when `rounds > 1`.
+// ============================================================================
+
+/** Absolute ceiling on sources accumulated across ALL rounds (bounded cost). */
+const LOOP_TOTAL_SOURCE_CAP = 50;
+/** Draft chars fed to the gap analyzer (bounded token cost). */
+const GAP_DRAFT_CHARS = 4000;
+/** Hard ceiling on rounds regardless of what the caller asks for. */
+const LOOP_MAX_ROUNDS = 5;
+
+export interface DeepResearchLoopOptions extends DeepResearchOptions {
+  /**
+   * Number of research rounds. Default 1 ⇒ Phase A byte-identical (no gap loop).
+   * >1 enables the iterative gap loop; clamped to [1, 5]. Recommended: 2-3.
+   */
+  rounds?: number;
+}
+
+/** The structured output of one gap-analysis pass. */
+export interface GapAnalysis {
+  /** True when the draft is judged sufficiently covered (convergence signal). */
+  sufficient: boolean;
+  /** Human-readable description of what is missing (for provenance/progress). */
+  gaps: string[];
+  /** New targeted search queries to fill the gaps. Empty ⇒ converged. */
+  queries: string[];
+}
+
+/** Everything the gap analyzer sees about the current state. */
+export interface GapAnalysisInput {
+  question: string;
+  plan: DeepQueryPlan;
+  /** The current draft report (already cited). */
+  draft: string;
+  /** The sources already collected (registry — title/url/id, no content). */
+  sources: SourceRef[];
+  /** 1-based round about to be researched (>=2). */
+  round: number;
+}
+
+/** Per-round accounting for the loop result. */
+export interface DeepResearchRoundInfo {
+  round: number;
+  /** The gap queries that triggered this round (empty for round 1). */
+  gapQueries: string[];
+  /** New sources actually merged this round. */
+  newSources: number;
+  /** Sources dropped this round as (cross-round) duplicates. */
+  duplicatesDropped: number;
+}
+
+/** The Phase-B result — a superset of {@link DeepResearchResult}. */
+export interface DeepResearchLoopResult extends DeepResearchResult {
+  /** Rounds that actually collected sources (1 = Phase A). */
+  rounds: number;
+  /** True when the loop stopped on convergence (not the hard round cap / failure). */
+  converged: boolean;
+  /** Per-round accounting. */
+  roundInfos: DeepResearchRoundInfo[];
+}
+
+export function resolveLoopRounds(n: number | undefined): number {
+  return clampInt(n, 1, 1, LOOP_MAX_ROUNDS);
+}
+
+const GAP_SYSTEM = [
+  'You are a meticulous research gap analyst. You are given a research question, its',
+  'sub-questions, the CURRENT DRAFT report, and the list of sources already collected.',
+  'Identify what is MISSING: sub-questions that are unanswered or thinly supported, claims',
+  'lacking evidence, unresolved contradictions, and important angles not yet covered.',
+  'Then propose concrete NEW web search queries that would fill those gaps — queries targeting',
+  'information NOT already covered by the collected sources (do not re-request known sources).',
+  'If the draft already answers the question well with sufficient evidence, say so.',
+  'Return ONLY a JSON object of the exact shape:',
+  '{"sufficient": true, "gaps": ["..."], "queries": ["new query 1","new query 2"]}',
+  'When sufficient is true, return an empty queries array. No prose, no markdown fences.',
+].join('\n');
+
+/**
+ * Default gap analyzer — one bounded LLM call through the `llm` boundary. MAY
+ * throw (the loop treats a throw as a clean stop). Unparseable/empty output is
+ * treated as convergence (sufficient=true, no queries).
+ */
+async function defaultAnalyzeGaps(
+  input: GapAnalysisInput,
+  boundaries: DeepResearchBoundaries,
+): Promise<GapAnalysis> {
+  const subList = input.plan.subQuestions.map((sq, i) => `${i + 1}. ${sq.subQuestion}`).join('\n');
+  const sourceList =
+    input.sources.map((s) => `[${s.id}] ${s.title} — ${s.url}`).join('\n') || '(none)';
+  const userPrompt = [
+    `Question: ${input.question}`,
+    '',
+    'Sub-questions:',
+    subList || '(none)',
+    '',
+    'Current draft report:',
+    (input.draft || '').slice(0, GAP_DRAFT_CHARS),
+    '',
+    'Sources already collected (do NOT request these again):',
+    sourceList,
+    '',
+    'Identify the gaps and propose NEW search queries. Return the JSON object only.',
+  ].join('\n');
+
+  const raw = await boundaries.llm([
+    { role: 'system', content: GAP_SYSTEM },
+    { role: 'user', content: userPrompt },
+  ]);
+  return parseGapAnalysis(raw);
+}
+
+/** Parse a gap-analysis LLM response. Unparseable ⇒ convergence (never throws). */
+export function parseGapAnalysis(raw: string): GapAnalysis {
+  const json = extractJsonObject(raw);
+  if (!json) return { sufficient: true, gaps: [], queries: [] };
+  let obj: unknown;
+  try {
+    obj = JSON.parse(json);
+  } catch {
+    return { sufficient: true, gaps: [], queries: [] };
+  }
+  const o = obj as { sufficient?: unknown; gaps?: unknown; queries?: unknown };
+  const gaps = Array.isArray(o.gaps)
+    ? o.gaps.filter((g): g is string => typeof g === 'string' && g.trim().length > 0).map((g) => g.trim())
+    : [];
+  const queries = Array.isArray(o.queries)
+    ? o.queries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0).map((q) => q.trim())
+    : [];
+  // sufficient is explicit true, OR implied when there is nothing more to search.
+  const sufficient = o.sufficient === true || queries.length === 0;
+  return { sufficient, gaps, queries };
+}
+
+/**
+ * Merge freshly-collected sources into an already-accumulated, id-stable set.
+ * Cross-round dedup is enforced TWICE: exact URL match (a URL surfaced in an
+ * earlier round is never re-collected) AND content fingerprint (a near-duplicate
+ * under a different URL). New sources get CONTINUING ids (M+1, M+2, …) so the
+ * citation registry stays coherent across rounds. Bounded by `totalCap`.
+ * Mutates `accumulated`/`accumulatedPrints` in place. Never throws.
+ */
+export function mergeSources(
+  accumulated: CollectedSource[],
+  accumulatedPrints: number[][],
+  incoming: Array<Omit<CollectedSource, 'id'>>,
+  boundaries: DeepResearchBoundaries,
+  opts: ResolvedOptions,
+  totalCap: number,
+): { added: number; dropped: number } {
+  const fingerprint = boundaries.fingerprint ?? contentFingerprint;
+  const seenUrls = new Set(accumulated.map((s) => s.url));
+  let added = 0;
+  let dropped = 0;
+
+  for (const src of incoming) {
+    if (accumulated.length >= totalCap) break;
+    if (seenUrls.has(src.url)) {
+      dropped++;
+      continue;
+    }
+    let print: number[] = [];
+    try {
+      print = fingerprint(src.content);
+    } catch {
+      print = [];
+    }
+    let isDup = false;
+    if (print.length > 0) {
+      for (const prev of accumulatedPrints) {
+        if (fingerprintSimilarity(print, prev) >= opts.dedupThreshold) {
+          isDup = true;
+          break;
+        }
+      }
+    }
+    if (isDup) {
+      dropped++;
+      continue;
+    }
+    accumulated.push({ ...src, id: accumulated.length + 1 });
+    accumulatedPrints.push(print);
+    seenUrls.add(src.url);
+    added++;
+  }
+
+  return { added, dropped };
+}
+
+/** collectSources guarded so a total failure degrades to zero sources (never throws). */
+async function safeCollect(
+  plan: DeepQueryPlan,
+  boundaries: DeepResearchBoundaries,
+  opts: ResolvedOptions,
+): Promise<Array<Omit<CollectedSource, 'id'>>> {
+  try {
+    return await collectSources(plan, boundaries, opts);
+  } catch (err) {
+    logger.debug(`[deep-research] collection failed: ${errMsg(err)}`);
+    return [];
+  }
+}
+
+/**
+ * Run the BOUNDED iterative gap loop. Default `rounds <= 1` delegates to the
+ * exact Phase-A pipeline (byte-identical). Never throws.
+ */
+export async function runDeepResearchLoop(
+  question: string,
+  boundaries: DeepResearchBoundaries,
+  options: DeepResearchLoopOptions = {},
+  onProgress?: (s: DeepResearchStage) => void,
+): Promise<DeepResearchLoopResult> {
+  const rounds = resolveLoopRounds(options.rounds);
+
+  // DEFAULT: 1 round ⇒ Phase A, byte-identical. The gap-analysis boundary is
+  // NEVER touched on this path.
+  if (rounds <= 1) {
+    const base = await runDeepResearchPipeline(question, boundaries, options, onProgress);
+    return {
+      ...base,
+      rounds: 1,
+      converged: true,
+      roundInfos: [
+        {
+          round: 1,
+          gapQueries: [],
+          newSources: base.sources.length,
+          duplicatesDropped: base.duplicatesDropped,
+        },
+      ],
+    };
+  }
+
+  const opts = resolveDeepResearchOptions(options);
+  const started = Date.now();
+  const emit = (s: DeepResearchStage) => {
+    try {
+      onProgress?.(s);
+    } catch {
+      /* progress must never break research */
+    }
+  };
+  const totalCap = Math.min(opts.maxSources * rounds, LOOP_TOTAL_SOURCE_CAP);
+
+  // ---- Round 1: plan → collect → merge(empty) → synthesize draft -----------
+  emit({ stage: 'planning' });
+  const { plan: initialPlan, llmUsed: plannerLlmUsed } = await planQueries(question, boundaries, opts);
+  const queryCount = initialPlan.subQuestions.reduce((n, sq) => n + sq.queries.length, 0);
+  emit({ stage: 'planned', subQuestions: initialPlan.subQuestions.length, queries: queryCount, llmUsed: plannerLlmUsed });
+
+  const accumulated: CollectedSource[] = [];
+  const accumulatedPrints: number[][] = [];
+  const roundInfos: DeepResearchRoundInfo[] = [];
+  const usedQueries = new Set<string>();
+  const accumulatedPlan: DeepQueryPlan = { question, subQuestions: [...initialPlan.subQuestions] };
+  for (const sq of initialPlan.subQuestions) for (const q of sq.queries) usedQueries.add(q.toLowerCase());
+
+  const round1Raw = await safeCollect(initialPlan, boundaries, opts);
+  emit({ stage: 'collecting', urls: round1Raw.length });
+  const round1Merge = mergeSources(accumulated, accumulatedPrints, round1Raw, boundaries, opts, totalCap);
+  emit({ stage: 'collected', scraped: round1Raw.length });
+  emit({ stage: 'deduped', kept: accumulated.length, dropped: round1Merge.dropped });
+  roundInfos.push({ round: 1, gapQueries: [], newSources: round1Merge.added, duplicatesDropped: round1Merge.dropped });
+
+  emit({ stage: 'synthesizing' });
+  let synth = await synthesize(question, accumulatedPlan, accumulated, boundaries, opts);
+  let report = synth.report;
+  let synthesisLlmUsed = synth.llmUsed;
+
+  // ---- Rounds 2..N: gap analysis → re-search → merge → re-synthesize -------
+  let converged = false;
+  for (let round = 2; round <= rounds; round++) {
+    emit({ stage: 'gap-analysis', round });
+
+    let gap: GapAnalysis;
+    try {
+      const analyze = boundaries.analyzeGaps ?? ((input: GapAnalysisInput) => defaultAnalyzeGaps(input, boundaries));
+      gap = await analyze({
+        question,
+        plan: accumulatedPlan,
+        draft: report,
+        sources: toSourceRegistry(accumulated),
+        round,
+      });
+    } catch (err) {
+      logger.debug(`[deep-research] gap analysis failed at round ${round}: ${errMsg(err)}`);
+      emit({ stage: 'converged', round, reason: 'gap-analysis-failed' });
+      break; // clean stop with the current draft (converged stays false)
+    }
+
+    const newQueries = dedupStrings(gap.queries)
+      .filter((q) => !usedQueries.has(q.toLowerCase()))
+      .slice(0, opts.queriesPerSubQuestion * 2);
+    emit({ stage: 'gaps', round, gaps: gap.gaps.length, queries: newQueries.length, sufficient: gap.sufficient });
+
+    if (gap.sufficient || newQueries.length === 0) {
+      converged = true;
+      emit({ stage: 'converged', round, reason: 'sufficient' });
+      break;
+    }
+    if (accumulated.length >= totalCap) {
+      converged = true;
+      emit({ stage: 'converged', round, reason: 'source-cap' });
+      break;
+    }
+
+    for (const q of newQueries) usedQueries.add(q.toLowerCase());
+    const gapSubQuestion: SubQuestionPlan = {
+      subQuestion: `Follow-up (round ${round}): ${gap.gaps.slice(0, 3).join('; ') || 'fill remaining gaps'}`,
+      queries: newQueries,
+    };
+    accumulatedPlan.subQuestions.push(gapSubQuestion);
+
+    const gapRaw = await safeCollect({ question, subQuestions: [gapSubQuestion] }, boundaries, opts);
+    emit({ stage: 'collecting', urls: gapRaw.length });
+    const gapMerge = mergeSources(accumulated, accumulatedPrints, gapRaw, boundaries, opts, totalCap);
+    emit({ stage: 'collected', scraped: gapRaw.length });
+    emit({ stage: 'merged', round, added: gapMerge.added, dropped: gapMerge.dropped, total: accumulated.length });
+    roundInfos.push({ round, gapQueries: newQueries, newSources: gapMerge.added, duplicatesDropped: gapMerge.dropped });
+
+    if (gapMerge.added === 0) {
+      // No marginal gain this round ⇒ converged (nothing new to synthesize on).
+      converged = true;
+      emit({ stage: 'converged', round, reason: 'no-new-sources' });
+      break;
+    }
+
+    emit({ stage: 'synthesizing' });
+    synth = await synthesize(question, accumulatedPlan, accumulated, boundaries, opts);
+    report = synth.report;
+    synthesisLlmUsed = synth.llmUsed;
+  }
+
+  emit({ stage: 'done', sources: accumulated.length });
+
+  return {
+    question,
+    plan: accumulatedPlan,
+    sources: toSourceRegistry(accumulated),
+    report,
+    durationMs: Date.now() - started,
+    plannerLlmUsed,
+    synthesisLlmUsed,
+    duplicatesDropped: roundInfos.reduce((n, r) => n + r.duplicatesDropped, 0),
+    rounds: roundInfos.length,
+    converged,
+    roundInfos,
+  };
 }
 
 // ============================================================================

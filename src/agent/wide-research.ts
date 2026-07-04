@@ -26,8 +26,8 @@
 import { EventEmitter } from 'events';
 import type { ToolResult } from '../types/index.js';
 import type {
-  DeepResearchOptions,
-  DeepResearchResult,
+  DeepResearchLoopOptions,
+  DeepResearchLoopResult,
   DeepResearchBoundaries,
   DeepResearchStage,
   DeepLlmMessage,
@@ -359,21 +359,27 @@ export class WideResearchOrchestrator extends EventEmitter {
    * web-search, and scrape boundaries; every one degrades gracefully. Emits
    * `{ type: 'deep', ... }` progress events. Never throws.
    *
+   * Phase B: when `deepOptions.rounds > 1`, this runs the BOUNDED iterative gap
+   * loop (research → draft → gap analysis → re-search → convergence). With the
+   * default (`rounds` absent / 1) it delegates to the Phase-A single round —
+   * byte-identical. The gap-analysis boundary defaults to the `llm` boundary and
+   * is only exercised when `rounds > 1`.
+   *
    * @param boundariesOverride injected fakes for tests (no network).
    */
   async deepResearch(
     question: string,
     apiKey: string,
     providerConfig?: Record<string, unknown>,
-    deepOptions?: DeepResearchOptions,
+    deepOptions?: DeepResearchLoopOptions,
     boundariesOverride?: Partial<DeepResearchBoundaries>,
-  ): Promise<DeepResearchResult> {
-    const { runDeepResearchPipeline } = await import('./deep-research.js');
+  ): Promise<DeepResearchLoopResult> {
+    const { runDeepResearchLoop } = await import('./deep-research.js');
 
     const real = await this.buildDeepBoundaries(apiKey, providerConfig);
     const boundaries: DeepResearchBoundaries = { ...real, ...boundariesOverride };
 
-    return runDeepResearchPipeline(
+    return runDeepResearchLoop(
       question,
       boundaries,
       deepOptions ?? {},
@@ -549,7 +555,7 @@ export async function runWideResearch(
 export async function runDeepResearch(
   topic: string,
   apiKey: string,
-  options?: WideResearchOptions & { deep?: DeepResearchOptions },
+  options?: WideResearchOptions & { deep?: DeepResearchLoopOptions },
   providerConfig?: Record<string, unknown>,
 ): Promise<ToolResult> {
   const orchestrator = new WideResearchOrchestrator(options);

@@ -16,14 +16,18 @@
 import * as fs from 'fs/promises';
 import path from 'path';
 import type { WideResearchOrchestrator, DeepResearchProgress } from '../../agent/wide-research.js';
-import type { DeepResearchOptions, DeepResearchResult } from '../../agent/deep-research.js';
+import type {
+  DeepResearchLoopOptions,
+  DeepResearchResult,
+  DeepResearchLoopResult,
+} from '../../agent/deep-research.js';
 
 export interface DeepResearchCliOptions {
   deep?: boolean;
   report?: string;
   reportPath?: string;
   providerLabel?: string;
-  deepOptions?: DeepResearchOptions;
+  deepOptions?: DeepResearchLoopOptions;
 }
 
 /** Minimal orchestrator surface used by the CLI (keeps the injected fake tiny). */
@@ -33,7 +37,7 @@ export interface DeepOrchestratorLike {
     question: string,
     apiKey: string,
     providerConfig?: Record<string, unknown>,
-    deepOptions?: DeepResearchOptions,
+    deepOptions?: DeepResearchLoopOptions,
   ): Promise<DeepResearchResult>;
 }
 
@@ -108,6 +112,22 @@ export async function runDeepResearchCli(
       case 'synthesizing':
         log('  🔗 Synthesizing cited report...');
         break;
+      // Phase B (gap loop) — only emitted when --iterations > 1.
+      case 'gap-analysis':
+        log(`  🔎 Round ${e.round}: analysing gaps in the draft...`);
+        break;
+      case 'gaps':
+        log(
+          `  🧩 Round ${e.round}: ${e.gaps} gap(s), ${e.queries} new quer${e.queries === 1 ? 'y' : 'ies'}` +
+            `${e.sufficient ? ' (draft judged sufficient)' : ''}`,
+        );
+        break;
+      case 'merged':
+        log(`  ➕ Round ${e.round}: +${e.added} new source(s), ${e.dropped} duplicate(s) dropped (${e.total} total)`);
+        break;
+      case 'converged':
+        log(`  🎯 Converged at round ${e.round} (${e.reason})`);
+        break;
       case 'done':
         log(`  ✅ Deep Research complete (${e.sources} cited source(s))`);
         break;
@@ -148,6 +168,13 @@ export function buildDeepReportFile(
   result: DeepResearchResult,
   providerLabel?: string,
 ): string {
+  // The loop metadata is present only on the Phase-B result; read it optionally
+  // so a plain Phase-A result renders exactly as before (no "Rounds:" line).
+  const loop = result as Partial<DeepResearchLoopResult>;
+  const roundsLine =
+    typeof loop.rounds === 'number' && loop.rounds > 1
+      ? `Rounds: ${loop.rounds} (${loop.converged ? 'converged' : 'round cap reached'})`
+      : undefined;
   return [
     `# Deep Research: ${topic}`,
     '',
@@ -155,6 +182,7 @@ export function buildDeepReportFile(
     'Mode: deep',
     providerLabel ? `Provider: ${providerLabel}` : undefined,
     `Sources: ${result.sources.length} (${result.duplicatesDropped} near-duplicate(s) dropped)`,
+    roundsLine,
     `Planner: ${result.plannerLlmUsed ? 'LLM' : 'deterministic'} | ` +
       `Synthesis: ${result.synthesisLlmUsed ? 'LLM' : 'deterministic'}`,
     `Duration: ${(result.durationMs / 1000).toFixed(1)}s`,
