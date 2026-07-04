@@ -20,6 +20,25 @@ describe('feature map — curated base', () => {
   });
 });
 
+describe('feature map — deep-research & multimodal areas (cartography gap #2)', () => {
+  it('exposes a deep-research area pointing at the deep-research pipeline + research commands', () => {
+    const area = CURATED_FEATURES.find((f) => f.id === 'deep-research');
+    expect(area, 'deep-research area must be curated so evolution can target it').toBeDefined();
+    expect(area!.description.length).toBeGreaterThan(20);
+    // At least one deep-research source path + the research commands dir.
+    expect(area!.paths.some((p) => p.includes('deep-research'))).toBe(true);
+    expect(area!.paths.some((p) => p.includes('src/commands/research'))).toBe(true);
+  });
+
+  it('exposes a multimodal area pointing at video + multimodal tools', () => {
+    const area = CURATED_FEATURES.find((f) => f.id === 'multimodal');
+    expect(area, 'multimodal area must be curated so evolution can target it').toBeDefined();
+    expect(area!.description.length).toBeGreaterThan(20);
+    expect(area!.paths.some((p) => p.includes('src/tools/video/'))).toBe(true);
+    expect(area!.paths.some((p) => p.includes('multimodal'))).toBe(true);
+  });
+});
+
 describe('mergeFeatures', () => {
   const base: FeatureArea[] = [{ id: 'a', name: 'A', description: 'desc a', paths: ['x'] }];
   it('adds new areas and dedups by id (curated wins)', () => {

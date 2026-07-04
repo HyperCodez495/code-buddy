@@ -41,6 +41,8 @@ export const CURATED_FEATURES: FeatureArea[] = [
   { id: 'sessions-checkpoints', name: 'Sessions & checkpoints', description: 'Session persistence, resume, checkpoints and rewind/undo of agent work.', paths: ['src/agent/facades/session-facade.ts', 'src/checkpoints/'] },
   { id: 'output-sanitization', name: 'Output sanitization', description: 'Stripping model-leakage control tokens and unpronounceable/foreign-script content from model output before display or speech.', paths: ['src/utils/output-sanitizer.ts', 'src/sensory/speech-sanitizer.ts'] },
   { id: 'research-ingest', name: 'Research ingestion', description: 'Wide research and ingestion of scientific publications into the collective knowledge graph.', paths: ['src/research/'] },
+  { id: 'deep-research', name: 'Deep Research (cited pipeline)', description: 'Multi-source, cited research pipeline: query planning, deterministic web search/scrape fan-out, near-duplicate dedup, iterative gap loops, STORM multi-perspective co-writing, and Collective-Knowledge-Graph bridging into a referenced report.', paths: ['src/agent/deep-research.ts', 'src/agent/deep-research-storm.ts', 'src/agent/deep-research-ckg.ts', 'src/commands/research/'] },
+  { id: 'multimodal', name: 'Multimodal & video understanding', description: 'Image/audio/video perception: frame sampling and dedup, keyframe description, long-form transcription, YouTube captions, cloud/local video understanding and multimodal tool routing.', paths: ['src/tools/video/', 'src/tools/multimodal-index.ts', 'src/codebuddy/tool-definitions/multimodal-tools.ts', 'src/tools/registry/multimodal-tools.ts'] },
 ];
 
 /** Enrichment source: extra areas discovered dynamically (e.g. from Code Explorer). Injectable. */
