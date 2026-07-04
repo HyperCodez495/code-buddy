@@ -43,6 +43,13 @@ export interface ExperimentMetric {
   score: number;
   /** Human-readable explanation of how the score was derived. */
   detail: string;
+  /**
+   * True when the raw value was OUTSIDE [0,1] with no explicit `{min,max}` range,
+   * so its normalisation is untrustworthy (e.g. a percentage 87.5 that would
+   * otherwise clamp to a false "perfect" 1.0). The fitness component treats such
+   * a metric as NOT passed so the corruption is visible, not silently kept.
+   */
+  outOfRange?: boolean;
 }
 
 /**
@@ -94,6 +101,14 @@ export function clamp01(n: number): number {
  *     accuracy/recall), clamped. Pass an explicit `{ min, max }` to rescale.
  *   - `lowerIsBetter`: score = 1 − normalised(value) (a loss/error), needs a
  *     `{ min, max }` range to be meaningful.
+ *
+ * GUARD (see {@link ExperimentMetric.outOfRange}): without a `{min,max}` range the
+ * parser assumes the value is already normalised to [0,1]. A raw value OUTSIDE
+ * [0,1] (e.g. a percentage `accuracy=87.5`) would otherwise be SILENTLY clamped to
+ * a false "perfect" 1.0, corrupting keep/archive/loop decisions. Rather than
+ * clamp silently, such a value floors the score to 0 and is FLAGGED `outOfRange`
+ * with an actionable detail (supply `--min/--max` or print a normalised value).
+ *
  * Pure + never-throws. A richer parser (result.json) is a CLI/deps concern.
  */
 export function stdoutNumberMetric(
@@ -116,12 +131,22 @@ export function stdoutNumberMetric(
       return { name: key, value: null, score: 0, detail: `métrique '${key}' absente de stdout` };
     }
     const { min, max } = opts;
-    let normalised: number;
-    if (typeof min === 'number' && typeof max === 'number' && max > min) {
-      normalised = (last - min) / (max - min);
-    } else {
-      normalised = last;
+    const hasRange = typeof min === 'number' && typeof max === 'number' && max > min;
+    if (!hasRange && (last < 0 || last > 1)) {
+      // No range + out of [0,1] ⇒ the value is NOT a normalised metric. Do not
+      // clamp silently to a false 1.0 (or 0.0) — floor + flag so the corruption
+      // is visible to the keep-gate / archive / loop instead of "always perfect".
+      return {
+        name: key,
+        value: last,
+        score: 0,
+        outOfRange: true,
+        detail:
+          `métrique '${key}'=${last} hors de [0,1] sans échelle : fournis --min/--max ` +
+          `ou imprime une valeur normalisée (score non fiable, ignoré)`,
+      };
     }
+    const normalised = hasRange ? (last - (min as number)) / ((max as number) - (min as number)) : last;
     const score = clamp01(higherIsBetter ? normalised : 1 - normalised);
     return {
       name: key,
@@ -193,7 +218,14 @@ export function experimentFitnessComponent(config: ExperimentFitnessConfig): Fit
         };
       }
 
-      const passed = exec.ok === true && exec.timedOut !== true && metric.value !== null;
+      // An out-of-range metric (raw value outside [0,1] with no scale) is NOT a
+      // trustworthy pass — flooring the score alone is not enough, the gate must
+      // see passed:false so a corrupt "perfect" variant is never kept.
+      const passed =
+        exec.ok === true &&
+        exec.timedOut !== true &&
+        metric.value !== null &&
+        metric.outOfRange !== true;
       return {
         name,
         weight,

@@ -86,6 +86,38 @@ describe('stdoutNumberMetric', () => {
     const lower = stdoutNumberMetric('loss', { higherIsBetter: false, min: 0, max: 10 });
     expect(lower(fakeExec({ stdout: 'loss=2' })).score).toBeCloseTo(0.8);
   });
+
+  // ── F2: a value out of [0,1] with NO range must NOT clamp to a false 1.0 ──────
+  it('flags an out-of-[0,1] value (a % like 87.5) with no range instead of clamping to 1.0', () => {
+    const parse = stdoutNumberMetric('accuracy'); // no {min,max}
+    const m = parse(fakeExec({ stdout: 'accuracy=87.5' }));
+    expect(m.value).toBeCloseTo(87.5); // the raw value is preserved for the record
+    expect(m.score).toBe(0); // NOT 1.0 — the corruption is refused
+    expect(m.outOfRange).toBe(true);
+    expect(m.detail).toContain('hors de [0,1]');
+    expect(m.detail).toContain('--min/--max');
+  });
+
+  it('flags a negative out-of-range value (no range) the same way', () => {
+    const parse = stdoutNumberMetric('reward');
+    const m = parse(fakeExec({ stdout: 'reward=-5' }));
+    expect(m.score).toBe(0);
+    expect(m.outOfRange).toBe(true);
+  });
+
+  it('a normalised in-[0,1] value with no range is NOT flagged (unchanged behaviour)', () => {
+    const parse = stdoutNumberMetric('accuracy');
+    const m = parse(fakeExec({ stdout: 'accuracy=0.875' }));
+    expect(m.score).toBeCloseTo(0.875);
+    expect(m.outOfRange).toBeUndefined();
+  });
+
+  it('an explicit range is authoritative: an out-of-[min,max] value still clamps (no flag)', () => {
+    const parse = stdoutNumberMetric('score', { min: 0, max: 200 });
+    const m = parse(fakeExec({ stdout: 'score=250' })); // > max → user-declared scale
+    expect(m.score).toBe(1); // legitimate clamp — the human supplied the range
+    expect(m.outOfRange).toBeUndefined();
+  });
 });
 
 describe('experimentFitnessComponent — DECOUPLING (targets the experiment folder, not the repo)', () => {
@@ -182,6 +214,21 @@ describe('experimentFitnessComponent — never-throws', () => {
     const result = await component.run({ checkoutDir: '/experiments/x' });
     expect(result.score).toBe(0);
     expect(result.passed).toBe(false);
+  });
+
+  // ── F2: an out-of-range metric must NOT be a passing "perfect" variant ────────
+  it('an out-of-[0,1] metric (a %) scores 0 and is NOT passed (never a false keep)', async () => {
+    const component = experimentFitnessComponent({
+      code: 'print("accuracy=87.5")',
+      language: 'python',
+      // ok exec, but the printed value is a percentage with no {min,max} scale.
+      executeCode: async () => fakeExec({ ok: true, exitCode: 0, stdout: 'accuracy=87.5' }),
+      parseMetric: stdoutNumberMetric('accuracy'),
+    });
+    const result = await component.run({ checkoutDir: '/experiments/x' });
+    expect(result.score).toBe(0); // pre-fix this was a silent 1.0
+    expect(result.passed).toBe(false); // ⇒ decideKeep will reject, best() ignores it
+    expect(result.detail).toContain('hors de [0,1]');
   });
 });
 
