@@ -3312,6 +3312,17 @@ addLazyCommand(
   },
 );
 
+// AI-Scientist-lite (Phase 0) — human-gated, sandboxed experiment pass (opt-in)
+addLazyCommand(
+  program,
+  'science',
+  'AI-Scientist-lite (Phase 0, EXPERIMENTAL, opt-in CODEBUDDY_AI_SCIENTIST=true): run ONE human-gated, sandboxed experiment pass',
+  async () => {
+    const { createScienceCommand } = await import('./commands/science/index.js');
+    return createScienceCommand();
+  },
+);
+
 // Planning Flow — OpenManus-compatible multi-agent orchestration
 addLazyCommand(
   program,
