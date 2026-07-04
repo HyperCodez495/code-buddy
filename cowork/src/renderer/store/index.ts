@@ -419,6 +419,8 @@ export interface AppState {
   showReasoningViewer: boolean;
   showAutonomyPanel: boolean;
   showLiveLauncher: boolean;
+  /** One-shot: the LiveLauncher should open pre-selected in Deep Research mode. */
+  liveLauncherDeepIntent: boolean;
 
   // Phase 3 step 8: split-pane layout (chat + preview side-by-side)
   splitPaneEnabled: boolean;
@@ -739,6 +741,7 @@ export interface AppState {
   setShowReasoningViewer: (show: boolean) => void;
   setShowAutonomyPanel: (show: boolean) => void;
   setShowLiveLauncher: (show: boolean) => void;
+  setLiveLauncherDeepIntent: (deep: boolean) => void;
   setSplitPaneEnabled: (enabled: boolean) => void;
   toggleSplitPane: () => void;
   setSplitPaneRatio: (ratio: number) => void;
@@ -949,6 +952,7 @@ export const useAppStore = create<AppState>((set) => ({
   showReasoningViewer: false,
   showAutonomyPanel: false,
   showLiveLauncher: false,
+  liveLauncherDeepIntent: false,
   splitPaneEnabled: ((): boolean => {
     try {
       return typeof window !== 'undefined'
@@ -1958,6 +1962,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowReasoningViewer: (show) => set({ showReasoningViewer: show }),
   setShowAutonomyPanel: (show) => set({ showAutonomyPanel: show }),
   setShowLiveLauncher: (show) => set({ showLiveLauncher: show }),
+  setLiveLauncherDeepIntent: (deep) => set({ liveLauncherDeepIntent: deep }),
   setSplitPaneEnabled: (enabled) => {
     set({ splitPaneEnabled: enabled });
     try {

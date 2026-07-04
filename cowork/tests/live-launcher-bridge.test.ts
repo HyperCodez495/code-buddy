@@ -90,6 +90,46 @@ describe('buildLiveLauncherArgs', () => {
     );
   });
 
+  it('builds deep research args with --deep + optional iterations/perspectives, never --wide', () => {
+    const deep = buildLiveLauncherArgs(
+      { kind: 'research', prompt: 'topic', deep: true, iterations: 2, perspectives: 4 },
+      'r3',
+      '/tmp/reports',
+    );
+    expect(deep.args).toEqual(
+      expect.arrayContaining(['--deep', '--iterations', '2', '--perspectives', '4']),
+    );
+    expect(deep.args).not.toContain('--wide');
+    expect(deep.reportPath).toBe('/tmp/reports/cowork-r3.md');
+
+    // deep takes precedence over wide (the CLI's --deep short-circuits --wide).
+    const both = buildLiveLauncherArgs(
+      { kind: 'research', prompt: 'topic', deep: true, wide: true },
+      'r4',
+      '/tmp/reports',
+    );
+    expect(both.args).toContain('--deep');
+    expect(both.args).not.toContain('--wide');
+
+    // A bare --deep (iterations 1 / perspectives 0) omits the optional flags.
+    const bare = buildLiveLauncherArgs(
+      { kind: 'research', prompt: 'topic', deep: true, iterations: 1, perspectives: 0 },
+      'r5',
+      '/tmp/reports',
+    );
+    expect(bare.args).toContain('--deep');
+    expect(bare.args).not.toContain('--iterations');
+    expect(bare.args).not.toContain('--perspectives');
+
+    // perspectives is clamped into [2,6].
+    const clamped = buildLiveLauncherArgs(
+      { kind: 'research', prompt: 'topic', deep: true, perspectives: 99 },
+      'r6',
+      '/tmp/reports',
+    );
+    expect(clamped.args).toEqual(expect.arrayContaining(['--perspectives', '6']));
+  });
+
   it('builds flow args with verbose + retries and no report path', () => {
     const flow = buildLiveLauncherArgs({ kind: 'flow', prompt: 'fix the bug', maxRetries: 2 }, 'f1', '/tmp/reports');
     expect(flow.args).toEqual(['flow', 'fix the bug', '--model', 'qwen2.5:7b-instruct', '--verbose', '--max-retries', '2']);

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Play, Square, Telescope, X } from 'lucide-react';
 import { MessageMarkdown } from './MessageMarkdown';
+import { useAppStore } from '../store';
 import type {
   LiveLauncherEventPayload,
   LiveLauncherKind,
@@ -28,12 +29,17 @@ const DEFAULT_MODEL = 'qwen2.5:7b-instruct';
 
 export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
   const { t } = useTranslation();
+  const deepIntent = useAppStore((s) => s.liveLauncherDeepIntent);
+  const setDeepIntent = useAppStore((s) => s.setLiveLauncherDeepIntent);
   const [kind, setKind] = useState<LiveLauncherKind>('research');
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [useLocalOllama, setUseLocalOllama] = useState(true);
   const [wide, setWide] = useState(false);
   const [workers, setWorkers] = useState('5');
+  const [deep, setDeep] = useState(false);
+  const [iterations, setIterations] = useState('1');
+  const [perspectives, setPerspectives] = useState('0');
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<LiveLauncherRunStatusValue | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -59,6 +65,16 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
       })
       .catch(() => undefined);
   }, [isOpen]);
+
+  // Honor a one-shot "open in Deep Research mode" intent (from the Labs card /
+  // command palette), then clear it so a later manual open starts clean.
+  useEffect(() => {
+    if (!isOpen || !deepIntent) return;
+    setKind('research');
+    setDeep(true);
+    setWide(false);
+    setDeepIntent(false);
+  }, [isOpen, deepIntent, setDeepIntent]);
 
   // Live stream subscription.
   useEffect(() => {
@@ -96,14 +112,30 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
     try {
       const api = window.electronAPI;
       const workerCount = Number.parseInt(workers, 10);
+      const iterationsCount = Number.parseInt(iterations, 10);
+      const perspectivesCount = Number.parseInt(perspectives, 10);
+      // Deep Research (cited pipeline) takes precedence over wide (the CLI's
+      // --deep short-circuits --wide), so it's checked first.
+      const modeFields =
+        kind === 'research' && deep
+          ? {
+              deep: true,
+              ...(Number.isFinite(iterationsCount) && iterationsCount > 1
+                ? { iterations: iterationsCount }
+                : {}),
+              ...(Number.isFinite(perspectivesCount) && perspectivesCount > 0
+                ? { perspectives: perspectivesCount }
+                : {}),
+            }
+          : kind === 'research' && wide
+            ? { wide: true, workers: Number.isFinite(workerCount) && workerCount > 0 ? workerCount : 5 }
+            : {};
       const response = await api.liveLauncher.start({
         kind,
         prompt: trimmed,
         model: model.trim() || undefined,
         provider: useLocalOllama ? 'ollama' : 'inherit',
-        ...(kind === 'research' && wide
-          ? { wide: true, workers: Number.isFinite(workerCount) && workerCount > 0 ? workerCount : 5 }
-          : {}),
+        ...modeFields,
       });
       if (!response.ok || !response.runId) {
         setError(response.error ?? 'launch failed');
@@ -117,7 +149,7 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
     } finally {
       setStarting(false);
     }
-  }, [prompt, starting, status, kind, model, useLocalOllama, wide, workers]);
+  }, [prompt, starting, status, kind, model, useLocalOllama, wide, workers, deep, iterations, perspectives]);
 
   const cancel = useCallback(async () => {
     if (!runId) return;
@@ -238,7 +270,10 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
                 <input
                   type="checkbox"
                   checked={wide}
-                  onChange={(e) => setWide(e.target.checked)}
+                  onChange={(e) => {
+                    setWide(e.target.checked);
+                    if (e.target.checked) setDeep(false); // wide/deep are mutually exclusive
+                  }}
                   disabled={running}
                   className="h-3 w-3 accent-accent"
                   data-testid="live-launcher-wide"
@@ -252,6 +287,45 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
                     className="w-10 px-1 py-0.5 rounded bg-background border border-border text-text-primary text-[10px]"
                     data-testid="live-launcher-workers"
                   />
+                )}
+              </label>
+            )}
+            {kind === 'research' && (
+              <label
+                className="flex items-center gap-1 text-[10px] text-text-secondary cursor-pointer select-none"
+                title={t('liveLauncher.deepHint', 'Deep Research: deterministic, cited pipeline (plan → search → scrape → cited synthesis)')}
+              >
+                <input
+                  type="checkbox"
+                  checked={deep}
+                  onChange={(e) => {
+                    setDeep(e.target.checked);
+                    if (e.target.checked) setWide(false); // wide/deep are mutually exclusive
+                  }}
+                  disabled={running}
+                  className="h-3 w-3 accent-accent"
+                  data-testid="live-launcher-deep"
+                />
+                {t('liveLauncher.deep', 'deep (cited)')}
+                {deep && (
+                  <>
+                    <input
+                      value={iterations}
+                      onChange={(e) => setIterations(e.target.value)}
+                      disabled={running}
+                      title={t('liveLauncher.iterations', 'Gap-analysis rounds (1-3)')}
+                      className="w-10 px-1 py-0.5 rounded bg-background border border-border text-text-primary text-[10px]"
+                      data-testid="live-launcher-iterations"
+                    />
+                    <input
+                      value={perspectives}
+                      onChange={(e) => setPerspectives(e.target.value)}
+                      disabled={running}
+                      title={t('liveLauncher.perspectives', 'STORM perspectives (0 = off, else 2-6)')}
+                      className="w-10 px-1 py-0.5 rounded bg-background border border-border text-text-primary text-[10px]"
+                      data-testid="live-launcher-perspectives"
+                    />
+                  </>
                 )}
               </label>
             )}

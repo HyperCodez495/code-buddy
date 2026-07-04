@@ -60,6 +60,23 @@ export function buildLiveLauncherArgs(
   if (input.kind === 'research') {
     const reportPath = path.join(reportDir, `cowork-${runId}.md`);
     const timeoutMs = input.timeoutMs && input.timeoutMs > 0 ? input.timeoutMs : DEFAULT_RESEARCH_TIMEOUT_MS;
+    // Mode flags. `--deep` (the deterministic, cited pipeline) takes precedence
+    // over `--wide` (parallel workers) — the CLI's `--deep` short-circuits the
+    // wide/direct paths, so we never pass both. Default (neither) = the direct
+    // single-pass research the bridge has always used.
+    const modeArgs: string[] = input.deep
+      ? [
+          '--deep',
+          ...(input.iterations && input.iterations > 1
+            ? ['--iterations', String(Math.min(Math.trunc(input.iterations), 5))]
+            : []),
+          ...(input.perspectives && input.perspectives > 0
+            ? ['--perspectives', String(Math.max(2, Math.min(Math.trunc(input.perspectives), 6)))]
+            : []),
+        ]
+      : input.wide
+        ? ['--wide', '--workers', String(input.workers && input.workers > 0 ? Math.min(input.workers, 20) : 5)]
+        : [];
     return {
       args: [
         'research',
@@ -70,9 +87,7 @@ export function buildLiveLauncherArgs(
         String(timeoutMs),
         '--report',
         reportPath,
-        ...(input.wide
-          ? ['--wide', '--workers', String(input.workers && input.workers > 0 ? Math.min(input.workers, 20) : 5)]
-          : []),
+        ...modeArgs,
       ],
       reportPath,
     };

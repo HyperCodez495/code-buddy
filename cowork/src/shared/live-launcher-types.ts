@@ -25,6 +25,16 @@ export interface LiveLauncherStartInput {
   wide?: boolean;
   /** Research only — worker count for wide mode. */
   workers?: number;
+  /**
+   * Research only — Deep Research: the deterministic, cited pipeline
+   * (`buddy research --deep`). Additive to `wide`; when both are set `deep`
+   * takes precedence (the CLI's `--deep` short-circuits the wide path).
+   */
+  deep?: boolean;
+  /** Research only — Deep Research gap-analysis rounds (`--iterations`, 1-3). */
+  iterations?: number;
+  /** Research only — Deep Research STORM perspectives (`--perspectives`, 2-6). */
+  perspectives?: number;
   /** Flow only — max retries per failed step. */
   maxRetries?: number;
   /** Overall timeout. Defaults: 300_000 (research) / 600_000 (flow). */
