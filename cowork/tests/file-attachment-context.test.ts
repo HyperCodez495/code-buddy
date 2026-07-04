@@ -324,4 +324,81 @@ describe('file attachment prompt context', () => {
       ])
     ).toBe('Analyze the attached file(s): diagram.png.');
   });
+
+  it('routes an attached video to the understand_video tool in the prompt context', async () => {
+    mockedLoadCoreModule.mockResolvedValue(null);
+
+    const context = await buildAttachedFilesPromptContext(
+      [
+        attachment({
+          filename: 'demo.mp4',
+          relativePath: '.tmp/demo.mp4',
+          mimeType: 'video/mp4',
+        }),
+      ],
+      undefined,
+      'Que dit cette vidéo ?'
+    );
+
+    expect(context).toContain('[Video understanding guidance]');
+    expect(context).toContain('understand_video');
+    expect(context).toContain('.tmp/demo.mp4');
+    expect(context).toContain('A video was provided: .tmp/demo.mp4');
+    // Still lists the standard attached-files section (video is additive, not a replacement).
+    expect(context).toContain('[Attached files - use Read tool to access them]');
+    // The core text/document extractor is never invoked for a video.
+    expect(mockedLoadCoreModule).not.toHaveBeenCalled();
+  });
+
+  it('detects videos by extension even when the browser MIME is octet-stream', async () => {
+    mockedLoadCoreModule.mockResolvedValue(null);
+
+    const context = await buildAttachedFilesPromptContext(
+      [
+        attachment({
+          filename: 'recording.mkv',
+          relativePath: '.tmp/recording.mkv',
+          mimeType: 'application/octet-stream',
+        }),
+      ],
+      undefined,
+      ''
+    );
+
+    expect(context).toContain('[Video understanding guidance]');
+    expect(context).toContain('source .tmp/recording.mkv');
+    expect(context).toContain('understand_video');
+  });
+
+  it('builds a video-first implicit prompt when only a video is attached', () => {
+    const prompt = buildAttachmentOnlyPrompt([
+      attachment({
+        filename: 'demo.mp4',
+        relativePath: '.tmp/demo.mp4',
+        mimeType: 'video/mp4',
+      }),
+    ]);
+
+    expect(prompt).toContain('Understand the attached video(s): demo.mp4');
+    expect(prompt).toContain('understand_video');
+  });
+
+  it('does not inject video guidance for non-video attachments (no regression)', async () => {
+    mockedLoadCoreModule.mockResolvedValue(null);
+
+    const context = await buildAttachedFilesPromptContext(
+      [
+        attachment({
+          filename: 'notes.txt',
+          relativePath: '.tmp/notes.txt',
+          mimeType: 'text/plain',
+        }),
+      ],
+      undefined,
+      'Résume ce fichier'
+    );
+
+    expect(context).not.toContain('[Video understanding guidance]');
+    expect(context).not.toContain('understand_video');
+  });
 });

@@ -27,6 +27,16 @@ const TEXT_EXTENSIONS = new Set([
 
 const DOCUMENT_EXTENSIONS = new Set(['.docx', '.xlsx', '.pptx', '.rtf']);
 const WORKSHOP_DOCUMENT_EXTENSIONS = new Set(['.docx', '.pdf']);
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4',
+  '.webm',
+  '.mov',
+  '.mkv',
+  '.avi',
+  '.m4v',
+  '.mpeg',
+  '.mpg',
+]);
 
 interface CoreDocumentModule {
   DocumentTool: new () => {
@@ -131,6 +141,43 @@ function isPdfAttachment(
   return file.mimeType === 'application/pdf' || extensionOf(file) === '.pdf';
 }
 
+function isVideoAttachment(
+  file: Pick<FileAttachmentContent, 'filename' | 'relativePath' | 'mimeType'>
+): boolean {
+  if (file.mimeType?.startsWith('video/')) return true;
+  return VIDEO_EXTENSIONS.has(extensionOf(file));
+}
+
+/**
+ * Routes an attached video to the core `understand_video` tool.
+ *
+ * A video is inert to the text/document extraction path (it has no readable
+ * excerpt), so instead of ignoring it we inject a clear instruction that steers
+ * the agent to call the `understand_video` tool with the file path as its
+ * source. The agent invokes the tool itself through the existing agentic loop —
+ * the least-invasive, most robust route (no direct tool call from the main
+ * process, so no extra coupling to the core tool surface).
+ */
+export function buildVideoUnderstandingGuidance(
+  files: Array<Pick<FileAttachmentContent, 'filename' | 'relativePath' | 'mimeType'>>
+): string | null {
+  const videos = files.filter(isVideoAttachment);
+  if (videos.length === 0) return null;
+
+  const lines = videos.map((file) => {
+    const sourcePath = normalizePromptPath(file.relativePath || file.filename);
+    return `- A video was provided: ${sourcePath}. Use the understand_video tool with source ${sourcePath} to understand it before answering.`;
+  });
+
+  return [
+    '[Video understanding guidance]',
+    '- One or more videos were attached. Do NOT try to Read them directly or treat them as plain text — they have no readable text excerpt.',
+    '- Call the understand_video tool with the video file path as its `source` to produce a transcript, then answer from that transcript.',
+    '- Pass the user question through as the understand_video `question` argument when it is about the video content.',
+    ...lines,
+  ].join('\n');
+}
+
 export function shouldIncludeDocumentWorkshopGuidance(
   prompt: string,
   files: Array<Pick<FileAttachmentContent, 'filename' | 'relativePath' | 'mimeType'>>
@@ -167,6 +214,10 @@ export function buildAttachmentOnlyPrompt(
 
   if (hasWorkshopDocument) {
     return `Analyze the attached document(s): ${target}. If they contain questions or functional-analysis context, identify every question, answer one by one, preserve screenshot/table context, and generate a DOCX deliverable when useful.`;
+  }
+
+  if (files.some(isVideoAttachment)) {
+    return `Understand the attached video(s): ${target}. Use the understand_video tool with each video path as its source to transcribe and analyze the content, then answer.`;
   }
 
   return `Analyze the attached file(s): ${target}.`;
@@ -289,6 +340,11 @@ export async function buildAttachedFilesPromptContext(
   }
 
   const sections = [`[Attached files - use Read tool to access them]:\n${fileInfo}`];
+
+  const videoGuidance = buildVideoUnderstandingGuidance(files);
+  if (videoGuidance) {
+    sections.push(videoGuidance);
+  }
 
   if (shouldIncludeDocumentWorkshopGuidance(prompt, files)) {
     sections.push(buildDocumentWorkshopGuidance());

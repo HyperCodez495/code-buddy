@@ -44,6 +44,23 @@ describe('file attachment helpers', () => {
     expect(inferAttachmentMimeType('notes.md', 'application/octet-stream')).toBe('text/markdown');
   });
 
+  it('recognizes common video files instead of leaving them as octet-stream', () => {
+    expect(inferAttachmentMimeType('clip.mp4')).toBe('video/mp4');
+    expect(inferAttachmentMimeType('clip.webm')).toBe('video/webm');
+    expect(inferAttachmentMimeType('clip.mov')).toBe('video/quicktime');
+    expect(inferAttachmentMimeType('clip.mkv')).toBe('video/x-matroska');
+    expect(inferAttachmentMimeType('clip.avi')).toBe('video/x-msvideo');
+    expect(inferAttachmentMimeType('clip.m4v')).toBe('video/x-m4v');
+    // A pathless dropped video still resolves to a video MIME (not octet-stream).
+    expect(inferAttachmentMimeType('demo.mp4', 'application/octet-stream')).toBe('video/mp4');
+    expect(buildAttachmentFromPath('/tmp/demo.mp4')).toEqual({
+      name: 'demo.mp4',
+      path: '/tmp/demo.mp4',
+      size: 0,
+      type: 'video/mp4',
+    });
+  });
+
   it('detects folder drops and preserves inline data only for pathless files', async () => {
     const folder = fileLike({ name: 'Project', path: 'D:\\Project', type: '' });
     const pickedDoc = fileLike({
