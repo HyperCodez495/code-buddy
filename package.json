@@ -96,7 +96,11 @@
     "dev:gui": "cd cowork && npm run dev",
     "build:all": "node scripts/build-all.js",
     "build:all:pack": "node scripts/build-all.js --pack",
-    "install:gui": "node dist/index.js install-gui"
+    "install:gui": "node dist/index.js install-gui",
+    "docker:build": "docker build --target production -t codebuddy:latest .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "keywords": [
     "cli",

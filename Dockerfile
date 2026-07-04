@@ -36,10 +36,13 @@ RUN npm prune --production
 # ============================================================================
 FROM node:20-bookworm-slim AS production
 
+# Image version — override at build time: --build-arg CODEBUDDY_VERSION=1.8.0
+ARG CODEBUDDY_VERSION=1.8.0
+
 # Labels for container registry
 LABEL org.opencontainers.image.title="Code Buddy"
-LABEL org.opencontainers.image.description="AI-powered terminal assistant using Grok API (xAI)"
-LABEL org.opencontainers.image.version="2.0.0"
+LABEL org.opencontainers.image.description="Open-source multi-provider AI coding agent (terminal, HTTP server, desktop)"
+LABEL org.opencontainers.image.version="${CODEBUDDY_VERSION}"
 LABEL org.opencontainers.image.vendor="phuetz"
 LABEL org.opencontainers.image.source="https://github.com/phuetz/code-buddy"
 LABEL org.opencontainers.image.licenses="MIT"
@@ -78,9 +81,11 @@ USER codebuddy
 # Set working directory for projects
 WORKDIR /workspace
 
-# Health check for server mode
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/api/health 2>/dev/null || exit 0
+# Health check — meaningful in server mode (CMD ["server", ...]).
+# Honest: reports unhealthy if /api/health stops responding (was `|| exit 0`,
+# which always passed and hid real failures).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:3000/api/health || exit 1
 
 # Expose server port (for server mode)
 EXPOSE 3000

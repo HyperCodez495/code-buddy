@@ -1,40 +1,49 @@
-# Grok CLI - Docker Compose Configuration
-# Usage: docker-compose run --rm grok "your prompt here"
+# Code Buddy — 24/7 server (the VPS / self-host path)
+#
+#   cp .env.example .env      # then set JWT_SECRET + at least one provider key/login
+#   docker compose up -d      # build + run the HTTP/WebSocket server, restarts on reboot
+#   docker compose logs -f     # follow logs
+#   docker compose down        # stop (named volume 'codebuddy-data' is kept)
+#
+# Secrets are read from the environment / .env — never baked into the image.
+name: code-buddy
 
 services:
-  grok:
+  codebuddy:
     build:
       context: .
       target: production
-    image: code-buddy:latest
+    image: codebuddy:latest
+    container_name: codebuddy
+    # HTTP API + WebSocket gateway (same port, path /ws). --host 0.0.0.0 so it is
+    # reachable from outside the container; front it with a reverse proxy in prod.
+    command: ["server", "--port", "3000", "--host", "0.0.0.0"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000" # HTTP API + WebSocket (/ws)
+      # - "3001:3001" # uncomment if you also run a separate fleet gateway instance
     environment:
-      - GROK_API_KEY=${GROK_API_KEY}
-      - GROK_MODEL=${GROK_MODEL:-grok-3-latest}
+      NODE_ENV: production
+      # JWT_SECRET is MANDATORY in production (server refuses to start without it).
+      # Generate one with: openssl rand -hex 32
+      JWT_SECRET: "${JWT_SECRET:?missing — generate with 'openssl rand -hex 32' and set it in .env}"
+      # Bring at least one brain. Leave blank the ones you do not use.
+      # Cheapest path is `buddy login` (ChatGPT OAuth) inside the container — see docs/install.md.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Lock CORS to your client origins in production (never "*").
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     volumes:
-      # Mount current directory as workspace
-      - .:/workspace:rw
-      # Persist grok settings
-      - grok-config:/home/grok/.grok
-    working_dir: /workspace
-    stdin_open: true
-    tty: true
-
-  grok-dev:
-    build:
-      context: .
-      target: development
-    image: code-buddy:dev
-    environment:
-      - GROK_API_KEY=${GROK_API_KEY}
-      - GROK_MODEL=${GROK_MODEL:-grok-3-latest}
-    volumes:
-      - .:/app:rw
-      - /app/node_modules
-      - grok-config:/home/node/.grok
-    working_dir: /app
-    stdin_open: true
-    tty: true
-    command: npm run dev:node
+      # Persist config, credentials, SQLite DB, sessions, memory, peer-sessions.
+      - codebuddy-data:/home/codebuddy/.codebuddy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
 volumes:
-  grok-config:
+  codebuddy-data:

@@ -44,6 +44,10 @@ docs-generated-full/
 wiki/
 *.md
 !README.md
+# Keep the bundled SKILL.md files — `npm run build` copies them into dist/.
+# (Root-level `*.md` above does NOT match nested paths, but this guards a
+# future switch to `**/*.md`.)
+!src/skills/bundled/*.md
 
 # Tests (not needed in production)
 tests/
@@ -66,3 +70,15 @@ commitlint.config.*
 ${APPDATA}/
 C*Users*gemini*openclaw_test*/
 cowork/
+
+# Rust/Python sidecars & their build output (not part of the Node image)
+buddy-sense/target
+buddy-memory/target
+buddy-vision/
+.gitnexus/
+
+# Large data files / models not needed to build or run the CLI image
+*.traineddata
+benchmarks/
+eval/
+deep_research/
