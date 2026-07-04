@@ -19,6 +19,7 @@ import {
   __resetSessionModelOverridesForTests,
 } from '../../channels/channel-model-override.js';
 import { logger } from '../../utils/logger.js';
+import { resolveChannelSecret } from '../../channels/resolve-channel-secret.js';
 
 interface ChannelOptions {
   type?: string;
@@ -939,7 +940,16 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
   });
 }
 
-export async function instantiateChannel(config: ChannelConfigEntry): Promise<import('../../channels/index.js').BaseChannel | null> {
+export async function instantiateChannel(configEntry: ChannelConfigEntry): Promise<import('../../channels/index.js').BaseChannel | null> {
+  // Resolve the auth token BEFORE building the channel config so every branch
+  // below sees the effective token. Priority: an explicit literal `token` wins
+  // (full backwards compat), otherwise fall back to the encrypted secret the
+  // Cowork GUI stores under `channel:<type>:token`, otherwise no token. Never
+  // throws, never logs the secret. See src/channels/resolve-channel-secret.ts.
+  const config: ChannelConfigEntry = {
+    ...configEntry,
+    token: resolveChannelSecret(configEntry.type, configEntry),
+  };
   const opts = config.options ?? {};
   const channelConfig = {
     type: config.type as import('../../channels/index.js').ChannelType,
