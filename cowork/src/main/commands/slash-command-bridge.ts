@@ -137,7 +137,117 @@ const SYNTHETIC_COMMANDS: SlashCommandDef[] = [
       },
     ],
   },
+  {
+    // `/deep <topic>` — Deep Research discoverability (Pattern A). We do NOT
+    // spawn the CLI here: `execute()` intercepts by name, parses the optional
+    // flags, and forwards a guidance prompt that steers the agent to call the
+    // core `deep_research` tool itself — so the cited report streams into the
+    // chat through the normal agentic loop. The `prompt` below is only the
+    // graceful fallback (natural-language, `{{args}}`) if that interception is
+    // ever bypassed; it still forwards a usable Deep Research instruction.
+    name: 'deep',
+    description: 'Deep Research: a multi-source, CITED report on a topic (agent calls deep_research)',
+    prompt:
+      'Use the deep_research tool (mode: deep) to produce a multi-source, cited report, then present it verbatim with its [n] citations and "## Références" section. Topic: {{args}}',
+    category: 'research',
+    isBuiltin: true,
+    arguments: [
+      {
+        name: 'topic',
+        description: 'The research question or topic to investigate',
+        required: true,
+      },
+      {
+        name: 'options',
+        description: 'Optional: --iterations N (gap-loop rounds 1-3) | --perspectives N (STORM, 2-6)',
+        required: false,
+      },
+    ],
+  },
 ];
+
+export interface DeepSlashArgs {
+  topic: string;
+  /** Deep Research gap-analysis rounds (clamped 1-3). */
+  iterations?: number;
+  /** STORM diversified perspectives (clamped 2-6). */
+  perspectives?: number;
+}
+
+/**
+ * Parse `/deep <topic> [--iterations N] [--perspectives N]` args (order-agnostic).
+ * Supports both `--iterations 2` and `--iterations=2`. Everything that isn't a
+ * recognised flag is treated as part of the topic. Pure — unit-tested.
+ */
+export function parseDeepSlashArgs(args: string[]): DeepSlashArgs {
+  const topicParts: string[] = [];
+  let iterations: number | undefined;
+  let perspectives: number | undefined;
+
+  const setFlag = (key: string, value: number): void => {
+    if (!Number.isFinite(value)) return;
+    if (key === 'iterations') iterations = Math.max(1, Math.min(3, Math.trunc(value)));
+    else if (key === 'perspectives') perspectives = Math.max(2, Math.min(6, Math.trunc(value)));
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok) continue;
+    const inline = tok.match(/^--(iterations|perspectives)=(-?\d+)$/i);
+    if (inline) {
+      const key = inline[1]?.toLowerCase();
+      const num = inline[2];
+      if (key && num !== undefined) setFlag(key, parseInt(num, 10));
+      continue;
+    }
+    const flag = tok.toLowerCase();
+    if (flag === '--iterations' || flag === '--perspectives') {
+      const raw = args[i + 1];
+      const value = raw !== undefined ? parseInt(raw, 10) : NaN;
+      if (Number.isFinite(value)) {
+        setFlag(flag.slice(2), value);
+        i++; // consume the value token
+      }
+      continue;
+    }
+    topicParts.push(tok);
+  }
+
+  return {
+    topic: topicParts.join(' ').trim(),
+    ...(iterations !== undefined ? { iterations } : {}),
+    ...(perspectives !== undefined ? { perspectives } : {}),
+  };
+}
+
+/**
+ * Build the Pattern-A guidance prompt for `/deep`. This is forwarded to the LLM,
+ * which then calls the core `deep_research` tool itself (the report streams into
+ * the chat via the normal agentic loop). Pure — unit-tested.
+ */
+export function buildDeepResearchGuidance(parsed: DeepSlashArgs): string {
+  const lines: string[] = [
+    '[Deep Research request]',
+    'The user wants a DEEP, multi-source, CITED research report on the topic below.',
+    'Call the `deep_research` tool with:',
+    `- topic: ${JSON.stringify(parsed.topic)}`,
+    "- mode: 'deep'",
+  ];
+  if (parsed.iterations !== undefined) {
+    lines.push(`- iterations: ${parsed.iterations} (extra gap-analysis rounds — slower, more thorough)`);
+  }
+  if (parsed.perspectives !== undefined) {
+    lines.push(
+      `- perspectives: ${parsed.perspectives} (STORM: research from N diversified perspectives, then co-write an outline-first article)`,
+    );
+  }
+  lines.push(
+    'Present the returned report as-is: keep the numbered [n] citations and the "## Références" section intact.',
+    '',
+    `Topic: ${parsed.topic}`,
+  );
+  return lines.join('\n');
+}
 
 function isTimeToken(value: string | undefined): value is string {
   return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
@@ -663,6 +773,25 @@ export class SlashCommandBridge {
               type: 'open_schedule',
               draft: parseScheduleSlashArgs(args),
             },
+      };
+    }
+
+    // `/deep <topic> [--iterations N] [--perspectives N]` — Deep Research
+    // (Pattern A): forward a guidance prompt so the agent calls `deep_research`
+    // itself and streams the cited report into the chat. No CLI spawn here.
+    if (cmd.name === 'deep') {
+      const parsed = parseDeepSlashArgs(args);
+      if (!parsed.topic) {
+        return {
+          success: true,
+          handled: true,
+          message: 'Usage : /deep <sujet> [--iterations N] [--perspectives N]',
+        };
+      }
+      return {
+        success: true,
+        prompt: buildDeepResearchGuidance(parsed),
+        handled: false,
       };
     }
 
