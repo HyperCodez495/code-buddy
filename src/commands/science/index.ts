@@ -44,6 +44,10 @@ interface ScienceCliOptions {
   baselineScore?: string;
   /** Commander sets this false when --lower-is-better is passed. */
   higherIsBetter?: boolean;
+  /** Phase 2: execution sandbox backend (isolate|docker|e2b). */
+  sandbox?: string;
+  /** Phase 2: fail closed instead of degrading to a network-open sandbox. */
+  requireNetworkIsolation?: boolean;
 }
 
 /** Human-readable one-pass summary. */
@@ -86,6 +90,14 @@ export function createScienceCommand(): Command {
     .option('--metric-key <key>', 'Metric key to parse from the experiment stdout (with --score)', 'accuracy')
     .option('--baseline-score <n>', 'Experiment baseline score to beat (with --score); omit to keep the first stepping-stone')
     .option('--no-higher-is-better', 'Treat the metric as lower-is-better, e.g. a loss (with --score)')
+    .option(
+      '--sandbox <backend>',
+      'Phase 2 execution sandbox: isolate|docker|e2b (default isolate). docker cuts the network (--network none); e2b runs off-host. Also set via CODEBUDDY_SCIENCE_SANDBOX',
+    )
+    .option(
+      '--require-network-isolation',
+      'Phase 2: refuse to run (fail closed) if the chosen sandbox cannot cut network egress, instead of silently degrading to the network-open isolate runner. Implies --sandbox docker when no backend is given',
+    )
     .action(async (goal: string, opts: ScienceCliOptions) => {
       // ── OPT-IN gate (default OFF = zero behaviour change) ─────────────────
       if (process.env.CODEBUDDY_AI_SCIENTIST !== 'true') {
@@ -116,6 +128,21 @@ export function createScienceCommand(): Command {
         return;
       }
 
+      // ── Phase 2 (OPT-IN via --sandbox / --require-network-isolation / env) ──
+      const { resolveScienceSandbox } = await import('./sandbox-option.js');
+      const sandboxRes = resolveScienceSandbox(
+        {
+          ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
+          ...(opts.requireNetworkIsolation ? { requireNetworkIsolation: true } : {}),
+        },
+        process.env,
+      );
+      if (sandboxRes.kind === 'invalid') {
+        logger.error(sandboxRes.error);
+        process.exitCode = 1;
+        return;
+      }
+
       const timeoutMs = opts.timeout ? Number(opts.timeout) : undefined;
       const { buildScienceDeps, buildEmpiricalScoringConfig } = await import('./deps.js');
       const deps = buildScienceDeps({
@@ -124,6 +151,14 @@ export function createScienceCommand(): Command {
         ...(opts.hypothesis ? { hypothesis: opts.hypothesis } : {}),
         ...(opts.codeFile ? { codeFile: opts.codeFile } : {}),
         ...(opts.publish === false ? { noPublish: true } : {}),
+        ...(sandboxRes.kind === 'sandbox'
+          ? {
+              sandbox: {
+                backend: sandboxRes.backend,
+                requireNetworkIsolation: sandboxRes.requireNetworkIsolation,
+              },
+            }
+          : {}),
       });
 
       // ── Phase 1 (OPT-IN via --score): empirical scoring / keep-gate ────────
@@ -144,6 +179,18 @@ export function createScienceCommand(): Command {
       logger.info(`AI-Scientist Phase ${empirical ? '1' : '0'} — goal: ${goal}`);
       logger.info('Two human gates will ask for your approval (plan, then publication). Both fail closed.');
       if (empirical) logger.info('A third keep-gate will ask before an experiment variant is kept. It also fails closed.');
+      if (sandboxRes.kind === 'sandbox') {
+        const posture =
+          sandboxRes.backend === 'docker'
+            ? 'network CUT (docker --network none)'
+            : sandboxRes.backend === 'e2b'
+              ? 'off-host microVM (host isolated; outbound network NOT cut)'
+              : 'local isolate (network NOT isolated)';
+        logger.info(
+          `Sandbox: ${sandboxRes.backend} — ${posture}` +
+            (sandboxRes.requireNetworkIsolation ? ' · --require-network-isolation: fail-closed if unavailable' : ''),
+        );
+      }
       logger.info('');
 
       const run = await runExperiment(goal, deps, {

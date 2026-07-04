@@ -39,6 +39,10 @@ import type {
   ReportContext,
   ReviewVerdict,
 } from '../../agent/science/experiment-orchestrator.js';
+import {
+  createExperimentSandboxRunner,
+  type ExperimentSandboxBackend,
+} from '../../agent/science/experiment-sandbox.js';
 import { getAskHumanTool } from '../../tools/ask-human-tool.js';
 import { logger } from '../../utils/logger.js';
 
@@ -53,6 +57,16 @@ export interface ScienceDepsConfig {
   language: ExecuteCodeLanguage;
   /** Skip publication entirely (still runs, still reviews; GATE #2 auto-declines). */
   noPublish?: boolean;
+  /**
+   * Phase 2 OPT-IN execution sandbox. When set, the experiment step is routed
+   * through the network-isolating sandbox router instead of the plain isolate
+   * runner. UNSET ⇒ byte-identical Phase 0/1 (the plain isolate runner, network
+   * NOT isolated — the router is never even constructed).
+   */
+  sandbox?: {
+    backend: ExperimentSandboxBackend;
+    requireNetworkIsolation: boolean;
+  };
 }
 
 /** A tiny provider-agnostic text chat, bounded and never-throws. */
@@ -345,7 +359,15 @@ export function buildScienceDeps(config: ScienceDepsConfig): ExperimentDeps {
     },
 
     // Real sandboxed runner. The orchestrator sets envMode:'isolate'.
-    executeCode: (input, options) => executeCode(input, options),
+    // Phase 2 (OPT-IN): when a sandbox backend is selected, route through the
+    // network-isolating router. UNSET ⇒ byte-identical Phase 0/1 (this exact
+    // plain-runner expression; the router is never constructed).
+    executeCode: config.sandbox
+      ? createExperimentSandboxRunner({
+          backend: config.sandbox.backend,
+          requireNetworkIsolation: config.sandbox.requireNetworkIsolation,
+        })
+      : (input, options) => executeCode(input, options),
 
     analyze: async (execution, idea) => {
       const raw = await chatText(
