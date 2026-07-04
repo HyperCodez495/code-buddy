@@ -12,6 +12,7 @@ import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { preserveToolPairs } from './tool-pair-preserver.js';
 import { wireCompactionProgress } from './progress-compaction-bridge.js';
+import { isFailedToolResultContent } from './enhanced-compression.js';
 
 // ============================================================================
 // Types & Interfaces
@@ -552,7 +553,16 @@ export class SmartCompactionEngine extends EventEmitter {
     }
 
     const basicSummary = [...new Set(points)].slice(-10).join('. ');
-    
+
+    // Manus AI error preservation: failed tool attempts must SURVIVE this
+    // fallback compaction (error context-length retry path) so the agent
+    // doesn't blindly retry a call it already knows is broken. Built the same
+    // way as ContextManagerV2.createSummary — shared `isFailedToolResultContent`
+    // predicate, attributed to the tool via tool_call_id, bounded to the last N
+    // failures and truncated per entry — and appended AFTER the summary body so
+    // it can't be crowded out (whether the body is extractive or LLM-rewritten).
+    const failuresSection = this.buildFailedToolAttemptsSection(messages);
+
     // Try to use LLM for a better summary if we can dynamically load a simple client
     try {
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
@@ -560,15 +570,59 @@ export class SmartCompactionEngine extends EventEmitter {
         if (API_KEY) {
             const genAI = new GoogleGenerativeAI(API_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            const prompt = `Summarize the following chat history densely in one short paragraph. Focus on the core problem, tools used, and final resolution. Do not include pleasantries.\n\nChat History:\n${basicSummary}`;
+            const prompt = `Summarize the following chat history densely in one short paragraph. Focus on the core problem, tools used, and final resolution. Do not include pleasantries. If a "Failed tool attempts (do not retry)" section is present, preserve it verbatim at the end.\n\nChat History:\n${basicSummary}`;
             const result = await model.generateContent(prompt);
-            return result.response.text().trim();
+            const llmSummary = result.response.text().trim();
+            // Deterministically re-attach failures so preservation never depends
+            // on the LLM honouring the instruction.
+            return failuresSection ? `${llmSummary}\n${failuresSection}` : llmSummary;
         }
     } catch (_e) {
         logger.debug("LLM summarization failed, falling back to basic summary");
     }
 
-    return basicSummary;
+    return failuresSection ? `${basicSummary}\n${failuresSection}` : basicSummary;
+  }
+
+  /**
+   * Build the bounded "Failed tool attempts (do not retry):" section from the
+   * failed `role:'tool'` results in the message window, attributing each to the
+   * tool that produced it. Returns '' when there are no failures (no parasitic
+   * empty section). Mirrors ContextManagerV2.createSummary for consistency.
+   */
+  private buildFailedToolAttemptsSection(messages: Message[]): string {
+    const MAX_PRESERVED_TOOL_FAILURES = 5;
+    const MAX_TOOL_FAILURE_CHARS = 200;
+
+    // Map tool_call_id -> function name from assistant tool_calls (these
+    // messages may have null content, so this pass is independent of the
+    // content-gated extraction loop above).
+    const toolNameById = new Map<string, string>();
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc && tc.type === 'function' && typeof tc.id === 'string') {
+            toolNameById.set(tc.id, tc.function.name);
+          }
+        }
+      }
+    }
+
+    const failedAttempts: string[] = [];
+    for (const msg of messages) {
+      if (msg.role !== 'tool' || typeof msg.content !== 'string') continue;
+      if (!isFailedToolResultContent(msg.content)) continue;
+      const id = msg.tool_call_id;
+      const name = (id ? toolNameById.get(id) : undefined) ?? 'tool';
+      const snippet = msg.content.replace(/\s+/g, ' ').trim().slice(0, MAX_TOOL_FAILURE_CHARS);
+      failedAttempts.push(`- ${name}: ${snippet}`);
+    }
+
+    if (failedAttempts.length === 0) return '';
+    return [
+      'Failed tool attempts (do not retry):',
+      ...failedAttempts.slice(-MAX_PRESERVED_TOOL_FAILURES),
+    ].join('\n');
   }
 
   /**
