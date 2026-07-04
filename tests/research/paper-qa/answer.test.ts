@@ -176,6 +176,58 @@ describe('answerFromPassages — grounded answer', () => {
     citationMatchesAProvidedPassage(res, passages);
   });
 
+  it('does NOT refuse a valid answer that merely OPENS with "Insufficient" (finding A)', async () => {
+    const passages = [
+      mkScored('Study X reports partial data on enzyme kinetics under load.', {
+        docId: 'bio.pdf',
+        page: 3,
+        section: 'Results',
+      }),
+    ];
+    // A real, cited answer that happens to start with the word "Insufficient".
+    const res = await answerFromPassages(
+      'what does study X show',
+      passages,
+      fakeLlm({
+        keyword: 'study',
+        synth: () =>
+          'Insufficient direct data exists on the full pathway, but the passage does report partial enzyme kinetics [1].',
+      }),
+    );
+
+    expect(res.sufficient).toBe(true);
+    expect(res.reason).toBe('answered');
+    expect(res.citations.map((c) => c.marker)).toEqual([1]);
+    expect(res.answer).toContain('Insufficient direct data exists');
+  });
+
+  it('drops an orphan citation whose only occurrence falls past the char limit (finding B)', async () => {
+    const passages = [
+      mkScored('First fact about cells and their organelles in biology.', { page: 1, section: 'A', final: 0.9 }),
+      mkScored('Second fact about membranes and transport in biology.', { page: 2, section: 'B', final: 0.8 }),
+    ];
+    const filler = 'x'.repeat(300);
+    // [1] is cited early; [2] only at the very end — past a deliberately tiny limit.
+    const res = await answerFromPassages(
+      'biology facts',
+      passages,
+      fakeLlm({
+        keyword: 'biology',
+        synth: () => `Cells have organelles [1]. ${filler} Membranes transport things [2].`,
+      }),
+      { answerCharLimit: 60 },
+    );
+
+    expect(res.sufficient).toBe(true);
+    // [1] survives (before the cut); [2] was truncated away → gone from BOTH the
+    // body and "## Références" (no orphan reference).
+    expect(res.answer).toContain('[1]');
+    expect(res.answer).not.toContain('[2]');
+    expect(res.citations.map((c) => c.marker)).toEqual([1]);
+    // Every rendered reference corresponds to a marker still visible in the body.
+    for (const c of res.citations) expect(res.answer).toContain(`[${c.marker}]`);
+  });
+
   it('renders a References entry per cited passage, each traceable to a real passage', async () => {
     const passages = [
       mkScored('The transformer uses self-attention over token embeddings.', { docId: 'nlp.pdf', page: 7, section: 'Model', final: 0.9 }),

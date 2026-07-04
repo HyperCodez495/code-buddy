@@ -165,23 +165,28 @@ export async function answerFromPassages(
   }
 
   // 3. Enforce grounding: strip any citation number outside the retained set so
-  //    every surviving [n] resolves to a real passage, then read back the markers.
+  //    every surviving [n] resolves to a real passage.
   const sanitized = stripInvalidMarkers(body, retained.length);
-  const usedMarkers = extractMarkers(sanitized).filter((n) => n >= 1 && n <= retained.length);
-  if (usedMarkers.length === 0) {
-    // A body that cites no valid passage is not a grounded answer → refuse.
-    return refuse('insufficient_evidence', retained.length, true);
-  }
 
-  // 4. Build citations + the DETERMINISTIC References section from CODE.
+  // 4. Truncate the body FIRST, then read the markers back FROM THE TRUNCATED
+  //    body, and build the References from those. A citation whose only
+  //    occurrence falls past `answerCharLimit` is cut from the visible answer, so
+  //    it must NOT survive in "## Références" either — that would be an orphan
+  //    reference pointing at text the reader can no longer see. Order matters.
   const excerptChars = clampInt(opts.excerptChars, DEFAULT_EXCERPT_CHARS, 1, 5000);
   const answerCharLimit = clampInt(opts.answerCharLimit, DEFAULT_ANSWER_CHAR_LIMIT, 1, 1_000_000);
+  const answerBody = truncate(sanitized, answerCharLimit).trimEnd();
+
+  const usedMarkers = extractMarkers(answerBody).filter((n) => n >= 1 && n <= retained.length);
+  if (usedMarkers.length === 0) {
+    // A (visible) body that cites no valid passage is not a grounded answer → refuse.
+    return refuse('insufficient_evidence', retained.length, true);
+  }
 
   const citations = usedMarkers
     .sort((a, b) => a - b)
     .map((marker) => toCitation(marker, retained[marker - 1]!, excerptChars));
 
-  const answerBody = truncate(sanitized, answerCharLimit).trimEnd();
   const answer = `${answerBody}\n\n${renderReferences(citations)}`;
 
   return {
@@ -283,10 +288,18 @@ function extractMarkers(body: string): number[] {
   return [...set];
 }
 
-/** True when the synthesizer emitted the insufficiency sentinel (tolerant of punctuation/case). */
+/**
+ * True when the synthesizer emitted the insufficiency sentinel — and ONLY then.
+ *
+ * The comparison is on the whole body normalized to letters (tolerant of
+ * punctuation/case), so `INSUFFICIENT`, `Insufficient.`, `insufficient` all
+ * match. It deliberately does NOT match a mere leading "Insufficient …" prefix:
+ * a valid answer such as "Insufficient direct data exists, but the passages show
+ * Y [1]." opens with that word yet is a real, cited answer and must be kept.
+ */
 function isInsufficient(body: string): boolean {
   const normalized = body.replace(/[^a-z]/gi, '').toUpperCase();
-  return normalized === INSUFFICIENT_SENTINEL || /^INSUFFICIENT\b/i.test(body.trim());
+  return normalized === INSUFFICIENT_SENTINEL;
 }
 
 /** Strip a references/sources heading the LLM may have added — we own that section. */
