@@ -51,6 +51,7 @@ import {
   LSP_TOOLS,
   SECRETS_TOOLS,
   ADVISOR_TOOLS,
+  VERIFY_TOOLS,
   ASK_USER_QUESTION_TOOLS,
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
@@ -109,6 +110,7 @@ export function getBuiltinToolNames(): string[] {
     LSP_TOOLS,
     SECRETS_TOOLS,
     ADVISOR_TOOLS,
+    VERIFY_TOOLS,
     ASK_USER_QUESTION_TOOLS,
     EXIT_PLAN_MODE_TOOLS,
     CODEBASE_REPLACE_TOOLS,
@@ -209,6 +211,9 @@ export function initializeToolRegistry(): void {
 
   // Advisor tool (second opinion from a stronger reviewer)
   registerGroup(ADVISOR_TOOLS);
+
+  // Verify tool (explicit delegation to the independent Verifier agent)
+  registerGroup(VERIFY_TOOLS);
 
   // AskUserQuestion tool (structured multi-option mid-task questions)
   registerGroup(ASK_USER_QUESTION_TOOLS);

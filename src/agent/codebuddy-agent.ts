@@ -1,4 +1,5 @@
 import { CodeBuddyClient, CodeBuddyToolCall } from "../codebuddy/client.js";
+import type { CodeBuddyMessage, CodeBuddyTool } from "../codebuddy/client.js";
 import { ToolSelectionResult } from "../codebuddy/tools.js";
 import { ToolResult } from "../types/index.js";
 import { createTokenCounter } from "../utils/token-counter.js";
@@ -712,6 +713,33 @@ Look at the screenshot and find the element matching the user's intent. Output o
         });
       }).catch((e) => { logger.debug('Advisor toml-config import failed (optional)', { error: String(e) }); });
     }).catch((e) => { logger.debug('Advisor config provider wire failed (optional)', { error: String(e) }); });
+
+    // Wire the Verify tool's LLM bridge so the independent Verifier agent is
+    // REACHABLE at runtime: the `verify` tool delegates to
+    // `registry.executeOn('verifier', …)` which needs an llmCall (to reason)
+    // and an executeTool (to drive read/execute-only oracles). Both are built
+    // from the agent's own client + tool executor — the same plumbing the
+    // SWE/multi-agent bridges use — so nothing new is stood up. The Verifier's
+    // internal toolset gate still refuses writes fail-closed.
+    import('../tools/registry/verify-tools.js').then(({ setVerifyToolProvider }) => {
+      setVerifyToolProvider(() => ({
+        llmCall: async (messages, tools) => {
+          const resp = await this.codebuddyClient.chat(
+            messages as unknown as CodeBuddyMessage[],
+            tools as unknown as CodeBuddyTool[],
+          );
+          const msg = resp.choices?.[0]?.message;
+          return {
+            content: msg?.content ?? '',
+            tool_calls: msg?.tool_calls ?? [],
+          };
+        },
+        executeTool: async (name, args) => {
+          const r = await this.executeToolByName(name, args);
+          return { success: r.success, output: r.output, error: r.error };
+        },
+      }));
+    }).catch((e) => { logger.debug('Verify tool provider wire failed (optional)', { error: String(e) }); });
 
     // Phase (d).21 ship 3 — wake NotificationManager via default sink.
     // Idempotent. Once wired, anyone in the codebase can call notify()

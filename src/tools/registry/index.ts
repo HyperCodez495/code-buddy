@@ -379,6 +379,20 @@ export {
   resetAdvisorConfigProvider,
 } from './advisor-tools.js';
 
+// Tool Adapters - Verify (explicit delegation to the independent Verifier agent)
+export {
+  VerifyTool,
+  createVerifyTools,
+  resetVerifyInstances,
+  setVerifyToolProvider,
+  resetVerifyToolProvider,
+} from './verify-tools.js';
+export type {
+  VerifyToolProvider,
+  VerifyLlmCall,
+  VerifyExecuteTool,
+} from './verify-tools.js';
+
 // Tool Adapters - Fleet (peer_delegate, list_peers, route_peer)
 export {
   PeerDelegateTool,

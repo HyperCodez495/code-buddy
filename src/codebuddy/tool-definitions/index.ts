@@ -283,6 +283,12 @@ export {
   ADVISOR_TOOLS,
 } from './advisor-tools.js';
 
+// Verify tool (explicit delegation to the independent Verifier agent)
+export {
+  VERIFY_TOOL,
+  VERIFY_TOOLS,
+} from './verify-tools.js';
+
 // AskUserQuestion tool (structured multi-option mid-task questions)
 export {
   ASK_USER_QUESTION_TOOL,

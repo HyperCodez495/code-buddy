@@ -1213,6 +1213,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Consult a stronger reviewer model for a second opinion (full conversation forwarded)'
   },
 
+  // Verify (explicit delegation to the independent, fresh-context Verifier agent)
+  {
+    name: 'verify',
+    category: 'utility' as ToolCategory,
+    keywords: ['verify', 'verification', 'evidence', 'confirm', 'validate', 'oracle', 'independent', 'proof', 'check', 'works'],
+    priority: 6,
+    description: 'Delegate to an independent fresh-context Verifier that runs real oracles and returns a CONFIRMED / NEEDS REVIEW verdict with evidence (read-only)'
+    // No fleetSafe: the Verifier drives execution tools (bash/app_server) — not peer-exposable.
+  },
+
   // Fleet — multi-Claude orchestration via peer-RPC (Phase (d).17)
   {
     name: 'peer_delegate',
