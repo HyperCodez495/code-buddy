@@ -25,6 +25,14 @@
 
 import { EventEmitter } from 'events';
 import type { ToolResult } from '../types/index.js';
+import type {
+  DeepResearchOptions,
+  DeepResearchResult,
+  DeepResearchBoundaries,
+  DeepResearchStage,
+  DeepLlmMessage,
+  SearchHit,
+} from './deep-research.js';
 
 // ============================================================================
 // Types
@@ -82,6 +90,9 @@ export type WideResearchProgress =
   | { type: 'worker_done'; workerIndex: number; subtopic: string; success: boolean }
   | { type: 'aggregating' }
   | { type: 'done'; result: WideResearchResult };
+
+/** Progress events emitted by the opt-in Deep Research path (distinct channel). */
+export type DeepResearchProgress = { type: 'deep' } & DeepResearchStage;
 
 // ============================================================================
 // Orchestrator
@@ -335,6 +346,113 @@ export class WideResearchOrchestrator extends EventEmitter {
   }
 
   // --------------------------------------------------------------------------
+  // Deep Research (Phase A) — opt-in, deterministic, cited pipeline.
+  //
+  // Additive to `research()`: nothing here runs unless `deepResearch()` is
+  // explicitly called. It reuses this orchestrator's parallel batching
+  // (`batchMap`) and event channel, and delegates the pure planning/collection/
+  // dedup/citation/synthesis logic to `deep-research.ts` (fully injectable).
+  // --------------------------------------------------------------------------
+
+  /**
+   * Run the GPT-Researcher-style Deep Research pipeline. Wires the real LLM,
+   * web-search, and scrape boundaries; every one degrades gracefully. Emits
+   * `{ type: 'deep', ... }` progress events. Never throws.
+   *
+   * @param boundariesOverride injected fakes for tests (no network).
+   */
+  async deepResearch(
+    question: string,
+    apiKey: string,
+    providerConfig?: Record<string, unknown>,
+    deepOptions?: DeepResearchOptions,
+    boundariesOverride?: Partial<DeepResearchBoundaries>,
+  ): Promise<DeepResearchResult> {
+    const { runDeepResearchPipeline } = await import('./deep-research.js');
+
+    const real = await this.buildDeepBoundaries(apiKey, providerConfig);
+    const boundaries: DeepResearchBoundaries = { ...real, ...boundariesOverride };
+
+    return runDeepResearchPipeline(
+      question,
+      boundaries,
+      deepOptions ?? {},
+      (stage: DeepResearchStage) => {
+        this.emit('progress', { type: 'deep', ...stage } satisfies DeepResearchProgress);
+      },
+    );
+  }
+
+  /** Construct the real Deep Research boundaries (LLM / search / scrape / batching). */
+  private async buildDeepBoundaries(
+    apiKey: string,
+    providerConfig?: Record<string, unknown>,
+  ): Promise<DeepResearchBoundaries> {
+    const model = providerConfig?.model as string | undefined;
+    const baseURL = providerConfig?.baseURL as string | undefined;
+
+    const { WebSearchTool } = await import('../tools/web-search.js');
+    const webSearch = new WebSearchTool();
+
+    const { isFirecrawlEnabled, firecrawlScrape } = await import('../tools/firecrawl-tool.js');
+    const firecrawlReady = (() => {
+      try {
+        return isFirecrawlEnabled();
+      } catch {
+        return false;
+      }
+    })();
+
+    return {
+      llm: async (messages: DeepLlmMessage[]): Promise<string> => {
+        const { CodeBuddyClient } = await import('../codebuddy/client.js');
+        const client = new CodeBuddyClient(apiKey, model, baseURL);
+        const response = await client.chat(
+          messages.map((m) => ({ role: m.role, content: m.content })),
+        );
+        return response.choices[0]?.message?.content ?? '';
+      },
+      search: async (query: string, k: number): Promise<SearchHit[]> => {
+        const results = await webSearch.searchStructured(query, { maxResults: k });
+        return results
+          .filter((r) => typeof r.url === 'string' && r.url.length > 0)
+          .map((r) => ({ title: r.title || r.url, url: r.url, snippet: r.snippet || '' }));
+      },
+      scrape: async (url: string): Promise<string> => {
+        try {
+          if (firecrawlReady) {
+            const r = await firecrawlScrape({ url });
+            if (r.success && r.output && r.output.trim().length > 0) return r.output;
+          }
+        } catch {
+          /* fall through to cheap fetch */
+        }
+        try {
+          const r = await webSearch.fetchPage(url);
+          if (r.success && r.output && r.output.trim().length > 0) return r.output;
+        } catch {
+          /* dropped by the pipeline */
+        }
+        return '';
+      },
+      mapBatched: <T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> =>
+        this.batchMap(items, size, fn),
+    };
+  }
+
+  /**
+   * Parallel batched map — the same batching mechanic `research()` uses
+   * (`chunk` + `Promise.all`), exposed for the Deep Research fan-out.
+   */
+  private async batchMap<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const out: R[] = [];
+    for (const batch of this.chunk(items, Math.max(1, size))) {
+      out.push(...(await Promise.all(batch.map(fn))));
+    }
+    return out;
+  }
+
+  // --------------------------------------------------------------------------
   // Helpers
   // --------------------------------------------------------------------------
 
@@ -419,6 +537,41 @@ export async function runWideResearch(
     return {
       success: false,
       error: `Wide Research failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/**
+ * Convenience wrapper for the opt-in Deep Research (Phase A) path, symmetric to
+ * `runWideResearch`. Returns the cited report (already carrying inline [n]
+ * markers and a "## Références" section). Never throws.
+ */
+export async function runDeepResearch(
+  topic: string,
+  apiKey: string,
+  options?: WideResearchOptions & { deep?: DeepResearchOptions },
+  providerConfig?: Record<string, unknown>,
+): Promise<ToolResult> {
+  const orchestrator = new WideResearchOrchestrator(options);
+  try {
+    const result = await orchestrator.deepResearch(topic, apiKey, providerConfig, options?.deep);
+    const summary = [
+      `# Deep Research: ${topic}`,
+      '',
+      `**Sources:** ${result.sources.length} (deduped, ${result.duplicatesDropped} near-duplicate(s) dropped)`,
+      `**Planner:** ${result.plannerLlmUsed ? 'LLM' : 'deterministic fallback'} | ` +
+        `**Synthesis:** ${result.synthesisLlmUsed ? 'LLM' : 'deterministic fallback'}`,
+      `**Duration:** ${(result.durationMs / 1000).toFixed(1)}s`,
+      '',
+      '---',
+      '',
+      result.report,
+    ].join('\n');
+    return { success: true, output: summary };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Deep Research failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }

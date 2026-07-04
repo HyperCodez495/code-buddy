@@ -357,6 +357,28 @@ export class WebSearchTool {
     options: WebSearchOptions,
     cacheKey: string,
   ): Promise<ToolResult> {
+    const results = await this.resolveProviderResults(provider, query, count, options);
+
+    if (results.length === 0) {
+      return { success: true, output: `No results found for: "${query}"` };
+    }
+
+    this.cache.set(cacheKey, { results, timestamp: Date.now() });
+    return { success: true, output: this.formatResults(results, query) };
+  }
+
+  /**
+   * Resolve a single provider into structured `SearchResult[]` (no formatting,
+   * no caching). Shared by `searchWithProvider` (which formats+caches) and
+   * `searchStructured` (which returns the raw hits). Extracted verbatim from the
+   * original `searchWithProvider` switch — behaviour is unchanged.
+   */
+  private async resolveProviderResults(
+    provider: SearchProvider,
+    query: string,
+    count: number,
+    options: WebSearchOptions,
+  ): Promise<SearchResult[]> {
     let results: SearchResult[];
 
     switch (provider) {
@@ -393,12 +415,41 @@ export class WebSearchTool {
         throw new Error(`Unknown provider: ${provider}`);
     }
 
-    if (results.length === 0) {
-      return { success: true, output: `No results found for: "${query}"` };
+    return results;
+  }
+
+  /**
+   * Structured search — same mode gate and provider fallback chain as `search()`,
+   * but returns raw `SearchResult[]` (title/url/snippet) instead of a formatted
+   * string. Used by deterministic pipelines (Deep Research) that need the top-K
+   * URLs. Additive: `search()` is untouched. Returns [] on disabled mode or when
+   * every provider fails (never throws).
+   */
+  async searchStructured(query: string, options: WebSearchOptions = {}): Promise<SearchResult[]> {
+    const effectiveMode = options.mode ?? _globalSearchMode;
+    if (effectiveMode === 'disabled') return [];
+
+    let effectiveOptions = options;
+    if (effectiveMode === 'cached' && !options.provider) {
+      effectiveOptions = {
+        ...options,
+        provider: this.braveApiKey ? 'brave' : this.perplexityApiKey ? 'perplexity' : 'duckduckgo',
+      };
     }
 
-    this.cache.set(cacheKey, { results, timestamp: Date.now() });
-    return { success: true, output: this.formatResults(results, query) };
+    const count = Math.max(1, Math.min(MAX_SEARCH_COUNT, effectiveOptions.maxResults ?? DEFAULT_SEARCH_COUNT));
+    const chain = effectiveOptions.provider ? [effectiveOptions.provider] : this.buildProviderChain();
+
+    for (const provider of chain) {
+      try {
+        const results = await this.resolveProviderResults(provider, query, count, effectiveOptions);
+        const filtered = results.filter((r) => !r.url || isDomainAllowed(r.url));
+        if (filtered.length > 0) return filtered;
+      } catch (error) {
+        logger.debug(`Structured search provider ${provider} failed, trying next`, { error: getErrorMessage(error) });
+      }
+    }
+    return [];
   }
 
   private buildCacheKey(query: string, count: number, options: WebSearchOptions): string {

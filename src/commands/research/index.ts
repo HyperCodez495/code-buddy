@@ -83,6 +83,7 @@ export function createResearchCommand(): Command {
     .option('--context <text>', 'Additional context injected into each worker')
     .option('-m, --model <model>', 'Override the model for this research run')
     .option('--wide', 'Force parallel workers even in non-interactive runs (default: direct single-pass)', false)
+    .option('--deep', 'Deep Research: deterministic, cited pipeline (plan → search → scrape → dedup → cited synthesis)', false)
     .action(async (topic: string, opts, command) => {
       // The root program also declares a global `-m, --model`; depending on
       // argv order Commander can bind it there — merge so either wins.
@@ -116,6 +117,19 @@ export function createResearchCommand(): Command {
       if (!opts.report && reportPath) {
         console.warn(`⚠️ Legacy output flag detected. Use "--report ${reportPath}" for research report files.`);
       }
+
+      // Deep Research (opt-in, Phase A) — deterministic, cited pipeline. Routed
+      // FIRST and independently of TTY (it is automation-friendly). Strictly
+      // gated: without `--deep`, the Wide/direct paths below run byte-identically.
+      const { maybeRunDeepResearch, runDeepResearchCli } = await import('./deep.js');
+      const deepHandled = await maybeRunDeepResearch(opts, () =>
+        runDeepResearchCli(topic, apiKey, providerConfig, {
+          deep: true,
+          reportPath,
+          providerLabel: resolved.providerLabel,
+        }),
+      );
+      if (deepHandled) return;
 
       // In non-interactive runs (CI/headless), prefer a direct single-pass research call.
       // This avoids long-lived worker handles and makes output deterministic for automation.
