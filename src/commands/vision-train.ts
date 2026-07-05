@@ -79,16 +79,53 @@ export function createVisionTrainCommand(): Command {
       let obtainImage: VisionTrainDeps['obtainImage'];
       let source: string;
 
-      if (opts.images) {
-        if (!opts.labels) {
-          logger.error('Folder mode requires --labels <file> (a JSON of filename -> ground-truth counts) to score against.');
+      // Folder mode without labels → detection-only AUDIT (what does the robot
+      // see?). Useful for real footage you can't hand-label.
+      if (opts.images && !opts.labels) {
+        const dir = path.resolve(opts.images);
+        let files: string[];
+        try {
+          files = (await fs.readdir(dir)).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort();
+        } catch (err) {
+          logger.error(`Could not read --images dir: ${err instanceof Error ? err.message : String(err)}`);
           process.exitCode = 1;
           return;
         }
+        if (files.length === 0) {
+          logger.error(`No images found in ${dir}`);
+          process.exitCode = 1;
+          return;
+        }
+        const auditSpecs: SceneSpec[] = files.map((f) => ({ id: f, prompt: '', expect: { counts: {} }, tags: [] }));
+        logger.info(`vision-train audit: ${auditSpecs.length} images · ${dir}`);
+        const { runAudit } = await import('../vision-train/engine.js');
+        const { renderAudit } = await import('../vision-train/report.js');
+        const audit = await runAudit(auditSpecs, {
+          obtainImage: async (spec) => path.join(dir, spec.id),
+          perceive,
+          onScene: (info) =>
+            logger.info(`  [${info.index + 1}/${info.total}] ${info.id} — ${info.error ? `FAIL: ${info.error}` : 'ok'}`),
+        });
+        const outDir = path.resolve(opts.out ?? '.codebuddy/vision-train');
+        await fs.mkdir(outDir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const md = renderAudit(audit, {
+          source: `folder ${dir}`,
+          ...(process.env.CODEBUDDY_YOLO_MODEL ? { model: process.env.CODEBUDDY_YOLO_MODEL } : {}),
+        });
+        const mdPath = path.join(outDir, `audit-${stamp}.md`);
+        await fs.writeFile(mdPath, md);
+        logger.info(`\n${md}\n`);
+        logger.info(`Audit → ${mdPath}`);
+        return;
+      }
+
+      if (opts.images && opts.labels) {
         const dir = path.resolve(opts.images);
+        const labelsFile = opts.labels;
         let labelMap: Record<string, Record<string, number>>;
         try {
-          labelMap = JSON.parse(await fs.readFile(path.resolve(opts.labels), 'utf8'));
+          labelMap = JSON.parse(await fs.readFile(path.resolve(labelsFile), 'utf8'));
         } catch (err) {
           logger.error(`Could not read --labels file: ${err instanceof Error ? err.message : String(err)}`);
           process.exitCode = 1;

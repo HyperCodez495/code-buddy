@@ -4,8 +4,8 @@
  * failures without aborting. Report rendering is asserted on real content.
  */
 import { describe, expect, it } from 'vitest';
-import { runVisionTrain } from '../../src/vision-train/engine.js';
-import { renderReport } from '../../src/vision-train/report.js';
+import { runVisionTrain, runAudit } from '../../src/vision-train/engine.js';
+import { renderReport, renderAudit } from '../../src/vision-train/report.js';
 import { buildCurriculum } from '../../src/vision-train/curriculum.js';
 import type { ScenePerception } from '../../src/vision-train/scorer.js';
 
@@ -51,6 +51,52 @@ describe('runVisionTrain', () => {
     const peopled = specs.filter((s) => !s.tags.includes('empty')).length;
     expect(peopled).toBeGreaterThan(0);
     expect(result.benchmark.weakSpots.some((w) => /Misses "person"/.test(w))).toBe(true);
+  });
+});
+
+describe('runAudit', () => {
+  it('perceives each image and totals detections (no ground truth)', async () => {
+    const specs = buildCurriculum({ count: 3, prop: 'none' });
+    const audit = await runAudit(specs, {
+      obtainImage: async (spec) => `/i/${spec.id}.png`,
+      perceive: async () => ({ countsByLabel: { person: 2, chair: 1 } }),
+    });
+    expect(audit.images).toHaveLength(3);
+    expect(audit.totals.person).toBe(6); // 2 × 3 images
+    expect(audit.totals.chair).toBe(3);
+    expect(audit.failures).toHaveLength(0);
+  });
+
+  it('records a failure and continues', async () => {
+    const specs = buildCurriculum({ count: 2, prop: 'none' });
+    const audit = await runAudit(specs, {
+      obtainImage: async (spec, i) => {
+        if (i === 0) throw new Error('unreadable');
+        return `/i/${spec.id}.png`;
+      },
+      perceive: async () => ({ countsByLabel: { person: 1 } }),
+    });
+    expect(audit.failures).toHaveLength(1);
+    expect(audit.images).toHaveLength(1);
+  });
+});
+
+describe('renderAudit', () => {
+  it('renders totals and per-image detections', () => {
+    const md = renderAudit(
+      {
+        images: [
+          { id: 'a.png', counts: { person: 2 } },
+          { id: 'b.png', counts: {} },
+        ],
+        totals: { person: 2 },
+        failures: [],
+      },
+      { source: 'folder /x', model: 'yolov8n' },
+    );
+    expect(md).toContain('Vision perception audit');
+    expect(md).toContain('person×2');
+    expect(md).toContain('| a.png |');
   });
 });
 
