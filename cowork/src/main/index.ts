@@ -49,6 +49,14 @@ import { registerMobileSupervisionIpcHandlers } from './ipc/mobile-supervision-i
 import { registerIdentityIpcHandlers } from './ipc/identity-ipc';
 import { registerDeviceIpcHandlers } from './ipc/device-ipc';
 import { registerChannelsIpcHandlers } from './ipc/channels-ipc';
+// App Studio (bolt.diy-style) main-process IPC + services.
+import { registerDevServerIpc } from './studio/dev-server-ipc';
+import { StudioDevServer } from './studio/dev-server-service';
+import { registerStudioFilesIpc } from './studio/studio-files-ipc';
+import { registerCommandRunnerIpc } from './studio/command-runner-ipc';
+import { CommandRunner } from './studio/command-runner';
+import { registerScaffoldIpc } from './studio/scaffold-ipc';
+import { ScaffoldService } from './studio/scaffold-service';
 import { registerPairingIpcHandlers } from './ipc/pairing-ipc';
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
 import { registerCompanionIpcHandlers } from './ipc/companion-ipc';
@@ -2489,6 +2497,16 @@ registerSpecIpcHandlers(() => projectManager, configStore);
 registerSpecNextIpcHandlers(() => projectManager);
 registerLiveLauncherIpcHandlers();
 registerProfilesIpcHandlers();
+
+// ── App Studio (bolt.diy-style: file tree + editor + terminal + live preview) ─
+// Dormant until the renderer opens the Studio view. The command runner streams
+// output to whatever window is current via the lazy getMainWindow() getter; the
+// dev server delegates to the core `app_server` tool for loopback-gated spawns.
+// See src/main/studio/*.
+registerDevServerIpc(ipcMain, new StudioDevServer());
+registerStudioFilesIpc(ipcMain);
+registerCommandRunnerIpc(ipcMain, new CommandRunner(), () => getMainWindow()?.webContents ?? null);
+registerScaffoldIpc(ipcMain, new ScaffoldService());
 
 // ── .codebuddy/ backups (same core handler as `buddy backup`) ────────────
 registerBackupIpcHandlers();

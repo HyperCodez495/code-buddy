@@ -17,6 +17,10 @@ import { ActivityPane } from './ActivityPane';
 import { PlanPanel } from './PlanPanel';
 import { FileActivityPanel } from './FileActivityPanel';
 import { HomeView } from './HomeView';
+import { useMemo } from 'react';
+import { AppStudioView } from './studio/AppStudioView';
+import { useAppStudio } from './studio/use-app-studio';
+import { createStudioApis } from './studio/studio-api-bridge';
 
 interface RailItem {
   view: PrimaryView;
@@ -29,6 +33,7 @@ const RAIL: RailItem[] = [
   { view: 'plan', label: 'Plan', glyph: '📋' },
   { view: 'activity', label: 'Activité', glyph: '📊' },
   { view: 'workspace', label: 'Fichiers', glyph: '📁' },
+  { view: 'studio', label: 'App Studio', glyph: '🛠️' },
   { view: 'advanced', label: 'Avancé', glyph: '⚙️' },
 ];
 
@@ -112,6 +117,18 @@ function AdvancedLauncher() {
   );
 }
 
+/**
+ * App Studio (bolt.diy-style: file tree + editor + terminal + live preview) as a
+ * full-screen primaryView. The preload-backed APIs are built once from
+ * window.electronAPI.studio; with no project selected the view renders its own
+ * calm empty state ("Décris une app pour commencer").
+ */
+function StudioView() {
+  const apis = useMemo(() => createStudioApis(), []);
+  const { viewProps } = useAppStudio({ apis });
+  return <AppStudioView {...viewProps} />;
+}
+
 export function NewShell() {
   const primaryView = useAppStore((st) => st.primaryView);
   const setPrimaryView = useAppStore((st) => st.setPrimaryView);
@@ -185,6 +202,7 @@ export function NewShell() {
         {primaryView === 'plan' && <PlanPanel />}
         {primaryView === 'activity' && <ActivityPane />}
         {primaryView === 'workspace' && <FileActivityPanel open onClose={backToChat} />}
+        {primaryView === 'studio' && <StudioView />}
         {primaryView === 'advanced' && <AdvancedLauncher />}
       </div>
     </div>
