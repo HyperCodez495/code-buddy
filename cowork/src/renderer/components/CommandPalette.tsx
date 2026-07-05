@@ -287,12 +287,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-24" onClick={onClose}>
       <div
-        className="w-[480px] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden"
+        className="w-[480px] bg-background border border-border rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
-          <Search size={16} className="text-zinc-500" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Search size={16} className="text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
@@ -300,14 +300,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('commandPalette.searchPlaceholder', 'Type a command…')}
-            className="flex-1 bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+            className="flex-1 bg-transparent text-sm text-secondary placeholder:text-muted-foreground focus:outline-none"
           />
         </div>
 
         {/* Results */}
         <div className="max-h-64 overflow-y-auto py-1">
           {filtered.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-zinc-500">
+            <div className="px-4 py-3 text-sm text-muted-foreground">
               {t('commandPalette.empty', 'No matching commands')}
             </div>
           ) : (
@@ -319,18 +319,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   onClose();
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                  i === selectedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
+                  i === selectedIndex ? 'bg-surface' : 'hover:bg-zinc-800/50'
                 }`}
               >
-                <span className="text-zinc-400">{cmd.icon}</span>
+                <span className="text-muted-foreground">{cmd.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-zinc-200">{cmd.label}</div>
+                  <div className="text-sm text-secondary">{cmd.label}</div>
                   {cmd.description && (
-                    <div className="text-xs text-zinc-500">{cmd.description}</div>
+                    <div className="text-xs text-muted-foreground">{cmd.description}</div>
                   )}
                 </div>
                 {cmd.shortcut && (
-                  <span className="text-xs text-zinc-600 font-mono">{cmd.shortcut}</span>
+                  <span className="text-xs text-muted-foreground font-mono">{cmd.shortcut}</span>
                 )}
               </button>
             ))

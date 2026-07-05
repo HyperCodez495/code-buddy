@@ -141,17 +141,17 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
       aria-label={t('shortcutsDialog.title', 'Keyboard shortcuts')}
     >
       <div
-        className="w-[640px] max-w-[92vw] max-h-[85vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-[640px] max-w-[92vw] max-h-[85vh] bg-background border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
-          <h2 className="text-sm font-medium text-zinc-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-sm font-medium text-secondary">
             {t('shortcutsDialog.title', 'Keyboard shortcuts')}
           </h2>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-muted-foreground hover:text-secondary transition-colors"
             aria-label={t('common.close', 'Close')}
           >
             <X size={16} />
@@ -159,11 +159,11 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
         </div>
 
         {/* Search */}
-        <div className="px-5 py-3 border-b border-zinc-800 shrink-0">
+        <div className="px-5 py-3 border-b border-border shrink-0">
           <div className="relative">
             <Search
               size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
             />
             <input
               type="text"
@@ -171,7 +171,7 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('shortcutsDialog.searchPlaceholder', 'Search shortcuts…')}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-800/60 border border-zinc-700 rounded-md text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-800/60 border border-border rounded-md text-secondary placeholder:text-muted-foreground focus:outline-none focus:border-zinc-500"
             />
           </div>
         </div>
@@ -179,13 +179,13 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
         {/* Content */}
         <div className="overflow-y-auto p-5 space-y-5 flex-1">
           {filtered.length === 0 ? (
-            <div className="text-center text-zinc-500 text-sm py-8">
+            <div className="text-center text-muted-foreground text-sm py-8">
               {t('shortcutsDialog.noMatches', 'No shortcut matches your search.')}
             </div>
           ) : (
             filtered.map((section) => (
               <div key={section.title}>
-                <h3 className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider mb-2">
+                <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
                   {section.title}
                 </h3>
                 <div className="space-y-0.5">
@@ -194,7 +194,7 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
                       key={shortcut.keys + shortcut.description}
                       className="flex items-center justify-between gap-3 py-1.5 px-2 rounded hover:bg-zinc-800/40 transition-colors"
                     >
-                      <span className="text-sm text-zinc-300 flex-1 min-w-0">
+                      <span className="text-sm text-secondary flex-1 min-w-0">
                         {shortcut.description}
                       </span>
                       <ShortcutKey keys={shortcut.keys} />
@@ -207,11 +207,11 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-2.5 border-t border-zinc-800 text-[10px] text-zinc-500 shrink-0 flex items-center justify-between">
+        <div className="px-5 py-2.5 border-t border-border text-[10px] text-muted-foreground shrink-0 flex items-center justify-between">
           <span>
             {t('shortcutsDialog.footerHint', 'Press {{shortcut}} anywhere to reopen this dialog.', { shortcut: `${mod}+/` })}
           </span>
-          <span className="text-zinc-600">
+          <span className="text-muted-foreground">
             {filtered.reduce((acc, s) => acc + s.shortcuts.length, 0)}{' '}
             {t('shortcutsDialog.results', 'results')}
           </span>
@@ -228,8 +228,8 @@ const ShortcutKey: React.FC<{ keys: string }> = ({ keys }) => {
     <span className="flex items-center gap-1 shrink-0">
       {parts.map((part, i) => (
         <React.Fragment key={i}>
-          {i > 0 && <span className="text-zinc-600 text-xs">+</span>}
-          <kbd className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 min-w-[20px] text-center">
+          {i > 0 && <span className="text-muted-foreground text-xs">+</span>}
+          <kbd className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-secondary min-w-[20px] text-center">
             {part}
           </kbd>
         </React.Fragment>

@@ -65,16 +65,16 @@ const TreeNode: React.FC<TreeNodeProps> = React.memo(({ entry, depth, onFileClic
       <button
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        className="w-full flex items-center gap-1 px-2 py-0.5 text-left hover:bg-zinc-800 transition-colors group"
+        className="w-full flex items-center gap-1 px-2 py-0.5 text-left hover:bg-surface transition-colors group"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         title={entry.path}
       >
         {entry.isDirectory ? (
           <>
             {expanded ? (
-              <ChevronDown size={12} className="text-zinc-500 flex-shrink-0" />
+              <ChevronDown size={12} className="text-muted-foreground flex-shrink-0" />
             ) : (
-              <ChevronRight size={12} className="text-zinc-500 flex-shrink-0" />
+              <ChevronRight size={12} className="text-muted-foreground flex-shrink-0" />
             )}
             {expanded ? (
               <FolderOpen size={14} className="text-yellow-500 flex-shrink-0" />
@@ -85,11 +85,11 @@ const TreeNode: React.FC<TreeNodeProps> = React.memo(({ entry, depth, onFileClic
         ) : (
           <>
             <span className="w-3" />
-            <File size={14} className="text-zinc-500 flex-shrink-0" />
+            <File size={14} className="text-muted-foreground flex-shrink-0" />
           </>
         )}
-        <span className="text-xs text-zinc-300 truncate ml-1">{entry.name}</span>
-        {loading && <span className="text-xs text-zinc-600 ml-auto">...</span>}
+        <span className="text-xs text-secondary truncate ml-1">{entry.name}</span>
+        {loading && <span className="text-xs text-muted-foreground ml-auto">...</span>}
       </button>
 
       {expanded && children.map((child) => (
@@ -160,22 +160,22 @@ export const FileTree: React.FC<FileTreeProps> = ({ rootPath }) => {
     <div>
       {/* Search */}
       <div className="relative px-3 py-2">
-        <Search size={12} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" />
+        <Search size={12} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t('fileTree.filterPlaceholder', 'Filter files…')}
-          className="w-full pl-6 pr-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+          className="w-full pl-6 pr-2 py-1 text-xs bg-surface border border-border rounded text-secondary placeholder:text-muted-foreground focus:outline-none focus:border-zinc-500"
         />
       </div>
 
       {/* Tree */}
       <div className="max-h-64 overflow-y-auto">
         {loading ? (
-          <div className="text-xs text-zinc-500 px-3 py-2">{t('common.loading')}</div>
+          <div className="text-xs text-muted-foreground px-3 py-2">{t('common.loading')}</div>
         ) : filtered.length === 0 ? (
-          <div className="text-xs text-zinc-500 px-3 py-2">
+          <div className="text-xs text-muted-foreground px-3 py-2">
             {t('fileTree.empty', 'No files found')}
           </div>
         ) : (

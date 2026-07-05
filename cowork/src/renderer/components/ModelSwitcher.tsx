@@ -40,7 +40,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ currentModel, onMo
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-zinc-400 bg-zinc-800 hover:bg-zinc-700 hover:text-zinc-200 transition-colors"
+        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-muted-foreground bg-surface hover:bg-surface-hover hover:text-secondary transition-colors"
         title={`Model: ${currentModel}`}
       >
         <Cpu size={12} />
@@ -49,7 +49,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ currentModel, onMo
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 left-0 w-64 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto">
+        <div className="absolute top-full mt-1 left-0 w-64 bg-surface border border-border rounded-lg shadow-xl z-50 overflow-hidden max-h-80 overflow-y-auto">
           {POPULAR_MODELS.map((model) => (
             <button
               key={model.id}
@@ -57,13 +57,13 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ currentModel, onMo
                 onModelChange(model.id);
                 setOpen(false);
               }}
-              className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-700 transition-colors ${
+              className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-surface-hover transition-colors ${
                 model.id === currentModel ? 'bg-zinc-700/50' : ''
               }`}
             >
               <div>
-                <div className="text-xs font-medium text-zinc-200">{model.label}</div>
-                <div className="text-xs text-zinc-500">{model.provider}</div>
+                <div className="text-xs font-medium text-secondary">{model.label}</div>
+                <div className="text-xs text-muted-foreground">{model.provider}</div>
               </div>
               {model.id === currentModel && (
                 <span className="text-xs text-green-400">\u2713</span>
