@@ -1,0 +1,4 @@
+import { canRestore, sortSnapshots, type ProjectSnapshot } from './utils/snapshot-model.js';
+export interface ProjectSnapshotBarProps { snapshots: ProjectSnapshot[]; selectedId?: string; onBackup: () => void; onSelect: (snapshotId: string) => void; onRestore: (snapshotId: string) => void; }
+export function ProjectSnapshotBar({ snapshots, selectedId, onBackup, onSelect, onRestore }: ProjectSnapshotBarProps) { const sorted = sortSnapshots(snapshots); return <section className="studio2-snapshots"><button type="button" onClick={onBackup}>Backup</button><select value={selectedId ?? ''} onChange={(event) => onSelect(event.target.value)}><option value="">Select snapshot</option>{sorted.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>{snapshot.label}</option>)}</select><button type="button" disabled={!canRestore(selectedId, snapshots)} onClick={() => selectedId && onRestore(selectedId)}>Restore</button></section>; }
+export default ProjectSnapshotBar;
