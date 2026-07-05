@@ -214,7 +214,7 @@ function App() {
       settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
 
     // 'dark' is the class-less :root default; every other theme is a named class.
-    const themeClasses = ['light', 'open-cowork', 'genspark', 'codex', 'anthropic'];
+    const themeClasses = ['light', 'ember', 'genspark', 'codex', 'anthropic'];
     document.documentElement.classList.remove(...themeClasses);
     if (effectiveTheme !== 'dark') {
       document.documentElement.classList.add(effectiveTheme);

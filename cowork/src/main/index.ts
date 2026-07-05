@@ -5794,7 +5794,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           'dark',
           'light',
           'system',
-          'open-cowork',
+          'ember',
           'genspark',
           'codex',
           'anthropic',

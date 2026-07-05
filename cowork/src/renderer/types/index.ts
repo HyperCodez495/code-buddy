@@ -1885,7 +1885,7 @@ export type AppTheme =
   | 'dark'
   | 'light'
   | 'system'
-  | 'open-cowork'
+  | 'ember'
   | 'genspark'
   | 'codex'
   | 'anthropic';

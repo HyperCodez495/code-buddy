@@ -58,8 +58,8 @@
     --color-error: #ef4444;
   }
 
-  /* Open-Cowork theme override — Warm charcoal/orange aesthetic */
-  .open-cowork {
+  /* Ember theme — warm charcoal/orange aesthetic */
+  .ember {
     --color-background: #171614;
     --color-background-secondary: #1a1917;
     --color-surface: rgba(34, 32, 29, 0.7);

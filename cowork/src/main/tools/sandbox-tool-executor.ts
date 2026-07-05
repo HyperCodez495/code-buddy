@@ -318,7 +318,7 @@ export class SandboxToolExecutor {
     let response: Response;
     try {
       response = await fetch(parsed.toString(), {
-        headers: { 'User-Agent': 'open-cowork' },
+        headers: { 'User-Agent': 'code-buddy' },
         signal: AbortSignal.timeout(15000),
       });
     } catch (error) {
@@ -365,7 +365,7 @@ export class SandboxToolExecutor {
     let response: Response;
     try {
       response = await fetch(searchUrl.toString(), {
-        headers: { 'User-Agent': 'open-cowork' },
+        headers: { 'User-Agent': 'code-buddy' },
         signal: AbortSignal.timeout(10000),
       });
     } catch (error) {

@@ -58,7 +58,7 @@ export type AppTheme =
   | 'dark'
   | 'light'
   | 'system'
-  | 'open-cowork'
+  | 'ember'
   | 'genspark'
   | 'codex'
   | 'anthropic';
@@ -473,7 +473,7 @@ const VALID_THEMES: AppTheme[] = [
   'dark',
   'light',
   'system',
-  'open-cowork',
+  'ember',
   'genspark',
   'codex',
   'anthropic',

@@ -34,7 +34,7 @@ export function SettingsGeneral() {
   const themeOptions = [
     { value: 'light' as const, label: t('general.themeLight') },
     { value: 'dark' as const, label: t('general.themeDark') },
-    { value: 'open-cowork' as const, label: t('general.themeOpenCowork', 'Open Cowork') },
+    { value: 'ember' as const, label: t('general.themeEmber', 'Ember') },
     { value: 'genspark' as const, label: t('general.themeGenspark', 'Genspark') },
     { value: 'codex' as const, label: t('general.themeCodex', 'Codex') },
     { value: 'anthropic' as const, label: t('general.themeAnthropic', 'Anthropic') },

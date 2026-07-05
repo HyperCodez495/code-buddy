@@ -21,8 +21,8 @@ export function HelpDocs({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="p-6 overflow-y-auto prose prose-sm prose-invert max-w-none text-text">
-          <h1>Open-Cowork Documentation</h1>
-          <p>Welcome to the Open-Cowork documentation. Here are some of the core features:</p>
+          <h1>Code Buddy Studio Documentation</h1>
+          <p>Welcome to the Code Buddy Studio documentation. Here are some of the core features:</p>
           
           <h2>Chat</h2>
           <p>

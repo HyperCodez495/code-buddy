@@ -55,7 +55,7 @@ export function TopMenuBar() {
   };
 
   const toggleTheme = () => {
-    const cycle = ['light', 'dark', 'open-cowork', 'genspark', 'codex', 'anthropic', 'system'] as const;
+    const cycle = ['light', 'dark', 'ember', 'genspark', 'codex', 'anthropic', 'system'] as const;
     const idx = cycle.indexOf(settings.theme as (typeof cycle)[number]);
     const next = cycle[(idx + 1) % cycle.length];
     updateSettings({ theme: next });
@@ -64,7 +64,7 @@ export function TopMenuBar() {
   const themeIcon =
     settings.theme === 'dark' ? (
       <Moon strokeWidth={1.5} className="w-4 h-4" />
-    ) : settings.theme === 'open-cowork' ? (
+    ) : settings.theme === 'ember' ? (
       <Sun strokeWidth={1.5} className="w-4 h-4 text-accent" />
     ) : settings.theme === 'light' ? (
       <Sun strokeWidth={1.5} className="w-4 h-4" />
