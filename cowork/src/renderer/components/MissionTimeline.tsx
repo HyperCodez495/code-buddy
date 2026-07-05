@@ -23,7 +23,7 @@ export interface MissionTimelineProps {
 }
 
 /** Compact human duration: 340ms → "340ms", 1200ms → "1.2s", 65000ms → "1m5s". */
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
   if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;

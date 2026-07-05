@@ -13,7 +13,7 @@ import { PanelRightClose, ListTree } from 'lucide-react';
 import { useAppStore } from '../store';
 import type { TraceStep } from '../types';
 import { traceStepToLine, activityStatus } from './activity-pane-helpers';
-import { MissionTimeline, type MissionStep } from './MissionTimeline';
+import { MissionTimeline, formatDuration, type MissionStep } from './MissionTimeline';
 
 const EMPTY_STEPS: TraceStep[] = [];
 
@@ -64,6 +64,8 @@ export function FlightPlanPanel() {
 
   const status = activityStatus(traceSteps, activeTurn);
   const steps = toMissionSteps(traceSteps, activeTurn?.stepId ?? null);
+  const doneCount = steps.filter((s) => s.status === 'done' || s.status === 'error').length;
+  const totalMs = steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
 
   return (
     <aside
@@ -94,6 +96,21 @@ export function FlightPlanPanel() {
           <PanelRightClose size={15} aria-hidden />
         </button>
       </div>
+
+      {/* Compact progress summary: steps done / total + accumulated real duration. */}
+      {steps.length > 0 ? (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border shrink-0 text-[11px] text-text-muted tabular-nums">
+          <span>
+            <span className="text-text-primary font-medium">{doneCount}</span>/{steps.length} étape{steps.length > 1 ? 's' : ''}
+          </span>
+          {totalMs > 0 ? (
+            <>
+              <span aria-hidden>·</span>
+              <span title="Durée cumulée des étapes terminées">{formatDuration(totalMs)}</span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Live step timeline */}
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
