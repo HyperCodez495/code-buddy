@@ -2097,12 +2097,17 @@
     "source": "源代码",
     "chars": "字符",
     "openPanel": "打开制品",
+    "exportHtml": "导出为独立 HTML",
+    "reportChip": "引用报告（{{count}} 个来源）",
+    "tableChip": "表格（{{rows}}×{{cols}}）",
     "kind": {
       "html": "HTML",
       "svg": "SVG",
       "mermaid": "Mermaid 图表",
       "react": "React 组件",
-      "json": "JSON"
+      "json": "JSON",
+      "report": "报告",
+      "table": "表格"
     }
   },
   "voice": {

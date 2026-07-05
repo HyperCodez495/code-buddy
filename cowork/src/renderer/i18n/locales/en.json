@@ -2149,12 +2149,17 @@
     "source": "Source",
     "chars": "chars",
     "openPanel": "Open artifact",
+    "exportHtml": "Export as standalone HTML",
+    "reportChip": "Cited report ({{count}} sources)",
+    "tableChip": "Table ({{rows}}×{{cols}})",
     "kind": {
       "html": "HTML",
       "svg": "SVG",
       "mermaid": "Mermaid diagram",
       "react": "React component",
-      "json": "JSON"
+      "json": "JSON",
+      "report": "Report",
+      "table": "Table"
     }
   },
   "voice": {

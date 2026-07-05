@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ReportArtifactData, TableArtifactData } from '../utils/artifact-detector';
 import type {
   Session,
   Message,
@@ -305,10 +306,12 @@ export interface AppState {
   previewFilePath: string | null;
   activeArtifact: {
     id: string;
-    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'json';
+    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'json' | 'report' | 'table';
     language: string;
     source: string;
     title?: string;
+    report?: ReportArtifactData;
+    table?: TableArtifactData;
   } | null;
   guiActions: Array<{
     sessionId: string;
@@ -650,10 +653,12 @@ export interface AppState {
   setActiveArtifact: (
     artifact: {
       id: string;
-      kind: 'html' | 'svg' | 'mermaid' | 'react' | 'json';
+      kind: 'html' | 'svg' | 'mermaid' | 'react' | 'json' | 'report' | 'table';
       language: string;
       source: string;
       title?: string;
+      report?: ReportArtifactData;
+      table?: TableArtifactData;
     } | null
   ) => void;
   appendGuiAction: (action: {

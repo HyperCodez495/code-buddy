@@ -2149,12 +2149,17 @@
     "source": "Source",
     "chars": "chars",
     "openPanel": "Ouvrir l'artefact",
+    "exportHtml": "Exporter en HTML autonome",
+    "reportChip": "Rapport cité ({{count}} sources)",
+    "tableChip": "Tableau ({{rows}}×{{cols}})",
     "kind": {
       "html": "HTML",
       "svg": "SVG",
       "mermaid": "Diagramme de la sirène",
       "react": "Composant React",
-      "json": "JSON"
+      "json": "JSON",
+      "report": "Rapport",
+      "table": "Tableau"
     }
   },
   "voice": {

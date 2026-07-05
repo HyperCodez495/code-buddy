@@ -7,8 +7,24 @@ import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '.
 import { ContentBlockView } from './message/ContentBlockView';
 import { User } from 'lucide-react';
 import { ActivityGroupBlock } from './message/ActivityGroupBlock';
-import { detectArtifacts } from '../utils/artifact-detector';
+import { detectArtifacts, type RenderableArtifact } from '../utils/artifact-detector';
 import { useAppStore } from '../store';
+
+type TranslateFn = (key: string, opts?: Record<string, unknown>) => string;
+
+/** Chip label for a detected artifact — descriptive for report/table, else title/kind. */
+function artifactChipLabel(artifact: RenderableArtifact, t: TranslateFn): string {
+  if (artifact.kind === 'report' && artifact.report) {
+    return t('artifact.reportChip', { count: artifact.report.sources.length });
+  }
+  if (artifact.kind === 'table' && artifact.table) {
+    return t('artifact.tableChip', {
+      rows: artifact.table.rows.length,
+      cols: artifact.table.headers.length,
+    });
+  }
+  return artifact.title ?? t(`artifact.kind.${artifact.kind}`);
+}
 
 interface MessageCardProps {
   message: Message;
@@ -317,6 +333,8 @@ export const MessageCard = memo(function MessageCard({
                             language: artifact.language,
                             source: artifact.source,
                             title: artifact.title,
+                            report: artifact.report,
+                            table: artifact.table,
                           })
                         }
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-surface hover:bg-surface-hover border border-border rounded-lg transition-colors group"
@@ -324,7 +342,7 @@ export const MessageCard = memo(function MessageCard({
                       >
                         <Code2 size={12} className="text-accent" />
                         <span className="text-text-primary font-medium">
-                          {artifact.title ?? t(`artifact.kind.${artifact.kind}`)}
+                          {artifactChipLabel(artifact, t)}
                         </span>
                         <span className="text-text-muted uppercase text-[9px]">{artifact.kind}</span>
                       </button>
