@@ -107,7 +107,7 @@ const RunnerDetailsDialog: React.FC<RunnerDetailsDialogProps> = ({ status, onClo
       aria-modal="true"
     >
       <div
-        className="w-[480px] max-w-[92vw] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-5 text-sm text-zinc-200"
+        className="w-[480px] max-w-[92vw] bg-background border border-border rounded-xl shadow-2xl p-5 text-sm text-secondary"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-3">
@@ -122,7 +122,7 @@ const RunnerDetailsDialog: React.FC<RunnerDetailsDialogProps> = ({ status, onClo
               : t('runner.dialog.titlePi', 'pi-coding-agent fallback')}
           </h2>
         </div>
-        <p className="text-zinc-400 text-xs leading-relaxed">
+        <p className="text-muted-foreground text-xs leading-relaxed">
           {status.runner === 'engine'
             ? t(
                 'runner.dialog.bodyEngine',
@@ -138,14 +138,14 @@ const RunnerDetailsDialog: React.FC<RunnerDetailsDialogProps> = ({ status, onClo
             {status.bootError}
           </div>
         )}
-        <div className="mt-4 text-[10px] text-zinc-500">
+        <div className="mt-4 text-[10px] text-muted-foreground">
           {t('runner.dialog.envHint', 'Set CODEBUDDY_EMBEDDED=0 to force pi.')}
         </div>
         <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            className="px-3 py-1 text-xs rounded bg-surface hover:bg-surface-hover transition-colors"
           >
             {t('common.close', 'Close')}
           </button>

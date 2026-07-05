@@ -125,23 +125,23 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
       data-testid="clipboard-summary-panel"
     >
       <div
-        className="w-[560px] max-w-[92vw] max-h-[80vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="w-[560px] max-w-[92vw] max-h-[80vh] bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 shrink-0">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <ClipboardCopy size={14} className="text-accent" />
-            <h2 className="text-sm font-medium text-zinc-200">
+            <h2 className="text-sm font-medium text-secondary">
               {t('clipboardSummary.title', 'Résumé du presse-papiers')}
             </h2>
             {summarising && (
-              <Loader2 size={11} className="animate-spin text-zinc-500" />
+              <Loader2 size={11} className="animate-spin text-muted-foreground" />
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-muted-foreground hover:text-secondary transition-colors"
             aria-label={t('common.close', 'Close')}
           >
             <X size={16} />
@@ -149,7 +149,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-zinc-800 shrink-0">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
           <button
             type="button"
             onClick={() => void handleSummarizeNow()}
@@ -186,7 +186,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
           )}
 
           {!summary ? (
-            <div className="text-xs text-zinc-500 text-center py-12 leading-relaxed">
+            <div className="text-xs text-muted-foreground text-center py-12 leading-relaxed">
               <ClipboardCopy size={28} className="mx-auto mb-2 opacity-30" />
               <p>
                 {t(
@@ -197,11 +197,11 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 {t('clipboardSummary.summaryLabel', 'Résumé')}
               </div>
               {summary.summary ? (
-                <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                <div className="text-sm text-secondary leading-relaxed whitespace-pre-wrap">
                   <span data-testid="clipboard-summary-text">
                   {summary.summary}
                   </span>
@@ -214,17 +214,17 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
                   )}
                 </div>
               )}
-              <div className="text-[10px] text-zinc-500 mt-2 italic">
+              <div className="text-[10px] text-muted-foreground mt-2 italic">
                 {t('clipboardSummary.sourceMeta', 'Source')} :{' '}
                 {summary.sourceLength.toLocaleString()}{' '}
                 {t('clipboardSummary.chars', 'caractères')} ·{' '}
                 {new Date(summary.at).toLocaleTimeString()}
               </div>
               <details className="mt-2">
-                <summary className="text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300">
+                <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-secondary">
                   {t('clipboardSummary.showSource', 'Voir l\'aperçu source')}
                 </summary>
-                <pre className="mt-2 text-[11px] text-zinc-400 bg-zinc-800/50 rounded p-2 overflow-x-auto whitespace-pre-wrap">
+                <pre className="mt-2 text-[11px] text-muted-foreground bg-zinc-800/50 rounded p-2 overflow-x-auto whitespace-pre-wrap">
                   {summary.sourcePreview}…
                 </pre>
               </details>
@@ -234,7 +234,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
 
         {/* Footer actions */}
         {summary?.summary && onSendToChat && (
-          <div className="px-5 py-3 border-t border-zinc-800 shrink-0 flex justify-end">
+          <div className="px-5 py-3 border-t border-border shrink-0 flex justify-end">
             <button
               type="button"
               onClick={handleSendToChat}

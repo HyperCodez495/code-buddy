@@ -39,13 +39,13 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
             <span className="text-xs text-blue-300">
               {t('updateNotification.downloading', 'Downloading update…')}
             </span>
-            <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden max-w-32">
+            <div className="flex-1 h-1 bg-surface rounded-full overflow-hidden max-w-32">
               <div
                 className="h-full bg-blue-500 transition-all"
                 style={{ width: `${updateInfo.downloadProgress}%` }}
               />
             </div>
-            <span className="text-xs text-zinc-500">{Math.round(updateInfo.downloadProgress)}%</span>
+            <span className="text-xs text-muted-foreground">{Math.round(updateInfo.downloadProgress)}%</span>
           </div>
         ) : (
           <span className="text-xs text-blue-300">
@@ -77,7 +77,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
       <button
         onClick={onDismiss}
-        className="text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="text-muted-foreground hover:text-secondary transition-colors"
       >
         <X size={14} />
       </button>
