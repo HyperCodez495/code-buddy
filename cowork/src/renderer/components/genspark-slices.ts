@@ -591,4 +591,15 @@ export const GENSPARK_SLICES: GensparkSlice[] = [
     componentFile: 'components/studio-iterate/PreviewToolbar.tsx',
     needsData: 'Barre de test de la preview : lancer/arrêter, tailles d’écran, recharger.',
   },
+  {
+    id: 'NA5',
+    title: 'MediaGenStudio',
+    roadmap: 60,
+    category: 'deliverable',
+    mount: 'labs',
+    componentFile: 'components/media-gen/MediaGenPanel.tsx',
+    logicFile: 'components/media-gen/media-gen-wiring.ts',
+    testFile: '../../tests/media-gen-service.test.ts',
+    needsData: 'Studio d’images branché au vrai image_generate (ComfyUI local / cloud).',
+  },
 ];

@@ -56,6 +56,8 @@ import { registerStudioFilesIpc } from './studio/studio-files-ipc';
 import { registerCommandRunnerIpc } from './studio/command-runner-ipc';
 import { CommandRunner } from './studio/command-runner';
 import { registerScaffoldIpc } from './studio/scaffold-ipc';
+import { registerMediaGenIpc } from './media/media-gen-ipc';
+import { MediaGenService } from './media/media-gen-service';
 import { ScaffoldService } from './studio/scaffold-service';
 import { registerPairingIpcHandlers } from './ipc/pairing-ipc';
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
@@ -2525,6 +2527,9 @@ registerDevServerIpc(ipcMain, new StudioDevServer());
 registerStudioFilesIpc(ipcMain);
 registerCommandRunnerIpc(ipcMain, new CommandRunner(), () => getMainWindow()?.webContents ?? null);
 registerScaffoldIpc(ipcMain, new ScaffoldService());
+
+// Media generation surface delegates to the core image_generate tool.
+registerMediaGenIpc(ipcMain, new MediaGenService());
 
 // ── .codebuddy/ backups (same core handler as `buddy backup`) ────────────
 registerBackupIpcHandlers();

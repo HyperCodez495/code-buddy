@@ -271,6 +271,10 @@ const WIRING: Record<string, LabsWiring> = {
     load: () => import('../template-gallery/TemplateGallery').then((m) => named(m, 'TemplateGallery')),
     props: {},
   },
+  NA5: {
+    load: () => import('../media-gen/MediaGenPanel').then((m) => named(m, 'MediaGenPanel')),
+    props: {},
+  },
   NM1: {
     load: () => import('../os-panels/AutonomyDashboard').then((m) => named(m, 'AutonomyDashboard')),
     props: { posture: 'dontAsk', running: 3, queued: 7, costUsd: 12.48, capUsd: 50, turns: 128, maxTurns: 400 },

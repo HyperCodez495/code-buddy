@@ -693,6 +693,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: (cwd?: string) => ipcRenderer.invoke('science.status', cwd),
   },
 
+  // Media generation — delegates to the core image_generate tool via
+  // src/main/media/media-gen-ipc.ts.
+  media: {
+    generateImage: (request: {
+      prompt: string;
+      aspect?: string;
+      provider?: string;
+      model?: string;
+    }): Promise<{ ok: boolean; outputPath?: string; url?: string; error?: string }> =>
+      ipcRenderer.invoke('media.generateImage', request),
+  },
+
   // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
   // Channels mirror the main-process register*Ipc handlers under
   // src/main/studio/*. Note: the file listing handler is `studio.files.tree`.
