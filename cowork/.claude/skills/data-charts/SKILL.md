@@ -25,6 +25,16 @@ Turn tabular data (CSV/JSON/Excel/inline) into a real chart image using the
 open-source **pandas** + **matplotlib** libraries. Work in **visible steps** and
 verify the image was written before reporting.
 
+## Getting the data when it's NOT in a file (e.g. "France GDP over 10 years")
+When the user asks to chart something you must look up rather than read from a
+file, gather the numbers FIRST with your normal tools — your own knowledge, or a
+quick `web_search` — then **hard-code them as inline Python lists**. Do **NOT**
+fetch from an external API *inside* the Python script (`urllib`/`requests`):
+sandboxed network calls routinely time out (the 30 s command limit), which makes
+you give up and fall back to a much worse ASCII/text "chart". Inline numbers →
+matplotlib → a real PNG is fast and reliable. Only read from the network when the
+user explicitly gives you a data URL and it's known-fast.
+
 ## Preflight (extras-tier libs)
 These libs are optional and not in the default build. Always check first:
 ```bash
