@@ -107,6 +107,7 @@ import {
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
 import { createRegisterToolTool } from "../tools/register-tool-handler.js";
+import { createAuthoredExtraTools } from "../tools/registry/authored-extra-tools.js";
 import { CodeBuddyToolCall } from "../codebuddy/client.js";
 import { ToolResult } from "../types/index.js";
 import { CheckpointManager } from "../checkpoints/checkpoint-manager.js";
@@ -432,6 +433,10 @@ export class ToolHandler {
       ...createBugFinderTools(),
       ...createDocumentGeneratorTools(),
       ...createDelegateAgentTools(),
+      // 20 pre-authored tools (scaffold_app, project_map, git_summary, …) —
+      // exposed to the LLM via codebuddy/tools.ts AUTHORED_EXTRA_TOOLS, so they
+      // must be dispatchable in interactive chat too (invariant: dispatch ⊇ exposed).
+      ...createAuthoredExtraTools(),
       // Self-improvement: the agent can author its own tools (opt-in only).
       ...(process.env.CODEBUDDY_SELF_IMPROVE === 'true' ? [createRegisterToolTool()] : []),
     ];

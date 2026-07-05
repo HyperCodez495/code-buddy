@@ -67,6 +67,57 @@ import {
 } from "./tool-definitions/index.js";
 import { FLEET_TOOLS } from "./fleet-tool-defs.js";
 
+// 20 pre-authored tool definitions (wired into the registry as AUTHORED_EXTRA_TOOLS).
+// Loosely-typed literal definitions → cast the group to CodeBuddyTool[] below.
+import { SCAFFOLD_APP_TOOL_DEFINITION } from "../tools/scaffold-app-tool.js";
+import { PROJECT_MAP_TOOL_DEFINITION } from "../tools/project-map-tool.js";
+import { DEP_INSPECT_TOOL_DEFINITION } from "../tools/dep-inspect-tool.js";
+import { CODE_STATS_TOOL_DEFINITION } from "../tools/code-stats-tool.js";
+import { GIT_SUMMARY_TOOL_DEFINITION } from "../tools/git-summary-tool.js";
+import { TODO_SCAN_TOOL_DEFINITION } from "../tools/todo-scan-tool.js";
+import { JSON_QUERY_TOOL_DEFINITION } from "../tools/json-query-tool.js";
+import { CSV_PREVIEW_TOOL_DEFINITION } from "../tools/csv-preview-tool.js";
+import { ENV_DOCTOR_TOOL_DEFINITION } from "../tools/env-doctor-tool.js";
+import { PORT_CHECK_TOOL_DEFINITION } from "../tools/port-check-tool.js";
+import { LINT_PROJECT_TOOL_DEFINITION } from "../tools/lint-project-tool.js";
+import { TEST_RUNNER_TOOL_DEFINITION } from "../tools/test-runner-tool.js";
+import { FORMAT_PROJECT_TOOL_DEFINITION } from "../tools/format-project-tool.js";
+import { BUNDLE_ANALYZE_TOOL_DEFINITION } from "../tools/bundle-analyze-tool.js";
+import { BUILD_PROJECT_TOOL_DEFINITION } from "../tools/build-project-tool.js";
+import { LICENSE_CHECK_TOOL_DEFINITION } from "../tools/license-check-tool.js";
+import { SBOM_GENERATE_TOOL_DEFINITION } from "../tools/sbom-generate-tool.js";
+import { HTTP_PROBE_TOOL_DEFINITION } from "../tools/http-probe-tool.js";
+import { FILE_SEARCH_TOOL_DEFINITION } from "../tools/file-search-tool.js";
+import { DIFF_FILES_TOOL_DEFINITION } from "../tools/diff-files-tool.js";
+
+/**
+ * The 20 pre-authored tools, exposed to the LLM. Their adapters are registered
+ * for interactive dispatch in `ToolHandler.initializeRegistry()` via
+ * `createAuthoredExtraTools()` — keep both in lockstep (dispatch ⊇ exposed).
+ */
+const AUTHORED_EXTRA_TOOLS: CodeBuddyTool[] = [
+  SCAFFOLD_APP_TOOL_DEFINITION,
+  PROJECT_MAP_TOOL_DEFINITION,
+  DEP_INSPECT_TOOL_DEFINITION,
+  CODE_STATS_TOOL_DEFINITION,
+  GIT_SUMMARY_TOOL_DEFINITION,
+  TODO_SCAN_TOOL_DEFINITION,
+  JSON_QUERY_TOOL_DEFINITION,
+  CSV_PREVIEW_TOOL_DEFINITION,
+  ENV_DOCTOR_TOOL_DEFINITION,
+  PORT_CHECK_TOOL_DEFINITION,
+  LINT_PROJECT_TOOL_DEFINITION,
+  TEST_RUNNER_TOOL_DEFINITION,
+  FORMAT_PROJECT_TOOL_DEFINITION,
+  BUNDLE_ANALYZE_TOOL_DEFINITION,
+  BUILD_PROJECT_TOOL_DEFINITION,
+  LICENSE_CHECK_TOOL_DEFINITION,
+  SBOM_GENERATE_TOOL_DEFINITION,
+  HTTP_PROBE_TOOL_DEFINITION,
+  FILE_SEARCH_TOOL_DEFINITION,
+  DIFF_FILES_TOOL_DEFINITION,
+] as unknown as CodeBuddyTool[];
+
 /**
  * Plugin tool definition interface
  */
@@ -130,6 +181,7 @@ export function getBuiltinToolNames(): string[] {
     FLEET_TOOLS,
     CODE_EXPLORER_TOOLS,
     WINDOWS_TOOLS,
+    AUTHORED_EXTRA_TOOLS,
   ];
 
   return Array.from(new Set(
@@ -273,6 +325,11 @@ export function initializeToolRegistry(): void {
 
   // CodeExplorer tools
   registerGroup(CODE_EXPLORER_TOOLS);
+
+  // 20 pre-authored tools (scaffold_app, project_map, git_summary, file_search, …).
+  // Dispatch adapters registered in ToolHandler.initializeRegistry() via
+  // createAuthoredExtraTools() so exposition and dispatch stay in lockstep.
+  registerGroup(AUTHORED_EXTRA_TOOLS);
 
   isRegistryInitialized = true;
   logger.debug('Tool registry initialized with built-in tools');

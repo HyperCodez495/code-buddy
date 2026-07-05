@@ -577,7 +577,8 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createAskUserQuestionTools } = await import('./ask-user-question-tools.js');
   const { createExitPlanModeTools } = await import('./exit-plan-mode-tools.js');
   const { createCodeExplorerTools } = await import('./code-explorer-tools.js');
-  
+  const { createAuthoredExtraTools } = await import('./authored-extra-tools.js');
+
   // Await MCP Manager initialization before registering its tools
   const { getMcpManager } = await import('../mcp/mcp-manager.js');
   await getMcpManager().initialize();
@@ -635,6 +636,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createAskUserQuestionTools(),
     ...createExitPlanModeTools(),
     ...createCodeExplorerTools(),
+    ...createAuthoredExtraTools(),
     ...createMcpTools(),
   ];
 
@@ -721,6 +723,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createGuiTools(),
     ...createSessionTools(),
     ...createCodeExplorerTools(),
+    ...createAuthoredExtraTools(),
   ];
   // Append canonical-prefix aliases (shell_exec → bash_run, etc.).
   allTools.push(...createAliasTools(allTools));
@@ -737,6 +740,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
 
 // Re-import the factories used by registerBuiltinTools so the function above resolves.
 import { FormalToolRegistry } from './tool-registry.js';
+import { createAuthoredExtraTools } from './authored-extra-tools.js';
 import { createTextEditorTools } from './text-editor-tools.js';
 import { createBashTools } from './bash-tools.js';
 import { createLsTools } from './ls-tools.js';
