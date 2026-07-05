@@ -72,11 +72,12 @@ export function AppStudioView({
   onStopBuild,
 }: AppStudioViewProps) {
   const [tab, setTab] = useState<MainTab>('editor');
+  const [seedPrompt, setSeedPrompt] = useState<string | undefined>(undefined);
   const hasProject = tree.length > 0 || Boolean(activeFile) || Boolean(previewUrl);
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <StudioComposer templates={templates} onScaffold={onScaffold} onGenerateWithAI={onGenerateWithAI} onPrompt={onPrompt} busy={busy} workingDir={workingDir} />
+      <StudioComposer templates={templates} onScaffold={onScaffold} onGenerateWithAI={onGenerateWithAI} onPrompt={onPrompt} busy={busy} workingDir={workingDir} seedPrompt={seedPrompt} />
       <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} error={buildError} onStop={onStopBuild} />
       {!hasProject ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
@@ -92,7 +93,7 @@ export function AppStudioView({
               items={DEFAULT_TEMPLATES}
               onSelect={(id) => {
                 const item = DEFAULT_TEMPLATES.find((t) => t.id === id);
-                if (item) onPrompt(`${item.name} — ${item.tagline}`);
+                if (item) setSeedPrompt(`${item.name} — ${item.tagline}`);
               }}
             />
           </div>

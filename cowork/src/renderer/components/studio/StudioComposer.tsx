@@ -25,6 +25,8 @@ export interface StudioComposerProps {
   onPrompt: (text: string) => void;
   busy?: boolean;
   workingDir?: string;
+  /** External seed for the prompt (e.g. picking a template vignette). */
+  seedPrompt?: string;
 }
 
 const SUGGESTIONS = ['une todo app React', 'une API Express CRUD', 'une landing page'];
@@ -58,7 +60,7 @@ function joinPath(base: string, child: string): string {
   return cleanBase ? `${cleanBase}/${child}` : child;
 }
 
-export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onPrompt, busy = false, workingDir = '' }: StudioComposerProps) {
+export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onPrompt, busy = false, workingDir = '', seedPrompt }: StudioComposerProps) {
   const [prompt, setPrompt] = useState('');
   const [template, setTemplate] = useState<StudioTemplateId>('react-ts');
   const [projectName, setProjectName] = useState('app-studio-project');
@@ -100,6 +102,13 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
       setTemplate(suggestion);
     }
   };
+
+  // Seed the prompt from outside (e.g. a template vignette click) — fills the
+  // composer as if the user typed it, so they can review and hit Generate.
+  useEffect(() => {
+    if (seedPrompt && seedPrompt.trim()) updatePrompt(seedPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedPrompt]);
 
   const handleTargetChange = (value: string) => {
     setTargetEdited(true);
