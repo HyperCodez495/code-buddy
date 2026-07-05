@@ -1,0 +1,3 @@
+export interface EditIntent { targetHint?: string; action: string; }
+const TARGET_RE = /(?:dans|in|sur|on)\s+([\w./-]+\.(?:tsx?|jsx?|css|html|json))/i;
+export function parseEditIntent(text: string): EditIntent { const clean = text.trim(); const targetHint = clean.match(TARGET_RE)?.[1]; const lower = clean.toLowerCase(); const verb = lower.includes('supprime') || lower.includes('remove') ? 'remove' : lower.includes('modifie') || lower.includes('change') || lower.includes('update') ? 'update' : lower.includes('corrige') || lower.includes('fix') ? 'fix' : 'add'; return targetHint ? { targetHint, action: verb + ': ' + clean } : { action: verb + ': ' + clean }; }

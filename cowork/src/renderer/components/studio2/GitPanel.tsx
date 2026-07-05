@@ -1,0 +1,6 @@
+import { canCommit, partitionChanges, type GitChange } from './utils/git-status-model.js';
+export interface GitLogEntry { hash: string; subject: string; author?: string; date?: string; }
+export interface GitPanelProps { changes: GitChange[]; message: string; history: GitLogEntry[]; onMessageChange: (message: string) => void; onCommit: () => void; }
+function ChangeList({ title, changes }: { title: string; changes: GitChange[] }) { return <section><h4>{title}</h4><ul>{changes.map((change) => <li key={change.status + ':' + change.path}><code>{change.status}</code> {change.path}</li>)}</ul></section>; }
+export function GitPanel({ changes, message, history, onMessageChange, onCommit }: GitPanelProps) { const groups = partitionChanges(changes); return <section className="studio2-git"><h3>Git</h3><ChangeList title="Staged" changes={groups.staged} /><ChangeList title="Modified" changes={groups.modified} /><ChangeList title="Untracked" changes={groups.untracked} /><textarea value={message} placeholder="Commit message" onChange={(event) => onMessageChange(event.target.value)} /><button type="button" disabled={!canCommit(message, changes)} onClick={onCommit}>Commit</button><ol>{history.map((entry) => <li key={entry.hash}><code>{entry.hash}</code> {entry.subject}</li>)}</ol></section>; }
+export default GitPanel;
