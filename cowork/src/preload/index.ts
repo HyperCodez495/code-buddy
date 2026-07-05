@@ -693,6 +693,69 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: (cwd?: string) => ipcRenderer.invoke('science.status', cwd),
   },
 
+  // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
+  // Channels mirror the main-process register*Ipc handlers under
+  // src/main/studio/*. Note: the file listing handler is `studio.files.tree`.
+  studio: {
+    devServer: {
+      start: (request: { cwd: string; command: string; url: string; timeoutMs?: number }) =>
+        ipcRenderer.invoke('studio.dev.start', request),
+      stop: (pid: number) => ipcRenderer.invoke('studio.dev.stop', pid),
+      status: () => ipcRenderer.invoke('studio.dev.status'),
+      logs: (pid: number, lines?: number) => ipcRenderer.invoke('studio.dev.logs', pid, lines),
+      onLog: (listener: (payload: { pid: number; lines: string[] }) => void): (() => void) => {
+        const wrapped = (
+          _event: Electron.IpcRendererEvent,
+          payload: { pid: number; lines: string[] },
+        ) => listener(payload);
+        ipcRenderer.on('studio.dev.log', wrapped);
+        return () => {
+          ipcRenderer.removeListener('studio.dev.log', wrapped);
+        };
+      },
+    },
+    files: {
+      read: (root: string, relPath: string) => ipcRenderer.invoke('studio.files.read', root, relPath),
+      write: (root: string, relPath: string, content: string) =>
+        ipcRenderer.invoke('studio.files.write', root, relPath, content),
+      list: (root: string) => ipcRenderer.invoke('studio.files.tree', root),
+      create: (root: string, relPath: string) => ipcRenderer.invoke('studio.files.create', root, relPath),
+      rename: (root: string, from: string, to: string) =>
+        ipcRenderer.invoke('studio.files.rename', root, from, to),
+      delete: (root: string, relPath: string) => ipcRenderer.invoke('studio.files.delete', root, relPath),
+    },
+    commands: {
+      run: (request: { cwd: string; command: string; id: string }) =>
+        ipcRenderer.invoke('studio.cmd.run', request),
+      kill: (id: string) => ipcRenderer.invoke('studio.cmd.kill', id),
+      onOutput: (
+        listener: (event: {
+          id: string;
+          stream: 'stdout' | 'stderr' | 'system';
+          line: string;
+          timestamp: string;
+        }) => void,
+      ): (() => void) => {
+        const wrapped = (
+          _event: Electron.IpcRendererEvent,
+          payload: Parameters<typeof listener>[0],
+        ) => listener(payload);
+        ipcRenderer.on('studio.cmd.output', wrapped);
+        return () => {
+          ipcRenderer.removeListener('studio.cmd.output', wrapped);
+        };
+      },
+    },
+    scaffold: {
+      list: () => ipcRenderer.invoke('studio.scaffold.list'),
+      generate: (request: {
+        template: string;
+        targetDir: string;
+        vars?: Record<string, string | boolean>;
+      }) => ipcRenderer.invoke('studio.scaffold.generate', request),
+    },
+  },
+
   // Checkpoint operations
   checkpoint: {
     list: () => ipcRenderer.invoke('checkpoint.list'),
@@ -4823,6 +4886,48 @@ declare global {
       science: {
         listVariants: (cwd?: string) => Promise<unknown>;
         status: (cwd?: string) => Promise<unknown>;
+      };
+      studio: {
+        devServer: {
+          start: (request: {
+            cwd: string;
+            command: string;
+            url: string;
+            timeoutMs?: number;
+          }) => Promise<unknown>;
+          stop: (pid: number) => Promise<unknown>;
+          status: () => Promise<unknown>;
+          logs: (pid: number, lines?: number) => Promise<unknown>;
+          onLog: (listener: (payload: { pid: number; lines: string[] }) => void) => () => void;
+        };
+        files: {
+          read: (root: string, relPath: string) => Promise<unknown>;
+          write: (root: string, relPath: string, content: string) => Promise<unknown>;
+          list: (root: string) => Promise<unknown>;
+          create: (root: string, relPath: string) => Promise<unknown>;
+          rename: (root: string, from: string, to: string) => Promise<unknown>;
+          delete: (root: string, relPath: string) => Promise<unknown>;
+        };
+        commands: {
+          run: (request: { cwd: string; command: string; id: string }) => Promise<unknown>;
+          kill: (id: string) => Promise<unknown>;
+          onOutput: (
+            listener: (event: {
+              id: string;
+              stream: 'stdout' | 'stderr' | 'system';
+              line: string;
+              timestamp: string;
+            }) => void,
+          ) => () => void;
+        };
+        scaffold: {
+          list: () => Promise<unknown>;
+          generate: (request: {
+            template: string;
+            targetDir: string;
+            vars?: Record<string, string | boolean>;
+          }) => Promise<unknown>;
+        };
       };
       checkpoint: {
         list: () => Promise<unknown>;
