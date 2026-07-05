@@ -313,6 +313,52 @@ const WIRING: Record<string, LabsWiring> = {
       right: 'Gate: typecheck + vite build.',
     },
   },
+  NA1: {
+    load: () => import('../drive/AiDrive').then((m) => named(m, 'AiDrive')),
+    props: {
+      items: [
+        { id: 'd1', name: 'Analyse marché Q3.xlsx', kind: 'sheet', createdAt: Date.now() - 1_200_000, sizeBytes: 48_213 },
+        { id: 'd2', name: 'Pitch investisseurs.pptx', kind: 'slide', createdAt: Date.now() - 5_400_000, sizeBytes: 1_843_200 },
+        { id: 'd3', name: 'Rapport concurrence.md', kind: 'doc', createdAt: Date.now() - 86_400_000, sizeBytes: 12_400 },
+        { id: 'd4', name: 'hero-banner.png', kind: 'image', createdAt: Date.now() - 3_600_000, sizeBytes: 542_000 },
+        { id: 'd5', name: 'demo-produit.mp4', kind: 'video', createdAt: Date.now() - 172_800_000, sizeBytes: 8_400_000 },
+        { id: 'd6', name: 'todo-app', kind: 'app', createdAt: Date.now() - 600_000 },
+      ],
+      onOpen: () => {},
+      onDelete: () => {},
+    },
+  },
+  NA2: {
+    load: () => import('../media-gen/MediaGallery').then((m) => named(m, 'MediaGallery')),
+    props: {
+      items: [
+        {
+          id: 'm1',
+          type: 'image',
+          status: 'done',
+          url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Crect width=%22120%22 height=%22120%22 fill=%22%236366f1%22/%3E%3C/svg%3E',
+          prompt: 'Un renard roux dans une forêt brumeuse, aquarelle',
+          model: 'flux',
+          aspect: '1:1',
+          createdAt: Date.now() - 300_000,
+        },
+        { id: 'm2', type: 'image', status: 'generating', prompt: 'Skyline néon cyberpunk de nuit', aspect: '16:9', createdAt: Date.now() - 60_000 },
+        {
+          id: 'm3',
+          type: 'video',
+          status: 'done',
+          url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%2290%22%3E%3Crect width=%22160%22 height=%2290%22 fill=%22%2310a37f%22/%3E%3C/svg%3E',
+          prompt: 'Vagues au coucher du soleil',
+          aspect: '16:9',
+          createdAt: Date.now() - 900_000,
+        },
+        { id: 'm4', type: 'image', status: 'queued', prompt: 'Logo minimaliste marque de café', aspect: '1:1', createdAt: Date.now() - 30_000 },
+        { id: 'm5', type: 'image', status: 'error', prompt: 'Portrait photoréaliste', aspect: '9:16', createdAt: Date.now() - 1_200_000 },
+      ],
+      onSelect: () => {},
+      onRetry: () => {},
+    },
+  },
 };
 
 /**
