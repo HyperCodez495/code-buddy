@@ -16,6 +16,10 @@ import {
   sortStatusItems,
   summarizeStatus,
 } from '../../src/renderer/components/os-panels/os-status-bar-model';
+import {
+  summarizeMissionLayout,
+  describeMissionLayout,
+} from '../../src/renderer/components/os-panels/mission-control-shell-model';
 
 describe('autonomy-dashboard-model', () => {
   it('clampPercent maps value/max into 0..100 and guards bad input', () => {
@@ -69,5 +73,22 @@ describe('os-status-bar-model', () => {
     const summary = summarizeStatus(items);
     expect(summary).toEqual({ ok: 1, warn: 1, error: 1, muted: 1 });
     expect(sortStatusItems(items)).toHaveLength(4);
+  });
+});
+
+describe('mission-control-shell-model', () => {
+  it('summarizes active slots and detects sidebars', () => {
+    const s = summarizeMissionLayout({ header: true, left: true, main: true });
+    expect(s.activeSlots).toEqual(['header', 'left', 'main']);
+    expect(s.hasSidebars).toBe(true);
+
+    const noSide = summarizeMissionLayout({ main: true });
+    expect(noSide.hasSidebars).toBe(false);
+    expect(noSide.columnClass).toContain('grid-cols-1');
+  });
+
+  it('describes the layout, empty frame included', () => {
+    expect(describeMissionLayout({})).toBe('Cadre vide');
+    expect(describeMissionLayout({ header: true, main: true })).toBe('header + main');
   });
 });
