@@ -242,11 +242,28 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
               ))}
             </select>
           </div>
-          <p className="flex items-center text-xs text-muted-foreground">
-            {selectedDesign
-              ? `${selectedDesign.name} — ${selectedDesign.tagline}`
-              : "Choisis un style de marque : l'app générée en reprend couleurs, typo et géométrie."}
-          </p>
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            {selectedDesign ? (
+              <>
+                {selectedDesign.colors && selectedDesign.colors.length > 0 ? (
+                  <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
+                    {selectedDesign.colors.slice(0, 5).map((color, index) => (
+                      <span
+                        key={`${color}-${index}`}
+                        className="h-4 w-4 rounded-sm border border-border"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </span>
+                ) : null}
+                <span className="min-w-0 truncate" title={`${selectedDesign.name} — ${selectedDesign.tagline}`}>
+                  {selectedDesign.name} — {selectedDesign.tagline}
+                </span>
+              </>
+            ) : (
+              "Choisis un style de marque : l'app générée en reprend couleurs, typo et géométrie."
+            )}
+          </div>
         </div>
         <div className="grid gap-2 md:grid-cols-3">
           <input

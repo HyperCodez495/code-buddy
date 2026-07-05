@@ -14,6 +14,8 @@ export interface DesignSystemSummary {
   name: string;
   category: string;
   tagline: string;
+  /** Representative brand palette (hex) for a preview swatch. */
+  colors?: string[];
 }
 
 interface CatalogFile {
