@@ -6,7 +6,7 @@ import { getImageGenerationModel } from '../config/agent-defaults.js';
 import { resolveToolGatewayRoute } from '../agent/tool-gateway-router.js';
 
 export type ImageAspectRatio = 'landscape' | 'square' | 'portrait';
-export type MediaProvider = 'openai' | 'xai' | 'fal';
+export type MediaProvider = 'openai' | 'xai' | 'fal' | 'comfyui';
 
 export interface MediaGenerationRuntime {
   rootDir?: string;
@@ -127,6 +127,12 @@ export async function generateImage(
   const aspect = resolveImageAspect(input.aspectRatio);
   const fetchImpl = runtime.fetch ?? fetch;
   const generatedAt = (runtime.now ?? (() => new Date()))().toISOString();
+
+  // ComfyUI has a workflow-submit/poll/view API, not /images/generations.
+  if (config.provider === 'comfyui') {
+    return generateComfyUIImage(prompt, aspect, config, runtime, generatedAt);
+  }
+
   const size = IMAGE_SIZES[aspect];
   const body: Record<string, unknown> = {
     model: config.model,
@@ -193,6 +199,184 @@ export async function generateImage(
     aspect_ratio: aspect,
     generatedAt,
     ...(revisedPrompt ? { revised_prompt: revisedPrompt } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ComfyUI local image backend (offline, GPU). Distinct from the OpenAI-shaped
+// providers: it submits a node graph to /prompt, polls /history/{id} until the
+// SaveImage node reports outputs, then downloads the PNG from /view. Fail-closed
+// on unreachable server / rejected workflow / timeout.
+// ---------------------------------------------------------------------------
+
+interface ComfyParams {
+  steps: number;
+  cfg: number;
+  sampler: string;
+  scheduler: string;
+}
+
+const COMFY_DIMS: Record<ImageAspectRatio, { width: number; height: number }> = {
+  landscape: { width: 1024, height: 768 },
+  square: { width: 768, height: 768 },
+  portrait: { width: 768, height: 1024 },
+};
+
+/** Sampler/step defaults keyed off the checkpoint family (turbo → few-step). */
+function comfyParamsForModel(model: string): ComfyParams {
+  const m = model.toLowerCase();
+  if (m.includes('turbo') || m.includes('lightning') || m.includes('lcm') || m.includes('hyper')) {
+    return { steps: 4, cfg: 1.0, sampler: 'euler', scheduler: 'sgm_uniform' };
+  }
+  if (m.includes('flux')) {
+    return { steps: 20, cfg: 1.0, sampler: 'euler', scheduler: 'simple' };
+  }
+  return { steps: 20, cfg: 7.0, sampler: 'euler', scheduler: 'normal' };
+}
+
+function buildComfyWorkflow(
+  prompt: string,
+  negative: string,
+  ckpt: string,
+  dims: { width: number; height: number },
+  params: ComfyParams,
+  seed: number,
+): Record<string, unknown> {
+  return {
+    '3': {
+      class_type: 'KSampler',
+      inputs: {
+        seed,
+        steps: params.steps,
+        cfg: params.cfg,
+        sampler_name: params.sampler,
+        scheduler: params.scheduler,
+        denoise: 1.0,
+        model: ['4', 0],
+        positive: ['6', 0],
+        negative: ['7', 0],
+        latent_image: ['5', 0],
+      },
+    },
+    '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: ckpt } },
+    '5': { class_type: 'EmptyLatentImage', inputs: { width: dims.width, height: dims.height, batch_size: 1 } },
+    '6': { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['4', 1] } },
+    '7': { class_type: 'CLIPTextEncode', inputs: { text: negative, clip: ['4', 1] } },
+    '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
+    '9': { class_type: 'SaveImage', inputs: { filename_prefix: 'codebuddy', images: ['8', 0] } },
+  };
+}
+
+interface ComfyImageRef {
+  filename: string;
+  subfolder: string;
+  type: string;
+}
+
+/** First image emitted by any output node in a /history entry, or null. */
+function firstComfyImage(outputs: unknown): ComfyImageRef | null {
+  if (!outputs || typeof outputs !== 'object') return null;
+  for (const node of Object.values(outputs as Record<string, unknown>)) {
+    const images = (node as { images?: unknown }).images;
+    if (Array.isArray(images)) {
+      for (const img of images) {
+        const filename = stringField(img, 'filename');
+        if (filename) {
+          return {
+            filename,
+            subfolder: stringField(img, 'subfolder') ?? '',
+            type: stringField(img, 'type') ?? 'output',
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function comfyDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateComfyUIImage(
+  prompt: string,
+  aspect: ImageAspectRatio,
+  config: ProviderConfig,
+  runtime: MediaGenerationRuntime,
+  generatedAt: string,
+): Promise<ImageGenerateResult> {
+  const fetchImpl = runtime.fetch ?? fetch;
+  const envSource = runtime.env ?? process.env;
+  const now = runtime.now ?? (() => new Date());
+  const base = config.baseUrl;
+  const negative = (env(envSource, 'CODEBUDDY_IMAGE_NEGATIVE') ?? 'blurry, low quality, deformed, watermark').trim();
+  const params = comfyParamsForModel(config.model);
+  const dims = COMFY_DIMS[aspect];
+  const seed = Math.floor(now().getTime() % 2_000_000_000);
+  const clientId = runtime.createId?.() ?? randomUUID();
+  const workflow = buildComfyWorkflow(prompt, negative, config.model, dims, params, seed);
+
+  const submit = await postJson(fetchImpl, joinUrl(base, '/prompt'), {
+    headers: { 'Content-Type': 'application/json' },
+    body: { prompt: workflow, client_id: clientId },
+  });
+  const promptId = stringField(submit, 'prompt_id');
+  if (!promptId) {
+    const errNode = submit.error ?? submit.node_errors;
+    throw new Error(`ComfyUI rejected the workflow${errNode ? `: ${JSON.stringify(errNode).slice(0, 300)}` : ' (no prompt_id)'}`);
+  }
+
+  const timeoutMs = Number(env(envSource, 'CODEBUDDY_COMFYUI_TIMEOUT_MS') ?? '300000');
+  const intervalMs = Number(env(envSource, 'CODEBUDDY_COMFYUI_POLL_MS') ?? '1500');
+  const deadline = now().getTime() + (Number.isFinite(timeoutMs) ? timeoutMs : 300000);
+
+  let image: ComfyImageRef | null = null;
+  for (;;) {
+    const history = await getJson(fetchImpl, joinUrl(base, `/history/${promptId}`), {
+      Accept: 'application/json',
+    });
+    const entry = history[promptId] as { outputs?: unknown; status?: { status_str?: string } } | undefined;
+    if (entry?.outputs) {
+      image = firstComfyImage(entry.outputs);
+      if (image) break;
+      throw new Error(
+        `ComfyUI finished without an image (status: ${entry.status?.status_str ?? 'unknown'})`,
+      );
+    }
+    if (now().getTime() >= deadline) {
+      throw new Error(`ComfyUI generation timed out after ${timeoutMs}ms (prompt ${promptId})`);
+    }
+    await comfyDelay(Number.isFinite(intervalMs) ? intervalMs : 1500);
+  }
+
+  const viewUrl = joinUrl(
+    base,
+    `/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(image.subfolder)}&type=${encodeURIComponent(image.type)}`,
+  );
+  const viewResponse = await fetchImpl(viewUrl);
+  if (!viewResponse.ok) {
+    throw new Error(`ComfyUI /view returned ${viewResponse.status} for ${image.filename}`);
+  }
+  const bytes = Buffer.from(await viewResponse.arrayBuffer());
+  const outputPath = await saveGeneratedAsset(bytes, {
+    rootDir: runtime.rootDir,
+    dirName: 'images',
+    prefix: 'image',
+    extension: 'png',
+    createId: runtime.createId,
+  });
+
+  return {
+    kind: 'image_generate_result',
+    success: true,
+    image: outputPath,
+    outputPath,
+    mediaPath: `MEDIA:${outputPath}`,
+    provider: 'comfyui',
+    model: config.model,
+    prompt,
+    aspect_ratio: aspect,
+    generatedAt,
   };
 }
 
@@ -454,6 +638,19 @@ async function materializeVideoResult(
 
 function resolveImageProvider(envSource: NodeJS.ProcessEnv): ProviderConfig {
   const requested = (envSource.CODEBUDDY_IMAGE_PROVIDER ?? '').trim().toLowerCase();
+  // Local ComfyUI backend (offline, GPU) — no API key, workflow-based API.
+  if (requested === 'comfyui') {
+    const baseUrl = (envSource.COMFYUI_URL
+      ?? envSource.CODEBUDDY_IMAGE_BASE_URL
+      ?? 'http://127.0.0.1:8188').trim().replace(/\/+$/, '');
+    const model = (envSource.CODEBUDDY_IMAGE_MODEL
+      ?? envSource.COMFYUI_CHECKPOINT
+      ?? 'sd_turbo.safetensors').trim();
+    if (!baseUrl) {
+      throw new Error('No ComfyUI base URL configured (set COMFYUI_URL)');
+    }
+    return { provider: 'comfyui', model, baseUrl, apiKey: '' };
+  }
   const provider: MediaProvider = requested === 'xai' ? 'xai' : 'openai';
   const baseUrl = (envSource.CODEBUDDY_IMAGE_BASE_URL
     ?? (provider === 'xai' ? envSource.XAI_BASE_URL : envSource.OPENAI_BASE_URL)
