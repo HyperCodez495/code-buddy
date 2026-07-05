@@ -1,7 +1,8 @@
-import { Palette, Send, Sparkles, Wand2 } from 'lucide-react';
+import { LayoutGrid, Palette, Send, Sparkles, Wand2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { suggestTemplate, type StudioTemplateId } from './utils/studio-intent.js';
 import { designSystemsByCategory, findDesignSystem } from './design-systems-catalog.js';
+import { DesignSystemGallery } from './DesignSystemGallery.js';
 
 export interface TemplateCard {
   id: StudioTemplateId;
@@ -66,6 +67,7 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
   const [targetDir, setTargetDir] = useState('app-studio-project');
   const [targetEdited, setTargetEdited] = useState(false);
   const [designSystem, setDesignSystem] = useState('');
+  const [showGallery, setShowGallery] = useState(false);
   const selectedTemplate = useMemo(
     () => templates.find((item) => item.id === template) ?? templates[0],
     [template, templates],
@@ -241,6 +243,16 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
                 </optgroup>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setShowGallery(true)}
+              disabled={busy}
+              title="Parcourir les 150 styles avec aperçu"
+              className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Parcourir les styles"
+            >
+              <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             {selectedDesign ? (
@@ -311,6 +323,12 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
           {targetDir ? <span className="text-xs text-muted-foreground">Racine prévue: {dirname(targetDir)}</span> : null}
         </div>
       </div>
+      <DesignSystemGallery
+        open={showGallery}
+        selectedId={designSystem}
+        onSelect={setDesignSystem}
+        onClose={() => setShowGallery(false)}
+      />
     </section>
   );
 }
