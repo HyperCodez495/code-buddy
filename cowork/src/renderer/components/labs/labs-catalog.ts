@@ -163,6 +163,156 @@ const WIRING: Record<string, LabsWiring> = {
       onExit: () => {},
     },
   },
+  NV1: {
+    load: () => import('../viz/Sparkline').then((m) => named(m, 'Sparkline')),
+    props: { values: [12, 18, 16, 24, 31, 38, 43, 57], width: 220, height: 72, tone: 'success' },
+  },
+  NV2: {
+    load: () => import('../viz/BarChart').then((m) => named(m, 'BarChart')),
+    props: {
+      data: [
+        { label: 'Recherche', value: 42 },
+        { label: 'Code', value: 68 },
+        { label: 'Tests', value: 54 },
+        { label: 'Revue', value: 31 },
+      ],
+      horizontal: true,
+    },
+  },
+  NV3: {
+    load: () => import('../viz/Donut').then((m) => named(m, 'Donut')),
+    props: {
+      segments: [
+        { label: 'Terminé', value: 62, tone: 'success' },
+        { label: 'En cours', value: 24, tone: 'warning' },
+        { label: 'Bloqué', value: 8, tone: 'danger' },
+        { label: 'Planifié', value: 18, tone: 'muted' },
+      ],
+    },
+  },
+  NV4: {
+    load: () => import('../viz/Heatmap').then((m) => named(m, 'Heatmap')),
+    props: {
+      rows: ['Agent', 'Tools', 'Cowork', 'Fleet'],
+      cols: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven'],
+      cells: [
+        [12, 18, 21, 28, 35],
+        [8, 14, 19, 25, 29],
+        [4, 11, 16, 22, 30],
+        [6, 9, 15, 20, 27],
+      ],
+    },
+  },
+  NV5: {
+    load: () => import('../viz/TimelineChart').then((m) => named(m, 'TimelineChart')),
+    props: {
+      events: [
+        { t: '2026-07-01T09:00:00Z', label: 'Brief', tone: 'primary' },
+        { t: '2026-07-01T11:30:00Z', label: 'Implémentation', tone: 'warning' },
+        { t: '2026-07-01T14:00:00Z', label: 'Tests', tone: 'success' },
+        { t: '2026-07-01T16:45:00Z', label: 'Gate', tone: 'success' },
+      ],
+    },
+  },
+  NV6: {
+    load: () => import('../viz/StackedBar').then((m) => named(m, 'StackedBar')),
+    props: {
+      parts: [
+        { label: 'Pass', value: 74, tone: 'success' },
+        { label: 'Warn', value: 18, tone: 'warning' },
+        { label: 'Fail', value: 5, tone: 'danger' },
+        { label: 'Skip', value: 3, tone: 'muted' },
+      ],
+    },
+  },
+  NV7: {
+    load: () => import('../viz/GaugeMeter').then((m) => named(m, 'GaugeMeter')),
+    props: { value: 78, max: 100, tone: 'warning' },
+  },
+  ND1: {
+    load: () => import('../deliverables/SlideDeckPreview').then((m) => named(m, 'SlideDeckPreview')),
+    props: {
+      slides: [
+        { title: 'Code Buddy Labs', bullets: ['Galerie vivante', 'Surfaces Genspark', 'Données réalistes'] },
+        { title: 'Impact produit', bullets: ['Découverte plus rapide', 'Prévisualisation claire', 'Câblage Fable simplifié'] },
+        { title: 'Prochain gate', bullets: ['Screenshot GUI', 'Validation UX', 'Merge contrôlé'] },
+      ],
+      activeIndex: 1,
+    },
+  },
+  ND2: {
+    load: () => import('../deliverables/SheetPreview').then((m) => named(m, 'SheetPreview')),
+    props: {
+      columns: ['Tranche', 'Catégorie', 'Statut', 'Score'],
+      rows: [
+        ['NV1', 'UI', 'câblé', 92],
+        ['ND1', 'Livrable', 'câblé', 88],
+        ['NA2', 'Média', 'en test', 81],
+        ['NM1', 'Agent', 'stable', 95],
+        ['NG2', 'Shell', 'review', 76],
+      ],
+    },
+  },
+  ND3: {
+    load: () => import('../deliverables/DocPreview').then((m) => named(m, 'DocPreview')),
+    props: {
+      blocks: [
+        { type: 'h1', text: 'Rapport Labs Genspark' },
+        { type: 'p', text: 'La galerie expose les nouvelles surfaces avec des jeux de données proches d’un run réel.' },
+        { type: 'list', items: ['Viz scalables', 'Livrables prévisualisables', 'Panneaux OS prêts à brancher'] },
+      ],
+    },
+  },
+  NA3: {
+    load: () => import('../media-gen/MediaGenComposer').then((m) => named(m, 'MediaGenComposer')),
+    props: { mode: 'image', prompt: 'Un copilote terminal lumineux qui orchestre une flotte IA', onPromptChange: () => {}, onSubmit: () => {} },
+  },
+  NA4: {
+    load: () => import('../template-gallery/TemplateGallery').then((m) => named(m, 'TemplateGallery')),
+    props: {},
+  },
+  NM1: {
+    load: () => import('../os-panels/AutonomyDashboard').then((m) => named(m, 'AutonomyDashboard')),
+    props: { posture: 'dontAsk', running: 3, queued: 7, costUsd: 12.48, capUsd: 50, turns: 128, maxTurns: 400 },
+  },
+  NM2: {
+    load: () => import('../os-panels/KnowledgeGraphView').then((m) => named(m, 'KnowledgeGraphView')),
+    props: {
+      nodes: [
+        { id: 'lesson-verify', type: 'lesson', label: 'Vérifier avant clôture', confidence: 0.96 },
+        { id: 'decision-yolo', type: 'decision', label: 'YOLO borné par guardrails', confidence: 0.88 },
+        { id: 'fact-fleet', type: 'fact', label: 'Fleet expose peer.chat-session', confidence: 0.92 },
+        { id: 'discovery-labs', type: 'discovery', label: 'Labs consomme WIRING + slices', confidence: 0.84 },
+        { id: 'lesson-store', type: 'lesson', label: 'Renderer props-driven uniquement', confidence: 0.94 },
+      ],
+      edges: [
+        { from: 'lesson-verify', to: 'discovery-labs', kind: 'supports' },
+        { from: 'decision-yolo', to: 'fact-fleet', kind: 'constrains' },
+        { from: 'lesson-store', to: 'discovery-labs', kind: 'applies' },
+        { from: 'fact-fleet', to: 'discovery-labs', kind: 'context' },
+      ],
+    },
+  },
+  NG1: {
+    load: () => import('../os-panels/OsStatusBar').then((m) => named(m, 'OsStatusBar')),
+    props: {
+      items: [
+        { label: 'API', value: 'ok', tone: 'ok' },
+        { label: 'Budget', value: '$12.48/$50', tone: 'ok' },
+        { label: 'Tests', value: '1 warn', tone: 'warn' },
+        { label: 'Fleet', value: '3 pairs', tone: 'muted' },
+      ],
+    },
+  },
+  NG2: {
+    load: () => import('../os-panels/MissionControlShell').then((m) => named(m, 'MissionControlShell')),
+    props: {
+      header: null,
+      left: null,
+      main: 'Mission principale: câbler Labs avec données de démonstration.',
+      right: 'Gate: typecheck + vite build.',
+    },
+  },
 };
 
 /**
