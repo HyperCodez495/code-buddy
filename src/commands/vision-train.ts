@@ -30,6 +30,7 @@ interface VisionTrainOpts {
   model?: string;
   minConfidence?: string;
   out?: string;
+  ckg?: boolean;
 }
 
 export function createVisionTrainCommand(): Command {
@@ -43,6 +44,7 @@ export function createVisionTrainCommand(): Command {
     .option('--provider <name>', 'generate mode: image provider (comfyui|openai|xai)')
     .option('--model <ckpt>', 'generate mode: image model/checkpoint')
     .option('--min-confidence <n>', 'YOLO min confidence', '0.35')
+    .option('--ckg', 'publish weak spots to the Collective Knowledge Graph (needs CODEBUDDY_COLLECTIVE_MEMORY=true)')
     .option('--out <dir>', 'report output directory', '.codebuddy/vision-train')
     .action(async (opts: VisionTrainOpts) => {
       // ── OPT-IN gate (default OFF = zero behaviour change) ──────────────────
@@ -149,6 +151,26 @@ export function createVisionTrainCommand(): Command {
       logger.info(`Report → ${mdPath}`);
       if (result.failures.length > 0) {
         logger.warn(`${result.failures.length} scene(s) failed to produce an image/perception (excluded from the benchmark).`);
+      }
+
+      // Optional: let the robot's brain RETAIN its weaknesses across runs.
+      if (opts.ckg) {
+        if (process.env.CODEBUDDY_COLLECTIVE_MEMORY !== 'true') {
+          logger.warn('--ckg ignored: set CODEBUDDY_COLLECTIVE_MEMORY=true to publish to the Collective Knowledge Graph.');
+        } else {
+          try {
+            const { getCollectiveKnowledgeGraph } = await import('../memory/collective-knowledge-graph.js');
+            const { publishBenchmark } = await import('../vision-train/ckg-publish.js');
+            const wrote = await publishBenchmark(
+              result.benchmark,
+              { source, ...(process.env.CODEBUDDY_YOLO_MODEL ? { model: process.env.CODEBUDDY_YOLO_MODEL } : {}) },
+              getCollectiveKnowledgeGraph(),
+            );
+            logger.info(`Published ${wrote} node(s) to the Collective Knowledge Graph.`);
+          } catch (err) {
+            logger.warn(`CKG publish failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
       }
     });
   return cmd;
