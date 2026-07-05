@@ -84,6 +84,84 @@
     --color-error: #db7676;
   }
 
+  /* Genspark theme — electric violet/indigo on deep space */
+  .genspark {
+    --color-background: #0d0b1f;
+    --color-background-secondary: #141129;
+    --color-surface: #1c1838;
+    --color-surface-hover: #252048;
+    --color-surface-active: #2e2858;
+    --color-surface-muted: #17142e;
+    --color-border: #332d5c;
+    --color-border-muted: #26214a;
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+    --color-mcp: #a78bfa;
+    --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 4px 16px rgba(20, 10, 50, 0.5), 0 0 0 1px rgba(124, 92, 255, 0.12);
+    --shadow-elevated: 0 20px 48px rgba(10, 5, 30, 0.6), 0 0 24px rgba(124, 92, 255, 0.2);
+    --color-accent: #7c5cff;
+    --color-accent-hover: #8f72ff;
+    --color-accent-muted: rgba(124, 92, 255, 0.2);
+    --color-text-primary: #ece9ff;
+    --color-text-secondary: #b4a9e0;
+    --color-text-muted: #7d72a8;
+    --color-success: #34d399;
+    --color-warning: #fbbf24;
+    --color-error: #f87171;
+  }
+
+  /* Codex theme — OpenAI teal-green on GitHub slate */
+  .codex {
+    --color-background: #0d1117;
+    --color-background-secondary: #161b22;
+    --color-surface: #1c2128;
+    --color-surface-hover: #262c36;
+    --color-surface-active: #30363d;
+    --color-surface-muted: #161b22;
+    --color-border: #30363d;
+    --color-border-muted: #21262d;
+    --color-border-subtle: rgba(255, 255, 255, 0.05);
+    --color-mcp: #2dd4bf;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --shadow-elevated: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(16, 163, 127, 0.15);
+    --color-accent: #10a37f;
+    --color-accent-hover: #1fb894;
+    --color-accent-muted: rgba(16, 163, 127, 0.18);
+    --color-text-primary: #e6edf3;
+    --color-text-secondary: #9da7b3;
+    --color-text-muted: #6e7681;
+    --color-success: #10a37f;
+    --color-warning: #d29922;
+    --color-error: #f85149;
+  }
+
+  /* Anthropic theme — Claude cream + terracotta (light) */
+  .anthropic {
+    --color-background: #faf9f5;
+    --color-background-secondary: #f0eee6;
+    --color-surface: #ffffff;
+    --color-surface-hover: #f5f3ee;
+    --color-surface-active: #ebe8e0;
+    --color-surface-muted: #f5f3ee;
+    --color-border: #e3ded3;
+    --color-border-muted: #efece4;
+    --color-border-subtle: rgba(40, 30, 20, 0.05);
+    --color-mcp: #d4a27f;
+    --shadow-soft: 0 1px 3px rgba(60, 50, 40, 0.06);
+    --shadow-card: 0 2px 6px rgba(60, 50, 40, 0.06), 0 1px 2px rgba(60, 50, 40, 0.03);
+    --shadow-elevated: 0 12px 28px rgba(60, 50, 40, 0.12);
+    --color-accent: #cc785c;
+    --color-accent-hover: #b8664a;
+    --color-accent-muted: rgba(204, 120, 92, 0.14);
+    --color-text-primary: #2d2a26;
+    --color-text-secondary: #6b6560;
+    --color-text-muted: #9b938a;
+    --color-success: #10a37f;
+    --color-warning: #d97706;
+    --color-error: #ef4444;
+  }
+
   * {
     @apply border-border;
   }

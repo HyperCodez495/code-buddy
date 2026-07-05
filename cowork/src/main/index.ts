@@ -899,11 +899,12 @@ function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
   if (theme === 'system') {
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   }
-  return theme;
+  // Named custom themes map to a dark/light base for native chrome.
+  return theme === 'light' || theme === 'anthropic' ? 'light' : 'dark';
 }
 
 function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme === 'system' ? 'system' : resolveEffectiveTheme(theme);
 }
 
 function createWindow() {
@@ -5788,18 +5789,28 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'settings.update':
-      if (
-        event.payload.theme === 'dark' ||
-        event.payload.theme === 'light' ||
-        event.payload.theme === 'system'
-      ) {
-        const nextTheme = event.payload.theme as AppTheme;
-        configStore.update({ theme: nextTheme });
-        applyNativeThemePreference(nextTheme);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          const effectiveTheme = resolveEffectiveTheme(nextTheme);
-          mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
-        }
+      {
+        const KNOWN_THEMES: AppTheme[] = [
+          'dark',
+          'light',
+          'system',
+          'open-cowork',
+          'genspark',
+          'codex',
+          'anthropic',
+        ];
+        const themeVal = event.payload.theme as AppTheme | undefined;
+        if (themeVal && KNOWN_THEMES.includes(themeVal)) {
+          configStore.update({ theme: themeVal });
+          // Named custom themes map to a dark/light base for the native window chrome.
+          const lightThemes: AppTheme[] = ['light', 'anthropic'];
+          const chromeBase: AppTheme =
+            themeVal === 'system' ? 'system' : lightThemes.includes(themeVal) ? 'light' : 'dark';
+          applyNativeThemePreference(chromeBase);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            const effectiveTheme = resolveEffectiveTheme(chromeBase);
+            mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
+          }
         sendToRenderer({
           type: 'config.status',
           payload: {
@@ -5807,6 +5818,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
             config: configStore.getAll(),
           },
         });
+        }
       }
       if (
         event.payload.memoryStrategy === 'auto' ||

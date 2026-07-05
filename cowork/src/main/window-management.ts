@@ -73,11 +73,12 @@ export function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
   if (theme === 'system') {
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   }
-  return theme;
+  // Named custom themes map to a dark/light base for native chrome.
+  return theme === 'light' || theme === 'anthropic' ? 'light' : 'dark';
 }
 
 export function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme === 'system' ? 'system' : resolveEffectiveTheme(theme);
 }
 
 export async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500): Promise<boolean> {

@@ -54,7 +54,14 @@ export type ProviderType =
   | 'vllm'
   | 'mistral';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system';
+export type AppTheme =
+  | 'dark'
+  | 'light'
+  | 'system'
+  | 'open-cowork'
+  | 'genspark'
+  | 'codex'
+  | 'anthropic';
 export type MemoryStrategy = 'auto' | 'manual' | 'rolling';
 export type ProviderProfileKey =
   | 'chatgpt'
@@ -462,7 +469,15 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+const VALID_THEMES: AppTheme[] = [
+  'dark',
+  'light',
+  'system',
+  'open-cowork',
+  'genspark',
+  'codex',
+  'anthropic',
+];
 const VALID_MEMORY_STRATEGIES: MemoryStrategy[] = ['auto', 'manual', 'rolling'];
 
 function isProviderType(value: unknown): value is ProviderType {

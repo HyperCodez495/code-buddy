@@ -1881,7 +1881,14 @@ export type ProviderType =
   | 'vllm'
   | 'mistral';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system' | 'open-cowork';
+export type AppTheme =
+  | 'dark'
+  | 'light'
+  | 'system'
+  | 'open-cowork'
+  | 'genspark'
+  | 'codex'
+  | 'anthropic';
 export type MemoryStrategy = 'auto' | 'manual' | 'rolling';
 export type ProviderProfileKey =
   | 'chatgpt'

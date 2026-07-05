@@ -55,10 +55,9 @@ export function TopMenuBar() {
   };
 
   const toggleTheme = () => {
-    const next =
-      settings.theme === 'light' ? 'dark' : 
-      settings.theme === 'dark' ? 'open-cowork' : 
-      settings.theme === 'open-cowork' ? 'system' : 'light';
+    const cycle = ['light', 'dark', 'open-cowork', 'genspark', 'codex', 'anthropic', 'system'] as const;
+    const idx = cycle.indexOf(settings.theme as (typeof cycle)[number]);
+    const next = cycle[(idx + 1) % cycle.length];
     updateSettings({ theme: next });
   };
 
@@ -94,7 +93,7 @@ export function TopMenuBar() {
   };
 
   return (
-    <div ref={menuRef} className="flex items-center bg-surface border-b border-border-subtle h-10 px-2 gap-1 shrink-0 z-[100] relative">
+    <div ref={menuRef} className="flex items-center bg-surface border-b border-border-subtle h-10 px-2 gap-1 shrink-0 z-30 relative">
       <div className="font-medium text-sm px-3 text-text-primary mr-2 flex items-center gap-2 cursor-default">
         <span className="text-accent">★</span> {APP_NAME}
       </div>
