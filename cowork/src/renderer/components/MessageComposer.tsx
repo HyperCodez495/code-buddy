@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, FileSearch, Plus, Send, Square, Target, Trash2, Pencil, X, Terminal } from 'lucide-react';
+import { Clock, FileSearch, Paperclip, Send, Square, Target, Trash2, Pencil, X, Terminal } from 'lucide-react';
 import { MentionAutocomplete, type MentionItem } from './MentionAutocomplete';
 import { SlashCommandPalette, type SlashCommandItem } from './SlashCommandPalette';
 import { MicButton } from './MicButton';
@@ -81,7 +81,7 @@ export function MessageComposer(props: MessageComposerProps) {
       <div className="max-w-3xl mx-auto px-4 w-full">
         <form
           onSubmit={props.handleSubmit}
-          className="relative w-full bg-white dark:bg-[#2F2F2F] rounded-3xl shadow-sm border border-black/5 dark:border-white/5"
+          className="relative w-full bg-surface rounded-3xl shadow-sm border border-border-subtle"
         >
           {props.isDragging && (
             <div className="absolute inset-0 z-10 rounded-3xl border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
@@ -214,7 +214,7 @@ export function MessageComposer(props: MessageComposerProps) {
                 className="w-9 h-9 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                 title={t('welcome.attachFiles')}
               >
-                <Plus className="w-5 h-5" />
+                <Paperclip className="w-5 h-5" />
               </button>
 
             <button
