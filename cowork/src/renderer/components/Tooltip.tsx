@@ -68,7 +68,7 @@ export function Tooltip({
         createPortal(
           <span
             role="tooltip"
-            className="pointer-events-none fixed z-[9999] whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-medium leading-none text-white shadow-lg ring-1 ring-white/10 dark:bg-neutral-700"
+            className="pointer-events-none fixed z-[9999] whitespace-nowrap rounded-md bg-background px-2 py-1 text-[11px] font-medium leading-none text-white shadow-lg ring-1 ring-white/10 dark:bg-neutral-700"
             style={{ left: coords.x, top: coords.y, transform: TRANSFORM[side] }}
           >
             {label}

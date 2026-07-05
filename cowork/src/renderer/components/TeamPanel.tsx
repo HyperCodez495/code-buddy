@@ -369,7 +369,7 @@ export function TeamPanel() {
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className={`text-[9px] uppercase tracking-widest px-1.5 py-[1px] rounded ${
-                          task.status === 'pending' ? 'bg-border-muted text-slate-300' :
+                          task.status === 'pending' ? 'bg-border-muted text-secondary' :
                           task.status === 'in_progress' ? 'bg-sky-900/50 text-text-secondary border border-border-muted' :
                           task.status === 'completed' ? 'bg-emerald-900/30 text-success' :
                           'bg-rose-900/30 text-error'
