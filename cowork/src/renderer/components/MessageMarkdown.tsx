@@ -2,17 +2,43 @@ import { memo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import { CodeBlock } from './message/CodeBlock';
 
 // Hoisted to module scope to avoid re-creating arrays on every render
 const REMARK_PLUGINS = [remarkMath, [remarkGfm, { singleTilde: false }]] as const;
-// rehypeKatex must run BEFORE rehypeSanitize so that KaTeX output is generated
-// first, then sanitized — the reverse order strips KaTeX markup before it renders.
+
+// rehypeKatex must run BEFORE rehypeSanitize so KaTeX output is generated first.
+// BUT the default (github) sanitize schema strips KaTeX's MathML tags, `className`
+// and inline `style` — which breaks every rendered formula. Extend the schema to
+// whitelist KaTeX's HTML+MathML output while keeping the rest sanitized.
+const KATEX_SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    'math', 'semantics', 'annotation', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext',
+    'msup', 'msub', 'msubsup', 'mfrac', 'msqrt', 'mroot', 'mtable', 'mtr', 'mtd',
+    'munder', 'mover', 'munderover', 'mspace', 'mpadded', 'mphantom', 'menclose',
+    'mstyle', 'svg', 'path', 'line', 'g',
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [
+      ...(defaultSchema.attributes?.['*'] ?? []),
+      'className', 'style', 'ariaHidden', 'aria-hidden',
+    ],
+    math: ['xmlns', 'display'],
+    annotation: ['encoding'],
+    svg: ['xmlns', 'width', 'height', 'viewBox', 'preserveAspectRatio', 'style'],
+    path: ['d'],
+    line: ['x1', 'y1', 'x2', 'y2', 'stroke', 'strokeWidth', 'style'],
+  },
+};
+
 const REHYPE_PLUGINS = [
   [rehypeKatex, { throwOnError: false, strict: false }],
-  rehypeSanitize,
+  [rehypeSanitize, KATEX_SANITIZE_SCHEMA],
 ] as const;
 
 // Default code rendering for EVERY MessageMarkdown context (ThinkingBlock,
