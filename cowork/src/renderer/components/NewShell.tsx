@@ -17,10 +17,14 @@ import { ActivityPane } from './ActivityPane';
 import { PlanPanel } from './PlanPanel';
 import { FileActivityPanel } from './FileActivityPanel';
 import { HomeView } from './HomeView';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { AppStudioView } from './studio/AppStudioView';
 import { useAppStudio } from './studio/use-app-studio';
 import { createStudioApis } from './studio/studio-api-bridge';
+import type { StudioScaffoldRequest } from './studio/StudioComposer';
+import { buildAiGenerationPrompt } from './studio/studio-ai-generation';
+import { useIPC } from '../hooks/useIPC';
+import { getInitialSessionTitle } from '../../shared/session-title';
 import { MissionControlView } from './os/MissionControlView';
 import { LabsGallery } from './labs/LabsGallery';
 
@@ -130,7 +134,28 @@ function AdvancedLauncher() {
 function StudioView() {
   const apis = useMemo(() => createStudioApis(), []);
   const { viewProps } = useAppStudio({ apis });
-  return <AppStudioView {...viewProps} />;
+  const { startSession } = useIPC();
+  const setActiveSession = useAppStore((st) => st.setActiveSession);
+  const setPrimaryView = useAppStore((st) => st.setPrimaryView);
+  const workingDir = useAppStore((st) => st.workingDir);
+
+  // AI generation: start a project-scoped agent session seeded to read the chosen
+  // design system and write a complete branded app, then jump to chat to watch it
+  // (the Flight Plan panel fills with the generation steps live).
+  const onGenerateWithAI = useCallback(
+    async (request: StudioScaffoldRequest) => {
+      const prompt = buildAiGenerationPrompt(request);
+      const cwd = request.targetDir?.trim() || workingDir || undefined;
+      const session = await startSession(getInitialSessionTitle(request.prompt), prompt, cwd);
+      if (session?.id) {
+        setActiveSession(session.id);
+        setPrimaryView('chat');
+      }
+    },
+    [startSession, setActiveSession, setPrimaryView, workingDir],
+  );
+
+  return <AppStudioView {...viewProps} onGenerateWithAI={onGenerateWithAI} />;
 }
 
 export function NewShell() {

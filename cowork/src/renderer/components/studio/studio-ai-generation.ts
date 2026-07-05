@@ -1,0 +1,45 @@
+/**
+ * Builds the seeded prompt for App Studio's "Générer avec IA" mode.
+ *
+ * Instead of a static template scaffold, AI generation starts a project-scoped
+ * agent session (cwd = target dir) with this prompt: the agent reads the chosen
+ * design system's guidance via the `design_system` tool and writes a complete,
+ * branded custom app with its file tools. The "avoid dangerous shell" guidance
+ * keeps the turn away from hard-blocked commands (rm/chmod/curl/sh -c…) that
+ * would otherwise stall a headless turn.
+ */
+
+import type { StudioScaffoldRequest } from './StudioComposer.js';
+import { findDesignSystem } from './design-systems-catalog.js';
+
+export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
+  const lines: string[] = [];
+  lines.push(`Génère une application web complète et fonctionnelle : ${req.prompt}`);
+  lines.push('');
+
+  if (req.designSystem) {
+    const ds = findDesignSystem(req.designSystem);
+    const name = ds?.name ?? req.designSystem;
+    lines.push(
+      `Applique fidèlement le système de design « ${name} ». AVANT d'écrire le CSS, appelle ` +
+        `l'outil \`design_system\` avec action="get" et id="${req.designSystem}" pour lire sa ` +
+        `guidance (couleurs exactes, typographie, géométrie, ombres), puis respecte-la partout dans l'interface.`,
+    );
+    lines.push('');
+  }
+
+  lines.push('Contraintes STRICTES :');
+  lines.push(
+    "- N'utilise PAS l'outil bash / shell / terminal. Zéro commande. Crée l'app UNIQUEMENT en écrivant des fichiers.",
+  );
+  lines.push(
+    "- Utilise `create_file` pour créer chaque fichier (il crée le fichier s'il n'existe pas), puis `str_replace` / `write_file` pour éditer. Écris directement dans le dossier de travail courant.",
+  );
+  lines.push(
+    "- Stack : HTML/CSS/JS statique (index.html + style.css + app.js) qui s'ouvre directement dans un navigateur, SANS build ni installation. (Pas de framework sauf demande explicite.)",
+  );
+  lines.push("- L'application doit être fonctionnelle ET soignée visuellement selon la guidance de design.");
+  lines.push("- Termine par un court résumé de ce que tu as créé et comment ouvrir l'app (ouvrir index.html).");
+
+  return lines.join('\n');
+}

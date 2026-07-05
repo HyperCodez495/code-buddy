@@ -22,6 +22,7 @@ export interface AppStudioViewProps {
   busy?: boolean;
   workingDir?: string;
   onScaffold: (request: StudioScaffoldRequest) => void;
+  onGenerateWithAI?: (request: StudioScaffoldRequest) => void;
   onPrompt: (text: string) => void;
   onOpenFile: (path: string) => void;
   onChangeFileContent: (value: string) => void;
@@ -53,6 +54,7 @@ export function AppStudioView({
   busy = false,
   workingDir,
   onScaffold,
+  onGenerateWithAI,
   onPrompt,
   onOpenFile,
   onChangeFileContent,
@@ -72,7 +74,7 @@ export function AppStudioView({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <StudioComposer templates={templates} onScaffold={onScaffold} onPrompt={onPrompt} busy={busy} workingDir={workingDir} />
+      <StudioComposer templates={templates} onScaffold={onScaffold} onGenerateWithAI={onGenerateWithAI} onPrompt={onPrompt} busy={busy} workingDir={workingDir} />
       <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} error={buildError} onStop={onStopBuild} />
       {!hasProject ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">

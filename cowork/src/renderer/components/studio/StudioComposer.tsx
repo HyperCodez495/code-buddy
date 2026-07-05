@@ -1,4 +1,4 @@
-import { Palette, Send, Wand2 } from 'lucide-react';
+import { Palette, Send, Sparkles, Wand2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { suggestTemplate, type StudioTemplateId } from './utils/studio-intent.js';
 import { designSystemsByCategory, findDesignSystem } from './design-systems-catalog.js';
@@ -20,6 +20,7 @@ export interface StudioScaffoldRequest {
 export interface StudioComposerProps {
   templates: TemplateCard[];
   onScaffold: (request: StudioScaffoldRequest) => void;
+  onGenerateWithAI?: (request: StudioScaffoldRequest) => void;
   onPrompt: (text: string) => void;
   busy?: boolean;
   workingDir?: string;
@@ -56,7 +57,7 @@ function joinPath(base: string, child: string): string {
   return cleanBase ? `${cleanBase}/${child}` : child;
 }
 
-export function StudioComposer({ templates, onScaffold, onPrompt, busy = false, workingDir = '' }: StudioComposerProps) {
+export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onPrompt, busy = false, workingDir = '' }: StudioComposerProps) {
   const [prompt, setPrompt] = useState('');
   const [template, setTemplate] = useState<StudioTemplateId>('react-ts');
   const [projectName, setProjectName] = useState('app-studio-project');
@@ -136,6 +137,22 @@ export function StudioComposer({ templates, onScaffold, onPrompt, busy = false, 
     });
   };
 
+  // AI generation is lighter: it only needs a description + a destination folder
+  // (the agent generates freely, no template variables required).
+  const canGenerateAI = Boolean(prompt.trim() && targetDir.trim() && !busy && onGenerateWithAI);
+
+  const handleGenerateWithAI = () => {
+    const text = prompt.trim();
+    if (!text || !canGenerateAI || !onGenerateWithAI) return;
+    onGenerateWithAI({
+      template,
+      prompt: text,
+      targetDir: targetDir.trim(),
+      vars,
+      ...(designSystem ? { designSystem } : {}),
+    });
+  };
+
   return (
     <section className="border-b border-border bg-surface p-3">
       <div className="flex flex-col gap-3">
@@ -156,7 +173,7 @@ export function StudioComposer({ templates, onScaffold, onPrompt, busy = false, 
             className="min-h-[104px] min-w-0 flex-1 resize-y bg-transparent py-1 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
           />
         </div>
-        <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_180px]">
+        <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto]">
           <select
             value={selectedTemplate?.id ?? template}
             onChange={(event) => setTemplate(event.target.value as StudioTemplateId)}
@@ -178,15 +195,30 @@ export function StudioComposer({ templates, onScaffold, onPrompt, busy = false, 
             className="h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Dossier de destination"
           />
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={!canGenerate}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Send className="h-4 w-4" aria-hidden="true" />
-            Générer
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={!canGenerate}
+              title="Générer depuis un template (rapide, sans IA)"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+              Template
+            </button>
+            {onGenerateWithAI ? (
+              <button
+                type="button"
+                onClick={handleGenerateWithAI}
+                disabled={!canGenerateAI}
+                title="L'agent génère une app custom brandée en lisant le système de design choisi"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                Générer avec IA
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2">
