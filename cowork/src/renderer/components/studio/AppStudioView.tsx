@@ -7,6 +7,8 @@ import { StudioComposer, type StudioScaffoldRequest, type TemplateCard } from '.
 import { StudioFileTree } from './StudioFileTree.js';
 import { TerminalPane } from './TerminalPane.js';
 import type { TreeNode } from './utils/file-tree-model.js';
+import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
+import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
 
 export interface AppStudioViewProps {
   tree: TreeNode[];
@@ -77,11 +79,22 @@ export function AppStudioView({
       <StudioComposer templates={templates} onScaffold={onScaffold} onGenerateWithAI={onGenerateWithAI} onPrompt={onPrompt} busy={busy} workingDir={workingDir} />
       <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} error={buildError} onStop={onStopBuild} />
       {!hasProject ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
-          <div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+          <div className="mx-auto max-w-3xl text-center">
             <PanelBottom className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
-            <h2 className="mt-3 text-sm font-medium text-foreground">Décris une app pour commencer</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Les fichiers, le code, la preview et le terminal apparaîtront ici.</p>
+            <h2 className="mt-3 text-sm font-medium text-foreground">Que veux-tu créer&nbsp;?</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Choisis un type ci-dessous (aperçu de ce qui sera créé) ou décris ton app en haut — les fichiers, le code et la preview apparaîtront ici.
+            </p>
+          </div>
+          <div className="mx-auto mt-5 w-full max-w-4xl">
+            <TemplateGallery
+              items={DEFAULT_TEMPLATES}
+              onSelect={(id) => {
+                const item = DEFAULT_TEMPLATES.find((t) => t.id === id);
+                if (item) onPrompt(`${item.name} — ${item.tagline}`);
+              }}
+            />
           </div>
         </div>
       ) : (
