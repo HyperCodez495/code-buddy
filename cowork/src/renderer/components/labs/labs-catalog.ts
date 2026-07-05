@@ -359,6 +359,42 @@ const WIRING: Record<string, LabsWiring> = {
       onRetry: () => {},
     },
   },
+  NI1: {
+    load: () => import('../studio-iterate/StudioChatPanel').then((m) => named(m, 'StudioChatPanel')),
+    props: {
+      messages: [
+        { id: '1', role: 'user', text: 'Rends le bouton principal bleu et arrondi.' },
+        { id: '2', role: 'assistant', text: 'Fait — j’ai mis à jour la couleur et le rayon du bouton dans src/App.css, et la preview s’est rechargée.' },
+        { id: '3', role: 'user', text: 'Ajoute un mode sombre.' },
+      ],
+      suggestions: ['Change le thème', 'Ajoute des tests', 'Rends-le responsive'],
+      onSend: () => {},
+      onStop: () => {},
+    },
+  },
+  NI2: {
+    load: () => import('../studio-iterate/ChangedFilesStrip').then((m) => named(m, 'ChangedFilesStrip')),
+    props: {
+      changes: [
+        { path: 'src/App.tsx', kind: 'modified' },
+        { path: 'src/theme.css', kind: 'added' },
+        { path: 'src/legacy.css', kind: 'deleted' },
+      ],
+      onOpen: () => {},
+    },
+  },
+  NI3: {
+    load: () => import('../studio-iterate/PreviewToolbar').then((m) => named(m, 'PreviewToolbar')),
+    props: {
+      url: 'http://127.0.0.1:5173/',
+      status: 'running',
+      device: 'desktop',
+      onReload: () => {},
+      onDevice: () => {},
+      onOpenExternal: () => {},
+      onToggle: () => {},
+    },
+  },
 };
 
 /**
