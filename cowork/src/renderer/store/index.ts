@@ -237,6 +237,8 @@ export interface AppState {
   newShellEnabled: boolean;
   /** Live Flight Plan panel (step timeline right of chat) — persisted as COWORK_FLIGHT_PLAN. */
   showFlightPlan: boolean;
+  /** Live app preview panel (bolt.new-style, right of chat) for project sessions. */
+  showStudioPreview: boolean;
   primaryView: PrimaryView;
   showSettings: boolean;
   /** Evolution panel (new-shell Labs) — lists variants from recursive self-improvement. */
@@ -581,6 +583,7 @@ export interface AppState {
   setContextPanelCollapsed: (collapsed: boolean) => void;
   setNewShellEnabled: (on: boolean) => void;
   setShowFlightPlan: (on: boolean) => void;
+  setShowStudioPreview: (on: boolean) => void;
   setPrimaryView: (v: PrimaryView) => void;
   setShowSettings: (show: boolean) => void;
   setShowEvolutionPanel: (show: boolean) => void;
@@ -919,6 +922,7 @@ export const useAppStore = create<AppState>((set) => ({
   contextPanelCollapsed: false,
   newShellEnabled: readNewShellFlag(),
   showFlightPlan: readFlightPlanFlag(),
+  showStudioPreview: false,
   primaryView: 'chat',
   showSettings: false,
   showEvolutionPanel: false,
@@ -1533,6 +1537,7 @@ export const useAppStore = create<AppState>((set) => ({
     }
     set({ showFlightPlan: on });
   },
+  setShowStudioPreview: (on) => set({ showStudioPreview: on }),
   setPrimaryView: (v) => set({ primaryView: v }),
   setShowSettings: (show) => set({ showSettings: show }),
   setShowEvolutionPanel: (show) => set({ showEvolutionPanel: show }),

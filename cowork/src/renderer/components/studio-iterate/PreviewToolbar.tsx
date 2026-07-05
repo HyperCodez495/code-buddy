@@ -1,8 +1,8 @@
 import { ExternalLink, Monitor, Play, RefreshCw, Smartphone, Square, Tablet } from 'lucide-react';
-import type { PreviewDevice } from './iterate-model.js';
+import type { PreviewDevice, PreviewStatus } from './iterate-model.js';
 import { deviceWidth } from './iterate-model.js';
 
-export type PreviewStatus = 'idle' | 'starting' | 'running' | 'dead';
+export type { PreviewStatus };
 
 export interface PreviewToolbarProps {
   url?: string;

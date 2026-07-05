@@ -16,6 +16,9 @@ export interface StudioFileChange {
 
 export type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
 
+/** Lifecycle of the live app preview (bolt.new-style dev server). */
+export type PreviewStatus = 'idle' | 'starting' | 'running' | 'dead';
+
 export interface ChangeSummary {
   added: number;
   modified: number;
