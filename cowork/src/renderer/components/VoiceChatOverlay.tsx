@@ -290,14 +290,14 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       aria-modal="true"
     >
       <div
-        className="w-[640px] max-w-[94vw] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="w-[640px] max-w-[94vw] bg-background border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 shrink-0">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <Mic size={14} className="text-accent" />
-            <h2 className="text-sm font-medium text-zinc-200">
+            <h2 className="text-sm font-medium text-secondary">
               {t('voiceOverlay.title', 'Voix → Cowork')}
             </h2>
             {isRecording && (
@@ -311,7 +311,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <button
               onClick={() => setShowSettings((v) => !v)}
               className={`p-1.5 rounded ${
-                showSettings ? 'bg-accent/15 text-accent' : 'text-zinc-500 hover:text-zinc-300'
+                showSettings ? 'bg-accent/15 text-accent' : 'text-muted-foreground hover:text-secondary'
               }`}
               title={t('voiceOverlay.settings', 'Paramètres voix')}
             >
@@ -319,7 +319,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-zinc-500 hover:text-zinc-300"
+              className="p-1.5 text-muted-foreground hover:text-secondary"
               aria-label={t('common.close', 'Close')}
             >
               <X size={14} />
@@ -329,13 +329,13 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
         {/* Settings drawer */}
         {showSettings && (
-          <div className="px-5 py-3 border-b border-zinc-800 space-y-3 text-xs bg-zinc-900/60">
+          <div className="px-5 py-3 border-b border-border space-y-3 text-xs bg-zinc-900/60">
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-zinc-400">
+                <label className="text-muted-foreground">
                   {t('voiceOverlay.rate', 'Vitesse Piper TTS')}
                 </label>
-                <span className="text-zinc-200 tabular-nums">
+                <span className="text-secondary tabular-nums">
                   {(1 / ttsRate).toFixed(1)}×
                 </span>
               </div>
@@ -348,7 +348,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 onChange={(e) => handleRateChange(parseFloat(e.target.value))}
                 className="w-full accent-accent"
               />
-              <div className="text-[10px] text-zinc-500 mt-0.5">
+              <div className="text-[10px] text-muted-foreground mt-0.5">
                 {t(
                   'voiceOverlay.rateHint',
                   'Piper utilise length_scale ; >1 ralentit, <1 accélère.',
@@ -356,7 +356,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">
+              <span className="text-muted-foreground">
                 {t('voiceOverlay.autoSpeak', 'Lire la réponse de l\'agent à voix haute')}
               </span>
               <button
@@ -364,14 +364,14 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 className={`px-3 py-1 rounded text-[11px] font-medium transition-colors ${
                   autoSpeak
                     ? 'bg-success/15 text-success'
-                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    : 'bg-surface text-muted-foreground hover:bg-surface-hover'
                 }`}
               >
                 {autoSpeak ? t('common.on', 'Activé') : t('common.off', 'Désactivé')}
               </button>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">
+              <span className="text-muted-foreground">
                 {t(
                   'voiceOverlay.autoBargeIn',
                   'Barge-in automatique (couper l\'agent dès que vous parlez)',
@@ -382,7 +382,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 className={`px-3 py-1 rounded text-[11px] font-medium transition-colors ${
                   autoBargeIn
                     ? 'bg-success/15 text-success'
-                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    : 'bg-surface text-muted-foreground hover:bg-surface-hover'
                 }`}
                 data-testid="voice-overlay-auto-barge-in"
               >
@@ -390,12 +390,12 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               </button>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">
+              <span className="text-muted-foreground">
                 {t('voiceOverlay.testVoice', 'Tester la voix')}
               </span>
               <button
                 onClick={playSampleTts}
-                className="px-3 py-1 rounded text-[11px] bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+                className="px-3 py-1 rounded text-[11px] bg-surface text-secondary hover:bg-surface-hover"
               >
                 <Volume2 size={11} className="inline mr-1" />
                 {t('voiceOverlay.play', 'Échantillon')}
@@ -426,14 +426,14 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               isRecording
                 ? 'bg-error/20 ring-4 ring-error/40 animate-pulse'
                 : isTranscribing
-                  ? 'bg-zinc-800 ring-2 ring-zinc-700'
+                  ? 'bg-surface ring-2 ring-zinc-700'
                   : 'bg-accent/15 ring-2 ring-accent/40 hover:ring-accent hover:bg-accent/25'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
             aria-label={isRecording ? 'Arrêter' : 'Dicter'}
             data-testid="voice-overlay-mic"
           >
             {isTranscribing ? (
-              <Loader2 className="w-10 h-10 text-zinc-400 animate-spin" />
+              <Loader2 className="w-10 h-10 text-muted-foreground animate-spin" />
             ) : isRecording ? (
               <MicOff className="w-10 h-10 text-error" />
             ) : (
@@ -441,7 +441,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             )}
           </button>
 
-          <div className="text-[11px] text-zinc-500 text-center">
+          <div className="text-[11px] text-muted-foreground text-center">
             {isRecording
               ? t('voiceOverlay.listening', 'Écoute en cours… cliquez à nouveau pour arrêter')
               : isTranscribing
@@ -465,13 +465,13 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               'La transcription apparaît ici. Vous pouvez modifier avant d\'envoyer.',
             )}
             rows={4}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-accent resize-none"
+            className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-secondary placeholder:text-muted-foreground focus:outline-none focus:border-accent resize-none"
           />
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-between shrink-0">
-          <div className="text-[10px] text-zinc-500">
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between shrink-0">
+          <div className="text-[10px] text-muted-foreground">
             {isTtsEnabled() ? (
               <span className="inline-flex items-center gap-1">
                 <Volume2 size={10} className="text-success" />

@@ -22,16 +22,16 @@ interface AnsiSpan {
 const ANSI_COLORS: Record<number, string> = {
   30: 'text-zinc-900', 31: 'text-red-400', 32: 'text-green-400',
   33: 'text-yellow-400', 34: 'text-blue-400', 35: 'text-purple-400',
-  36: 'text-cyan-400', 37: 'text-zinc-300',
-  90: 'text-zinc-500', 91: 'text-red-300', 92: 'text-green-300',
+  36: 'text-cyan-400', 37: 'text-secondary',
+  90: 'text-muted-foreground', 91: 'text-red-300', 92: 'text-green-300',
   93: 'text-yellow-300', 94: 'text-blue-300', 95: 'text-purple-300',
   96: 'text-cyan-300', 97: 'text-white',
 };
 
 const ANSI_BG_COLORS: Record<number, string> = {
-  40: 'bg-zinc-900', 41: 'bg-red-900/50', 42: 'bg-green-900/50',
+  40: 'bg-background', 41: 'bg-red-900/50', 42: 'bg-green-900/50',
   43: 'bg-yellow-900/50', 44: 'bg-blue-900/50', 45: 'bg-purple-900/50',
-  46: 'bg-cyan-900/50', 47: 'bg-zinc-700',
+  46: 'bg-cyan-900/50', 47: 'bg-surface-hover',
 };
 
 const ANSI_SGR_PATTERN = '\\u001b\\[([0-9;]*)m';
@@ -102,17 +102,17 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = React.memo(
     };
 
     return (
-      <div className="mt-1 rounded-lg overflow-hidden border border-zinc-700">
+      <div className="mt-1 rounded-lg overflow-hidden border border-border">
         {/* Header */}
         {command && (
-          <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 border-b border-zinc-800">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-background border-b border-border">
             <div className="flex items-center gap-2 min-w-0">
-              <Terminal size={12} className="text-zinc-500 flex-shrink-0" />
-              <span className="text-xs font-mono text-zinc-400 truncate">$ {command}</span>
+              <Terminal size={12} className="text-muted-foreground flex-shrink-0" />
+              <span className="text-xs font-mono text-muted-foreground truncate">$ {command}</span>
             </div>
             <button
               onClick={handleCopy}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0"
+              className="text-muted-foreground hover:text-secondary transition-colors flex-shrink-0"
               title="Copy output"
             >
               {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
@@ -125,7 +125,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = React.memo(
           className={`overflow-auto bg-zinc-950 p-3 ${isError ? 'border-l-2 border-red-500' : ''}`}
           style={{ maxHeight }}
         >
-          <pre className="text-xs font-mono leading-5 text-zinc-300 whitespace-pre-wrap break-all">
+          <pre className="text-xs font-mono leading-5 text-secondary whitespace-pre-wrap break-all">
             {spans.map((span, i) => (
               <span key={i} className={span.className}>
                 {span.text}

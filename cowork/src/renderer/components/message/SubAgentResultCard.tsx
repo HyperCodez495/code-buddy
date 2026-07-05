@@ -61,19 +61,19 @@ const SectionRow: React.FC<{ section: AggregatedSection }> = ({ section }) => {
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-800/30 transition-colors"
       >
         {expanded ? (
-          <ChevronDown size={12} className="text-zinc-500 shrink-0" />
+          <ChevronDown size={12} className="text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight size={12} className="text-zinc-500 shrink-0" />
+          <ChevronRight size={12} className="text-muted-foreground shrink-0" />
         )}
         <Bot size={12} className="text-indigo-400 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-zinc-200">{section.nickname}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800/50 text-zinc-500">
+            <span className="text-xs font-medium text-secondary">{section.nickname}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800/50 text-muted-foreground">
               {section.role}
             </span>
           </div>
-          <div className="text-[10px] text-zinc-500 truncate mt-0.5">{section.summary}</div>
+          <div className="text-[10px] text-muted-foreground truncate mt-0.5">{section.summary}</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {section.success ? (
@@ -82,7 +82,7 @@ const SectionRow: React.FC<{ section: AggregatedSection }> = ({ section }) => {
             <XCircle size={12} className="text-red-400" />
           )}
           {section.duration > 0 && (
-            <span className="text-[10px] text-zinc-500 font-mono">
+            <span className="text-[10px] text-muted-foreground font-mono">
               {formatDuration(section.duration)}
             </span>
           )}
@@ -91,10 +91,10 @@ const SectionRow: React.FC<{ section: AggregatedSection }> = ({ section }) => {
 
       {expanded && (
         <div className="px-3 py-2 border-t border-zinc-700/50 bg-black/30">
-          <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">
+          <div className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">
             Full Output
           </div>
-          <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-words max-h-80 overflow-y-auto">
+          <pre className="text-xs text-secondary font-mono whitespace-pre-wrap break-words max-h-80 overflow-y-auto">
             {section.fullOutput || '(empty)'}
           </pre>
           {section.errors.length > 0 && (
@@ -132,10 +132,10 @@ export const SubAgentResultCard: React.FC<SubAgentResultCardProps> = ({ result }
       >
         <div className="flex items-center gap-2">
           <Users size={14} className={isSuccess ? 'text-indigo-400' : 'text-amber-400'} />
-          <span className="text-sm font-semibold text-zinc-200">
+          <span className="text-sm font-semibold text-secondary">
             Multi-Agent Orchestration
           </span>
-          <div className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
+          <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <CheckCircle2 size={12} className="text-green-400" />
               {result.successCount}
@@ -152,7 +152,7 @@ export const SubAgentResultCard: React.FC<SubAgentResultCardProps> = ({ result }
             </span>
           </div>
         </div>
-        <p className="text-xs text-zinc-400 mt-1.5">{result.summary}</p>
+        <p className="text-xs text-muted-foreground mt-1.5">{result.summary}</p>
       </div>
 
       {/* Sections */}
@@ -170,12 +170,12 @@ export const SubAgentResultCard: React.FC<SubAgentResultCardProps> = ({ result }
             className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-zinc-800/30 transition-colors"
           >
             {artifactsExpanded ? (
-              <ChevronDown size={12} className="text-zinc-500" />
+              <ChevronDown size={12} className="text-muted-foreground" />
             ) : (
-              <ChevronRight size={12} className="text-zinc-500" />
+              <ChevronRight size={12} className="text-muted-foreground" />
             )}
-            <FileText size={12} className="text-zinc-400" />
-            <span className="text-xs font-medium text-zinc-300">
+            <FileText size={12} className="text-muted-foreground" />
+            <span className="text-xs font-medium text-secondary">
               Artifacts ({result.artifacts.length})
             </span>
           </button>
@@ -187,7 +187,7 @@ export const SubAgentResultCard: React.FC<SubAgentResultCardProps> = ({ result }
                   className="text-xs font-mono bg-zinc-800/40 rounded px-2 py-1"
                 >
                   <span className="text-indigo-300">{artifact.key}</span>
-                  <span className="text-zinc-500">
+                  <span className="text-muted-foreground">
                     {' '}— {artifact.contributors.join(', ')}
                   </span>
                 </div>

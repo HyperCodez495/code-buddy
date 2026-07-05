@@ -193,26 +193,26 @@ export const AgenticHarnessStrip: React.FC<{
 
   return (
     <section
-      className="rounded border border-zinc-800 bg-zinc-950/35 p-3"
+      className="rounded border border-border bg-zinc-950/35 p-3"
       data-testid="agentic-harness-strip"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           <ShieldCheck size={15} className="mt-0.5 shrink-0 text-accent" />
           <div className="min-w-0">
-            <div className="truncate text-xs font-semibold text-zinc-200">
+            <div className="truncate text-xs font-semibold text-secondary">
               {harness.label ?? t('agenticHarness.title', 'Harness contract')}
             </div>
-            <div className="mt-0.5 text-[10px] text-zinc-500">
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
               {sourceKind ?? t('agenticHarness.source', 'agentic workspace')}
             </div>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300">
+          <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-secondary">
             {harness.mode}
           </span>
-          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300">
+          <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-secondary">
             {harness.executionMode}
           </span>
           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
@@ -222,41 +222,41 @@ export const AgenticHarnessStrip: React.FC<{
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px] md:grid-cols-4">
-        <span className="rounded bg-zinc-900/70 px-2 py-1 text-zinc-400">
+        <span className="rounded bg-zinc-900/70 px-2 py-1 text-muted-foreground">
           {t('agenticHarness.status', 'Status')}: {formatStateValue(state.workspaceStatus)}
         </span>
-        <span className="rounded bg-zinc-900/70 px-2 py-1 text-zinc-400">
+        <span className="rounded bg-zinc-900/70 px-2 py-1 text-muted-foreground">
           {t('agenticHarness.supervision', 'Supervision')}:{' '}
           {formatStateValue(state.supervisionState)}
         </span>
-        <span className="rounded bg-zinc-900/70 px-2 py-1 text-zinc-400">
+        <span className="rounded bg-zinc-900/70 px-2 py-1 text-muted-foreground">
           {t('agenticHarness.approval', 'Approval')}: {formatStateValue(state.approvalState)}
         </span>
-        <span className="rounded bg-zinc-900/70 px-2 py-1 text-zinc-400">
+        <span className="rounded bg-zinc-900/70 px-2 py-1 text-muted-foreground">
           {t('agenticHarness.ready', 'Ready')}: {formatStateValue(state.readyCommandCount)}
         </span>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1">
-        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-zinc-500">
+        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           {t('agenticHarness.termsChip', '{{count}} terms', { count: summary.termCount })}
         </span>
-        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-zinc-500">
+        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           {t('agenticHarness.hooksChip', '{{count}} hooks', { count: summary.lifecycleStageCount })}
         </span>
-        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-zinc-500">
+        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           {t('agenticHarness.blockingChip', '{{count}} blocking', {
             count: summary.blockingStageCount,
           })}
         </span>
-        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-zinc-500">
+        <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[9px] text-muted-foreground">
           {harness.hermes?.toolsetId ?? t('agenticHarness.noToolset', 'no toolset')}
         </span>
       </div>
 
       <div className="mt-2 grid gap-2 md:grid-cols-2">
         <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <ClipboardCheck size={11} className="shrink-0" />
             {t('agenticHarness.contractTerms', 'Contract terms')}
           </div>
@@ -266,8 +266,8 @@ export const AgenticHarnessStrip: React.FC<{
                 key={term.id}
                 className="flex min-w-0 items-center justify-between gap-2 rounded bg-zinc-900/70 px-2 py-1"
               >
-                <span className="truncate text-[10px] text-zinc-300">{term.label}</span>
-                <span className="shrink-0 rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-zinc-500">
+                <span className="truncate text-[10px] text-secondary">{term.label}</span>
+                <span className="shrink-0 rounded bg-surface px-1 py-0.5 text-[9px] text-muted-foreground">
                   {term.id}
                 </span>
               </li>
@@ -276,7 +276,7 @@ export const AgenticHarnessStrip: React.FC<{
         </div>
 
         <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <Workflow size={11} className="shrink-0" />
             {t('agenticHarness.lifecycle', 'Lifecycle hooks')}
           </div>
@@ -286,8 +286,8 @@ export const AgenticHarnessStrip: React.FC<{
                 key={stage.stage}
                 className="flex min-w-0 items-center justify-between gap-2 rounded bg-zinc-900/70 px-2 py-1"
               >
-                <span className="truncate text-[10px] text-zinc-300">{stage.label}</span>
-                <span className="flex shrink-0 items-center gap-1 rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-zinc-500">
+                <span className="truncate text-[10px] text-secondary">{stage.label}</span>
+                <span className="flex shrink-0 items-center gap-1 rounded bg-surface px-1 py-0.5 text-[9px] text-muted-foreground">
                   {stage.blocksOperation && <Lock size={8} />}
                   {stage.stage}
                 </span>
@@ -299,7 +299,7 @@ export const AgenticHarnessStrip: React.FC<{
 
       {visibleSurfaces.length > 0 && (
         <div className="mt-2">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <Waypoints size={11} className="shrink-0" />
             {t('agenticHarness.surfaces', 'Native surfaces')}
           </div>
@@ -307,7 +307,7 @@ export const AgenticHarnessStrip: React.FC<{
             {visibleSurfaces.map((surface) => (
               <span
                 key={surface.id}
-                className="rounded bg-zinc-900/70 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                className="rounded bg-zinc-900/70 px-1.5 py-0.5 text-[10px] text-muted-foreground"
               >
                 {surface.label}
               </span>
@@ -317,9 +317,9 @@ export const AgenticHarnessStrip: React.FC<{
       )}
 
       {(safetyNote || onUseAsGoal) && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-2">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
           {safetyNote && (
-            <div className="min-w-0 flex-1 text-[10px] text-zinc-500 line-clamp-2">
+            <div className="min-w-0 flex-1 text-[10px] text-muted-foreground line-clamp-2">
               {safetyNote}
             </div>
           )}
@@ -327,7 +327,7 @@ export const AgenticHarnessStrip: React.FC<{
             <button
               type="button"
               onClick={() => onUseAsGoal(buildAgenticHarnessGoal(harness))}
-              className="flex shrink-0 items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-accent hover:text-accent"
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-secondary transition-colors hover:border-accent hover:text-accent"
             >
               <Route size={10} />
               {t('agenticHarness.useAsGoal', 'Use as Fleet goal')}
