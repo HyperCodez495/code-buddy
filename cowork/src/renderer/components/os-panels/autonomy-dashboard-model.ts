@@ -46,7 +46,7 @@ export function clampPercent(value: number, max: number): number {
 }
 
 export function formatUsd(value: number): string {
-  if (!Number.isFinite(value)) return 'bash.00';
+  if (!Number.isFinite(value)) return '$0.00';
   return '$' + value.toFixed(2);
 }
 
