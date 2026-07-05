@@ -17,6 +17,7 @@ import { normalizeLatexDelimiters } from '../../utils/latex-delimiters';
 import type { ToolUseContent, ToolResultContent, FileAttachmentContent } from '../../types';
 import { FileText, Film } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
+import { MermaidBlock } from './MermaidBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolUseBlock } from './ToolUseBlock';
 import { ToolResultBlock } from './ToolResultBlock';
@@ -197,7 +198,13 @@ export const ContentBlockView = memo(function ContentBlockView({
           );
         }
 
-        return <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>;
+        const lang = match[1];
+        const source = String(children).replace(/\n$/, '');
+        // Render mermaid fences as inline SVG diagrams instead of highlighted text.
+        if (lang.toLowerCase() === 'mermaid') {
+          return <MermaidBlock text={source} />;
+        }
+        return <CodeBlock language={lang}>{source}</CodeBlock>;
       },
       p({ children }: { children?: React.ReactNode }) {
         return <p className="text-left">{renderChildrenWithFileLinks(children, 'p')}</p>;

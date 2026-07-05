@@ -4,6 +4,7 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { CodeBlock } from './message/CodeBlock';
+import { MermaidBlock } from './message/MermaidBlock';
 
 // Hoisted to module scope to avoid re-creating arrays on every render
 const REMARK_PLUGINS = [remarkMath, [remarkGfm, { singleTilde: false }]] as const;
@@ -29,7 +30,13 @@ const DEFAULT_COMPONENTS = {
         </code>
       );
     }
-    return <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>;
+    const lang = match[1];
+    const source = String(children).replace(/\n$/, '');
+    // Render mermaid fences as inline SVG diagrams instead of highlighted text.
+    if (lang.toLowerCase() === 'mermaid') {
+      return <MermaidBlock text={source} />;
+    }
+    return <CodeBlock language={lang}>{source}</CodeBlock>;
   },
 };
 
