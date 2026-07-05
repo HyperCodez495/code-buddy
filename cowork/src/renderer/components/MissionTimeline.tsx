@@ -13,11 +13,22 @@ export interface MissionStep {
   status: 'pending' | 'running' | 'done' | 'error';
   tool?: string;
   detail?: string;
+  /** Real elapsed time for the step in ms (shown as a compact badge once done). */
+  durationMs?: number;
 }
 
 export interface MissionTimelineProps {
   steps: MissionStep[];
   className?: string;
+}
+
+/** Compact human duration: 340ms → "340ms", 1200ms → "1.2s", 65000ms → "1m5s". */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m${Math.round(s - m * 60)}s`;
 }
 
 const statusIcon = {
@@ -80,6 +91,17 @@ export const MissionTimeline: React.FC<MissionTimelineProps> = ({ steps, classNa
                 {step.tool}
               </span>
             )}
+            {typeof step.durationMs === 'number' &&
+              step.durationMs > 0 &&
+              step.status !== 'running' &&
+              step.status !== 'pending' && (
+                <span
+                  className="shrink-0 rounded px-1 py-0.5 text-[10px] tabular-nums text-text-muted"
+                  title="Durée de l'étape"
+                >
+                  {formatDuration(step.durationMs)}
+                </span>
+              )}
           </li>
         );
       })}

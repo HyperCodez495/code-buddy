@@ -47,6 +47,7 @@ function toMissionSteps(steps: readonly TraceStep[], activeStepId: string | null
         detail: line.detail,
         tool: step.toolName,
         status: toMissionStatus(step, activeStepId),
+        durationMs: step.duration,
       };
     });
 }

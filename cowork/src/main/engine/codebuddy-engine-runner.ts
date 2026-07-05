@@ -185,6 +185,9 @@ export class CodeBuddyEngineRunner {
     let fullContent = '';
     let runtimeError: string | null = null;
     const contentBlocks: ContentBlock[] = [];
+    // Per-tool start timestamps → real step duration in the Flight Plan panel
+    // (Phase 2). Keyed by tool-use id; set on tool_start, read+cleared on tool_end.
+    const toolStartTimes = new Map<string, number>();
     const reasoningCapture = createReasoningCapture({
       bridge: getReasoningBridge(),
       toolUseId: `${session.id}:reasoning:${userMessageId}`,
@@ -234,6 +237,7 @@ export class CodeBuddyEngineRunner {
                   type: 'trace.step',
                   payload: { sessionId: session.id, step },
                 } as ServerEvent);
+                toolStartTimes.set(event.tool.id, step.timestamp);
 
                 // Add tool_use content block
                 contentBlocks.push({
@@ -247,6 +251,9 @@ export class CodeBuddyEngineRunner {
 
             case 'tool_end':
               if (event.tool) {
+                const startedAt = toolStartTimes.get(event.tool.id);
+                const duration = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+                toolStartTimes.delete(event.tool.id);
                 sendToRenderer({
                   type: 'trace.update',
                   payload: {
@@ -256,7 +263,7 @@ export class CodeBuddyEngineRunner {
                       status: event.tool.isError ? 'error' : 'completed',
                       toolOutput: event.tool.output,
                       isError: event.tool.isError,
-                      duration: 0,
+                      duration,
                     },
                   },
                 });
