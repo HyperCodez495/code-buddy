@@ -1591,6 +1591,24 @@ app
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
     sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService, engineAdapter);
+
+    // Cowork is a trusted local GUI driving a headless engine: auto-approve tool
+    // operations so the agent's own bash/file work — e.g. running the bundled
+    // Python to draw a chart — doesn't fail with "Approval requires an interactive
+    // terminal" (there is no TTY in the embedded engine) and trigger a jarring
+    // auto-repair loop. Safety is unchanged: the command-validator still hard-blocks
+    // dangerous patterns (rm/dd/chmod/curl/sh/eval…) and the user's permission mode
+    // (e.g. plan = read-only, set via Settings) is still checked first.
+    try {
+      const confirmMod = await loadCoreModule<{
+        ConfirmationService: { getInstance(): { setSessionFlag(flag: string, value: boolean): void } };
+      }>('utils/confirmation-service.js');
+      confirmMod?.ConfirmationService.getInstance().setSessionFlag('allOperations', true);
+      log('[main] Embedded engine: auto-approving tool operations (trusted local GUI)');
+    } catch (err) {
+      log('[main] Failed to configure embedded auto-approve:', err);
+    }
+
     const recovery = sessionManager.recoverFromTurnJournals();
     if (recovery.sessionsChanged > 0 || recovery.errors > 0) {
       log('[main] Turn journal startup recovery:', recovery);
