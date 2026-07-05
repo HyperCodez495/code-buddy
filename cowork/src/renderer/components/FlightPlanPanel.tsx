@@ -14,6 +14,7 @@ import { useAppStore } from '../store';
 import type { TraceStep } from '../types';
 import { traceStepToLine, activityStatus } from './activity-pane-helpers';
 import { MissionTimeline, formatDuration, type MissionStep } from './MissionTimeline';
+import { Sparkline } from './viz/Sparkline';
 
 const EMPTY_STEPS: TraceStep[] = [];
 
@@ -66,6 +67,7 @@ export function FlightPlanPanel() {
   const steps = toMissionSteps(traceSteps, activeTurn?.stepId ?? null);
   const doneCount = steps.filter((s) => s.status === 'done' || s.status === 'error').length;
   const totalMs = steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+  const durations = steps.map((s) => s.durationMs ?? 0).filter((v) => v > 0);
 
   return (
     <aside
@@ -108,6 +110,11 @@ export function FlightPlanPanel() {
               <span aria-hidden>·</span>
               <span title="Durée cumulée des étapes terminées">{formatDuration(totalMs)}</span>
             </>
+          ) : null}
+          {durations.length >= 2 ? (
+            <span className="ml-auto shrink-0" title="Tendance des durées d'étape">
+              <Sparkline values={durations} width={90} height={20} tone="primary" />
+            </span>
           ) : null}
         </div>
       ) : null}
