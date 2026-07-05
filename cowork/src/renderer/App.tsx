@@ -767,14 +767,29 @@ export default App;
  * the existing component tree intact and avoids extra subscriptions
  * on App's main render path.
  */
+// If the Fleet panel throws (e.g. a peer with incomplete capability data), close
+// it cleanly so the user is never trapped behind the full-app crash screen.
+function FleetCrashFallback({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    onClose();
+  }, [onClose]);
+  return null;
+}
+
 function FleetCommandCenterWrapper() {
   const open = useAppStore((s) => s.showFleetCommandCenter);
   const close = useAppStore((s) => s.setShowFleetCommandCenter);
   if (!open) return null;
   return (
-    <Suspense fallback={null}>
-      <FleetCommandCenter isOpen={open} onClose={() => close(false)} />
-    </Suspense>
+    <PanelErrorBoundary
+      name="FleetCommandCenter"
+      resetKey={String(open)}
+      fallback={<FleetCrashFallback onClose={() => close(false)} />}
+    >
+      <Suspense fallback={null}>
+        <FleetCommandCenter isOpen={open} onClose={() => close(false)} />
+      </Suspense>
+    </PanelErrorBoundary>
   );
 }
 

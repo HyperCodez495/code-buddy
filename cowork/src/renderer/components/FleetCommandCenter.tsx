@@ -272,7 +272,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const setShowLessonCandidatePanel = useAppStore((s) => s.setShowLessonCandidatePanel);
   const peers = useMemo(() => Object.values(fleetPeers), [fleetPeers]);
   const routablePeers = useMemo(
-    () => peers.filter((p) => Boolean(p.capability?.models.length)),
+    () => peers.filter((p) => Boolean(p.capability?.models?.length)),
     [peers]
   );
   const onlinePeers = useMemo(

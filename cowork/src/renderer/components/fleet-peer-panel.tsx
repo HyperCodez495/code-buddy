@@ -40,7 +40,7 @@ export const PeerRow: React.FC<{
           <EgressChip egress={egress} />
           {cap && (
             <span>
-              {cap.models.length} {cap.models.length === 1 ? 'model' : 'models'}
+              {cap.models?.length ?? 0} {(cap.models?.length ?? 0) === 1 ? 'model' : 'models'}
             </span>
           )}
           {cap?.machineSpec?.gpu && (
@@ -126,10 +126,10 @@ export const PeerDetail: React.FC<{
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-              {t('fleet.detail.models', 'Models')} ({cap.models.length})
+              {t('fleet.detail.models', 'Models')} ({cap.models?.length ?? 0})
             </div>
             <ul className="space-y-1.5">
-              {cap.models.map((m) => (
+              {(cap.models ?? []).map((m) => (
                 <li key={m.id} className="p-2 rounded border border-border-muted bg-surface/70">
                   <div className="font-mono text-[11px] text-text-primary">{m.id}</div>
                   <div className="text-[10px] text-text-muted mt-0.5">
