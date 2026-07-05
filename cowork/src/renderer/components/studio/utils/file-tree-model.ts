@@ -5,6 +5,17 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+const IGNORED_DIRS = new Set(['node_modules', '.git']);
+
+export function filterStudioTree(nodes: TreeNode[]): TreeNode[] {
+  return nodes
+    .filter((node) => !(node.type === 'directory' && IGNORED_DIRS.has(node.name)))
+    .map((node) => ({
+      ...node,
+      ...(node.children ? { children: filterStudioTree(node.children) } : {}),
+    }));
+}
+
 export function sortTree(nodes: TreeNode[]): TreeNode[] {
   return nodes
     .map((node) => ({

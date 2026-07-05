@@ -3,11 +3,12 @@ import { Pill } from '../ui/Pill.js';
 import { StatTile } from '../ui/StatTile.js';
 import type { UiTone } from '../../utils/ui-tone.js';
 
-export type BuildPhase = 'idle' | 'scaffolding' | 'installing' | 'starting' | 'running' | 'dead';
+export type BuildPhase = 'idle' | 'scaffolding' | 'installing' | 'starting' | 'running' | 'error';
 
 export interface BuildStatusStripProps {
   phase: BuildPhase;
   elapsedMs: number;
+  error?: string | null;
   onStop: () => void;
 }
 
@@ -17,12 +18,12 @@ const PHASE_LABELS: Record<BuildPhase, string> = {
   installing: 'Install',
   starting: 'Démarrage',
   running: 'En ligne',
-  dead: 'Arrêté',
+  error: 'Erreur',
 };
 
 function toneForPhase(phase: BuildPhase): UiTone {
   if (phase === 'running') return 'success';
-  if (phase === 'dead') return 'danger';
+  if (phase === 'error') return 'danger';
   if (phase === 'idle') return 'default';
   return 'info';
 }
@@ -36,7 +37,7 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${remaining}s`;
 }
 
-export function BuildStatusStrip({ phase, elapsedMs, onStop }: BuildStatusStripProps) {
+export function BuildStatusStrip({ phase, elapsedMs, error, onStop }: BuildStatusStripProps) {
   const canStop = phase === 'starting' || phase === 'running' || phase === 'installing';
 
   return (
@@ -51,7 +52,8 @@ export function BuildStatusStrip({ phase, elapsedMs, onStop }: BuildStatusStripP
         {phase === 'installing' && 'Installation des dépendances.'}
         {phase === 'starting' && 'Lancement du serveur local.'}
         {phase === 'running' && 'Preview locale disponible.'}
-        {phase === 'dead' && 'Le serveur ne répond plus.'}
+        {phase === 'error' && (error || 'Une erreur est survenue.')}
+
       </div>
       <button
         type="button"

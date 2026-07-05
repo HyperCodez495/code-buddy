@@ -1,4 +1,4 @@
-import { Code2, Eye, PanelBottom } from 'lucide-react';
+import { Code2, Eye, PanelBottom, Play } from 'lucide-react';
 import { useState } from 'react';
 import { BuildStatusStrip, type BuildPhase } from './BuildStatusStrip.js';
 import { CodeEditorPane } from './CodeEditorPane.js';
@@ -17,8 +17,10 @@ export interface AppStudioViewProps {
   terminalOutput: string[];
   buildPhase: BuildPhase;
   buildElapsedMs: number;
+  buildError?: string | null;
   templates: TemplateCard[];
   busy?: boolean;
+  workingDir?: string;
   onScaffold: (request: StudioScaffoldRequest) => void;
   onPrompt: (text: string) => void;
   onOpenFile: (path: string) => void;
@@ -27,6 +29,7 @@ export interface AppStudioViewProps {
   onCreateEntry?: (parentPath: string) => void;
   onRenameEntry?: (path: string) => void;
   onDeleteEntry?: (path: string) => void;
+  onStartPreview: () => void;
   onReloadPreview: () => void;
   onOpenPreviewExternal?: () => void;
   onTerminalInput?: (line: string) => void;
@@ -45,8 +48,10 @@ export function AppStudioView({
   terminalOutput,
   buildPhase,
   buildElapsedMs,
+  buildError,
   templates,
   busy = false,
+  workingDir,
   onScaffold,
   onPrompt,
   onOpenFile,
@@ -55,6 +60,7 @@ export function AppStudioView({
   onCreateEntry,
   onRenameEntry,
   onDeleteEntry,
+  onStartPreview,
   onReloadPreview,
   onOpenPreviewExternal,
   onTerminalInput,
@@ -66,8 +72,8 @@ export function AppStudioView({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <StudioComposer templates={templates} onScaffold={onScaffold} onPrompt={onPrompt} busy={busy} />
-      <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} onStop={onStopBuild} />
+      <StudioComposer templates={templates} onScaffold={onScaffold} onPrompt={onPrompt} busy={busy} workingDir={workingDir} />
+      <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} error={buildError} onStop={onStopBuild} />
       {!hasProject ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
           <div>
@@ -104,6 +110,18 @@ export function AppStudioView({
                 >
                   <Eye className="h-4 w-4" aria-hidden="true" />
                   Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('preview');
+                    onStartPreview();
+                  }}
+                  disabled={buildPhase === 'starting' || buildPhase === 'running'}
+                  className="ml-auto inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Play className="h-4 w-4" aria-hidden="true" />
+                  Lancer
                 </button>
               </div>
               <div className="min-h-0 flex-1">

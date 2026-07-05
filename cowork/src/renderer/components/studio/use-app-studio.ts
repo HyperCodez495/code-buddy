@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppStudioViewProps } from './AppStudioView.js';
 import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
-import type { TreeNode } from './utils/file-tree-model.js';
+import { filterStudioTree, type TreeNode } from './utils/file-tree-model.js';
 import type { AppStudioApis, CommandOutputEvent, StudioTemplateCard } from './studio-api.js';
 
 export interface UseAppStudioOptions {
@@ -33,6 +33,7 @@ export interface AppStudioState {
   terminalOutput: string[];
   buildPhase: BuildPhase;
   buildElapsedMs: number;
+  buildError: string | null;
   templates: StudioTemplateCard[];
   busy: boolean;
   devPid: number | null;
@@ -101,6 +102,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
   const [buildPhase, setBuildPhase] = useState<BuildPhase>('idle');
   const [buildStartedAt, setBuildStartedAt] = useState<number | null>(null);
   const [buildElapsedMs, setBuildElapsedMs] = useState(0);
+  const [buildError, setBuildError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<StudioTemplateCard[]>(DEFAULT_TEMPLATES);
   const [busy, setBusy] = useState(false);
   const [devPid, setDevPid] = useState<number | null>(null);
@@ -112,6 +114,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
 
   const beginPhase = useCallback((phase: BuildPhase) => {
     setBuildPhase(phase);
+    setBuildError(null);
     setBuildStartedAt(Date.now());
     setBuildElapsedMs(0);
   }, []);
@@ -147,33 +150,43 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     if (!root) return;
     const result = await apis.files.list(root);
     if (result.ok) {
-      setTree(result.data);
+      setTree(filterStudioTree(result.data));
     } else {
+      setBuildError(result.error);
       appendTerminal(result.error);
     }
   }, [apis, appendTerminal, projectRoot]);
 
-  const scaffold = useCallback(async (request: StudioScaffoldRequest & { targetDir?: string }) => {
-    const targetDir = request.targetDir ?? projectRoot;
-    if (!targetDir) {
-      appendTerminal('Aucun répertoire cible pour le scaffold.');
+  const scaffold = useCallback(async (request: StudioScaffoldRequest) => {
+    if (!request.targetDir) {
+      const error = 'Aucun répertoire cible pour le scaffold.';
+      setBuildError(error);
+      appendTerminal(error);
       return;
     }
     setBusy(true);
     beginPhase('scaffolding');
     const result = await apis.scaffold.generate({
       template: request.template,
-      targetDir,
+      targetDir: request.targetDir,
       vars: request.vars,
     });
     if (result.ok) {
-      setProjectRoot(result.data.projectDir);
-      appendTerminal(`Projet créé: ${result.data.projectDir}`);
-      await refreshTree(result.data.projectDir);
+      const nextProjectRoot = result.data.projectDir;
+      setProjectRoot(nextProjectRoot);
+      setActiveFile(null);
+      setFileContent('');
+      setPreviewUrl(null);
+      setPreviewStatus('idle');
+      appendTerminal(`Projet créé: ${nextProjectRoot}`);
+      beginPhase('installing');
+      await refreshTree(nextProjectRoot);
       setBuildPhase('idle');
+      setBuildStartedAt(null);
     } else {
+      setBuildError(result.error);
       appendTerminal(result.error);
-      setBuildPhase('dead');
+      setBuildPhase('error');
     }
     setBusy(false);
   }, [apis, appendTerminal, beginPhase, projectRoot, refreshTree]);
@@ -198,7 +211,9 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
   const startDev = useCallback(async (input?: { cwd?: string; command?: string; url?: string }) => {
     const cwd = input?.cwd ?? projectRoot;
     if (!cwd) {
-      appendTerminal('Aucun répertoire projet pour lancer le serveur.');
+      const error = 'Aucun répertoire projet pour lancer le serveur.';
+      setBuildError(error);
+      appendTerminal(error);
       return;
     }
     beginPhase('starting');
@@ -216,7 +231,8 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
       appendTerminal(`Serveur prêt: ${result.data.url}`);
     } else {
       setPreviewStatus('dead');
-      setBuildPhase('dead');
+      setBuildError(result.error);
+      setBuildPhase('error');
       appendTerminal(result.error);
     }
   }, [apis, appendTerminal, beginPhase, options.devCommand, options.devUrl, projectRoot]);
@@ -225,8 +241,9 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     if (devPid === null) return;
     const result = await apis.devServer.stop(devPid);
     appendTerminal(result.ok ? `Serveur arrêté: ${devPid}` : result.error);
+    if (!result.ok) setBuildError(result.error);
     setPreviewStatus('dead');
-    setBuildPhase('dead');
+    setBuildPhase('idle');
     setDevPid(null);
   }, [apis, appendTerminal, devPid]);
 
@@ -235,7 +252,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     const id = (options.commandIdFactory ?? defaultCommandId)();
     appendTerminal(`$ ${command}`);
     const result = await apis.commands.run({ cwd: projectRoot, command, id });
-    if (!result.ok) appendTerminal(result.error);
+    if (!result.ok) { setBuildError(result.error); appendTerminal(result.error); }
   }, [apis, appendTerminal, options.commandIdFactory, projectRoot]);
 
   const reloadPreview = useCallback(() => {
@@ -254,6 +271,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     terminalOutput,
     buildPhase,
     buildElapsedMs,
+    buildError,
     templates,
     busy,
     devPid,
@@ -268,13 +286,16 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     terminalOutput,
     buildPhase,
     buildElapsedMs,
+    buildError,
     templates,
     busy,
+    workingDir: options.projectRoot ?? '',
     onScaffold: scaffold,
     onPrompt: setLastPrompt,
     onOpenFile: openFile,
     onChangeFileContent: setFileContent,
     onSaveFile: saveFile,
+    onStartPreview: startDev,
     onReloadPreview: reloadPreview,
     onTerminalInput: runCommand,
     onClearTerminal: clearTerminal,

@@ -34,6 +34,7 @@ function extensionFor(language: EditorLanguage): Extension[] {
 
 export function CodeEditorPane({ path, value, onChange, onSave, readOnly = false }: CodeEditorPaneProps) {
   const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
   const extensions = useMemo(() => extensionFor(languageForPath(path)), [path]);
 
   const handleChange = useCallback((nextValue: string) => {
@@ -45,6 +46,8 @@ export function CodeEditorPane({ path, value, onChange, onSave, readOnly = false
     if (readOnly) return;
     onSave();
     setDirty(false);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1500);
   }, [onSave, readOnly]);
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -60,6 +63,7 @@ export function CodeEditorPane({ path, value, onChange, onSave, readOnly = false
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-xs text-foreground">{path || 'Sans fichier'}</span>
           {dirty && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Modifié" />}
+          {saved && <span className="text-xs text-muted-foreground">enregistré</span>}
         </div>
         <button
           type="button"
