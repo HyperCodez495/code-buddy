@@ -1,37 +1,114 @@
 /**
  * MissionControlView — the Mission Control OS cockpit as a full-screen primaryView.
  *
- * Composes the dormant OS views (fleet topology, fleet load, council arena, peer
- * capability matrix) plus one interactive control (autonomy posture) into a single
- * calm cockpit. Every view is props-driven and renders its own honest empty state,
- * so with no `buddy server` running the cockpit shows "start buddy server to
- * populate" rather than fake data.
- *
- * This step is presentation-only: it passes static empty/default props (no IPC).
- * Live fleet/council/autonomy data + real action callbacks are a later wiring step
- * (see cowork/src/renderer/components/os-actions/os-actions-wiring.ts for the
- * callback contract). The interactive control's callbacks are no-ops for now.
+ * Composes the OS views (fleet topology, fleet load, council arena, peer capability
+ * matrix) plus the autonomy posture panel. Fleet data is read from the Cowork
+ * renderer store; the store itself is fed by the existing fleet IPC events.
  */
+import { useMemo } from 'react';
+
+import { useAppStore } from '../../store';
 import { AutonomyControlPanel, type AutonomyControlState } from '../os-actions/AutonomyControlPanel';
+import type { AutonomyPosture } from '../os-actions/utils/autonomy-control-model.js';
 import { CouncilArenaView } from './CouncilArenaView';
 import { FleetLoadStrip } from './FleetLoadStrip';
 import { FleetTopologyView } from './FleetTopologyView';
 import { PeerCapabilityMatrix } from './PeerCapabilityMatrix';
 import type { CouncilSession } from './util/council-model';
 import type { FleetLoad } from './util/fleet-load-model';
-import type { Peer } from './util/fleet-model';
+import type { Peer, PeerStatus } from './util/fleet-model';
 
-// Static empty/default props — the cockpit renders its honest empty state until a
-// running buddy server feeds live data through a future IPC bridge.
-const EMPTY_PEERS: Peer[] = [];
-const EMPTY_CAPABILITIES: string[] = [];
 const EMPTY_LOAD: FleetLoad = { queued: 0, running: 0, capacity: 0, backpressure: 0, utilization: 0 };
 const EMPTY_COUNCIL: CouncilSession = { id: 'council', title: 'Council', dhi: 0, verdicts: [] };
-const DEFAULT_AUTONOMY: AutonomyControlState = { posture: 'plan', daemonPaused: true, costCapUsd: 10 };
+const DEFAULT_COST_CAP_USD = 10;
+
+type FleetStorePeer = ReturnType<typeof useAppStore.getState>['fleetPeers'][string];
+
+function toOsPeerStatus(status: string, utilization: number): PeerStatus {
+  if (status === 'disconnected' || status === 'error') {
+    return 'offline';
+  }
+  if (utilization > 0) {
+    return 'busy';
+  }
+  return 'online';
+}
+
+function toOsPeer(peer: FleetStorePeer): Peer {
+  const capability = peer.capability;
+  const capacity = Math.max(1, capability?.maxConcurrency ?? 1);
+  const running = Math.max(0, Math.min(capacity, capability?.activeRequests ?? 0));
+  const utilization = running / capacity;
+  const models = capability?.models.map((model) => model.id) ?? (peer.peerChatProvider ? [peer.peerChatProvider.model] : []);
+  const strengths = capability?.models.flatMap((model) => model.strengths) ?? [];
+
+  return {
+    id: peer.id,
+    label: peer.label ?? capability?.machineLabel ?? peer.url,
+    status: toOsPeerStatus(peer.status, utilization),
+    role: capability?.egress ?? (peer.peerChatProvider?.isLocal ? 'local' : 'peer'),
+    utilization,
+    latencyMs: capability?.models.find((model) => typeof model.avgLatencyMs === 'number')?.avgLatencyMs,
+    models,
+    tools: [],
+    capabilities: Array.from(new Set(strengths)),
+  };
+}
+
+function deriveFleetLoad(peers: Peer[]): FleetLoad {
+  if (peers.length === 0) {
+    return EMPTY_LOAD;
+  }
+  const running = peers.filter((peer) => peer.status === 'busy').length;
+  const capacity = peers.filter((peer) => peer.status !== 'offline').length;
+  const utilization = capacity === 0 ? 0 : running / capacity;
+
+  return {
+    queued: 0,
+    running,
+    capacity,
+    backpressure: capacity === 0 ? 0 : Math.max(0, utilization - 0.8) / 0.2,
+    utilization,
+  };
+}
+
+function deriveCapabilities(peers: Peer[]): string[] {
+  return Array.from(new Set(peers.flatMap((peer) => [
+    ...(peer.models ?? []),
+    ...(peer.tools ?? []),
+    ...(peer.capabilities ?? []),
+  ]))).sort((left, right) => left.localeCompare(right));
+}
+
+function postureFromPermissionMode(permissionMode: ReturnType<typeof useAppStore.getState>['permissionMode']): AutonomyPosture {
+  if (permissionMode === 'bypassPermissions') {
+    return 'full';
+  }
+  if (permissionMode === 'acceptEdits' || permissionMode === 'dontAsk') {
+    return 'auto';
+  }
+  return 'plan';
+}
 
 export function MissionControlView() {
-  // TODO(os-wiring): replace no-op callbacks with real IPC-backed actions
-  // (posture change / daemon pause / cost cap) once the OS action bridge lands.
+  const fleetPeers = useAppStore((state) => state.fleetPeers);
+  const permissionMode = useAppStore((state) => state.permissionMode);
+  const setPermissionMode = useAppStore((state) => state.setPermissionMode);
+
+  const peers = useMemo(() => Object.values(fleetPeers).map(toOsPeer), [fleetPeers]);
+  const load = useMemo(() => deriveFleetLoad(peers), [peers]);
+  const capabilities = useMemo(() => deriveCapabilities(peers), [peers]);
+  const autonomyState: AutonomyControlState = {
+    posture: postureFromPermissionMode(permissionMode),
+    daemonPaused: peers.length === 0,
+    costCapUsd: DEFAULT_COST_CAP_USD,
+  };
+
+  const setPosture = (posture: AutonomyPosture) => {
+    setPermissionMode(posture === 'full' ? 'bypassPermissions' : posture === 'auto' ? 'acceptEdits' : 'plan');
+  };
+
+  // TODO(os-wiring): no pause/resume/cost-cap IPC exists in the renderer bridge yet.
   const noop = () => {};
 
   return (
@@ -44,18 +121,18 @@ export function MissionControlView() {
           </p>
         </header>
 
-        <FleetLoadStrip load={EMPTY_LOAD} />
+        <FleetLoadStrip load={load} />
 
-        <FleetTopologyView peers={EMPTY_PEERS} />
+        <FleetTopologyView peers={peers} />
 
         <div className="grid gap-6 xl:grid-cols-2">
           <CouncilArenaView session={EMPTY_COUNCIL} />
-          <PeerCapabilityMatrix peers={EMPTY_PEERS} capabilities={EMPTY_CAPABILITIES} />
+          <PeerCapabilityMatrix peers={peers} capabilities={capabilities} />
         </div>
 
         <AutonomyControlPanel
-          state={DEFAULT_AUTONOMY}
-          onPostureChange={noop}
+          state={autonomyState}
+          onPostureChange={setPosture}
           onDaemonPause={noop}
           onDaemonResume={noop}
           onCostCapChange={noop}
