@@ -638,6 +638,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createCodeExplorerTools(),
     ...createAuthoredExtraTools(),
     ...createDesignTools(),
+    ...createCsvTools(),
     ...createMcpTools(),
   ];
 
@@ -726,6 +727,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createCodeExplorerTools(),
     ...createAuthoredExtraTools(),
     ...createDesignTools(),
+    ...createCsvTools(),
   ];
   // Append canonical-prefix aliases (shell_exec → bash_run, etc.).
   allTools.push(...createAliasTools(allTools));
@@ -744,6 +746,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
 import { FormalToolRegistry } from './tool-registry.js';
 import { createAuthoredExtraTools } from './authored-extra-tools.js';
 import { createDesignTools } from './design-tools.js';
+import { createCsvTools } from './csv-tools.js';
 import { createTextEditorTools } from './text-editor-tools.js';
 import { createBashTools } from './bash-tools.js';
 import { createLsTools } from './ls-tools.js';

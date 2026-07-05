@@ -242,6 +242,15 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: true,
   },
   {
+    name: 'csv_analyze',
+    category: 'utility',
+    keywords: ['csv', 'table', 'tabular', 'columns', 'colonnes', 'numeric', 'stats', 'statistiques', 'preview', 'data', 'analyze', 'analyse', 'spreadsheet'],
+    priority: 6,
+    description: 'Read-only CSV analysis: dimensions, column types, numeric stats, and a row preview',
+    // Read-only (deterministic local parse, no network) — answerable under the plan posture.
+    fleetSafe: true,
+  },
+  {
     name: 'deep_research',
     category: 'web',
     keywords: [
