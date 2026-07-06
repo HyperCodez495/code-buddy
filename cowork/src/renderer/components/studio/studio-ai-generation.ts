@@ -53,6 +53,14 @@ export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
     "- Utilise `create_file` pour créer chaque fichier (il crée le fichier s'il n'existe pas), puis `str_replace` / `write_file` pour éditer. Écris directement dans le dossier de travail courant.",
   );
   lines.push(
+    "- IMAGES : si l'app gagne à être illustrée (héros, galerie, logo, fond), GÉNÈRE de vraies images avec l'outil " +
+      '`image_generate` (charge-le via `tool_search("image_generate")` s\'il n\'est pas dans ta liste) : un prompt anglais ' +
+      "détaillé par image, cohérent avec le design choisi. L'outil renvoie un chemin de sortie SOUS le dossier du projet " +
+      "(`.codebuddy/media-generation/images/…`) — référence ce chemin RELATIF tel quel dans le HTML/CSS " +
+      '(ex. `<img src=".codebuddy/media-generation/images/xxx.jpg">`), ne tente PAS de copier le binaire. ' +
+      "Si la génération d'image échoue, continue sans elle (dégradé propre, pas d'app cassée).",
+  );
+  lines.push(
     "- Stack : HTML/CSS/JS statique (index.html + style.css + app.js) qui s'ouvre directement dans un navigateur, SANS build ni installation. (Pas de framework sauf demande explicite.)",
   );
   lines.push("- L'application doit être fonctionnelle ET soignée visuellement selon la guidance de design.");
