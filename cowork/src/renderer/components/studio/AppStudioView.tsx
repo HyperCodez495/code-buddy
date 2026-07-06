@@ -1,4 +1,4 @@
-import { Code2, Eye, PanelBottom, Play, Plus } from 'lucide-react';
+import { Code2, Eye, PanelBottom, Play, Plus, Download, Rocket } from 'lucide-react';
 import { useState } from 'react';
 import { BuildStatusStrip, type BuildPhase } from './BuildStatusStrip.js';
 import { CodeEditorPane } from './CodeEditorPane.js';
@@ -158,6 +158,32 @@ export function AppStudioView({
               <Play className="h-4 w-4" aria-hidden="true" />
               Lancer
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (workingDir) void window.electronAPI?.studio?.exportZip?.(workingDir);
+              }}
+              title="Exporter le projet en zip"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              data-testid="studio-export-zip"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Exporter
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setSeedPrompt(
+                  "Déploie cette app avec l'outil deploy (choisis l'hébergeur le plus simple, config générée, et donne-moi l'URL publique)."
+                )
+              }
+              title="Préparer une demande de déploiement (outil deploy)"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              data-testid="studio-deploy"
+            >
+              <Rocket className="h-4 w-4" aria-hidden="true" />
+              Déployer
+            </button>
           </div>
           <div className="min-h-0 flex-1">
             {tab === 'editor' ? (
@@ -191,6 +217,7 @@ export function AppStudioView({
                     status={previewStatus}
                     onReload={onReloadPreview}
                     onOpenExternal={onOpenPreviewExternal}
+                    onStart={onStartPreview}
                     {...(onVerifyPreview ? { onVerify: onVerifyPreview } : {})}
                   />
                 </div>

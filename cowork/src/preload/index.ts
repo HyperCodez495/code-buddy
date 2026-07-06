@@ -718,6 +718,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Channels mirror the main-process register*Ipc handlers under
   // src/main/studio/*. Note: the file listing handler is `studio.files.tree`.
   studio: {
+    exportZip: (root: string): Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('studio.exportZip', { root }),
     devServer: {
       start: (request: { cwd: string; command: string; url: string; timeoutMs?: number }) =>
         ipcRenderer.invoke('studio.dev.start', request),
@@ -4948,6 +4950,7 @@ declare global {
         status: (cwd?: string) => Promise<unknown>;
       };
       studio: {
+        exportZip: (root: string) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>;
         devServer: {
           start: (request: {
             cwd: string;

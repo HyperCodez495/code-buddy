@@ -8,7 +8,7 @@
  * @module renderer/components/studio/use-app-studio
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppStudioViewProps } from './AppStudioView.js';
 import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
@@ -324,6 +324,20 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
       appendTerminal(result.error);
     }
   }, [apis, appendTerminal, beginPhase, options.devCommand, options.devUrl, options.platform, projectRoot, tree]);
+
+  // bolt.new restores the preview when you reopen a project. For STATIC
+  // projects the serve is a loopback python http.server — cheap and safe to
+  // auto-start once the tree confirms the shape. npm projects keep the manual
+  // « Démarrer la preview » button (a dev server is heavier than a file
+  // server, don't spawn it unasked).
+  const autoServedRootRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectRoot || previewUrl || previewStatus !== 'idle') return;
+    if (autoServedRootRef.current === projectRoot) return;
+    if (tree.length === 0 || !isStaticProject(tree)) return;
+    autoServedRootRef.current = projectRoot;
+    void startDev();
+  }, [projectRoot, previewUrl, previewStatus, tree, startDev]);
 
   const stopDev = useCallback(async () => {
     if (devPid === null) return;

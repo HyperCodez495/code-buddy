@@ -18,6 +18,8 @@ export interface PreviewPaneProps {
   /** Ask Code Buddy to verify the running app (web_test): console/page errors,
    *  snapshot, screenshot, assertions. Wired to the agent session. */
   onVerify?: () => void;
+  /** Start (or restart) the preview server — shown in the idle empty state. */
+  onStart?: () => void;
 }
 
 function statusCopy(status: PreviewPaneProps['status'], unsafeUrl: boolean): { title: string; detail: string } {
@@ -36,7 +38,7 @@ function statusCopy(status: PreviewPaneProps['status'], unsafeUrl: boolean): { t
   return { title: 'Aucune preview', detail: 'Génère ou démarre une app pour afficher le rendu.' };
 }
 
-export function PreviewPane({ url, status, onReload, onOpenExternal, onVerify }: PreviewPaneProps) {
+export function PreviewPane({ url, status, onReload, onOpenExternal, onVerify, onStart }: PreviewPaneProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [device, setDevice] = useState<PreviewDevice>('desktop');
   const safeUrl = useMemo(() => (url && isLoopbackUrl(url) ? url : null), [url]);
@@ -133,6 +135,16 @@ export function PreviewPane({ url, status, onReload, onOpenExternal, onVerify }:
             <h3 className="text-sm font-medium text-foreground">{copy.title}</h3>
             <p className="mt-1 max-w-md text-xs text-muted-foreground">{copy.detail}</p>
           </div>
+          {status === 'idle' && onStart && (
+            <button
+              type="button"
+              onClick={onStart}
+              className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-medium text-background hover:bg-accent-hover"
+              data-testid="preview-start"
+            >
+              Démarrer la preview
+            </button>
+          )}
           {status === 'dead' && (
             <button
               type="button"

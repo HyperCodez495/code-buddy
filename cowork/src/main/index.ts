@@ -2798,6 +2798,39 @@ function resolveLessonsWorkspace(projectId?: string): string {
 }
 
 // ── Session export IPC handler ────────────────────────────────────────
+// bolt.new parity: export the generated project as a zip (Save-As dialog).
+ipcMain.handle('studio.exportZip', async (_event, { root }: { root: string }) => {
+  try {
+    const st = await import('fs').then((f) => f.promises.stat(root));
+    if (!st.isDirectory()) return { ok: false, error: 'not a directory' };
+    const win = getMainWindow();
+    const defaultName = `${basename(root) || 'projet'}.zip`;
+    const result = win
+      ? await dialog.showSaveDialog(win, { defaultPath: defaultName, title: "Exporter le projet" })
+      : await dialog.showSaveDialog({ defaultPath: defaultName, title: "Exporter le projet" });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    const archiver = (await import('archiver')).default;
+    const fsMod = await import('fs');
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const output = fsMod.createWriteStream(result.filePath!);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      output.on('close', () => resolvePromise());
+      archive.on('error', (err: Error) => rejectPromise(err));
+      archive.pipe(output);
+      archive.glob('**/*', {
+        cwd: root,
+        dot: true,
+        ignore: ['node_modules/**', '.git/**', '.codebuddy/checkpoints/**'],
+      });
+      void archive.finalize();
+    });
+    return { ok: true, savedTo: result.filePath };
+  } catch (err) {
+    logWarn('[studio.exportZip] failed:', err);
+    return { ok: false, error: String(err) };
+  }
+});
+
 // Media library (ChatGPT-library parity): every generated media across all
 // session roots; export = native Save-As dialog + copy.
 ipcMain.handle('media.list', async () => {
