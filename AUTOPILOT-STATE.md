@@ -420,7 +420,22 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
 - **DEMANDE EN COURS** : concevoir une « boucle de développement » façon Claude Code /loop (plan→exécute→vérifie→
   juge→répète) — Patrice demande le mode plan. Infra existante repérée : goals/goal-loop.ts (maybeContinueGoalAfterTurn),
   goal-manager/goal-judge, autonomous-daemon, buddy improve loop. À unifier en commande dev-loop de premier rang.
-- **File suivante (idées)** : implémenter la dev-loop après validation du plan ; e2e génération React/PWA.
+- **`buddy loop` LIVRÉ (`85310a1b`, conçu en mode plan, demande Patrice)** : boucle de dev unifiée façon Claude Code
+  /loop — plan→exécute→VÉRIFIE(Verifier indépendant)→juge→décide, jusqu'à fait PROUVÉ ou budget. Le gate Verifier
+  est l'apport : un « done » du juge est annulé (→continue) tant que le VerifierAgent ne CONFIRME pas (un fix
+  prétendu-mais-non-prouvé ne passe jamais). Ajoute `--budget` (coût $) au budget de tours. Surcouche mince sur
+  runDevLoop réutilisant GoalManager/judgeGoal/decomposeGoal/cost-tracker (tout injectable). `buddy goal` inchangé.
+  4 tests du gate + 152 tests goal verts + smoke live (⊙→🔎 CONFIRMED→✓ done, fichier réel, exit 0).
+  ⚠️ Découvert au smoke : hors projet + ChatGPT OAuth seul, la résolution appairait un modèle **Grok**
+  (`grok-code-fast-1`, défaut système) avec le **backend Codex** → 400 « model not supported ». Touchait
+  `goal`/`loop`/`flow`/`research` dès le 1er run (chemin $0 sans clé qu'on vante).
+- **Dérive modèle CORRIGÉE (`30f560f5`)** : `reconcileModelForBackend()` dans `llm-provider-resolution.ts` — quand
+  le baseURL résolu est le backend Codex et que le modèle n'est pas de la famille Codex, coercition vers le défaut
+  Codex (gpt-5.5) ; no-op strict sur tout autre backend ; préserve un modèle déjà-Codex. Appliqué aux 3 sites de
+  retour. PROUVÉ live : `buddy loop "…"` SANS `-m` → résout gpt-5.5 → Verifier CONFIRMED → exit 0, fichier réel.
+  151 tests provider verts + 4 tests de branches. Plus besoin de `-m gpt-5.5` pour les commandes headless.
+- **File suivante (idées)** : slash /loop in-session (V2, sentinel `__LOOP__` calqué sur /goal) ; e2e génération
+  React/PWA depuis App Studio ; Cowork LiveLauncher « Loop ».
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
