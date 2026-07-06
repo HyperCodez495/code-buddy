@@ -241,8 +241,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   le seul qui existe dans une install packagée). dotenv n'écrase jamais → l'environnement réel gagne toujours.
   Prouvé live : relance SANS exports média → les deux fichiers logués chargés, boot propre. TOUT lanceur (y compris
   celui de Patrice) a désormais image xAI + voix Piper.
-- **File suivante (idées)** : sparkline historique DHI dans l'arène ; AutonomyDashboard (os-panels) sur autonomy.snapshot ;
-  OsStatusBar ; e2e génération quand le backend Codex répond ; purge des 61 warnings lint.
+- **BOARD AUTONOMIE LIVE (`e9fbe0c7`)** : la ligne texte du snapshot daemon devient un vrai board dans Mission
+  Control — compteurs par statut, file triée (in_progress > pending par priorité > completed), présence agents
+  (fenêtre fraîcheur 10 min + « il y a X »), journal récent. Modèle pur testé (now injecté). Validé live : vraie
+  tâche du 8 juin, ministar/fleet « à l'instant », entrée worklog qwen2.5. La ligne « AutonomyDashboard sur
+  autonomy.snapshot » du backlog est soldée.
+- **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
+  rafraîchissement périodique des données Mission Control (snapshot/council chargés une fois au mount).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
