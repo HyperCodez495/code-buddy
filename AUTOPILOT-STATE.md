@@ -277,9 +277,18 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   matcher, fail-open) câblé dans le command-validator PARTAGÉ (les 2 chemins bash, inconditionnel). Prouvé sur dist.
   Restes registrés : /deny <raison> relayée à l'agent (plomberie feedback existe, callback booléen) ; SecretSource
   pluggable + 1Password (op gated) ; session prune/bulk-archive.
-- **File suivante (idées)** : /deny <raison> → agent ; e2e génération quand le backend Codex répond ; purge des
-  61 warnings lint ; rafraîchissement périodique Mission Control ; app vitrine vidéo hero e2e ;
-  Genspark suite : page résultat de tâche (timeline + artefacts en fin de tour).
+- **CONFIRMATIONS INTERACTIVES COWORK + /deny RAISON (`df968447`, 13e cause racine)** : TOUTE confirmation embarquée
+  échouait fail-closed « requires an interactive terminal » — Cowork câblait son DesktopPermissionBridge sur
+  setPermissionCallback mais l'adapter n'appelait JAMAIS le callback (lien mort de bout en bout).
+  ConfirmationService.setInteractiveBridge (prioritaire sur remote-approval + TTY) + câblage adapter→dialogue hôte.
+  Parité Hermes /deny : refus en 2 temps avec champ raison optionnel, la raison voyage renderer→preload→IPC→
+  requestPermissionDetailed→feedback→erreur outil lue par l'agent. Prouvé live (dialogue + traversée handleResponse
+  tracée) + 35 tests. ⚠️ Gotcha relance Electron AGGRAVÉ : vérifier « bind() failed » ABSENT du log ET une seule
+  instance (`pgrep -f dist-electron`) — 2 instances = tours morts silencieux (DB partagée), la boucle d'attente port
+  doit VÉRIFIER la libération réellement (pas de lancement aveugle après 20 s).
+- **File suivante (idées)** : e2e confirmation organique (trouver l'op qui demande confirmation par défaut) ;
+  purge des 61 warnings lint ; rafraîchissement périodique Mission Control ; app vitrine vidéo hero e2e ;
+  Genspark suite : page résultat de tâche ; angle mort garde anti-stall (établissement du stream avant 1er chunk).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
