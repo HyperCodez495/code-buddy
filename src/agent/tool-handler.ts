@@ -22,93 +22,12 @@ import {
   ImageTool,
   BashTool,
 } from "../tools/index.js";
-import {
-  getFormalToolRegistry,
-  createTextEditorTools,
-  createBashTools,
-  createLsTools,
-  createSelfDescribeTools,
-  createRemindTools,
-  createSearchTools,
-  createWebTools,
-  createResearchTools,
-  createTodoTools,
-  createCronjobTools,
-  createDockerTools,
-  createKubernetesTools,
-  createGitTools,
-  createMiscTools,
-  createBrowserTools,
-  createProcessTools,
-  createVisionTools,
-  createScriptTools,
-  createPlanTools,
-  createKnowledgeTools,
-  createRelationshipIntelligenceTools,
-  createInternetScoutTools,
-  createLeadScoutTools,
-  createBrowserOperatorTools,
-  createWindowsTools,
-  createMemoryTools,
-  createParallelTools,
-  createAttentionTools,
-  createSkillsInspectionTools,
-  createLessonsTools,
-  createUserModelTools,
-  createAliasTools,
-  createMultimodalTools,
-  createAdvancedTools,
-  createCanvasTools,
-  createLspTools,
-  createMergeConflictTools,
-  createVulnScannerTools,
-  createCodebaseReplaceTools,
-  createAdvisorTools,
-  createVerifyTools,
-  createFleetTools,
-  createAskUserQuestionTools,
-  createExitPlanModeTools,
-  createGuiTools,
-  createSessionTools,
-  createCodeExplorerTools,
-  createScreenpipeTools,
-  // Integration/messaging/security adapters — exposed to the LLM via
-  // codebuddy/tools.ts registerGroup(...) but previously NOT dispatchable in the
-  // pure interactive path (they only lived in the headless registry/index.ts),
-  // so a live call resolved to "Unknown tool". Registered here so interactive
-  // dispatch ⊇ exposition. All these factories are inert at mount (constructors
-  // only store options; no I/O without credentials).
-  createKanbanTools,
-  createSendMessageTools,
-  createDiscordTools,
-  createHomeAssistantTools,
-  createFeishuTools,
-  createYuanbaoTools,
-  createMixtureOfAgentsTools,
-  createSpotifyTools,
-  createXSearchTools,
-  createSecretsTools,
-  // Firecrawl (firecrawl_search / firecrawl_scrape) — exposed to the LLM when
-  // FIRECRAWL_API_KEY is set (src/codebuddy/tools.ts registerGroup), but its
-  // adapter only lived in the headless registry, so a live call resolved to
-  // "Unknown tool" once the key was present. Registered here so interactive
-  // dispatch ⊇ exposition. Inert without the key (isAvailable gates it).
-  createFirecrawlTools,
-  // find_bugs (regex static analysis) + generate_document (PPTX/DOCX/XLSX/PDF)
-  // are real features now exposed to the LLM (codebuddy/tools.ts). Their
-  // adapters previously only lived in the headless registry / streaming path,
-  // so the non-streaming interactive dispatch resolved "Unknown tool".
-  createBugFinderTools,
-  createDocumentGeneratorTools,
-  // delegate_agent → reaches the built-in specialized agents (pdf/excel/
-  // data_analysis/sql/archive/swe). Interactive-only, mirroring the `verify`
-  // delegation tool. Its LLM bridge is wired at boot via setDelegateAgentProvider.
-  createDelegateAgentTools,
-} from "../tools/registry/index.js";
+import { getFormalToolRegistry } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
-import { createRegisterToolTool } from "../tools/register-tool-handler.js";
-import { createAuthoredExtraTools } from "../tools/registry/authored-extra-tools.js";
-import { ToolSearchTool } from "../tools/tool-search.js";
+// The adapter list (base tools + aliases, with the audit-history rationale for
+// every group) lives in interactive-adapters.ts so tests can assert the
+// invariant `interactive dispatch ⊇ LLM exposition` on the production list.
+import { createInteractiveToolAdapters } from "../tools/registry/interactive-adapters.js";
 import { CodeBuddyToolCall } from "../codebuddy/client.js";
 import { ToolResult } from "../types/index.js";
 import { CheckpointManager } from "../checkpoints/checkpoint-manager.js";
@@ -369,89 +288,11 @@ export class ToolHandler {
   private initializeRegistry(): void {
     if (this.registryInitialized) return;
 
-    // Register all tool adapters
-    const allTools = [
-      // tool_search FIRST-CLASS: the progressive-disclosure escape hatch was a
-      // complete class (BaseTool implements ITool) that was never registered —
-      // so the alwaysInclude('tool_search') in tool selection silently added
-      // nothing (toolMap.has === false) and the model could never pull a tool
-      // the per-query subset missed. Registering it here both dispatches it
-      // and exposes it (getAllCodeBuddyTools derives from this registry).
-      new ToolSearchTool(),
-      ...createTextEditorTools(),
-      ...createBashTools(),
-      ...createLsTools(),
-      ...createSelfDescribeTools(),
-      ...createRemindTools(),
-      ...createSearchTools(),
-      ...createWebTools(),
-      ...createResearchTools(),
-      ...createTodoTools(),
-      ...createCronjobTools(),
-      ...createDockerTools(),
-      ...createKubernetesTools(),
-      ...createGitTools(),
-      ...createMiscTools(),
-      ...createBrowserTools(),
-      ...createProcessTools(),
-      ...createVisionTools(),
-      ...createScriptTools(),
-      ...createPlanTools(),
-      ...createKnowledgeTools(),
-      ...createRelationshipIntelligenceTools(),
-      ...createInternetScoutTools(),
-      ...createLeadScoutTools(),
-      ...createBrowserOperatorTools(),
-      ...(process.platform === 'win32' ? createWindowsTools() : []),
-      ...createMemoryTools(),
-      ...createParallelTools(),
-      ...createAttentionTools(),
-      ...createSkillsInspectionTools(),
-      ...createLessonsTools(),
-      ...createUserModelTools(),
-      ...createMultimodalTools(),
-      ...createAdvancedTools(),
-      ...createCanvasTools(),
-      ...createLspTools(),
-      ...createMergeConflictTools(),
-      ...createVulnScannerTools(),
-      ...createCodebaseReplaceTools(),
-      ...createAdvisorTools(),
-      ...createVerifyTools(),
-      ...createFleetTools(),
-      ...createAskUserQuestionTools(),
-      ...createExitPlanModeTools(),
-      ...createGuiTools(),
-      ...createSessionTools(),
-      ...createCodeExplorerTools(),
-      ...createScreenpipeTools(),
-      // Integration / messaging / security tools — exposed to the LLM, so they
-      // must be dispatchable in interactive chat (not only in headless/multi-agent).
-      ...createKanbanTools(),
-      ...createSendMessageTools(),
-      ...createDiscordTools(),
-      ...createHomeAssistantTools(),
-      ...createFeishuTools(),
-      ...createYuanbaoTools(),
-      ...createMixtureOfAgentsTools(),
-      ...createSpotifyTools(),
-      ...createXSearchTools(),
-      ...createSecretsTools(),
-      ...createFirecrawlTools(),
-      ...createBugFinderTools(),
-      ...createDocumentGeneratorTools(),
-      ...createDelegateAgentTools(),
-      // 20 pre-authored tools (scaffold_app, project_map, git_summary, …) —
-      // exposed to the LLM via codebuddy/tools.ts AUTHORED_EXTRA_TOOLS, so they
-      // must be dispatchable in interactive chat too (invariant: dispatch ⊇ exposed).
-      ...createAuthoredExtraTools(),
-      // Self-improvement: the agent can author its own tools (opt-in only).
-      ...(process.env.CODEBUDDY_SELF_IMPROVE === 'true' ? [createRegisterToolTool()] : []),
-    ];
-
-    // Register canonical-prefix alias tools (shell_exec→bash, file_read→view_file, etc.)
-    const aliasTools = createAliasTools(allTools);
-    allTools.push(...aliasTools);
+    // The full interactive dispatch list (base adapters + canonical aliases)
+    // lives in registry/interactive-adapters.ts so the invariant
+    // `interactive dispatch ⊇ LLM exposition` is enforceable by
+    // tests/tools/tool-surface.test.ts against the exact production list.
+    const allTools = createInteractiveToolAdapters();
 
     for (const tool of allTools) {
       if (!this.registry.has(tool.name)) {

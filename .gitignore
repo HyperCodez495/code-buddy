@@ -4,6 +4,8 @@
 fleet-*-artifact.json
 !LICENSE
 !README.md
+# Committed test baselines (surface snapshots) — not artifacts
+!tests/**/*.baseline.txt
 full-test-log*.txt
 vitest-full*.log
 lint-*.txt
