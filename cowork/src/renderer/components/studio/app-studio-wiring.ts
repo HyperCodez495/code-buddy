@@ -86,7 +86,7 @@ export const APP_STUDIO_WIRING: StudioWiring = {
     'Writes must still pass a user confirmation gate before files.write/create/rename/delete are invoked.',
     'All file operations require an explicit project root and are confined by safeJoin; do not pass arbitrary absolute paths from the renderer.',
     'CommandRunner is not a PTY or sandbox; bound cwd to the active project and add core command validation if user-entered commands are enabled.',
-    'Dev server preview must come from app_server only; PreviewPane will refuse non-loopback URLs and uses sandbox=\"allow-scripts allow-same-origin\".',
+    'Dev server preview must come from app_server only; PreviewPane will refuse non-loopback URLs and uses sandbox allow-scripts allow-same-origin.',
     'Stop/death states from app_server should be reflected by refreshing devServer.status and clearing or marking previewStatus as dead.',
   ],
 };

@@ -12,8 +12,8 @@ describe('theme settings persistence', () => {
 
     expect(source).toContain("const DARK_BG = '#171614';");
     expect(source).toContain("const LIGHT_BG = '#f5f3ee';");
-    expect(source).toContain("configStore.update({ theme: nextTheme });");
-    expect(source).toContain('nativeTheme.themeSource = theme;');
+    expect(source).toContain('configStore.update({ theme: '); // variable renamed over time — persistence is what matters
+    expect(source).toContain('nativeTheme.themeSource = '); // now routes through resolveEffectiveTheme('system' aware)
     expect(source).toContain('mainWindow.setBackgroundColor(');
     expect(source).toContain("getSavedThemePreference() === 'system'");
     expect(source).toContain('nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG');

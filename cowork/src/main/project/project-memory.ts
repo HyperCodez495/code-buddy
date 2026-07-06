@@ -280,7 +280,7 @@ export class ProjectMemoryService {
     if (preferenceMatch) {
       return {
         category: 'preference',
-        content: preferenceMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        content: preferenceMatch[1].trim().replace(/^[,:;-]\s*/, ''),
         sourceSessionId: sessionId,
         sourceKind: role,
         evidence: normalized.slice(0, 120),
@@ -291,7 +291,7 @@ export class ProjectMemoryService {
     if (decisionMatch) {
       return {
         category: 'decision',
-        content: decisionMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        content: decisionMatch[1].trim().replace(/^[,:;-]\s*/, ''),
         sourceSessionId: sessionId,
         sourceKind: role,
         evidence: normalized.slice(0, 120),
@@ -302,7 +302,7 @@ export class ProjectMemoryService {
     if (contextMatch) {
       return {
         category: 'context',
-        content: contextMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        content: contextMatch[1].trim().replace(/^[,:;-]\s*/, ''),
         sourceSessionId: sessionId,
         sourceKind: role,
         evidence: normalized.slice(0, 120),
@@ -313,7 +313,7 @@ export class ProjectMemoryService {
     if (patternMatch) {
       return {
         category: 'pattern',
-        content: patternMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        content: patternMatch[1].trim().replace(/^[,:;-]\s*/, ''),
         sourceSessionId: sessionId,
         sourceKind: role,
         evidence: normalized.slice(0, 120),

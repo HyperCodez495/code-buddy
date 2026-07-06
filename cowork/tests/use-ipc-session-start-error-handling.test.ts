@@ -20,10 +20,10 @@ describe('useIPC session start error handling', () => {
     const errorCase = source.match(/case 'error':[\s\S]*?break;/)?.[0] || '';
 
     expect(errorCase).toContain('event.payload.sessionId');
-    expect(errorCase).toContain("store.updateSession(event.payload.sessionId, { status: 'idle' })");
-    expect(errorCase).toContain('store.finishExecutionClock(event.payload.sessionId)');
-    expect(errorCase).toContain('store.clearActiveTurn(event.payload.sessionId)');
-    expect(errorCase).toContain('store.clearPendingTurns(event.payload.sessionId)');
-    expect(errorCase).toContain('store.clearQueuedMessages(event.payload.sessionId)');
+    expect(errorCase).toContain("store.updateSession(errSessionId, { status: 'idle' })"); // errSessionId falls back to the active session
+    expect(errorCase).toContain('store.finishExecutionClock(errSessionId)');
+    expect(errorCase).toContain('store.clearActiveTurn(errSessionId)');
+    expect(errorCase).toContain('store.clearPendingTurns(errSessionId)');
+    expect(errorCase).toContain('store.clearQueuedMessages(errSessionId)');
   });
 });

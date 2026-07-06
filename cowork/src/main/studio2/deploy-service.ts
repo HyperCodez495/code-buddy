@@ -24,7 +24,7 @@ function extractUrl(output: string): string | undefined { return output.match(/h
 export class DeployService {
   async detectCli(target: Exclude<DeployTarget, 'zip'>): Promise<string | null> {
     for (const candidate of CLI_BY_TARGET[target]) {
-      try { await execFileAsync(whichCommand(), [candidate]); return candidate; } catch {}
+      try { await execFileAsync(whichCommand(), [candidate]); return candidate; } catch { /* candidate absent — try the next one */ }
     }
     return null;
   }

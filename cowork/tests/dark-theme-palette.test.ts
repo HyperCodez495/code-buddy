@@ -12,12 +12,16 @@ describe('dark theme palette', () => {
     expect(source).toContain('--color-text-primary: #e5e5e5;');
   });
 
-  it('keeps the warm charcoal palette available as the open-cowork theme override', () => {
+  it('keeps the selectable theme overrides (genspark / codex / anthropic)', () => {
+    // The old `.open-cowork` charcoal override was intentionally replaced by
+    // the theme selector work (6c753ce0): three named overrides now live in
+    // globals.css and the selector applies them as root classes.
     const source = fs.readFileSync(stylesPath, 'utf8');
-    expect(source).toContain('.open-cowork {');
-    expect(source).toContain('--color-background: #171614;');
-    expect(source).toContain('--color-surface: rgba(34, 32, 29, 0.7);');
-    expect(source).toContain('--color-text-primary: #f8f4ed;');
+    expect(source).toContain('.genspark {');
+    expect(source).toContain('.codex {');
+    expect(source).toContain('.anthropic {');
+    expect(source).toContain('--color-background: #0d0b1f;'); // genspark deep violet
+    expect(source).toContain('--color-background: #0d1117;'); // codex slate
   });
 
   it('keeps the accent within the warm orange family', () => {
