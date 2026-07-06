@@ -309,8 +309,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   bolt split sur les traceSteps réels ; clic = afficher dans le dossier). Rien pendant un tour actif / sans
   production. Prouvé live : tour réel → « Fichiers produits · 1 » avec le chemin exact. La ligne « page résultat
   de tâche » Genspark est soldée côté chat.
+- **SECRETSOURCE PLUGGABLE + 1PASSWORD (`ed1acbb6`, parité Hermes)** : le switch fermé de SecretRef devient un
+  registre (registerSecretSource, builtins env/file/exec/op) ; op:// first-class (valeur entière ET token
+  ${op:...}) via execFile (pas de shell). 6 tests contre un VRAI faux binaire op sur PATH ; validation live
+  1Password honnêtement account-gated. Prouvé sur dist. Le doc de parité enregistre les 3 fills du jour
+  (df968447, e53f6abc, ed1acbb6) — seul reste CLI : session prune/bulk-archive.
 - **File suivante (idées)** : e2e confirmation organique ; purge des 61 warnings lint ; app vitrine vidéo hero
-  e2e ; SecretSource pluggable (structure) ; session prune/bulk-archive.
+  e2e ; session prune/bulk-archive (dernier reste parité).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
