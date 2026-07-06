@@ -252,8 +252,15 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   française ne matchait les keywords → video_generate hors du set du tour. Fix : pliage NFD des diacritiques
   (tokenize + classification + TF-IDF + index IDF) + radicaux français dans les metadata média. Prouvé chemin réel :
   même demande → video_generate appelé → MP4 4,5 Mo en 71 s, envoyé à Patrice. 65/65 tests sélecteur verts.
+- **MÉDIAS INLINE DANS LE CHAT + VIDÉO PARTOUT (`cd1f447f`, demandes Patrice)** : (a) MediaAttachments sous chaque
+  message assistant — les chemins MEDIA:/nus deviennent de vrais lecteurs <video>/<img>/<audio> (file://, CSP
+  img-src file: + media-src ajoutés) ; (b) hydratation des sessions froides PROMUE à la racine NewShell (reprendre
+  une session depuis la Home après reload affichait « Démarrez la conversation ») ; (c) le contrat App Studio
+  autorise video_generate (vidéo hero/ambiance, chemin relatif, dégradé propre). Prouvé live : le MP4 sharpei se
+  lit inline dans la session rouverte (720p, readyState 4).
 - **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
-  rafraîchissement périodique des données Mission Control (snapshot/council chargés une fois au mount).
+  rafraîchissement périodique des données Mission Control (snapshot/council chargés une fois au mount) ;
+  app vitrine avec vidéo hero e2e (App Studio) quand le backend est disponible.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
