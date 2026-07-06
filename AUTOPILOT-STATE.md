@@ -384,7 +384,12 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   l'a produit : media.list construit un index basename→sessionId en scannant les messages (le basename est repris
   dans le marqueur MEDIA: — vérité terrain, modèle pur + 4 tests), bouton 💬 « voir la conversation » par carte.
   Prouvé live : 11 médias, 8 liés ; clic vignette chaton → ouvre « Génère une image d'un chaton roux ».
-- **File suivante (idées)** : e2e confirmation organique ; vérifier les autres appelants de startSession pour cwd relatif.
+- **RESTE cwd relatif CLOS + RECHERCHE BIBLIOTHÈQUE (`d53b78df`)** : (a) audit des appelants de startSession —
+  TOUS passent par sessionManager.startSession/startBackgroundSession qui appellent resolveSafeCwd en tête ; le fix
+  au SEAM (itération 50) couvre donc remote-manager, task-dispatch, index.ts et l'autonomie. Reste clos. (b) La
+  Bibliothèque n'avait que des filtres par type → modèle pur filterMedia (type + recherche pliée sur
+  prompt/modèle/nom, 4 tests) + champ de recherche. Prouvé live : « chaton » → 1 image (via son prompt).
+- **File suivante (idées)** : e2e confirmation organique ; suite lint warnings résiduels si le temps.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
