@@ -11,6 +11,7 @@ import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
 import { StudioProjectHistory } from './StudioProjectHistory';
 import { StudioVersionsPane } from './StudioVersionsPane';
 import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
+import { EXTRA_GALLERY_ITEMS, extraPromptById } from './template-gallery/template-extra-bridge';
 import { StudioChatPanel } from '../studio-iterate/StudioChatPanel.js';
 import { ChangedFilesStrip } from '../studio-iterate/ChangedFilesStrip.js';
 import type { StudioMessage, StudioFileChange } from '../studio-iterate/iterate-model.js';
@@ -311,8 +312,15 @@ export function AppStudioView({
           </div>
           <div className="mx-auto mt-5 w-full max-w-4xl">
             <TemplateGallery
-              items={DEFAULT_TEMPLATES}
+              items={[...DEFAULT_TEMPLATES, ...EXTRA_GALLERY_ITEMS]}
               onSelect={(id) => {
+                // Extra templates (vague Codex E) carry a full generation
+                // prompt — seed it verbatim; built-ins keep the name+tagline.
+                const richPrompt = extraPromptById.get(id);
+                if (richPrompt) {
+                  setSeedPrompt(richPrompt);
+                  return;
+                }
                 const item = DEFAULT_TEMPLATES.find((t) => t.id === id);
                 if (item) setSeedPrompt(`${item.name} — ${item.tagline}`);
               }}
