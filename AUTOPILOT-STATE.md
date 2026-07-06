@@ -246,6 +246,12 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   (fenêtre fraîcheur 10 min + « il y a X »), journal récent. Modèle pur testé (now injecté). Validé live : vraie
   tâche du 8 juin, ministar/fleet « à l'instant », entrée worklog qwen2.5. La ligne « AutonomyDashboard sur
   autonomy.snapshot » du backlog est soldée.
+- **VIDÉO DANS LE CHAT (12e cause racine, `63313334`)** : demande Patrice « permet de générer également des vidéos ».
+  Reproduit : « Crée une vidéo… » → « je ne peux pas » (5,3K in — system prompt OK, donc SÉLECTION d'outils).
+  Cause : le tokenizer \W du ToolSelector cassait les mots accentués (« vidéo » → 'vid o') → AUCUNE requête
+  française ne matchait les keywords → video_generate hors du set du tour. Fix : pliage NFD des diacritiques
+  (tokenize + classification + TF-IDF + index IDF) + radicaux français dans les metadata média. Prouvé chemin réel :
+  même demande → video_generate appelé → MP4 4,5 Mo en 71 s, envoyé à Patrice. 65/65 tests sélecteur verts.
 - **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
   rafraîchissement périodique des données Mission Control (snapshot/council chargés une fois au mount).
 
