@@ -450,11 +450,15 @@ async function fixStaleLockFiles(lockFiles: string[]): Promise<FixResult> {
 
 export async function runDoctorChecks(cwd?: string): Promise<DoctorCheck[]> {
   const dir = cwd ?? process.cwd();
+  const { checkLlmKeysLive } = await import('./llm-key-check.js');
   return [
     checkNodeVersion(),
     await checkNativeSqlite(),
     ...checkDependencies(),
     ...checkApiKeys(),
+    // Validation LIVE des clés configurées (endpoint /models, 0 token) :
+    // distingue clé invalide (401/403 → error) de quota épuisé (429 → warn).
+    ...(await checkLlmKeysLive()),
     await checkChatGptOAuth(),
     ...checkConfigFiles(dir),
     ...checkStaleLockFiles(dir),
