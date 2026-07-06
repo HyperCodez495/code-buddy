@@ -22,6 +22,12 @@ import type { GoalStatus } from '../../goals/goal-state.js';
 import { getAgentRegistry, initializeAgentRegistry } from '../specialized/agent-registry.js';
 import { getCostTracker } from '../../utils/cost-tracker.js';
 import { logger } from '../../utils/logger.js';
+import {
+  changedFilesBetween,
+  formatStructuralEvidence,
+  gitStatusSnapshot,
+  structuralCheck,
+} from './structural-gate.js';
 
 export type VerifierVerdict = 'CONFIRMED' | 'NEEDS REVIEW' | 'unverified';
 
@@ -58,6 +64,19 @@ export interface DevLoopOptions {
   noPlan?: boolean;
   /** Désactiver le gate Verifier (retombe sur la boucle juge-seule, comme `goal`). */
   noVerify?: boolean;
+  /**
+   * Désactiver la couche structurelle zéro-LLM (fichiers vides, marqueurs de
+   * conflit, placeholders d'omission, JSON invalide sur les fichiers touchés
+   * par le tour). Active seulement quand `cwd` est fourni (la boucle possède
+   * ce working tree) ; s'abstient d'elle-même hors dépôt git.
+   */
+  noStructural?: boolean;
+  /**
+   * Working tree possédé par la boucle — requis pour activer la couche
+   * structurelle (turn-delta git). Absent ⇒ pas de checks structurels
+   * (contextes embarqués/tests où le tree ne appartient pas au tour).
+   */
+  cwd?: string;
   /** Override du vérificateur (tests) ; défaut = Verifier agent via le registry. */
   verify?: DevLoopVerifier;
   /** Lecteur de coût session (tests) ; défaut = getCostTracker. */
@@ -205,18 +224,41 @@ export async function runDevLoop(
 
   let prompt = state.goal;
   let lastVerifierVerdict: VerifierVerdict = 'unverified';
+  let lastVerifyEvidence = '';
+  const structuralCwd =
+    !options.noVerify && !options.noStructural ? options.cwd : undefined;
   const maxIterations = state.maxTurns + 1;
 
   for (let i = 0; i < maxIterations; i++) {
-    // 1) EXECUTE
+    // 1) EXECUTE (snapshot git avant/après pour la couche structurelle)
+    const preStatus = structuralCwd ? await gitStatusSnapshot(structuralCwd) : null;
     const entries = await agent.processUserMessage(prompt);
     const turnSummary = summarizeTurn(entries);
 
-    // 2) VERIFY (indépendant) — gate le « done ».
+    // 2a) VERIFY — couche structurelle zéro-LLM d'abord (jarvis-OS layer 1) :
+    // un défaut indiscutable (fichier vide, conflit, omission, JSON cassé) sur
+    // un fichier touché par le tour ⇒ NEEDS REVIEW direct, sans payer le
+    // Verifier LLM. S'abstient hors dépôt git (snapshots null).
+    let structuralEvidence: string | null = null;
+    if (structuralCwd && turnSummary.trim()) {
+      const touched = changedFilesBetween(preStatus, await gitStatusSnapshot(structuralCwd));
+      if (touched.length > 0) {
+        const issues = await structuralCheck(structuralCwd, touched);
+        if (issues.length > 0) structuralEvidence = formatStructuralEvidence(issues);
+      }
+    }
+
+    // 2b) VERIFY (indépendant) — gate le « done ».
     let evidence = turnSummary;
-    if (!options.noVerify && turnSummary.trim()) {
+    if (structuralEvidence) {
+      lastVerifierVerdict = 'NEEDS REVIEW';
+      lastVerifyEvidence = `Défauts structurels détectés (vérification déterministe) :\n${structuralEvidence}`;
+      emit(`🔎 Verifier : NEEDS REVIEW (structurel, sans LLM)`);
+      evidence = `${turnSummary}\n\n[Verifier verdict: NEEDS REVIEW]\n${lastVerifyEvidence.slice(0, 2000)}`;
+    } else if (!options.noVerify && turnSummary.trim()) {
       const v = await verify({ agent, goal: state.goal, evidence: turnSummary });
       lastVerifierVerdict = v.verdict;
+      lastVerifyEvidence = v.evidence;
       emit(`🔎 Verifier : ${v.verdict}`);
       evidence = `${turnSummary}\n\n[Verifier verdict: ${v.verdict}]\n${v.evidence.slice(0, 2000)}`;
     }
@@ -256,6 +298,14 @@ export async function runDevLoop(
     }
     if (!decision.shouldContinue || !decision.continuationPrompt) break;
     prompt = decision.continuationPrompt;
+    // Réinjection des échecs de vérification : le tour suivant reçoit ce qui a
+    // été refusé et pourquoi (sinon le continuation prompt générique ne porte
+    // que l'objectif, et l'agent peut re-déclarer « fait » sans corriger).
+    if (lastVerifierVerdict === 'NEEDS REVIEW' && lastVerifyEvidence.trim()) {
+      prompt +=
+        `\n\n[Vérification indépendante NON confirmée — corrige d'abord ces points, ` +
+        `preuves à l'appui :]\n${lastVerifyEvidence.slice(0, 1500)}`;
+    }
   }
 
   const final = manager.state;

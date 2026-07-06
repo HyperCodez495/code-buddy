@@ -88,6 +88,10 @@ export function createLoopCommand(): Command {
       'Gate de vérif DÉTERMINISTE (exit 0 = CONFIRMED) au lieu du Verifier LLM — ex. "npm test"',
     )
     .option('--no-verify', 'Désactiver le gate Verifier indépendant (boucle juge-seule)')
+    .option(
+      '--no-structural',
+      'Désactiver la couche structurelle zéro-LLM (fichiers vides/conflits/omissions/JSON) avant le Verifier',
+    )
     .option('--no-plan', 'Désactiver la décomposition en plan')
     .option('-m, --model <model>', 'Override du modèle agent pour ce run')
     .option(
@@ -146,7 +150,9 @@ export function createLoopCommand(): Command {
           ...(judgeModel ? { judgeModel } : {}),
           ...(verify ? { verify } : {}),
           noVerify: options.verify === false,
+          noStructural: options.structural === false,
           noPlan: options.plan === false,
+          cwd,
           onMessage: text => console.log(`\n${text}`),
         });
 

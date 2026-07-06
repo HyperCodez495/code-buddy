@@ -148,3 +148,83 @@ describe('runDevLoop — cost budget', () => {
     expect(result.turnsUsed).toBe(1);
   });
 });
+
+describe('runDevLoop — structural gate (zero-LLM layer)', () => {
+  it('overrides the LLM verifier when the turn leaves a structural defect, then reinjects the issues', async () => {
+    const fs = await import('fs/promises');
+    const os = await import('os');
+    const path = await import('path');
+    const { execFileSync } = await import('child_process');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'devloop-sg-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'claims done', parseFailed: false });
+    const llmVerify = vi.fn(async () => ({ verdict: 'CONFIRMED' as const, evidence: 'proof' }));
+
+    const prompts: string[] = [];
+    let turn = 0;
+    const agent: DevLoopAgent = {
+      processUserMessage: async (input: string): Promise<ChatEntry[]> => {
+        prompts.push(input);
+        turn += 1;
+        if (turn === 1) {
+          // Turn 1 leaves an unparsable JSON in the owned working tree.
+          await fs.writeFile(path.join(dir, 'out.json'), '{"broken": ');
+        } else {
+          // Turn 2 fixes it.
+          await fs.writeFile(path.join(dir, 'out.json'), '{"broken": false}');
+        }
+        return [{ type: 'assistant', content: 'did work' } as ChatEntry];
+      },
+      getClient: () => ({}) as never,
+      executeToolByName: async () => ({ success: true, output: '' }),
+    };
+
+    const result = await runDevLoop(agent, 'court objectif', {
+      maxTurns: 4,
+      cwd: dir,
+      verify: llmVerify,
+      currentCostUsd: zeroCost,
+      noPlan: true,
+    });
+
+    // Turn 1: structural defect → NEEDS REVIEW without calling the LLM verifier,
+    // judge's "done" is overridden. Turn 2: file fixed → LLM verifier CONFIRMS.
+    expect(result.status).toBe('done');
+    expect(result.turnsUsed).toBe(2);
+    expect(llmVerify).toHaveBeenCalledTimes(1);
+    // The turn-2 prompt carries the structural issues (prev-issues reinjection).
+    expect(prompts[1]).toContain('NON confirmée');
+    expect(prompts[1]).toContain('out.json');
+  });
+
+  it('reinjects LLM-verifier evidence into the next turn prompt on NEEDS REVIEW', async () => {
+    judgeMock.mockResolvedValue({ verdict: 'continue', reason: 'not there yet', parseFailed: false });
+    const verdicts = ['NEEDS REVIEW', 'CONFIRMED'] as const;
+    let v = 0;
+    const verify: DevLoopVerifier = async () => ({
+      verdict: verdicts[Math.min(v++, verdicts.length - 1)] as 'CONFIRMED' | 'NEEDS REVIEW',
+      evidence: 'tests still failing: X should equal 2',
+    });
+
+    const prompts: string[] = [];
+    const agent: DevLoopAgent = {
+      processUserMessage: async (input: string): Promise<ChatEntry[]> => {
+        prompts.push(input);
+        return [{ type: 'assistant', content: 'work' } as ChatEntry];
+      },
+      getClient: () => ({}) as never,
+      executeToolByName: async () => ({ success: true, output: '' }),
+    };
+
+    await runDevLoop(agent, 'court objectif', {
+      maxTurns: 2,
+      verify,
+      currentCostUsd: zeroCost,
+      noPlan: true,
+    });
+
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts[1]).toContain('tests still failing: X should equal 2');
+  });
+});
