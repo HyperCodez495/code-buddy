@@ -291,8 +291,14 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   entrée worklog temporaire écrite dans le vrai ledger → apparue dans le board en ≤30 s SANS reload (puis retirée).
   Notes : contextBridge FIGE window.electronAPI (interception impossible côté renderer) ; l'angle mort anti-stall
   n'existe pas (chatStream est un async generator — le POST part au 1er next(), couvert par la garde).
-- **File suivante (idées)** : e2e confirmation organique (trouver l'op qui demande confirmation par défaut) ;
-  purge des 61 warnings lint ; app vitrine vidéo hero e2e ; Genspark suite : page résultat de tâche.
+- **VUE CAPACITÉS UNIFIÉE (`7eabeb33`, parité IHM Hermes desktop)** : Hermes a unifié Skills/Tools/MCP en une page
+  « Capabilities » ; Cowork avait les 3 éparpillés (page skills ⌘⇧K, strips cockpit, MCP dans Réglages). Nouvelle
+  entrée rail 🧰 à 3 onglets sur données RÉELLES : ToolsCatalogPanel (230 outils du vrai registre tools.list,
+  groupés/cherchables), McpCapabilitiesPanel (mcp.getServers/Status/Tools, lecture — édition dans Réglages),
+  SkillsManagerPage réutilisée telle quelle (review-gated). Validé écran (3 onglets). Raffinements notés :
+  intégrer la page skills sans son chrome overlay ; per-tool gating (le toggle Hermes) en suite.
+- **File suivante (idées)** : e2e confirmation organique ; purge des 61 warnings lint ; app vitrine vidéo hero
+  e2e ; Genspark suite : page résultat de tâche ; per-tool gating dans Capacités.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
