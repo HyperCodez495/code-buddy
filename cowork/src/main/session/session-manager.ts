@@ -714,6 +714,8 @@ export class SessionManager {
       }
     }
 
+    this.ensureCwdExists(effectiveCwd);
+
     const session = this.createSession(title, effectiveCwd, allowedTools, memoryEnabled);
 
     // Attach active project if any (Claude Cowork parity)
@@ -756,6 +758,8 @@ export class SessionManager {
       }
     }
 
+    this.ensureCwdExists(effectiveCwd);
+
     const session = this.createSession(title, effectiveCwd);
     session.isBackground = true;
     if (resolvedProjectId) {
@@ -777,6 +781,25 @@ export class SessionManager {
     this.enqueuePrompt(session, prompt, content);
 
     return session;
+  }
+
+  /**
+   * A session's cwd must EXIST before the engine runs: with a missing
+   * workingDirectory the agent's relative paths silently resolve against the
+   * Electron process cwd (proven live: an AI app generation targeting a fresh
+   * folder overwrote cowork's own index.html). Fail-open: an uncreatable path
+   * is logged and the session proceeds with the old behavior.
+   */
+  private ensureCwdExists(cwd?: string): void {
+    if (!cwd) return;
+    try {
+      if (!fs.existsSync(cwd)) {
+        fs.mkdirSync(cwd, { recursive: true });
+        log('[SessionManager] Created missing session cwd:', cwd);
+      }
+    } catch (err) {
+      log('[SessionManager] Could not create session cwd:', cwd, err);
+    }
   }
 
   // Create a new session object
