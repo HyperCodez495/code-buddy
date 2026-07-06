@@ -236,8 +236,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   du rail (✨ Créations, onglets Deck/Feuille/Doc/Pod/Image/Vidéo/Drive, panneaux lazy remontés par onglet) + entrée
   ⌘K « Créations » (le test palette modélise désormais les capacités de navigation à côté des overlays). Validé
   computer-use : rail actif, DeckStudio rendu, Drive listant les 6 livrables réels de la nuit.
+- **ENV MÉDIA/TTS PORTÉS (`1f9e99fa`)** : cascade dotenv au boot du main — projet `cowork/.env` PUIS
+  `~/.codebuddy/cowork.env` (user-level, créé avec XAI_API_KEY + IMAGE_PROVIDER + TTS_VOICE, chmod 600, hors dépôt ;
+  le seul qui existe dans une install packagée). dotenv n'écrase jamais → l'environnement réel gagne toujours.
+  Prouvé live : relance SANS exports média → les deux fichiers logués chargés, boot propre. TOUT lanceur (y compris
+  celui de Patrice) a désormais image xAI + voix Piper.
 - **File suivante (idées)** : sparkline historique DHI dans l'arène ; AutonomyDashboard (os-panels) sur autonomy.snapshot ;
-  OsStatusBar ; e2e génération quand le backend Codex répond ; reporter les env média/TTS dans le lanceur standard.
+  OsStatusBar ; e2e génération quand le backend Codex répond ; purge des 61 warnings lint.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
