@@ -116,7 +116,13 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   // `tool_search` is ALWAYS exposed so the model can discover & pull ANY tool
   // on demand when the per-query TF-IDF subset missed it (progressive disclosure,
   // like Codex/Claude). Without it, a tool outside the top-K is unreachable.
-  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search', 'tool_search'],
+  // `create_file` pairs with `str_replace_editor`: without it an agent whose
+  // RAG subset missed it can EDIT files but never CREATE one — proven live in
+  // Cowork's App Studio generation ("l'outil create_file n'est pas disponible
+  // dans cette session"). `apply_patch` likewise: WritePolicy strict blocks
+  // direct editors and points at apply_patch, so a selection without it
+  // re-opens the historical edit deadlock.
+  alwaysInclude: ['view_file', 'create_file', 'str_replace_editor', 'apply_patch', 'bash', 'search', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search', 'tool_search'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes

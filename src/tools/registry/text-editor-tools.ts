@@ -6,13 +6,28 @@
  * to the formal ITool interface for use with the FormalToolRegistry.
  */
 
+import path from 'path';
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import { TextEditorTool } from '../index.js';
 
 function extractPath(input: Record<string, unknown>): string | undefined {
   const candidate = input.path ?? input.file_path ?? input.target_file ?? input.file;
   return typeof candidate === 'string' ? candidate : undefined;
+}
+
+/**
+ * Resolve a (possibly relative) tool path against the execution context's cwd.
+ *
+ * Without this, relative paths resolve against `process.cwd()` — correct for
+ * the CLI (launched from the workspace) but WRONG for embedded engines whose
+ * session workingDirectory differs from the host process cwd. Proven live in
+ * Cowork: an App Studio generation scoped to /tmp/e2e-meteo3 wrote
+ * `index.html` into the Electron launch dir and overwrote cowork's own entry.
+ */
+function resolveAgainstCwd(p: string, context?: IToolExecutionContext): string {
+  if (!p || path.isAbsolute(p) || !context?.cwd) return p;
+  return path.resolve(context.cwd, p);
 }
 
 // ============================================================================
@@ -50,8 +65,8 @@ export class ViewFileTool implements ITool {
   readonly name = 'view_file';
   readonly description = 'View file contents with optional line range';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const path = extractPath(input) as string;
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    const path = resolveAgainstCwd(extractPath(input) as string, context);
     const startLine = input.start_line as number | undefined;
     const endLine = input.end_line as number | undefined;
 
@@ -151,8 +166,8 @@ export class CreateFileTool implements ITool {
   readonly name = 'create_file';
   readonly description = 'Create a new file with the specified content';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const path = extractPath(input) as string;
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    const path = resolveAgainstCwd(extractPath(input) as string, context);
     const content = input.content as string;
 
     return await getTextEditor().create(path, content);
@@ -235,8 +250,8 @@ export class StrReplaceEditorTool implements ITool {
   readonly name = 'str_replace_editor';
   readonly description = 'Replace text in a file using exact or fuzzy matching';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const path = extractPath(input) as string;
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    const path = resolveAgainstCwd(extractPath(input) as string, context);
     const oldStr = (input.old_str ?? input.old_text ?? input.old_content ?? input.find ?? input.old_string) as string;
     const newStr = (input.new_str ?? input.new_text ?? input.new_content ?? input.replace ?? input.new_string) as string;
     const replaceAll = (input.replace_all as boolean) ?? false;
@@ -391,9 +406,9 @@ export class ApplyPatchExecuteTool implements ITool {
   readonly description =
     'Apply a patch to add, update, or delete files (diff-first). Use *** Begin Patch / *** End Patch with -/+ lines. Required by WritePolicy strict mode.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     const tool = await getApplyPatchTool();
-    return tool.execute(input);
+    return tool.execute(input, context?.cwd);
   }
 
   getSchema(): ToolSchema {

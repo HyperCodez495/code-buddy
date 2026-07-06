@@ -389,7 +389,11 @@ export class ApplyPatchTool extends BaseTool {
     };
   }
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  /**
+   * @param cwd Base directory for the patch's relative paths — an embedded
+   *   engine's session workingDirectory. Defaults to `process.cwd()` (CLI).
+   */
+  async execute(input: Record<string, unknown>, cwd?: string): Promise<ToolResult> {
     const patchText = input.patch as string;
     if (!patchText) return this.error('patch is required');
 
@@ -405,10 +409,10 @@ export class ApplyPatchTool extends BaseTool {
       // sync with resolveReviewMode() in src/review/review-engine.ts.
       const rawMode = (process.env.CODEBUDDY_DIFF_REVIEW ?? 'off').toLowerCase();
       if (rawMode === 'static' || rawMode === 'full') {
-        return await this.executeGated(ops, rawMode, typeof input.intent === 'string' ? input.intent : undefined);
+        return await this.executeGated(ops, rawMode, typeof input.intent === 'string' ? input.intent : undefined, cwd);
       }
 
-      const patchResult = applyPatchOps(ops);
+      const patchResult = applyPatchOps(ops, cwd ?? process.cwd());
       const lines: string[] = [];
       if (patchResult.filesAdded.length > 0) lines.push(`Added: ${patchResult.filesAdded.join(', ')}`);
       if (patchResult.filesDeleted.length > 0) lines.push(`Deleted: ${patchResult.filesDeleted.join(', ')}`);
@@ -431,8 +435,8 @@ export class ApplyPatchTool extends BaseTool {
    * comes back as a tool ERROR carrying the annotations, so the agent can
    * revise the patch instead of silently losing the edit.
    */
-  private async executeGated(ops: FileOp[], mode: 'static' | 'full', intent?: string): Promise<ToolResult> {
-    const cwd = process.cwd();
+  private async executeGated(ops: FileOp[], mode: 'static' | 'full', intent?: string, baseCwd?: string): Promise<ToolResult> {
+    const cwd = baseCwd ?? process.cwd();
     const { changes, errors } = computePatchedFiles(ops, cwd);
     if (errors.length > 0) {
       return this.error(`review gate: patch does not resolve against the working tree (fail-closed, nothing applied):\n${errors.join('\n')}`);
