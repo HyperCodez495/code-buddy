@@ -157,6 +157,12 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     }
   }, [apis, appendTerminal, projectRoot]);
 
+  // Load the file tree whenever the project root changes (AI-generated project,
+  // opened folder) so the bolt.new-style workbench reflects the current project.
+  useEffect(() => {
+    if (projectRoot) void refreshTree(projectRoot);
+  }, [projectRoot, refreshTree]);
+
   const scaffold = useCallback(async (request: StudioScaffoldRequest) => {
     if (!request.targetDir) {
       const error = 'Aucun répertoire cible pour le scaffold.';

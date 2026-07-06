@@ -20,6 +20,7 @@ import { HomeView } from './HomeView';
 import { useCallback, useMemo } from 'react';
 import { AppStudioView } from './studio/AppStudioView';
 import { useAppStudio } from './studio/use-app-studio';
+import { sessionToStudioMessages } from './studio/studio-chat-adapter';
 import { createStudioApis } from './studio/studio-api-bridge';
 import type { StudioScaffoldRequest } from './studio/StudioComposer';
 import { buildAiGenerationPrompt } from './studio/studio-ai-generation';
@@ -133,29 +134,48 @@ function AdvancedLauncher() {
  */
 function StudioView() {
   const apis = useMemo(() => createStudioApis(), []);
-  const { viewProps } = useAppStudio({ apis });
-  const { startSession } = useIPC();
+  const activeSessionId = useAppStore((st) => st.activeSessionId);
+  const sessions = useAppStore((st) => st.sessions);
+  const sessionStates = useAppStore((st) => st.sessionStates);
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const sessionCwd = activeSession?.cwd ?? '';
+  // Point the workbench at the active project session's dir so files/preview
+  // populate as the app is generated (bolt.new-style unified workspace).
+  const { viewProps } = useAppStudio({ apis, projectRoot: sessionCwd });
+  const { startSession, continueSession } = useIPC();
   const setActiveSession = useAppStore((st) => st.setActiveSession);
-  const setPrimaryView = useAppStore((st) => st.setPrimaryView);
   const workingDir = useAppStore((st) => st.workingDir);
 
-  // AI generation: start a project-scoped agent session seeded to read the chosen
-  // design system and write a complete branded app, then jump to chat to watch it
-  // (the Flight Plan panel fills with the generation steps live).
+  // AI generation: start a project-scoped agent session and STAY in App Studio —
+  // the bolt.new split shows the chat (left) driving the workbench (right) live.
   const onGenerateWithAI = useCallback(
     async (request: StudioScaffoldRequest) => {
       const prompt = buildAiGenerationPrompt(request);
       const cwd = request.targetDir?.trim() || workingDir || undefined;
       const session = await startSession(getInitialSessionTitle(request.prompt), prompt, cwd);
-      if (session?.id) {
-        setActiveSession(session.id);
-        setPrimaryView('chat');
-      }
+      if (session?.id) setActiveSession(session.id);
     },
-    [startSession, setActiveSession, setPrimaryView, workingDir],
+    [startSession, setActiveSession, workingDir],
   );
 
-  return <AppStudioView {...viewProps} onGenerateWithAI={onGenerateWithAI} />;
+  // The bolt.new iterate chat, driven by the active project session (a session
+  // with a cwd). Absent → App Studio shows its composer entry screen.
+  const chat = useMemo(() => {
+    if (!activeSessionId || !sessionCwd) return undefined;
+    const st = sessionStates[activeSessionId];
+    return {
+      messages: sessionToStudioMessages(st?.messages ?? [], { running: Boolean(st?.activeTurn) }),
+      busy: Boolean(st?.activeTurn),
+      suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
+      onSend: (text: string) => {
+        void continueSession(activeSessionId, text);
+      },
+    };
+  }, [activeSessionId, sessionCwd, sessionStates, continueSession]);
+
+  return (
+    <AppStudioView {...viewProps} onGenerateWithAI={onGenerateWithAI} {...(chat ? { chat } : {})} />
+  );
 }
 
 export function NewShell() {
