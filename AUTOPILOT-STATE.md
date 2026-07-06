@@ -353,7 +353,12 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   consigne), 28 fichiers, cherry-pick sans conflit, gate complet vert, boot vérifié. Worktrees codex-* nettoyés.
   Bilan salve : 3 vagues lancées, 3 récupérées+câblées (terminal ↑/↓, onglet Versions, lint) — la chaîne
   Codex-produit/Fable-gate-câble-merge tourne.
-- **File suivante (idées)** : e2e confirmation organique ; app vitrine vidéo hero e2e.
+- **SALVE CODEX 2 — D+F CÂBLÉS (`815c5311`)** : D (CheckpointDiffView) monté derrière le bouton « Diff » de
+  l'onglet Versions — commit du snapshot vs HEAD via checkpoint.compare réel (map id→commit dans le pane), tri
+  par le modèle pur, overlay. F (OnboardingTour 7 étapes) — s'affiche à la PREMIÈRE ouverture (latch localStorage
+  cowork.tourSeen) + ⌘K « Visite guidée ». Prouvé live (tour rendu, skip pose le latch). Vague E (8 templates)
+  tourne encore — monitor armé.
+- **File suivante (idées)** : fin vague E ; e2e confirmation organique ; app vitrine vidéo hero e2e.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
