@@ -10,11 +10,12 @@
  *  - « Copier » puts the absolute path on the clipboard.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clapperboard, Copy, Download, FolderOpen, Image as ImageIcon, Loader2, MessageCircle, MessageSquarePlus, Music, RefreshCw, Wand2 } from 'lucide-react';
+import { CheckSquare, Clapperboard, Copy, Download, FolderOpen, Image as ImageIcon, Loader2, MessageCircle, MessageSquarePlus, Music, RefreshCw, Square, Wand2 } from 'lucide-react';
 
 import { useAppStore } from '../../store';
 import { toFileUrl } from '../message/media-attachments-model.js';
 import { filterMedia } from './media-filter-model.js';
+import { clear as clearSel, isAllSelected, selectAll, selectionSummary, toggle as toggleSel } from './media-selection-model.js';
 
 interface MediaItem {
   path: string;
@@ -41,6 +42,8 @@ export function MediaLibraryPanel() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const setChatComposerSeed = useAppStore((s) => s.setChatComposerSeed);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
@@ -89,14 +92,31 @@ export function MediaLibraryPanel() {
     setPrimaryView('chat');
   };
 
+  const exportSelection = () => {
+    const paths = [...selected];
+    if (paths.length === 0) return;
+    void window.electronAPI?.media?.exportMany?.(paths).then((result) => {
+      if (result?.ok) {
+        flash(`${result.copied} média(s) exporté(s) vers ${result.destDir}`);
+        setSelectMode(false);
+        setSelected(clearSel());
+      }
+    });
+  };
+
   const exportItem = (item: MediaItem) => {
     void window.electronAPI?.media?.export(item.path).then((result) => {
       if (result?.ok && result.savedTo) flash(`Exporté vers ${result.savedTo}`);
     });
   };
 
-  const copyPath = (item: MediaItem) => {
-    void navigator.clipboard.writeText(item.path).then(() => flash('Chemin copié'));
+  const copyToClipboard = (item: MediaItem) => {
+    // Images copy the actual picture (paste into a doc/chat); video/audio copy
+    // the path (no portable clipboard type across apps).
+    void window.electronAPI?.media?.copyToClipboard?.(item.path).then((result) => {
+      if (result?.ok) flash(result.mode === 'image' ? 'Image copiée' : 'Chemin copié');
+      else void navigator.clipboard.writeText(item.path).then(() => flash('Chemin copié'));
+    });
   };
 
   const counts = useMemo(() => {
@@ -134,6 +154,18 @@ export function MediaLibraryPanel() {
           />
           <button
             type="button"
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(clearSel());
+            }}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs ${selectMode ? 'border-accent text-accent' : 'border-border text-muted-foreground hover:text-foreground'}`}
+            data-testid="media-select-toggle"
+          >
+            <CheckSquare className="h-3.5 w-3.5" aria-hidden="true" />
+            {selectMode ? 'Annuler' : 'Sélectionner'}
+          </button>
+          <button
+            type="button"
             onClick={refresh}
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:text-foreground"
             data-testid="media-refresh"
@@ -142,6 +174,30 @@ export function MediaLibraryPanel() {
             Rafraîchir
           </button>
         </div>
+
+        {selectMode ? (
+          <div className="flex items-center gap-2 rounded-md border border-accent/40 bg-accent/5 px-3 py-2 text-xs" data-testid="media-select-bar">
+            <button
+              type="button"
+              onClick={() => setSelected(isAllSelected(selected, filtered.map((m) => m.path)) ? clearSel() : selectAll(filtered.map((m) => m.path)))}
+              className="inline-flex items-center gap-1.5 text-foreground hover:text-accent"
+            >
+              {isAllSelected(selected, filtered.map((m) => m.path)) ? <CheckSquare className="h-3.5 w-3.5" aria-hidden="true" /> : <Square className="h-3.5 w-3.5" aria-hidden="true" />}
+              Tout
+            </button>
+            <span className="text-muted-foreground">{selectionSummary(selected, filtered.length)}</span>
+            <button
+              type="button"
+              onClick={exportSelection}
+              disabled={selected.size === 0}
+              className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md bg-accent px-3 font-medium text-background disabled:opacity-40"
+              data-testid="media-export-selection"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Exporter la sélection
+            </button>
+          </div>
+        ) : null}
 
         {notice ? <p className="text-xs text-success">{notice}</p> : null}
 
@@ -160,7 +216,21 @@ export function MediaLibraryPanel() {
             data-testid="media-grid"
           >
             {filtered.map((item) => (
-              <div key={item.path} className="overflow-hidden rounded-xl border border-border bg-surface">
+              <div
+                key={item.path}
+                className={`relative overflow-hidden rounded-xl border bg-surface ${selectMode && selected.has(item.path) ? 'border-accent ring-1 ring-accent' : 'border-border'}`}
+              >
+                {selectMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelected(toggleSel(selected, item.path))}
+                    className="absolute left-2 top-2 z-10 rounded bg-black/60 p-1 text-white"
+                    data-testid="media-card-checkbox"
+                    aria-pressed={selected.has(item.path)}
+                  >
+                    {selected.has(item.path) ? <CheckSquare className="h-4 w-4 text-accent" aria-hidden="true" /> : <Square className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                ) : null}
                 <div className="flex h-40 items-center justify-center bg-black/40">
                   {item.kind === 'image' ? (
                     <img src={toFileUrl(item.path)} alt="" loading="lazy" className="h-full w-full object-cover" />
@@ -198,7 +268,7 @@ export function MediaLibraryPanel() {
                         <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     ) : null}
-                    <button type="button" title="Copier le chemin" onClick={() => copyPath(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground">
+                    <button type="button" title={item.kind === 'image' ? "Copier l'image" : 'Copier le chemin'} onClick={() => copyToClipboard(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-copy">
                       <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                     <span className="flex-1" />

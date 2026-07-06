@@ -23,6 +23,8 @@ import {
   Tray,
   globalShortcut,
   session,
+  clipboard,
+  nativeImage,
 } from 'electron';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -2868,6 +2870,54 @@ ipcMain.handle('media.list', async () => {
   } catch (err) {
     logWarn('[media.list] failed:', err);
     return [];
+  }
+});
+
+ipcMain.handle('media.copyToClipboard', async (_event, { sourcePath }: { sourcePath: string }) => {
+  try {
+    const { kindOf } = await import('./media-library');
+    const kind = kindOf(sourcePath);
+    if (kind === 'image') {
+      const img = nativeImage.createFromPath(sourcePath);
+      if (img.isEmpty()) return { ok: false, error: 'image illisible' };
+      clipboard.writeImage(img);
+      return { ok: true, mode: 'image' as const };
+    }
+    // Non-image (video/audio): copy the absolute path (the clipboard has no
+    // portable video type across apps).
+    clipboard.writeText(sourcePath);
+    return { ok: true, mode: 'path' as const };
+  } catch (err) {
+    logWarn('[media.copyToClipboard] failed:', err);
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('media.exportMany', async (_event, { paths }: { paths: string[] }) => {
+  try {
+    const { kindOf } = await import('./media-library');
+    const valid = (paths ?? []).filter((p) => kindOf(p));
+    if (valid.length === 0) return { ok: false, error: 'no media selected' };
+    const win = getMainWindow();
+    const picked = win
+      ? await dialog.showOpenDialog(win, { title: 'Exporter la sélection vers…', properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog({ title: 'Exporter la sélection vers…', properties: ['openDirectory', 'createDirectory'] });
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, canceled: true };
+    const destDir = picked.filePaths[0];
+    const fsp = await import('fs/promises');
+    let copied = 0;
+    for (const src of valid) {
+      try {
+        await fsp.copyFile(src, join(destDir, basename(src)));
+        copied += 1;
+      } catch (err) {
+        logWarn('[media.exportMany] copy failed:', src, err);
+      }
+    }
+    return { ok: true, copied, destDir };
+  } catch (err) {
+    logWarn('[media.exportMany] failed:', err);
+    return { ok: false, error: String(err) };
   }
 });
 

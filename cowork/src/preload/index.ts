@@ -712,6 +712,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('media.list'),
     export: (sourcePath: string): Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }> =>
       ipcRenderer.invoke('media.export', { sourcePath }),
+    exportMany: (paths: string[]): Promise<{ ok: boolean; copied?: number; destDir?: string; canceled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('media.exportMany', { paths }),
+    copyToClipboard: (sourcePath: string): Promise<{ ok: boolean; mode?: 'image' | 'path'; error?: string }> =>
+      ipcRenderer.invoke('media.copyToClipboard', { sourcePath }),
   },
 
   // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
@@ -4606,6 +4610,8 @@ declare global {
       media: {
         list: () => Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string; prompt?: string; model?: string; provider?: string; sessionId?: string }>>;
         export: (sourcePath: string) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>;
+        exportMany: (paths: string[]) => Promise<{ ok: boolean; copied?: number; destDir?: string; canceled?: boolean; error?: string }>;
+        copyToClipboard: (sourcePath: string) => Promise<{ ok: boolean; mode?: 'image' | 'path'; error?: string }>;
       };
       selectFiles: () => Promise<string[]>;
       artifacts: {

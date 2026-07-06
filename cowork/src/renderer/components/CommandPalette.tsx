@@ -5,6 +5,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { CAPABILITY_COMMANDS } from './command-palette-capabilities';
+import { recordUse, rankByRecency } from './command-recency-model';
 import {
   Search,
   MessageSquare,
@@ -70,6 +71,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
+  // ⌘K recency: surface the commands you actually use first (persisted).
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cowork.paletteRecent') || '[]') as string[];
+    } catch {
+      return [];
+    }
+  });
+  const runCommand = (cmd: { id: string; action: () => void }) => {
+    const next = recordUse(recentIds, cmd.id);
+    setRecentIds(next);
+    try {
+      localStorage.setItem('cowork.paletteRecent', JSON.stringify(next));
+    } catch {
+      /* storage full/blocked — ranking just won't persist */
+    }
+    cmd.action();
+    onClose();
+  };
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -254,12 +274,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   );
 
   const filtered = useMemo(() => {
-    if (!query) return commands;
+    if (!query) return rankByRecency(commands, recentIds);
     const q = query.toLowerCase();
     return commands.filter(
       (c) => c.label.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q)
     );
-  }, [query, commands]);
+  }, [query, commands, recentIds]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -279,8 +299,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && filtered[selectedIndex]) {
-      filtered[selectedIndex].action();
-      onClose();
+      runCommand(filtered[selectedIndex]);
     }
   };
 
@@ -314,10 +333,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             filtered.map((cmd, i) => (
               <button
                 key={cmd.id}
-                onClick={() => {
-                  cmd.action();
-                  onClose();
-                }}
+                onClick={() => runCommand(cmd)}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                   i === selectedIndex ? 'bg-surface' : 'hover:bg-zinc-800/50'
                 }`}
