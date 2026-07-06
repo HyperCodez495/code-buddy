@@ -107,7 +107,7 @@ export function MediaLibraryPanel() {
 
   return (
     <div className="h-full overflow-y-auto p-4" data-testid="media-library-panel">
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="space-y-4">
         <div className="flex items-center gap-2">
           {([
             ['all', `Tous · ${(items ?? []).length}`],
@@ -154,7 +154,11 @@ export function MediaLibraryPanel() {
             Aucun média généré pour l'instant — demande une image, une vidéo ou une voix dans le chat ou les studios.
           </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="media-grid">
+          <div
+            className="grid justify-start gap-3"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 260px))' }}
+            data-testid="media-grid"
+          >
             {filtered.map((item) => (
               <div key={item.path} className="overflow-hidden rounded-xl border border-border bg-surface">
                 <div className="flex h-40 items-center justify-center bg-black/40">
