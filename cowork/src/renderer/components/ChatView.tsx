@@ -16,6 +16,7 @@ import { applySlashCommandResult } from '../commands/slash-command-actions';
 import { useIPC } from '../hooks/useIPC';
 import { SessionSearch } from './SessionSearch';
 import { ChatList } from './ChatList';
+import { TurnArtifactsCard } from './message/TurnArtifactsCard';
 import { MessageComposer } from './MessageComposer';
 import type { MentionItem } from './MentionAutocomplete';
 import type { SlashCommandItem } from './SlashCommandPalette';
@@ -975,6 +976,9 @@ export function ChatView() {
           onEditMessage={handleEditMessage}
           onRegenerateMessage={handleRegenerateMessage}
         />
+        {/* Genspark-style task result: surface the produced files once the
+            turn settles (component renders nothing while a turn is live). */}
+        {activeSessionId ? <TurnArtifactsCard sessionId={activeSessionId} /> : null}
       </div>
 
             {/* Input */}
