@@ -193,7 +193,10 @@ function StudioView() {
       changedPaths: changes.map((c) => c.path),
     });
     return {
-      messages: sessionToStudioMessages(st?.messages ?? [], { running: busy }),
+      messages: sessionToStudioMessages(st?.messages ?? [], {
+        running: busy,
+        ...(st?.partialMessage ? { partial: st.partialMessage } : {}),
+      }),
       busy,
       suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
       plan,

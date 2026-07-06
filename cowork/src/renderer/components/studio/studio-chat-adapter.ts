@@ -20,12 +20,13 @@ function textOf(content: ReadonlyArray<{ type: string; text?: string }>): string
 }
 
 /**
- * Keep only user/assistant messages that carry visible text; mark the last
- * assistant bubble as streaming while the turn is running.
+ * Keep only user/assistant messages that carry visible text; while the turn is
+ * running, append the live partial assistant response (bolt.new-style streaming)
+ * or mark the last assistant bubble as streaming.
  */
 export function sessionToStudioMessages(
   messages: ReadonlyArray<ChatSourceMessage>,
-  opts: { running?: boolean } = {},
+  opts: { running?: boolean; partial?: string } = {},
 ): StudioMessage[] {
   const out: StudioMessage[] = [];
   for (const m of messages) {
@@ -35,8 +36,15 @@ export function sessionToStudioMessages(
     out.push({ id: m.id, role: m.role, text });
   }
   if (opts.running) {
-    const last = out[out.length - 1];
-    if (last && last.role === 'assistant') last.streaming = true;
+    const partial = (opts.partial ?? '').trim();
+    if (partial) {
+      // The turn is streaming a fresh assistant reply not yet in `messages`.
+      out.push({ id: 'partial-stream', role: 'assistant', text: partial, streaming: true });
+    } else {
+      const last = out[out.length - 1];
+      if (last && last.role === 'assistant') last.streaming = true;
+      else out.push({ id: 'partial-stream', role: 'assistant', text: '', streaming: true });
+    }
   }
   return out;
 }

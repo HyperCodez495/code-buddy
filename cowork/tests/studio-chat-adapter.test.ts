@@ -27,6 +27,17 @@ describe('sessionToStudioMessages', () => {
     expect(out[0]!.id).toBe('2');
   });
 
+  it('appends the live partial reply as a streaming bubble while running', () => {
+    const out = sessionToStudioMessages(
+      [{ id: '1', role: 'user', content: [{ type: 'text', text: 'build it' }] }],
+      { running: true, partial: 'Je crée les fichiers…' },
+    );
+    const last = out[out.length - 1]!;
+    expect(last.role).toBe('assistant');
+    expect(last.text).toBe('Je crée les fichiers…');
+    expect(last.streaming).toBe(true);
+  });
+
   it('marks the last assistant bubble streaming while running', () => {
     const running = sessionToStudioMessages(
       [
