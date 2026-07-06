@@ -15,13 +15,18 @@ HX 470, Ollama Vulkan) · Verified against live installs: Hermes Agent `v0.16.0`
 > `command-validator.validateCommand`, which both bash paths (buffered + streaming) run unconditionally — YOLO
 > skips confirmations, never validation. Proven on the built runtime (dist): force-push blocked with the rule's
 > description, normal commands pass; 6 real-store tests + 654 security/bash tests green. **Registered, smaller,
-> not yet filled:** session prune filters/bulk archive (CLI conveniences).
+> not yet filled:** — (none; session prune filled `f48c147f`, see below).
 > **Filled later the same day:** `/deny <reason>` → the FULL interactive confirmation bridge for Cowork
 > (`df968447` — the permission callback was a dead link end to end; denial reason now reaches the agent as
 > feedback), per-tool gating from the GUI (`e53f6abc` — the resolver's `globalOverrides` seam finally has a
 > producer, persisted to `~/.codebuddy/tool-policy.json`), and pluggable SecretSource + first-class 1Password
 > (`ed1acbb6` — registry over the SecretRef switch, `op://` whole-value + `${op:...}` token via execFile; live
-> `op` validation stays account-gated, exercised against a real fake binary on PATH).
+> `op` validation stays account-gated, exercised against a real fake binary on PATH). **And the last
+> registered gap, session prune/bulk archive, filled the same evening** (`f48c147f` — « Nettoyer les sessions »
+> in Cowork: pure age+folded-title filter, pinned/archived/active never matched, age-span preview, bulk archive
+> via the real session manager; proven live on 3 real sessions). **The registered-gaps column is now EMPTY** —
+> every residual gate vs Hermes v2026.7.1+516 and OpenClaw 2026.6.11 is an external account (Vertex/GCP, Slack
+> prod, 1Password live), a product decision, or absent source data.
 
 > **2026-07-03 OpenClaw drift re-audit — ten versions, zero integration drift.** The local install was upgraded
 > 2026.6.1 → **2026.6.11** (npm latest stable) and every integration surface re-validated LIVE against the new
