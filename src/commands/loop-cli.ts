@@ -83,6 +83,10 @@ export function createLoopCommand(): Command {
       parsePositiveFloatOption(value, '--budget'),
     )
     .option('--judge-model <model>', 'Modèle du juge (défaut: modèle de session)')
+    .option(
+      '--verify-cmd <shell>',
+      'Gate de vérif DÉTERMINISTE (exit 0 = CONFIRMED) au lieu du Verifier LLM — ex. "npm test"',
+    )
     .option('--no-verify', 'Désactiver le gate Verifier indépendant (boucle juge-seule)')
     .option('--no-plan', 'Désactiver la décomposition en plan')
     .option('-m, --model <model>', 'Override du modèle agent pour ce run')
@@ -133,11 +137,14 @@ export function createLoopCommand(): Command {
         );
         await agent.systemPromptReady;
 
-        const { runDevLoop } = await import('../agent/dev-loop/dev-loop.js');
+        const { runDevLoop, makeShellVerifier } = await import('../agent/dev-loop/dev-loop.js');
+        // --verify-cmd swaps the LLM Verifier for a deterministic shell gate.
+        const verify = options.verifyCmd ? makeShellVerifier(options.verifyCmd, { cwd }) : undefined;
         const result = await runDevLoop(agent, goal, {
           ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
           ...(options.budget !== undefined ? { budgetUsd: options.budget } : {}),
           ...(judgeModel ? { judgeModel } : {}),
+          ...(verify ? { verify } : {}),
           noVerify: options.verify === false,
           noPlan: options.plan === false,
           onMessage: text => console.log(`\n${text}`),

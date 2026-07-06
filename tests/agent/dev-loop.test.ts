@@ -9,7 +9,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runDevLoop, type DevLoopAgent, type DevLoopVerifier } from '../../src/agent/dev-loop/dev-loop.js';
+import {
+  runDevLoop,
+  makeShellVerifier,
+  type DevLoopAgent,
+  type DevLoopVerifier,
+} from '../../src/agent/dev-loop/dev-loop.js';
 import { resetGoalManagers } from '../../src/goals/goal-manager.js';
 import type { ChatEntry } from '../../src/agent/codebuddy-agent.js';
 
@@ -102,6 +107,29 @@ describe('runDevLoop — Verifier gate', () => {
     expect(result.status).toBe('done');
     expect(result.turnsUsed).toBe(1);
     expect(verify).not.toHaveBeenCalled();
+  });
+});
+
+describe('makeShellVerifier — deterministic shell gate', () => {
+  it('maps exit 0 to CONFIRMED and a non-zero exit to NEEDS REVIEW', async () => {
+    const ok = await makeShellVerifier('true')({ agent: fakeAgent(['x']), goal: 'g', evidence: 'e' });
+    const bad = await makeShellVerifier('exit 3')({ agent: fakeAgent(['x']), goal: 'g', evidence: 'e' });
+    expect(ok.verdict).toBe('CONFIRMED');
+    expect(bad.verdict).toBe('NEEDS REVIEW');
+    expect(bad.evidence).toContain('exit 3');
+  });
+
+  it('gates a judge "done" behind the shell command inside runDevLoop', async () => {
+    // Judge always says done; the shell gate fails → the loop never accepts done.
+    judgeMock.mockResolvedValue({ verdict: 'done', reason: 'claims done', parseFailed: false });
+    const result = await runDevLoop(fakeAgent(['work']), 'court objectif', {
+      maxTurns: 2,
+      verify: makeShellVerifier('exit 1'),
+      currentCostUsd: zeroCost,
+      noPlan: true,
+    });
+    expect(result.status).not.toBe('done');
+    expect(result.lastVerifierVerdict).toBe('NEEDS REVIEW');
   });
 });
 

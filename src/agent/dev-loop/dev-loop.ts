@@ -137,6 +137,39 @@ export const defaultDevLoopVerifier: DevLoopVerifier = async ({ agent, goal, evi
 };
 
 /**
+ * Deterministic verification gate from a shell command: exit 0 ⇒ CONFIRMED,
+ * anything else ⇒ NEEDS REVIEW. The cheap, hermetic, $0 alternative to the LLM
+ * VerifierAgent — ideal for "make the tests pass" / CI-style loops where "done"
+ * literally means a command succeeds (`buddy loop … --verify-cmd "npm test"`).
+ * Ignores the goal/evidence context on purpose: the command IS the oracle.
+ */
+export function makeShellVerifier(
+  command: string,
+  opts: { cwd?: string; timeoutMs?: number } = {},
+): DevLoopVerifier {
+  return async () => {
+    try {
+      const { spawnSync } = await import('child_process');
+      const r = spawnSync('sh', ['-c', command], {
+        cwd: opts.cwd ?? process.cwd(),
+        encoding: 'utf-8',
+        timeout: opts.timeoutMs ?? 120_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      const tail = `${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-2000);
+      const ok = !r.error && r.status === 0;
+      return {
+        verdict: ok ? 'CONFIRMED' : 'NEEDS REVIEW',
+        evidence: `$ ${command}\n(exit ${r.status ?? 'null'}${r.error ? `, error: ${r.error.message}` : ''})\n${tail}`,
+      };
+    } catch (error) {
+      // A spawn failure is not proof of success — fail closed to NEEDS REVIEW.
+      return { verdict: 'NEEDS REVIEW', evidence: `verify-cmd failed to spawn: ${String(error)}` };
+    }
+  };
+}
+
+/**
  * Drive the unified dev-loop headlessly on an in-process agent.
  * Sets the goal, (optionally) decomposes it, then per iteration:
  * execute → verify (gate) → judge → decide, until done/budget/stagnation.
