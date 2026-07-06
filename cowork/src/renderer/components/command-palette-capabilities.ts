@@ -30,6 +30,7 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   // never show. Switch to the chat view first so the panel is actually visible.
   { id: 'cap-autonomy', label: 'Autonomy', description: 'Autonomous loop, YOLO, goal', run: (s) => { s.setPrimaryView('chat'); s.setShowAutonomyPanel(true); } },
   { id: 'cap-creations', label: 'Créations', description: 'Studios livrables : deck, feuille, doc, pod, image, vidéo, drive', run: (s) => s.setPrimaryView('creations') },
+  { id: 'cap-capabilities', label: 'Capacités', description: 'Outils, skills et serveurs MCP de l\u2019agent', run: (s) => s.setPrimaryView('capabilities') },
   { id: 'cap-workflows', label: 'Workflows', description: 'Visual workflow editor', run: (s) => s.setShowWorkflowProPanel(true) },
   { id: 'cap-evolution', label: 'Evolution', description: 'Versions from self-improvement', run: (s) => s.setShowEvolutionPanel(true) },
   { id: 'cap-knowledge', label: 'Knowledge (CKG)', description: 'Collective memory + research topics', run: (s) => s.setShowKnowledgePanel(true) },
