@@ -1,7 +1,8 @@
-import { LayoutGrid, Palette, Send, Sparkles, Wand2 } from 'lucide-react';
+import { Layers, LayoutGrid, Palette, Send, Sparkles, Wand2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { suggestTemplate, type StudioTemplateId } from './utils/studio-intent.js';
 import { designSystemsByCategory, findDesignSystem } from './design-systems-catalog.js';
+import { GENERATION_STACKS } from './generation-stacks.js';
 import { DesignSystemGallery } from './DesignSystemGallery.js';
 import { PromptEnhancer } from './PromptEnhancer.js';
 import { enhancePrompt } from './prompt-enhance-model.js';
@@ -18,6 +19,7 @@ export interface StudioScaffoldRequest {
   targetDir: string;
   vars: Record<string, string>;
   designSystem?: string;
+  stack?: string;
 }
 
 export interface StudioComposerProps {
@@ -71,6 +73,7 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
   const [targetDir, setTargetDir] = useState('app-studio-project');
   const [targetEdited, setTargetEdited] = useState(false);
   const [designSystem, setDesignSystem] = useState('');
+  const [stack, setStack] = useState('static');
   const [showGallery, setShowGallery] = useState(false);
   const selectedTemplate = useMemo(
     () => templates.find((item) => item.id === template) ?? templates[0],
@@ -167,6 +170,7 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
       targetDir: targetDir.trim(),
       vars,
       ...(designSystem ? { designSystem } : {}),
+      ...(stack ? { stack } : {}),
     });
   };
 
@@ -244,6 +248,22 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
               </button>
             ) : null}
           </div>
+        </div>
+        <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2" data-testid="stack-picker">
+          <Layers className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <select
+            value={stack}
+            onChange={(event) => setStack(event.target.value)}
+            disabled={busy}
+            className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Type d'application (stack)"
+          >
+            {GENERATION_STACKS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label} — {s.description}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
           <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2">

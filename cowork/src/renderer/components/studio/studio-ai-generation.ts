@@ -11,10 +11,12 @@
 
 import type { StudioScaffoldRequest } from './StudioComposer.js';
 import { findDesignSystem } from './design-systems-catalog.js';
+import { findStack } from './generation-stacks.js';
 
 export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
+  const stack = findStack(req.stack)!;
   const lines: string[] = [];
-  lines.push(`Génère une application web complète et fonctionnelle : ${req.prompt}`);
+  lines.push(`Génère une application complète et fonctionnelle (${stack.label}) : ${req.prompt}`);
   lines.push('');
 
   // bolt.new's plan step, LLM edition: the agent opens with a machine-readable
@@ -23,7 +25,7 @@ export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
   lines.push('COMMENCE ta réponse par un plan de développement dans un bloc ```plan (JSON strict) :');
   lines.push('```plan');
   lines.push(
-    '{"title":"<nom court de l\'app>","stack":"HTML/CSS/JS","steps":[' +
+    '{"title":"<nom court de l\'app>","stack":"' + stack.planStack + '","steps":[' +
       '{"id":"scaffold","title":"Créer la structure (index.html, style.css, app.js)"},' +
       '{"id":"<kebab-case>","title":"<étape fonctionnelle>","detail":"<détail court>","match":["<mot-clé de fichier>"]}]}',
   );
@@ -68,9 +70,8 @@ export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
       '(ex. `<video autoplay muted loop src=".codebuddy/media-generation/videos/xxx.mp4">`), ne copie pas le binaire. ' +
       "En cas d'échec, dégrade proprement (image ou fond CSS à la place).",
   );
-  lines.push(
-    "- Stack : HTML/CSS/JS statique (index.html + style.css + app.js) qui s'ouvre directement dans un navigateur, SANS build ni installation. (Pas de framework sauf demande explicite.)",
-  );
+  lines.push(`- ${stack.guidance}`);
+  lines.push(`- Preview : ${stack.previewNote}`);
   lines.push("- L'application doit être fonctionnelle ET soignée visuellement selon la guidance de design.");
   lines.push("- Termine par un court résumé de ce que tu as créé et comment ouvrir l'app (ouvrir index.html).");
 
