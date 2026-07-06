@@ -1112,11 +1112,11 @@ export class AgentExecutor {
             // pas exposé comme outil invocable").
             if (toolCall.function.name === 'tool_search' && result.success) {
               const names = (result.data as { names?: string[] } | undefined)?.names;
-              logger.info('tool_search post-hook', { hasData: result.data !== undefined, names: names?.length ?? 'none' });
+              logger.debug('tool_search post-hook', { hasData: result.data !== undefined, names: names?.length ?? 'none' });
               if (Array.isArray(names) && names.length > 0) {
                 try {
                   const added = await this.deps.toolSelectionStrategy.expandCachedTools(names);
-                  logger.info('tool_search expansion result', { added });
+                  logger.debug('tool_search expansion result', { added });
                 } catch (err) {
                   logger.warn('tool_search expansion failed', { error: String(err) });
                 }

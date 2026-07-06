@@ -195,7 +195,7 @@ export class ToolSelectionStrategy {
     // (observed live in Cowork: alwaysInclude apparently ignored, tools
     // "missing" at random depending on the prior turn).
     if (effectiveConfig.enableCaching && this.cachedQuery === query && this.isCacheValid(modelName)) {
-      logger.info('Using cached tools for query', { query: query.slice(0, 50), count: this.cachedTools!.length });
+      logger.debug('Using cached tools for query', { query: query.slice(0, 50), count: this.cachedTools!.length });
       return {
         tools: this.cachedTools!,
         selection: this.lastSelection,
@@ -326,7 +326,7 @@ export class ToolSelectionStrategy {
 
     this.cachedTools = [...this.cachedTools, ...additions];
     this.cachedToolNames = this.cachedTools.map((t) => t.function.name);
-    logger.info('Tool selection cache expanded via tool_search', {
+    logger.debug('Tool selection cache expanded via tool_search', {
       added: additions.map((t) => t.function.name),
     });
     return additions.length;
