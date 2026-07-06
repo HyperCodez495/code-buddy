@@ -9,10 +9,12 @@
  * for the live chat. Quick chips prefill the input or open the matching
  * surface; recent sessions resume.
  */
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { Clapperboard, FileText, FolderOpen, Hammer, Image as ImageIcon, Presentation, Radio, Search, Table2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { getInitialSessionTitle } from '../../shared/session-title';
+import { AGENT_RECIPES } from './agent-recipes';
 import type { Session } from '../types';
 
 interface QuickAction {
@@ -20,6 +22,25 @@ interface QuickAction {
   hint: string;
   run: () => void;
 }
+
+/** Genspark-style agent tiles: each studio is ONE click from Home. */
+interface StudioTile {
+  label: string;
+  icon: typeof Presentation;
+  run: (s: ReturnType<typeof useAppStore.getState>) => void;
+}
+
+const STUDIO_TILES: StudioTile[] = [
+  { label: 'App', icon: Hammer, run: (s) => s.setPrimaryView('studio') },
+  { label: 'Deck', icon: Presentation, run: (s) => { s.setCreationsTab('deck'); s.setPrimaryView('creations'); } },
+  { label: 'Feuille', icon: Table2, run: (s) => { s.setCreationsTab('sheet'); s.setPrimaryView('creations'); } },
+  { label: 'Document', icon: FileText, run: (s) => { s.setCreationsTab('doc'); s.setPrimaryView('creations'); } },
+  { label: 'Pod', icon: Radio, run: (s) => { s.setCreationsTab('pod'); s.setPrimaryView('creations'); } },
+  { label: 'Image', icon: ImageIcon, run: (s) => { s.setCreationsTab('image'); s.setPrimaryView('creations'); } },
+  { label: 'Vidéo', icon: Clapperboard, run: (s) => { s.setCreationsTab('video'); s.setPrimaryView('creations'); } },
+  { label: 'Drive', icon: FolderOpen, run: (s) => { s.setCreationsTab('drive'); s.setPrimaryView('creations'); } },
+  { label: 'Recherche', icon: Search, run: (s) => s.setShowLiveLauncher(true) },
+];
 
 function RecentSessions({
   sessions,
@@ -116,6 +137,10 @@ export function HomeView() {
     { label: 'Créer un document', hint: 'Excel, Word, PDF, charts', run: () => setShowSkillsManager(true) },
   ];
 
+  // A rotating handful of ready-to-run missions (Genspark recipes) — clicking
+  // one drops its prompt into the input so the user only fills the <…> bits.
+  const missions = useMemo(() => AGENT_RECIPES.slice(0, 6), []);
+
   return (
     <div
       className="h-full min-h-0 overflow-auto flex flex-col items-center justify-center gap-8 p-8"
@@ -159,6 +184,21 @@ export function HomeView() {
         </div>
       </form>
 
+      {/* Genspark-style agent row: every studio is one click away. */}
+      <div className="w-full max-w-xl flex flex-wrap justify-center gap-2" data-testid="home-studios">
+        {STUDIO_TILES.map(({ label, icon: Icon, run }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => run(useAppStore.getState())}
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-background hover:border-accent hover:bg-accent/10 transition-colors px-4 py-3 min-w-[72px]"
+          >
+            <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <span className="text-xs">{label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="w-full max-w-xl grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="home-quick">
         {quick.map((a) => (
           <button
@@ -171,6 +211,25 @@ export function HomeView() {
             <div className="text-xs text-muted-foreground mt-0.5">{a.hint}</div>
           </button>
         ))}
+      </div>
+
+      {/* Ready-to-run missions (agent-recipes catalogue, previously dormant). */}
+      <div className="w-full max-w-xl" data-testid="home-missions">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Missions prêtes</div>
+        <div className="flex flex-wrap gap-2">
+          {missions.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              title={r.description}
+              onClick={() => prefill(r.prompt)}
+              className="rounded-full border border-border bg-background hover:border-accent hover:bg-accent/10 transition-colors px-3 py-1.5 text-xs"
+            >
+              <span className="mr-1" aria-hidden="true">{r.emoji}</span>
+              {r.title}
+            </button>
+          ))}
+        </div>
       </div>
 
       <RecentSessions sessions={recents} onOpen={resume} />

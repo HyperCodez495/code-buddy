@@ -240,6 +240,8 @@ export interface AppState {
   /** Live app preview panel (bolt.new-style, right of chat) for project sessions. */
   showStudioPreview: boolean;
   primaryView: PrimaryView;
+  /** Active tab of the Créations view — settable from anywhere (Home tiles deep-link). */
+  creationsTab: string;
   showSettings: boolean;
   /** Evolution panel (new-shell Labs) — lists variants from recursive self-improvement. */
   showEvolutionPanel: boolean;
@@ -585,6 +587,7 @@ export interface AppState {
   setShowFlightPlan: (on: boolean) => void;
   setShowStudioPreview: (on: boolean) => void;
   setPrimaryView: (v: PrimaryView) => void;
+  setCreationsTab: (tab: string) => void;
   setShowSettings: (show: boolean) => void;
   setShowEvolutionPanel: (show: boolean) => void;
   setShowKnowledgePanel: (show: boolean) => void;
@@ -924,6 +927,7 @@ export const useAppStore = create<AppState>((set) => ({
   showFlightPlan: readFlightPlanFlag(),
   showStudioPreview: false,
   primaryView: 'chat',
+  creationsTab: 'deck',
   showSettings: false,
   showEvolutionPanel: false,
   showKnowledgePanel: false,
@@ -1539,6 +1543,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setShowStudioPreview: (on) => set({ showStudioPreview: on }),
   setPrimaryView: (v) => set({ primaryView: v }),
+  setCreationsTab: (tab) => set({ creationsTab: tab }),
   setShowSettings: (show) => set({ showSettings: show }),
   setShowEvolutionPanel: (show) => set({ showEvolutionPanel: show }),
   setShowKnowledgePanel: (show) => set({ showKnowledgePanel: show }),

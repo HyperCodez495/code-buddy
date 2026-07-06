@@ -6,8 +6,10 @@
  * produced. The panels are the exact same components Labs promoted first —
  * this view is their permanent address on the rail.
  */
-import { lazy, Suspense, useState, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react';
 import { FileDown, FileText, FolderOpen, Image as ImageIcon, Loader2, Presentation, Radio, Table2, Clapperboard } from 'lucide-react';
+
+import { useAppStore } from '../../store';
 
 const DeckStudioPanel = lazy(() => import('./DeckStudioPanel.js').then((m) => ({ default: m.DeckStudioPanel })));
 const SheetStudioPanel = lazy(() => import('./SheetStudioPanel.js').then((m) => ({ default: m.SheetStudioPanel })));
@@ -35,7 +37,10 @@ export const CREATIONS_TABS: StudioTab[] = [
 ];
 
 export function CreationsView() {
-  const [active, setActive] = useState('deck');
+  // Store-backed so the Home studio tiles (and the ⌘K palette) can deep-link
+  // straight to a tab; also survives leaving/re-entering the view.
+  const active = useAppStore((s) => s.creationsTab);
+  const setActive = useAppStore((s) => s.setCreationsTab);
   const tab = CREATIONS_TABS.find((t) => t.id === active) ?? CREATIONS_TABS[0]!;
   const Panel = tab.component;
 
