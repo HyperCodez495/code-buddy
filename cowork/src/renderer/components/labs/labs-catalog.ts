@@ -153,6 +153,10 @@ const WIRING: Record<string, LabsWiring> = {
     load: () => import('../MobileSupervisionView').then((m) => named(m, 'MobileSupervisionView')),
     props: { missions: [], onAct: () => {} },
   },
+  E4: {
+    load: () => import('../deliverables/DrivePanel').then((m) => named(m, 'DrivePanel')),
+    props: {},
+  },
   E1: {
     load: () => import('../DriveGrid').then((m) => named(m, 'DriveGrid')),
     props: { items: [], onOpen: () => {}, onTag: () => {} },

@@ -296,6 +296,18 @@ export const GENSPARK_SLICES: GensparkSlice[] = [
     needsData: 'Missions condensées et callback action mobile valider/stopper.',
   },
   {
+    id: 'E4',
+    title: 'DrivePanel',
+    roadmap: 16,
+    category: 'drive',
+    mount: 'labs',
+    componentFile: 'components/deliverables/DrivePanel.tsx',
+    logicFile: 'components/deliverables/drive-real-model.ts',
+    testFile: '../../tests/drive-real-model.test.ts',
+    needsData:
+      'FONCTIONNEL (promu) : AI Drive sur FICHIERS RÉELS — artifacts.listRecentFiles → DriveGrid, clic = dossier système.',
+  },
+  {
     id: 'E1',
     title: 'DriveGrid',
     roadmap: 26,
