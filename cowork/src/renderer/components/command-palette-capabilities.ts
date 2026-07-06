@@ -56,4 +56,5 @@ export const CAPABILITY_COMMANDS: CapabilityCommand[] = [
   { id: 'cap-desktop-snapshot', label: 'Desktop snapshot', description: 'Capture the screen', run: (s) => s.setShowDesktopSnapshot(true) },
   { id: 'cap-global-search', label: 'Search everything', description: 'Sessions, messages, memory, files', run: (s) => s.setShowGlobalSearch(true) },
   { id: 'cap-session-prune', label: 'Nettoyer les sessions', description: 'Archiver en masse les vieilles sessions (aperçu + filtre)', run: (s) => s.setShowSessionPrune(true) },
+  { id: 'cap-history', label: 'Historique des conversations', description: 'Toutes les conversations, groupées par date (recherche, épingler, renommer)', run: (s) => s.setShowConversationHistory(true) },
 ];

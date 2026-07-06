@@ -863,6 +863,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         executionMode?: 'chat' | 'task';
         isBackground?: boolean;
         title?: string;
+        pinned?: boolean;
+        archived?: boolean;
+        tags?: string[];
       }
     ) => ipcRenderer.invoke('session.updateSettings', sessionId, updates),
     // Branching (Claude Cowork parity Phase 2)
@@ -5056,6 +5059,9 @@ declare global {
             executionMode?: 'chat' | 'task';
             isBackground?: boolean;
             title?: string;
+            pinned?: boolean;
+            archived?: boolean;
+            tags?: string[];
           }
         ) => Promise<boolean>;
         branches: (sessionId: string) => Promise<

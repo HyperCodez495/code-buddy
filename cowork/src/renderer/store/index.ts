@@ -315,6 +315,8 @@ export interface AppState {
   showGlobalSearch: boolean;
   /** Bulk session prune dialog (Hermes sessions-prune parity). */
   showSessionPrune: boolean;
+  /** ChatGPT-style conversation history drawer. */
+  showConversationHistory: boolean;
   previewFilePath: string | null;
   activeArtifact: {
     id: string;
@@ -667,6 +669,7 @@ export interface AppState {
   setShowShortcutsDialog: (show: boolean) => void;
   setShowGlobalSearch: (show: boolean) => void;
   setShowSessionPrune: (show: boolean) => void;
+  setShowConversationHistory: (show: boolean) => void;
   setPreviewFilePath: (filePath: string | null) => void;
   setActiveArtifact: (
     artifact: {
@@ -972,6 +975,7 @@ export const useAppStore = create<AppState>((set) => ({
   showShortcutsDialog: false,
   showGlobalSearch: false,
   showSessionPrune: false,
+  showConversationHistory: false,
   previewFilePath: null,
   activeArtifact: null,
   guiActions: [],
@@ -1720,6 +1724,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowShortcutsDialog: (show) => set({ showShortcutsDialog: show }),
   setShowGlobalSearch: (show) => set({ showGlobalSearch: show }),
   setShowSessionPrune: (show) => set({ showSessionPrune: show }),
+  setShowConversationHistory: (show) => set({ showConversationHistory: show }),
   setPreviewFilePath: (filePath) => set({ previewFilePath: filePath }),
   setActiveArtifact: (artifact) => set({ activeArtifact: artifact }),
   appendGuiAction: (action) =>

@@ -33,6 +33,7 @@ import { MissionControlView } from './os/MissionControlView';
 import { LabsGallery } from './labs/LabsGallery';
 import { CreationsView } from './deliverables/CreationsView';
 import { CapabilitiesView } from './capabilities/CapabilitiesView';
+import { ConversationHistoryDrawer } from './ConversationHistoryDrawer';
 
 interface RailItem {
   view: PrimaryView;
@@ -337,6 +338,16 @@ export function NewShell() {
         })}
 
         {/* Footer: the discoverability net. ⌘K reaches every capability; "?" lists all shortcuts. */}
+        <button
+          type="button"
+          onClick={() => useAppStore.getState().setShowConversationHistory(true)}
+          title="Historique des conversations"
+          className="flex flex-col items-center gap-0.5 py-2 mx-1 rounded-md text-[10px] text-muted-foreground hover:bg-accent/60 transition-colors"
+          data-testid="rail-history"
+        >
+          <span className="text-lg leading-none">🕘</span>
+          <span>Historique</span>
+        </button>
         <div className="mt-auto flex flex-col items-stretch gap-1">
           <button
             type="button"
@@ -382,6 +393,7 @@ export function NewShell() {
         {primaryView === 'labs' && <LabsGallery />}
         {primaryView === 'advanced' && <AdvancedLauncher />}
       </div>
+      <ConversationHistoryDrawer />
     </div>
   );
 }
