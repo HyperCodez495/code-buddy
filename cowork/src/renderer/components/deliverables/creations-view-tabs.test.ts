@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { CREATIONS_TABS } from './CreationsView.js';
 
 describe('CREATIONS_TABS', () => {
-  it('exposes the seven functional studios, deck first', () => {
-    expect(CREATIONS_TABS.map((t) => t.id)).toEqual(['deck', 'sheet', 'doc', 'pod', 'image', 'video', 'drive']);
+  it('exposes the eight functional studios, deck first', () => {
+    expect(CREATIONS_TABS.map((t) => t.id)).toEqual(['deck', 'sheet', 'doc', 'pod', 'image', 'video', 'medias', 'drive']);
   });
 
   it('has unique ids and non-empty French labels', () => {

@@ -2798,6 +2798,43 @@ function resolveLessonsWorkspace(projectId?: string): string {
 }
 
 // ── Session export IPC handler ────────────────────────────────────────
+// Media library (ChatGPT-library parity): every generated media across all
+// session roots; export = native Save-As dialog + copy.
+ipcMain.handle('media.list', async () => {
+  try {
+    const { scanMediaLibrary } = await import('./media-library');
+    const roots = new Set<string>();
+    roots.add(join(app.getPath('userData'), 'default_working_dir'));
+    if (sessionManager) {
+      for (const s of sessionManager.listSessions()) {
+        if (s.cwd) roots.add(s.cwd);
+      }
+    }
+    return scanMediaLibrary([...roots]);
+  } catch (err) {
+    logWarn('[media.list] failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('media.export', async (_event, { sourcePath }: { sourcePath: string }) => {
+  try {
+    const { kindOf } = await import('./media-library');
+    if (!kindOf(sourcePath)) return { ok: false, error: 'not a media file' };
+    const fsp = await import('fs/promises');
+    const win = getMainWindow();
+    const result = win
+      ? await dialog.showSaveDialog(win, { defaultPath: basename(sourcePath), title: 'Exporter le média' })
+      : await dialog.showSaveDialog({ defaultPath: basename(sourcePath), title: 'Exporter le média' });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    await fsp.copyFile(sourcePath, result.filePath);
+    return { ok: true, savedTo: result.filePath };
+  } catch (err) {
+    logWarn('[media.export] failed:', err);
+    return { ok: false, error: String(err) };
+  }
+});
+
 // Bulk session prune (Hermes parity): preview matches + age span, then
 // archive them in one pass. Pinned/archived/active sessions never match.
 ipcMain.handle(

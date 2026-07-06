@@ -7,7 +7,7 @@
  * this view is their permanent address on the rail.
  */
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react';
-import { FileDown, FileText, FolderOpen, Image as ImageIcon, Loader2, Presentation, Radio, Table2, Clapperboard } from 'lucide-react';
+import { FileDown, FileText, FolderOpen, Image as ImageIcon, LibraryBig, Loader2, Presentation, Radio, Table2, Clapperboard } from 'lucide-react';
 
 import { useAppStore } from '../../store';
 
@@ -18,6 +18,7 @@ const PodStudioPanel = lazy(() => import('./PodStudioPanel.js').then((m) => ({ d
 const ImageStudioPanel = lazy(() => import('./ImageStudioPanel.js').then((m) => ({ default: m.ImageStudioPanel })));
 const VideoStudioPanel = lazy(() => import('./VideoStudioPanel.js').then((m) => ({ default: m.VideoStudioPanel })));
 const DrivePanel = lazy(() => import('./DrivePanel.js').then((m) => ({ default: m.DrivePanel })));
+const MediaLibraryPanel = lazy(() => import('./MediaLibraryPanel.js').then((m) => ({ default: m.MediaLibraryPanel })));
 
 interface StudioTab {
   id: string;
@@ -33,6 +34,7 @@ export const CREATIONS_TABS: StudioTab[] = [
   { id: 'pod', label: 'Pod', icon: Radio, component: PodStudioPanel },
   { id: 'image', label: 'Image', icon: ImageIcon, component: ImageStudioPanel },
   { id: 'video', label: 'Vidéo', icon: Clapperboard, component: VideoStudioPanel },
+  { id: 'medias', label: 'Médias', icon: LibraryBig, component: MediaLibraryPanel },
   { id: 'drive', label: 'Drive', icon: FolderOpen, component: DrivePanel },
 ];
 

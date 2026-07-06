@@ -9,7 +9,7 @@
  * for the live chat. Quick chips prefill the input or open the matching
  * surface; recent sessions resume.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, FileText, FolderOpen, Hammer, Image as ImageIcon, Presentation, Radio, Search, Table2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
@@ -88,6 +88,18 @@ export function HomeView() {
   const [prompt, setPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Consume a one-shot composer seed (e.g. « utiliser ce média dans le chat »
+  // from the media library).
+  const chatComposerSeed = useAppStore((s) => s.chatComposerSeed);
+  const setChatComposerSeed = useAppStore((s) => s.setChatComposerSeed);
+  useEffect(() => {
+    if (chatComposerSeed) {
+      setPrompt(chatComposerSeed);
+      setChatComposerSeed(null);
+      inputRef.current?.focus();
+    }
+  }, [chatComposerSeed, setChatComposerSeed]);
 
   const resume = (id: string) => {
     setActiveSession(id);

@@ -708,6 +708,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       model?: string;
     }): Promise<{ ok: boolean; outputPath?: string; url?: string; error?: string }> =>
       ipcRenderer.invoke('media.generateImage', request),
+    list: (): Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string }>> =>
+      ipcRenderer.invoke('media.list'),
+    export: (sourcePath: string): Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('media.export', { sourcePath }),
   },
 
   // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
@@ -4591,6 +4595,10 @@ declare global {
           ageSpan: { oldest: number; newest: number } | null;
         }>;
         apply: (ids: string[]) => Promise<{ ok: boolean; archived: number }>;
+      };
+      media: {
+        list: () => Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string }>>;
+        export: (sourcePath: string) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>;
       };
       selectFiles: () => Promise<string[]>;
       artifacts: {

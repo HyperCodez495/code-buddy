@@ -8,6 +8,7 @@ import { StudioFileTree } from './StudioFileTree.js';
 import { TerminalPane } from './TerminalPane.js';
 import type { TreeNode } from './utils/file-tree-model.js';
 import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
+import { StudioProjectHistory } from './StudioProjectHistory';
 import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
 import { StudioChatPanel } from '../studio-iterate/StudioChatPanel.js';
 import { ChangedFilesStrip } from '../studio-iterate/ChangedFilesStrip.js';
@@ -278,6 +279,7 @@ export function AppStudioView({
               }}
             />
           </div>
+          <StudioProjectHistory />
         </div>
       ) : (
         workbench

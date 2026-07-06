@@ -244,6 +244,8 @@ export interface AppState {
   creationsTab: string;
   /** One-shot subject carried from the Home composer into the opened studio. */
   creationsSeed: string | null;
+  /** One-shot text seeded into the Home chat composer (media reuse, etc.). */
+  chatComposerSeed: string | null;
   showSettings: boolean;
   /** Evolution panel (new-shell Labs) — lists variants from recursive self-improvement. */
   showEvolutionPanel: boolean;
@@ -593,6 +595,7 @@ export interface AppState {
   setPrimaryView: (v: PrimaryView) => void;
   setCreationsTab: (tab: string) => void;
   setCreationsSeed: (seed: string | null) => void;
+  setChatComposerSeed: (seed: string | null) => void;
   setShowSettings: (show: boolean) => void;
   setShowEvolutionPanel: (show: boolean) => void;
   setShowKnowledgePanel: (show: boolean) => void;
@@ -935,6 +938,7 @@ export const useAppStore = create<AppState>((set) => ({
   primaryView: 'chat',
   creationsTab: 'deck',
   creationsSeed: null,
+  chatComposerSeed: null,
   showSettings: false,
   showEvolutionPanel: false,
   showKnowledgePanel: false,
@@ -1553,6 +1557,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPrimaryView: (v) => set({ primaryView: v }),
   setCreationsTab: (tab) => set({ creationsTab: tab }),
   setCreationsSeed: (seed) => set({ creationsSeed: seed }),
+  setChatComposerSeed: (seed) => set({ chatComposerSeed: seed }),
   setShowSettings: (show) => set({ showSettings: show }),
   setShowEvolutionPanel: (show) => set({ showEvolutionPanel: show }),
   setShowKnowledgePanel: (show) => set({ showKnowledgePanel: show }),
