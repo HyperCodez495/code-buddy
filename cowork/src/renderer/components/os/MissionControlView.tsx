@@ -16,6 +16,8 @@ import { FleetTopologyView } from './FleetTopologyView';
 import { PeerCapabilityMatrix } from './PeerCapabilityMatrix';
 import { KnowledgeGraphView } from '../os-panels/KnowledgeGraphView';
 import type { KnowledgeGraphEdge, KnowledgeGraphNode } from '../os-panels/knowledge-graph-view-model.js';
+import { OsStatusBar } from '../os-panels/OsStatusBar';
+import type { OsStatusItem } from '../os-panels/os-status-bar-model.js';
 import { Sparkline } from '../viz/Sparkline';
 import type { CouncilSession } from './util/council-model';
 import type { FleetLoad } from './util/fleet-load-model';
@@ -196,6 +198,31 @@ export function MissionControlView() {
   // TODO(os-wiring): no cost-cap IPC exists in the renderer bridge yet.
   const noop = () => {};
 
+  // Status bar composed from the REAL signals this view already loads —
+  // one glance: daemon, council health, collective memory, fleet.
+  const statusItems: OsStatusItem[] = [
+    {
+      label: 'Daemon autonomie',
+      value: daemonRunning === null ? 'inconnu' : daemonRunning ? 'actif' : 'arrêté',
+      tone: daemonRunning === null ? 'muted' : daemonRunning ? 'ok' : 'warn',
+    },
+    {
+      label: 'Council DHI',
+      value: council ? String(Math.round(council.dhi * 100)) : '—',
+      tone: !council ? 'muted' : council.dhi > 0.75 ? 'ok' : council.dhi > 0.5 ? 'warn' : 'error',
+    },
+    {
+      label: 'Mémoire collective',
+      value: knowledge.nodes.length > 0 ? `${knowledge.nodes.length} nœuds · ${knowledge.edges.length} liens` : 'vide',
+      tone: knowledge.nodes.length > 0 ? 'ok' : 'muted',
+    },
+    {
+      label: 'Pairs flotte',
+      value: peers.length > 0 ? String(peers.length) : 'aucun',
+      tone: peers.length > 0 ? 'ok' : 'muted',
+    },
+  ];
+
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-background">
       <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -205,6 +232,8 @@ export function MissionControlView() {
             Cockpit de la flotte, du council et de l'autonomie. Lance <code className="rounded bg-muted px-1 py-0.5 text-xs">buddy server</code> pour alimenter les vues avec des données réelles.
           </p>
         </header>
+
+        <OsStatusBar items={statusItems} />
 
         <FleetLoadStrip load={load} />
 
