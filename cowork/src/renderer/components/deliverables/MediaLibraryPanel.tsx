@@ -14,6 +14,7 @@ import { Clapperboard, Copy, Download, FolderOpen, Image as ImageIcon, Loader2, 
 
 import { useAppStore } from '../../store';
 import { toFileUrl } from '../message/media-attachments-model.js';
+import { filterMedia } from './media-filter-model.js';
 
 interface MediaItem {
   path: string;
@@ -38,6 +39,7 @@ function formatSize(bytes: number): string {
 export function MediaLibraryPanel() {
   const [items, setItems] = useState<MediaItem[] | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
 
   const setChatComposerSeed = useAppStore((s) => s.setChatComposerSeed);
@@ -58,8 +60,8 @@ export function MediaLibraryPanel() {
   }, [refresh]);
 
   const filtered = useMemo(
-    () => (items ?? []).filter((m) => filter === 'all' || m.kind === filter),
-    [items, filter],
+    () => filterMedia(items ?? [], filter, query),
+    [items, filter, query],
   );
 
   const flash = (message: string) => {
@@ -122,10 +124,18 @@ export function MediaLibraryPanel() {
               {label}
             </button>
           ))}
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher (prompt, modèle, nom)…"
+            className="ml-auto w-56 rounded-md border border-border bg-surface px-2.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
+            data-testid="media-search"
+          />
           <button
             type="button"
             onClick={refresh}
-            className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:text-foreground"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:text-foreground"
             data-testid="media-refresh"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
