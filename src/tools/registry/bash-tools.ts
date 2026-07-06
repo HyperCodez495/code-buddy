@@ -7,7 +7,7 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import { BashTool } from '../index.js';
 
 // ============================================================================
@@ -44,15 +44,18 @@ export class BashExecuteTool implements ITool {
   readonly name = 'bash';
   readonly description = 'Execute a shell command with security validation and optional timeout';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     const command = input.command as string;
     const timeout = input.timeout as number | undefined;
+    // The session's workingDirectory (embedded engines) — commands must run
+    // there, not in the host process cwd. Undefined keeps CLI behavior.
+    const cwd = context?.cwd;
 
     if (typeof timeout === 'number') {
-      return await getBash().execute(command, timeout);
+      return await getBash().execute(command, timeout, cwd);
     }
 
-    return await getBash().execute(command);
+    return await getBash().execute(command, undefined, cwd);
   }
 
   getSchema(): ToolSchema {

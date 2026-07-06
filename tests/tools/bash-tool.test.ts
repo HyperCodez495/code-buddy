@@ -120,6 +120,18 @@ describe('BashTool', () => {
       expect(path.isAbsolute(result.output!.trim())).toBe(true);
     });
 
+    it('runs in the cwd override when provided (embedded session workingDirectory)', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-cwd-'));
+      const real = fs.realpathSync(dir);
+      const result = await bashTool.execute('pwd', 30000, dir);
+      expect(result.success).toBe(true);
+      expect(fs.realpathSync(result.output!.trim())).toBe(real);
+      // Sans override : comportement historique (process cwd), pas le tmpdir.
+      const legacy = await bashTool.execute('pwd');
+      expect(fs.realpathSync(legacy.output!.trim())).not.toBe(real);
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
     // cat is not available on Windows
     (isWindows ? it.skip : it)('should execute cat command', async () => {
       const tmpFile = path.join(os.tmpdir(), `bash-test-${Date.now()}.txt`);

@@ -252,7 +252,14 @@ export class BashTool implements Disposable {
    * // With custom timeout (2 minutes)
    * await bash.execute('npm install', 120000);
    */
-  async execute(command: string, timeout: number = 30000): Promise<ToolResult> {
+  /**
+   * @param cwd Working-directory override — the tool-execution context's cwd
+   *   (an embedded engine's session workingDirectory). Without it, commands
+   *   run in `currentDirectory` (= host process cwd), which is right for the
+   *   CLI but wrong for embedded sessions: a Cowork deck export wrote its
+   *   .pptx into cowork/ instead of the session dir.
+   */
+  async execute(command: string, timeout: number = 30000, cwd?: string): Promise<ToolResult> {
     try {
       // Validate input with schema (enhanced validation)
       const schemaValidation = validateWithSchema(
@@ -386,11 +393,12 @@ export class BashTool implements Disposable {
       }
 
       const executionCommand = await this.resolveRtkCommand(command);
+      const effectiveCwd = cwd ?? this.currentDirectory;
 
       // Execute using spawn (safer than exec)
       const result = await this.executeWithSpawn(executionCommand, {
         timeout,
-        cwd: this.currentDirectory,
+        cwd: effectiveCwd,
       });
 
       if (result.exitCode !== 0) {
@@ -405,7 +413,7 @@ export class BashTool implements Disposable {
               // Execute fix command without self-healing to avoid recursion
               const fixResult = await this.executeWithSpawn(fixCmd, {
                 timeout: timeout * 2, // Give more time for fix commands
-                cwd: this.currentDirectory,
+                cwd: effectiveCwd,
               });
 
               if (fixResult.exitCode === 0) {
