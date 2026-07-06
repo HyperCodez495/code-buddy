@@ -22,6 +22,7 @@ import { AppStudioView } from './studio/AppStudioView';
 import { useAppStudio } from './studio/use-app-studio';
 import { sessionToStudioMessages } from './studio/studio-chat-adapter';
 import { buildDevPlan, advancePlan } from './studio/dev-plan';
+import { changedFilesFromTrace } from './studio/trace-changes';
 import { createStudioApis } from './studio/studio-api-bridge';
 import type { StudioScaffoldRequest } from './studio/StudioComposer';
 import { buildAiGenerationPrompt } from './studio/studio-ai-generation';
@@ -178,6 +179,7 @@ function StudioView() {
       busy,
       suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
       plan,
+      changes: changedFilesFromTrace(st?.traceSteps ?? []),
       onSend: (text: string) => {
         void continueSession(activeSessionId, text);
       },

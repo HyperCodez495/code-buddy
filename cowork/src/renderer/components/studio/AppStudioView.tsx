@@ -10,7 +10,8 @@ import type { TreeNode } from './utils/file-tree-model.js';
 import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
 import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
 import { StudioChatPanel } from '../studio-iterate/StudioChatPanel.js';
-import type { StudioMessage } from '../studio-iterate/iterate-model.js';
+import { ChangedFilesStrip } from '../studio-iterate/ChangedFilesStrip.js';
+import type { StudioMessage, StudioFileChange } from '../studio-iterate/iterate-model.js';
 import { DevPlanCard } from './DevPlanCard.js';
 import type { DevPlan } from './dev-plan.js';
 
@@ -21,6 +22,8 @@ export interface StudioChatProps {
   suggestions?: string[];
   /** Development plan derived from the app prompt (bolt.new's plan step). */
   plan?: DevPlan;
+  /** Files the agent created/edited this session (bolt.new's changed-files strip). */
+  changes?: StudioFileChange[];
   onSend: (text: string) => void;
   onStop?: () => void;
 }
@@ -179,6 +182,11 @@ export function AppStudioView({
                 onStop={chat.onStop}
               />
             </div>
+            {chat.changes && chat.changes.length > 0 ? (
+              <div className="shrink-0 border-t border-border">
+                <ChangedFilesStrip changes={chat.changes} onOpen={onOpenFile} />
+              </div>
+            ) : null}
           </div>
           {hasProject ? (
             workbench
