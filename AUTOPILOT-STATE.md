@@ -258,9 +258,16 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   une session depuis la Home après reload affichait « Démarrez la conversation ») ; (c) le contrat App Studio
   autorise video_generate (vidéo hero/ambiance, chemin relatif, dégradé propre). Prouvé live : le MP4 sharpei se
   lit inline dans la session rouverte (720p, readyState 4).
+- **HOME FAÇON GENSPARK (`991eb431`, demande Patrice « compare les IHM »)** : écart identifié — chez Genspark tout
+  agent est à UN clic de l'accueil + galerie de recettes ; chez Cowork les studios étaient à 2-3 clics et le
+  catalogue agent-recipes (15 missions, vague Genspark) n'avait AUCUN consommateur. Livré : rangée d'agents
+  (9 tuiles App/Deck/Feuille/Document/Pod/Image/Vidéo/Drive/Recherche, deep-link via `creationsTab` store) +
+  « Missions prêtes » (6 chips recettes réelles → préremplissent le composer). Validé écran + deep-link prouvé
+  (clic Vidéo → Créations/onglet vidéo). ⚠️ Gotcha capture : fenêtre Electron minimisée ⇒ Page.captureScreenshot
+  CDP BLOQUE (occlusion) — activer la fenêtre (xdotool windowactivate) puis `import -window <id>`.
 - **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
-  rafraîchissement périodique des données Mission Control (snapshot/council chargés une fois au mount) ;
-  app vitrine avec vidéo hero e2e (App Studio) quand le backend est disponible.
+  rafraîchissement périodique des données Mission Control ; app vitrine avec vidéo hero e2e (App Studio) ;
+  comparaison Genspark suite : page résultat de tâche (timeline + artefacts), sélecteur de sortie dans le composer.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
