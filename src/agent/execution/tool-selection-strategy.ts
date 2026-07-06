@@ -155,6 +155,8 @@ export class ToolSelectionStrategy {
   private cachedToolNames: string[] = [];
   private cacheModelName: string | null = null;
   private lastQuery: string = '';
+  /** Query the cached tool set was selected FOR — cache hits require equality. */
+  private cachedQuery: string = '';
   private lastSelection: ToolSelectionResult | null = null;
   private cacheTimestamp: number = 0;
   private activeSkill: UnifiedSkill | null = null;
@@ -186,8 +188,13 @@ export class ToolSelectionStrategy {
     const modelName = ToolSelectionStrategy.normalizeModelName(effectiveConfig.modelName);
     this.lastQuery = query;
 
-    // Check if we should use cached tools
-    if (effectiveConfig.enableCaching && this.isCacheValid(modelName)) {
+    // Check if we should use cached tools. The cache exists for MULTI-ROUND
+    // consistency within one turn (same query, rounds 2..N) — it must never
+    // leak a PREVIOUS turn's selection into a new user query, or a turn that
+    // needs text_to_speech inherits the tool set of the "pwd" turn before it
+    // (observed live in Cowork: alwaysInclude apparently ignored, tools
+    // "missing" at random depending on the prior turn).
+    if (effectiveConfig.enableCaching && this.cachedQuery === query && this.isCacheValid(modelName)) {
       logger.debug('Using cached tools for query', { query: query.slice(0, 50) });
       return {
         tools: this.cachedTools!,
@@ -289,11 +296,40 @@ export class ToolSelectionStrategy {
     this.cachedToolNames = tools.map(t => t.function.name);
     this.cacheModelName = ToolSelectionStrategy.normalizeModelName(modelName);
     this.cacheTimestamp = Date.now();
+    // The executor calls this right after round 0's selection — the cache
+    // belongs to the query that produced it (this turn's user message).
+    this.cachedQuery = this.lastQuery;
 
     logger.debug('Tools cached for multi-round consistency', {
       toolCount: tools.length,
       modelName: this.cacheModelName,
     });
+  }
+
+  /**
+   * Expand the CURRENT turn's cached selection with named tools — called by
+   * the executor after a successful `tool_search` so a discovered tool is
+   * actually invocable on the next round (the cache would otherwise re-serve
+   * the same list for the rest of the turn). No-op for unknown names or when
+   * no cache is active.
+   */
+  async expandCachedTools(names: string[]): Promise<number> {
+    if (!this.config.enableCaching || !this.cachedTools || names.length === 0) return 0;
+    const have = new Set(this.cachedTools.map((t) => t.function.name));
+    const wanted = names.filter((n) => !have.has(n));
+    if (wanted.length === 0) return 0;
+
+    const { getAllCodeBuddyTools } = await import('../../codebuddy/tools.js');
+    const all = await getAllCodeBuddyTools();
+    const additions = all.filter((t) => wanted.includes(t.function.name));
+    if (additions.length === 0) return 0;
+
+    this.cachedTools = [...this.cachedTools, ...additions];
+    this.cachedToolNames = this.cachedTools.map((t) => t.function.name);
+    logger.debug('Tool selection cache expanded via tool_search', {
+      added: additions.map((t) => t.function.name),
+    });
+    return additions.length;
   }
 
   /**

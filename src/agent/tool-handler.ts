@@ -108,6 +108,7 @@ import {
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
 import { createRegisterToolTool } from "../tools/register-tool-handler.js";
 import { createAuthoredExtraTools } from "../tools/registry/authored-extra-tools.js";
+import { ToolSearchTool } from "../tools/tool-search.js";
 import { CodeBuddyToolCall } from "../codebuddy/client.js";
 import { ToolResult } from "../types/index.js";
 import { CheckpointManager } from "../checkpoints/checkpoint-manager.js";
@@ -370,6 +371,13 @@ export class ToolHandler {
 
     // Register all tool adapters
     const allTools = [
+      // tool_search FIRST-CLASS: the progressive-disclosure escape hatch was a
+      // complete class (BaseTool implements ITool) that was never registered —
+      // so the alwaysInclude('tool_search') in tool selection silently added
+      // nothing (toolMap.has === false) and the model could never pull a tool
+      // the per-query subset missed. Registering it here both dispatches it
+      // and exposes it (getAllCodeBuddyTools derives from this registry).
+      new ToolSearchTool(),
       ...createTextEditorTools(),
       ...createBashTools(),
       ...createLsTools(),

@@ -201,6 +201,11 @@ export class ToolSearchTool extends BaseTool {
       return line;
     });
 
-    return this.success(`Found ${results.length} tools:\n\n${lines.join('\n\n')}`);
+    // data.names lets the executor EXPAND the current turn's tool selection
+    // with what was discovered — finding a tool must make it invocable on the
+    // next round (true progressive disclosure), not just describe it.
+    return this.success(`Found ${results.length} tools:\n\n${lines.join('\n\n')}`, {
+      names: results.map((r) => r.name),
+    });
   }
 }

@@ -806,6 +806,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Convert text to a local speech audio file'
   },
   {
+    name: 'tool_search',
+    category: 'system',
+    keywords: ['tool', 'search', 'discover', 'find', 'capability', 'mcp', 'schema'],
+    priority: 9,
+    description: 'Search available tools by keyword (progressive disclosure)'
+  },
+  {
     name: 'image_generate',
     category: 'media',
     keywords: ['image', 'generate', 'picture', 'photo', 'openai', 'xai', 'hermes'],

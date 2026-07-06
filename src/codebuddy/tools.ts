@@ -331,6 +331,35 @@ export function initializeToolRegistry(): void {
   // createAuthoredExtraTools() so exposition and dispatch stay in lockstep.
   registerGroup(AUTHORED_EXTRA_TOOLS);
 
+  // tool_search — the progressive-disclosure escape hatch. The class existed
+  // (ToolSearchTool, dispatched via ToolHandler.initializeRegistry) but was
+  // never EXPOSED here, so the model literally could not call it and the
+  // alwaysInclude('tool_search') in tool selection silently added nothing.
+  registerGroup([
+    {
+      type: 'function',
+      function: {
+        name: 'tool_search',
+        description:
+          'Search for available tools by keyword. Use this when the tool you need is not in your current tool list — it returns matching tool names and descriptions (and loads deferred schemas).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query — keywords describing what you need to do.',
+            },
+            max_results: {
+              type: 'number',
+              description: 'Maximum number of results (default: 10).',
+            },
+          },
+          required: ['query'],
+        },
+      },
+    },
+  ]);
+
   isRegistryInitialized = true;
   logger.debug('Tool registry initialized with built-in tools');
 }

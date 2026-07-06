@@ -212,3 +212,22 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     expect(strategy.shouldUseSearchFor('https://github.com/browserbase/stagehand')).toBe(true);
   });
 });
+
+describe('tool selection cache scoping (multi-round, not cross-turn)', () => {
+  it('serves the cache for the SAME query but re-selects for a new query', async () => {
+    const { ToolSelectionStrategy } = await import('../../../src/agent/execution/tool-selection-strategy.js');
+    const strategy = new ToolSelectionStrategy({ useRAG: false, enableCaching: true });
+
+    const first = await strategy.selectToolsForQuery('lance pwd en bash');
+    expect(first.fromCache).toBe(false);
+    strategy.cacheTools([makeTool('bash'), makeTool('view_file')], 'gpt-5.5');
+
+    // Rounds 2..N of the SAME turn (same query) → cache hit.
+    const sameTurn = await strategy.selectToolsForQuery('lance pwd en bash', { modelName: 'gpt-5.5' });
+    expect(sameTurn.fromCache).toBe(true);
+
+    // A NEW user query must never inherit the previous turn's selection.
+    const newTurn = await strategy.selectToolsForQuery('synthétise un épisode avec text_to_speech', { modelName: 'gpt-5.5' });
+    expect(newTurn.fromCache).toBe(false);
+  });
+});

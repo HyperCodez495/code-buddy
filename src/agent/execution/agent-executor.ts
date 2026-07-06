@@ -1105,6 +1105,20 @@ export class AgentExecutor {
               }
             }
 
+            // Progressive disclosure, second half: a successful tool_search
+            // EXPANDS this turn's cached selection so the discovered tools are
+            // invocable on the next round (finding without exposing was a
+            // dead-end — proven live: "tool_search le trouve, mais il n'est
+            // pas exposé comme outil invocable").
+            if (toolCall.function.name === 'tool_search' && result.success) {
+              const names = (result.data as { names?: string[] } | undefined)?.names;
+              if (Array.isArray(names) && names.length > 0) {
+                try {
+                  await this.deps.toolSelectionStrategy.expandCachedTools(names);
+                } catch { /* discovery must never fail the turn */ }
+              }
+            }
+
             // --- User hooks: PostToolUse / PostToolUseFailure (streaming path) ---
             await runPostToolUseHook(process.cwd(), toolCall, result);
             // --- Per-tool metrics (streaming path, DeepWiki gap #3) ---
