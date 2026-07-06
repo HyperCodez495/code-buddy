@@ -54,7 +54,7 @@ Je peux VOIR + piloter Cowork moi-même (capture X11 `import -window root` + CDP
 - **Genspark Labs gallery** `primaryView:'labs'` — EN COURS (Opus worktree) : galerie des ~40 slices dormants (panel/labs mount) via genspark-slices.ts, lazy-import + error boundary + état vide.
 
 ### ✅ App Studio VALIDÉ END-TO-END (via CDP, 2026-07-05)
-Le bolt.diy MARCHE : `studio.scaffold.generate('node-cli', vars:{projectName,binName,...})` → **vrai projet fonctionnel** (package.json bin+scripts, src/index.ts code commander/chalk, tsconfig, README, **git init + npm install faits**, 51 fichiers). `devServer.status`→ok (dist recompilé). ⚠️ **Bug targetDir** : le TemplateEngine noyau crée dans `/tmp/<projectName>` et IGNORE le `targetDir` passé → à corriger (scaffold dans le workspace choisi par l'utilisateur). Reste : tester dev-server start→preview end-to-end.
+Le bolt.diy MARCHE : `studio.scaffold.generate('node-cli', vars:{projectName,binName,...})` → **vrai projet fonctionnel** (package.json bin+scripts, src/index.ts code commander/chalk, tsconfig, README, **git init + npm install faits**, 51 fichiers). `devServer.status`→ok (dist recompilé). ✅ **Bug targetDir CORRIGÉ (`65ffa0ec`)** : `scaffold-service.ts` mettait le même nom au dossier ET à l'interpolation ; le noyau construit `join(outputDir, projectName)`, donc quand `vars.projectName` ≠ `basename(targetDir)` le projet atterrissait à côté (ex. `/ws/app` au lieu du `/ws/my-app` choisi). Fix : dossier = `basename(targetDir)` (atterrit exactement dans targetDir), interpolation = nom choisi. Test de régression sur le cas noms-divergents. Reste : tester dev-server start→preview end-to-end.
 
 ### ✅ Genspark Labs mergé (`f63e8ad7`) — 23 composants browsables
 
