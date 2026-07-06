@@ -16,6 +16,7 @@ import { FleetTopologyView } from './FleetTopologyView';
 import { PeerCapabilityMatrix } from './PeerCapabilityMatrix';
 import { KnowledgeGraphView } from '../os-panels/KnowledgeGraphView';
 import type { KnowledgeGraphEdge, KnowledgeGraphNode } from '../os-panels/knowledge-graph-view-model.js';
+import { Sparkline } from '../viz/Sparkline';
 import type { CouncilSession } from './util/council-model';
 import type { FleetLoad } from './util/fleet-load-model';
 import type { Peer, PeerStatus } from './util/fleet-model';
@@ -100,12 +101,36 @@ export function MissionControlView() {
   // Real council data: the latest CLI council run read from the
   // ~/.codebuddy JSONL ledgers (os.councilHealth IPC). Null → honest empty.
   const [council, setCouncil] = useState<CouncilSession | null>(null);
+  const [dhiHistory, setDhiHistory] = useState<Array<{ at: string; taskType: string; dhi: number }>>([]);
   useEffect(() => {
     let cancelled = false;
     void window.electronAPI?.os
       ?.councilHealth()
       .then((payload) => {
-        if (!cancelled && payload?.session) setCouncil(payload.session);
+        if (cancelled || !payload) return;
+        if (payload.session) setCouncil(payload.session);
+        setDhiHistory(payload.history ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Real autonomy daemon queue (the ~/.codebuddy/fleet task board).
+  const [daemonQueue, setDaemonQueue] = useState<{ tasks: number; done: number; agents: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI?.autonomy
+      ?.snapshot()
+      .then((snap) => {
+        if (cancelled || !snap?.ok) return;
+        const tasks = snap.tasks ?? [];
+        setDaemonQueue({
+          tasks: tasks.length,
+          done: tasks.filter((t) => t.status === 'completed' || t.status === 'done').length,
+          agents: Object.keys(snap.presence ?? {}).length,
+        });
       })
       .catch(() => {});
     return () => {
@@ -186,7 +211,23 @@ export function MissionControlView() {
         <FleetTopologyView peers={peers} />
 
         <div className="grid gap-6 xl:grid-cols-2">
-          <CouncilArenaView session={council ?? EMPTY_COUNCIL} />
+          <div className="space-y-3">
+            <CouncilArenaView session={council ?? EMPTY_COUNCIL} />
+            {dhiHistory.length >= 2 ? (
+              <div className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+                <Sparkline
+                  values={dhiHistory.map((h) => Math.round(h.dhi * 100))}
+                  width={160}
+                  height={36}
+                  tone={(dhiHistory[dhiHistory.length - 1]?.dhi ?? 0) > 0.75 ? 'success' : 'warning'}
+                />
+                <div className="min-w-0 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Tendance DHI</span> — {dhiHistory.length} runs,
+                  dernier {Math.round((dhiHistory[dhiHistory.length - 1]?.dhi ?? 0) * 100)} ({dhiHistory[dhiHistory.length - 1]?.taskType})
+                </div>
+              </div>
+            ) : null}
+          </div>
           <PeerCapabilityMatrix peers={peers} capabilities={capabilities} />
         </div>
 
@@ -199,6 +240,13 @@ export function MissionControlView() {
           onDaemonResume={() => controlDaemon('start')}
           onCostCapChange={noop}
         />
+        {daemonQueue ? (
+          <p className="text-xs text-muted-foreground">
+            File du daemon : {daemonQueue.tasks} tâche{daemonQueue.tasks > 1 ? 's' : ''} dont {daemonQueue.done} terminée
+            {daemonQueue.done > 1 ? 's' : ''} · {daemonQueue.agents} agent{daemonQueue.agents > 1 ? 's' : ''} présent
+            {daemonQueue.agents > 1 ? 's' : ''} · ~/.codebuddy/fleet
+          </p>
+        ) : null}
       </div>
     </div>
   );
