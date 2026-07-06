@@ -55,6 +55,10 @@ const WIRING: Record<string, LabsWiring> = {
     load: () => import('../deliverables/DeckStudioPanel').then((m) => named(m, 'DeckStudioPanel')),
     props: {},
   },
+  B8: {
+    load: () => import('../deliverables/SheetStudioPanel').then((m) => named(m, 'SheetStudioPanel')),
+    props: {},
+  },
   A2: {
     load: () => import('../MissionBoard').then((m) => named(m, 'MissionBoard')),
     props: { missions: [], onOpen: () => {}, onPause: () => {}, onResume: () => {} },

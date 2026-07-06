@@ -84,6 +84,18 @@ export const GENSPARK_SLICES: GensparkSlice[] = [
       'FONCTIONNEL (promu) : session agent réelle + bloc ```deck → SlideDeckPreview live + export skill pptx.',
   },
   {
+    id: 'B8',
+    title: 'SheetStudioPanel',
+    roadmap: 9,
+    category: 'deliverable',
+    mount: 'labs',
+    componentFile: 'components/deliverables/SheetStudioPanel.tsx',
+    logicFile: 'components/deliverables/sheet-block-model.ts',
+    testFile: '../../tests/sheet-block-model.test.ts',
+    needsData:
+      'FONCTIONNEL (promu) : session agent réelle + bloc ```sheet → SheetPreview live + export skill xlsx.',
+  },
+  {
     id: 'B1',
     title: 'SlideDeckBuilder',
     roadmap: 8,
