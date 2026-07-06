@@ -708,7 +708,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       model?: string;
     }): Promise<{ ok: boolean; outputPath?: string; url?: string; error?: string }> =>
       ipcRenderer.invoke('media.generateImage', request),
-    list: (): Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string }>> =>
+    list: (): Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string; prompt?: string; model?: string; provider?: string; sessionId?: string }>> =>
       ipcRenderer.invoke('media.list'),
     export: (sourcePath: string): Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }> =>
       ipcRenderer.invoke('media.export', { sourcePath }),
@@ -4604,7 +4604,7 @@ declare global {
         apply: (ids: string[]) => Promise<{ ok: boolean; archived: number }>;
       };
       media: {
-        list: () => Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string }>>;
+        list: () => Promise<Array<{ path: string; kind: 'image' | 'video' | 'audio'; size: number; mtimeMs: number; root: string; prompt?: string; model?: string; provider?: string; sessionId?: string }>>;
         export: (sourcePath: string) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>;
       };
       selectFiles: () => Promise<string[]>;

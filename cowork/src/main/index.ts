@@ -2843,7 +2843,28 @@ ipcMain.handle('media.list', async () => {
         if (s.cwd) roots.add(s.cwd);
       }
     }
-    return scanMediaLibrary([...roots]);
+    const items = scanMediaLibrary([...roots]);
+    // Link each media to the conversation that generated it: its basename is
+    // echoed in that session's assistant message (the MEDIA: marker).
+    if (sessionManager) {
+      const { buildMediaSessionIndex, basenameOf } = await import('./session/media-session-index');
+      const blobs = sessionManager.listSessions().map((sess) => ({
+        sessionId: sess.id,
+        text: sessionManager!
+          .getMessages(sess.id)
+          .map((m) => (Array.isArray(m.content) ? m.content : [])
+            .filter((b): b is { type: 'text'; text: string } => (b as { type?: string }).type === 'text')
+            .map((b) => b.text)
+            .join(' '))
+          .join(' '),
+      }));
+      const index = buildMediaSessionIndex(blobs);
+      for (const item of items) {
+        const sid = index.get(basenameOf(item.path));
+        if (sid) (item as { sessionId?: string }).sessionId = sid;
+      }
+    }
+    return items;
   } catch (err) {
     logWarn('[media.list] failed:', err);
     return [];

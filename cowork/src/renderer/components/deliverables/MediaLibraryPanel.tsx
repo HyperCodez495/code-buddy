@@ -10,7 +10,7 @@
  *  - « Copier » puts the absolute path on the clipboard.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clapperboard, Copy, Download, FolderOpen, Image as ImageIcon, Loader2, MessageSquarePlus, Music, RefreshCw, Wand2 } from 'lucide-react';
+import { Clapperboard, Copy, Download, FolderOpen, Image as ImageIcon, Loader2, MessageCircle, MessageSquarePlus, Music, RefreshCw, Wand2 } from 'lucide-react';
 
 import { useAppStore } from '../../store';
 import { toFileUrl } from '../message/media-attachments-model.js';
@@ -24,6 +24,7 @@ interface MediaItem {
   prompt?: string;
   model?: string;
   provider?: string;
+  sessionId?: string;
 }
 
 type Filter = 'all' | 'image' | 'video' | 'audio';
@@ -78,6 +79,12 @@ export function MediaLibraryPanel() {
     // prompt; otherwise fall back to referencing the file path.
     setCreationsSeed(item.prompt ? `${item.prompt} — variante : ` : `Variante du média existant ${item.path} : `);
     setCreationsTab(item.kind === 'image' ? 'image' : 'video');
+  };
+
+  const openConversation = (item: MediaItem) => {
+    if (!item.sessionId) return;
+    setActiveSession(item.sessionId);
+    setPrimaryView('chat');
   };
 
   const exportItem = (item: MediaItem) => {
@@ -170,6 +177,11 @@ export function MediaLibraryPanel() {
                     {item.kind !== 'audio' ? (
                       <button type="button" title="Variante dans le studio" onClick={() => handleUseInStudio(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-use-studio">
                         <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    {item.sessionId ? (
+                      <button type="button" title="Voir la conversation associée" onClick={() => openConversation(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-open-conversation">
+                        <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     ) : null}
                     <button type="button" title="Copier le chemin" onClick={() => copyPath(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground">

@@ -26,6 +26,8 @@ export interface MediaItem {
   model?: string;
   /** Generation provider (sidecar). */
   provider?: string;
+  /** The conversation that generated this media (linked in media.list). */
+  sessionId?: string;
 }
 
 const EXT_TO_KIND: Record<string, MediaKind> = {

@@ -57,7 +57,7 @@ describe('CAPABILITY_COMMANDS', () => {
   it('each run() flips exactly one real store show-flag to true (or navigates to a primary view)', () => {
     // Capabilities whose action IS the navigation — they switch primaryView instead of
     // opening an overlay, so no show-flag must flip.
-    const viewSwitchers: Record<string, string> = { 'cap-creations': 'creations', 'cap-capabilities': 'capabilities' };
+    const viewSwitchers: Record<string, string> = { 'cap-creations': 'creations', 'cap-capabilities': 'capabilities', 'cap-library': 'library' };
     const flags = showFlags();
     expect(flags.length).toBeGreaterThan(20); // sanity: the store really exposes show* flags
     for (const c of CAPABILITY_COMMANDS) {
