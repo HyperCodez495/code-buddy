@@ -317,6 +317,8 @@ export interface AppState {
   showSessionPrune: boolean;
   /** ChatGPT-style conversation history drawer. */
   showConversationHistory: boolean;
+  /** Onboarding tour modal (first launch + \u2318K). */
+  showOnboardingTour: boolean;
   previewFilePath: string | null;
   activeArtifact: {
     id: string;
@@ -670,6 +672,7 @@ export interface AppState {
   setShowGlobalSearch: (show: boolean) => void;
   setShowSessionPrune: (show: boolean) => void;
   setShowConversationHistory: (show: boolean) => void;
+  setShowOnboardingTour: (show: boolean) => void;
   setPreviewFilePath: (filePath: string | null) => void;
   setActiveArtifact: (
     artifact: {
@@ -976,6 +979,7 @@ export const useAppStore = create<AppState>((set) => ({
   showGlobalSearch: false,
   showSessionPrune: false,
   showConversationHistory: false,
+  showOnboardingTour: false,
   previewFilePath: null,
   activeArtifact: null,
   guiActions: [],
@@ -1727,6 +1731,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowGlobalSearch: (show) => set({ showGlobalSearch: show }),
   setShowSessionPrune: (show) => set({ showSessionPrune: show }),
   setShowConversationHistory: (show) => set({ showConversationHistory: show }),
+  setShowOnboardingTour: (show) => set({ showOnboardingTour: show }),
   setPreviewFilePath: (filePath) => set({ previewFilePath: filePath }),
   setActiveArtifact: (artifact) => set({ activeArtifact: artifact }),
   appendGuiAction: (action) =>

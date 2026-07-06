@@ -34,6 +34,7 @@ import { LabsGallery } from './labs/LabsGallery';
 import { CreationsView } from './deliverables/CreationsView';
 import { CapabilitiesView } from './capabilities/CapabilitiesView';
 import { ConversationHistoryDrawer } from './ConversationHistoryDrawer';
+import { OnboardingTour } from './onboarding/OnboardingTour';
 
 interface RailItem {
   view: PrimaryView;
@@ -394,6 +395,30 @@ export function NewShell() {
         {primaryView === 'advanced' && <AdvancedLauncher />}
       </div>
       <ConversationHistoryDrawer />
+      <OnboardingTourHost />
     </div>
+  );
+}
+
+/**
+ * OnboardingTourHost — shows the tour on FIRST launch (localStorage latch)
+ * and whenever ⌘K « Visite guidée » flips the store flag.
+ */
+function OnboardingTourHost() {
+  const show = useAppStore((st) => st.showOnboardingTour);
+  const setShow = useAppStore((st) => st.setShowOnboardingTour);
+  useEffect(() => {
+    if (!localStorage.getItem('cowork.tourSeen')) {
+      setShow(true);
+    }
+  }, [setShow]);
+  return (
+    <OnboardingTour
+      open={show}
+      onClose={() => {
+        localStorage.setItem('cowork.tourSeen', '1');
+        setShow(false);
+      }}
+    />
   );
 }

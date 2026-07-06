@@ -217,7 +217,7 @@ export function AppStudioView({
                 </div>
               </div>
             ) : tab === 'versions' ? (
-              <StudioVersionsPane onRestored={onReloadPreview} />
+              <StudioVersionsPane cwd={workingDir} onRestored={onReloadPreview} />
             ) : (
               <div className="flex h-full min-h-0 flex-col gap-1.5">
                 {tree.length > 0 ? (
