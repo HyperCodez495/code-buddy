@@ -265,9 +265,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   « Missions prêtes » (6 chips recettes réelles → préremplissent le composer). Validé écran + deep-link prouvé
   (clic Vidéo → Créations/onglet vidéo). ⚠️ Gotcha capture : fenêtre Electron minimisée ⇒ Page.captureScreenshot
   CDP BLOQUE (occlusion) — activer la fenêtre (xdotool windowactivate) puis `import -window <id>`.
+- **SUJET → STUDIO (flux Genspark complet, `82ffe2f9`)** : le texte tapé sur la Home ACCOMPAGNE la tuile cliquée
+  (`creationsSeed` one-shot dans le store, consommé au mount du DeliverableStudioPanel partagé + hint sous les
+  tuiles). Prouvé live : sujet tapé → clic Deck → studio prérempli. C'était le « sélecteur de sortie » Genspark,
+  résolu sans widget supplémentaire (les tuiles SONT le sélecteur).
 - **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
   rafraîchissement périodique des données Mission Control ; app vitrine avec vidéo hero e2e (App Studio) ;
-  comparaison Genspark suite : page résultat de tâche (timeline + artefacts), sélecteur de sortie dans le composer.
+  comparaison Genspark suite : page résultat de tâche (timeline + artefacts en fin de tour).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
