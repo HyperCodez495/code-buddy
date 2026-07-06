@@ -11,6 +11,8 @@ export interface PlanStep {
   title: string;
   detail?: string;
   status: PlanStepStatus;
+  /** Path keywords whose appearance in a changed file marks this step done. */
+  match?: string[];
 }
 
 export interface DevPlan {
@@ -63,8 +65,8 @@ export function buildDevPlan(prompt: string): DevPlan {
   const { stack, scaffold } = detectStack(p);
 
   const steps: PlanStep[] = [];
-  const push = (id: string, title: string, detail?: string): void => {
-    steps.push({ id, title, ...(detail ? { detail } : {}), status: 'pending' });
+  const push = (id: string, title: string, detail?: string, match?: string[]): void => {
+    steps.push({ id, title, ...(detail ? { detail } : {}), status: 'pending', ...(match ? { match } : {}) });
   };
 
   push('scaffold', scaffold, 'Structure, dépendances et point d’entrée.');
@@ -73,7 +75,7 @@ export function buildDevPlan(prompt: string): DevPlan {
   for (const rule of FEATURE_RULES) {
     if (rule.keys.some((k) => p.includes(k)) && !seen.has(rule.title)) {
       seen.add(rule.title);
-      push(`feat-${slug(rule.title)}`, `Construire : ${rule.title}`, rule.detail);
+      push(`feat-${slug(rule.title)}`, `Construire : ${rule.title}`, rule.detail, [slug(rule.title), ...rule.keys]);
     }
   }
   if (seen.size === 0) {
@@ -81,9 +83,9 @@ export function buildDevPlan(prompt: string): DevPlan {
   }
 
   if (/\b(dark|sombre|night)\b/.test(p)) {
-    push('theme-dark', 'Ajouter le thème sombre', 'Palette et bascule clair/sombre.');
+    push('theme-dark', 'Ajouter le thème sombre', 'Palette et bascule clair/sombre.', ['theme', 'dark', 'sombre']);
   } else if (/\b(couleur|color|brand|thème|theme|palette|design)\b/.test(p)) {
-    push('theme', 'Appliquer le thème & le branding', 'Couleurs, typographie et espacements.');
+    push('theme', 'Appliquer le thème & le branding', 'Couleurs, typographie et espacements.', ['theme', 'style', 'brand']);
   }
 
   push('wire', 'Câbler l’état & la navigation', 'Relier les composants et les données.');
@@ -99,20 +101,30 @@ export interface PlanSignals {
   previewRunning: boolean;
   /** The agent is mid-turn (building). */
   busy: boolean;
+  /** Paths the agent created/edited — completes a matching feature step. */
+  changedPaths?: string[];
 }
 
 /**
  * Reflect real project state into step statuses (bolt.new's plan advances as it
- * builds). Honest by construction: only scaffold (files exist) and run (preview
- * running) are known precisely; the first still-pending step is shown active
- * while building; a running preview implies the middle steps completed.
+ * builds). Honest by construction: scaffold (files exist), run (preview
+ * running), and a feature step whose keyword appears in a changed file path are
+ * marked done; the first still-pending step is shown active while building.
  */
 export function advancePlan(plan: DevPlan, s: PlanSignals): DevPlan {
   const steps = plan.steps.map((step) => ({ ...step }));
   const find = (id: string): PlanStep | undefined => steps.find((x) => x.id === id);
+  const paths = (s.changedPaths ?? []).map((p) => p.toLowerCase());
 
   const scaffold = find('scaffold');
   if (scaffold) scaffold.status = s.hasFiles ? 'done' : s.busy ? 'active' : 'pending';
+
+  // A feature/theme step is done when a changed file path matches its keywords.
+  for (const step of steps) {
+    if (step.match && step.status !== 'done' && step.match.some((k) => paths.some((p) => p.includes(k)))) {
+      step.status = 'done';
+    }
+  }
 
   if (s.previewRunning) {
     for (const step of steps) if (step.id !== 'run') step.status = 'done';

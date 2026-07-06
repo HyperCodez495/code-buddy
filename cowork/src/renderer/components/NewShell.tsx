@@ -169,17 +169,19 @@ function StudioView() {
     // (the session title is the user's raw description), then advance its steps
     // from the real project state (files present, preview running, building).
     const busy = Boolean(st?.activeTurn);
+    const changes = changedFilesFromTrace(st?.traceSteps ?? []);
     const plan = advancePlan(buildDevPlan(activeSession?.title ?? ''), {
       hasFiles: viewProps.tree.length > 0,
       previewRunning: viewProps.previewStatus === 'running',
       busy,
+      changedPaths: changes.map((c) => c.path),
     });
     return {
       messages: sessionToStudioMessages(st?.messages ?? [], { running: busy }),
       busy,
       suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
       plan,
-      changes: changedFilesFromTrace(st?.traceSteps ?? []),
+      changes,
       onSend: (text: string) => {
         void continueSession(activeSessionId, text);
       },

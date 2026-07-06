@@ -59,6 +59,19 @@ describe('advancePlan', () => {
     expect(p.steps.every((s) => s.status === 'done')).toBe(true);
   });
 
+  it('marks a feature step done when a changed path matches its keywords', () => {
+    // base = "todo app avec thème sombre" → has a todo feature + theme-dark step
+    const p = advancePlan(base, {
+      hasFiles: true,
+      previewRunning: false,
+      busy: true,
+      changedPaths: ['src/components/ThemeToggle.tsx', 'src/TodoList.tsx'],
+    });
+    expect(p.steps.find((s) => s.id === 'theme-dark')!.status).toBe('done');
+    const todo = p.steps.find((s) => /tâches/i.test(s.title));
+    expect(todo?.status).toBe('done');
+  });
+
   it('is pure — does not mutate the input plan', () => {
     advancePlan(base, { hasFiles: true, previewRunning: true, busy: false });
     expect(base.steps.every((s) => s.status === 'pending')).toBe(true);
