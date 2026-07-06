@@ -150,9 +150,30 @@ function StudioView() {
     projectRoot: sessionCwd,
     platform: window.electronAPI?.platform ?? 'linux',
   });
-  const { startSession, continueSession } = useIPC();
+  const { startSession, continueSession, getSessionMessages, getSessionTraceSteps } = useIPC();
   const setActiveSession = useAppStore((st) => st.setActiveSession);
+  const setMessages = useAppStore((st) => st.setMessages);
+  const setTraceSteps = useAppStore((st) => st.setTraceSteps);
   const workingDir = useAppStore((st) => st.workingDir);
+
+  // Hydrate a COLD session from the DB (after an app reload, sessionStates
+  // starts empty — only live events fill it). Without this the bolt split
+  // loses the LLM plan (```plan block in a persisted assistant message), the
+  // verify card (web_test in persisted trace steps) and the changed files.
+  useEffect(() => {
+    if (!activeSessionId || !sessionCwd) return;
+    const state = useAppStore.getState().sessionStates[activeSessionId];
+    if (state?.messages?.length || state?.activeTurn) return; // live or already hydrated
+    void Promise.all([
+      getSessionMessages(activeSessionId),
+      getSessionTraceSteps(activeSessionId),
+    ]).then(([messages, steps]) => {
+      const current = useAppStore.getState().sessionStates[activeSessionId];
+      if (current?.activeTurn) return; // a live turn started meanwhile — don't clobber
+      if (messages?.length && !current?.messages?.length) setMessages(activeSessionId, messages);
+      if (steps?.length && !current?.traceSteps?.length) setTraceSteps(activeSessionId, steps);
+    });
+  }, [activeSessionId, sessionCwd, getSessionMessages, getSessionTraceSteps, setMessages, setTraceSteps]);
 
   // Refresh the file tree as the agent writes files: the initial load happens
   // before generation, so without this the workbench stays on "les fichiers
