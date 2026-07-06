@@ -29,9 +29,9 @@ export interface MessageComposerProps {
   goalComposerDisabled: boolean;
 
   activeSessionId: string | null;
-  activeSession: any; 
-  appConfig: any;
-  queuedIntents: any[];
+  activeSession: { cwd?: string } | null;
+  appConfig: { model?: string } | null;
+  queuedIntents: Array<{ id: string; prompt: string; sessionId: string }>;
   hasActiveTurn: boolean;
   isSessionRunning: boolean;
   canStop: boolean;

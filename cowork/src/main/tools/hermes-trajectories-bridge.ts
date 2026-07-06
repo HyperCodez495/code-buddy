@@ -86,7 +86,18 @@ export async function exportHermesTrajectoriesBatch(options?: {
   runIds?: string[];
   sources?: string[];
 }): Promise<{ success: boolean; data?: string; error?: string }> {
-  const mod = await loadCoreModule<Record<string, any>>('observability/run-trajectory-batch.js');
+  const mod = await loadCoreModule<{
+    buildRunTrajectoryBatchExport?: (options: {
+      includeArtifactContent: boolean;
+      limit?: number;
+      maxArtifactBytes?: number;
+      maxCompressedBytes?: number;
+      maxEventValueBytes?: number;
+      query?: string;
+      runIds?: string[];
+      sources?: string[];
+    }) => unknown;
+  }>('observability/run-trajectory-batch.js');
   if (!mod?.buildRunTrajectoryBatchExport) return { success: false, error: 'Module missing' };
 
   try {

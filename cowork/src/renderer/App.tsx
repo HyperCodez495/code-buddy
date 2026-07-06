@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useCallback, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -173,6 +173,10 @@ function App() {
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
 
   const { listSessions, stopSession, isElectron } = useIPC();
+  const initialSessionLoader = useMemo(
+    () => ({ isElectron, listSessions }),
+    [isElectron, listSessions]
+  );
   const { width } = useWindowSize();
   // Pin state survives restarts via configStore.tabs.pinnedSessionIds.
   useTabPinPersistence();
@@ -204,10 +208,10 @@ function App() {
     if (initialized.current) return;
     initialized.current = true;
 
-    if (isElectron) {
-      listSessions();
+    if (initialSessionLoader.isElectron) {
+      initialSessionLoader.listSessions();
     }
-  }, []); // Empty deps - run once
+  }, [initialSessionLoader]);
 
   // Apply theme to document root
   useEffect(() => {
@@ -291,7 +295,7 @@ function App() {
         setAppConfig(result.config);
       }
     },
-    [setIsConfigured, setAppConfig]
+    [isElectron, setIsConfigured, setAppConfig]
   );
 
   // Handle config modal close

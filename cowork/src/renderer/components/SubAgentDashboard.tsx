@@ -173,7 +173,7 @@ export function SubAgentDashboard({ onClose }: SubAgentDashboardProps) {
   const subAgentOutputs = useAppStore((s) => s.subAgentOutputs);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const agents = activeSessionId ? subAgents[activeSessionId] ?? [] : [];
+  const agents = useMemo(() => (activeSessionId ? subAgents[activeSessionId] ?? [] : []), [activeSessionId, subAgents]);
   const outputs = activeSessionId ? subAgentOutputs[activeSessionId] ?? {} : {};
   const tree = useMemo(() => buildTree(agents), [agents]);
 

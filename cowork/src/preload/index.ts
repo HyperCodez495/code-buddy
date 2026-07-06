@@ -8437,9 +8437,9 @@ declare global {
       };
       spec: SpecApi;
       skillsHub: {
-        list: (projectId?: string) => Promise<any[]>;
-        listEnabled: (projectId?: string) => Promise<any[]>;
-        setEnabled: (name: string, enabled: boolean, projectId?: string, filePath?: string) => Promise<any>;
+        list: (projectId?: string) => Promise<unknown[]>;
+        listEnabled: (projectId?: string) => Promise<unknown[]>;
+        setEnabled: (name: string, enabled: boolean, projectId?: string, filePath?: string) => Promise<unknown>;
       };
       memoryProvider: {
         list: () => Promise<string[]>;

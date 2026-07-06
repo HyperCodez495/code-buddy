@@ -53,9 +53,12 @@ export const MessageCard = memo(function MessageCard({
   );
   const isTransparentStream = activityDisplayMode === 'transparent_stream';
   const rawContent = message.content as unknown;
-  const contentBlocks = Array.isArray(rawContent)
-    ? (rawContent as ContentBlock[])
-    : [{ type: 'text', text: String(rawContent ?? '') } as ContentBlock];
+  const contentBlocks = useMemo(
+    () => Array.isArray(rawContent)
+      ? (rawContent as ContentBlock[])
+      : [{ type: 'text', text: String(rawContent ?? '') } as ContentBlock],
+    [rawContent]
+  );
   const [copied, setCopied] = useState(false);
 
   // Build a set of tool_result IDs that have a matching tool_use (for merging)

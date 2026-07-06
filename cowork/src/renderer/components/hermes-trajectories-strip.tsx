@@ -29,7 +29,7 @@ export interface HermesTrajectoriesReview {
 
 interface HermesTrajectoriesApi {
   get?: () => Promise<HermesTrajectoriesReview | null>;
-  export?: (options?: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+  export?: (options?: { includeArtifactContent?: boolean; maxArtifactBytes?: number }) => Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 export const HermesTrajectoriesStrip: React.FC<{

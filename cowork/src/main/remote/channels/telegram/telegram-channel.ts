@@ -88,9 +88,10 @@ export class TelegramChannel extends ChannelBase {
 
           try {
              await this.apiCall('sendMessage', body, 'POST');
-          } catch (e: any) {
+          } catch (e: unknown) {
              // If parse error (like unclosed tags), fallback to no parse mode
-             if (e.message?.includes('parse') || e.message?.includes('can\'t parse entities')) {
+             const message = e instanceof Error ? e.message : '';
+             if (message.includes('parse') || message.includes('can\'t parse entities')) {
                  delete body.parse_mode;
                  await this.apiCall('sendMessage', body, 'POST');
              } else {
@@ -120,7 +121,7 @@ export class TelegramChannel extends ChannelBase {
     }
     
     const res = await fetch(url, init);
-    const data = await res.json() as any;
+    const data = (await res.json()) as { ok?: boolean; description?: string; result: T };
     
     if (!res.ok || !data.ok) {
       throw new Error(`Telegram API Error: ${data.description || res.statusText}`);
@@ -132,7 +133,7 @@ export class TelegramChannel extends ChannelBase {
   private async pollLoop(): Promise<void> {
     if (this.stopped) return;
     try {
-      const updates = await this.apiCall<Array<any>>(`getUpdates?timeout=25&offset=${this.offset}`);
+      const updates = await this.apiCall<Array<{ update_id: number; message?: { message_id: number; chat: { id: number; type: string }; from: { id: number; username?: string; first_name?: string; is_bot?: boolean }; text?: string; reply_to_message?: { message_id: number }; date: number } }>>(`getUpdates?timeout=25&offset=${this.offset}`);
       
       for (const upd of updates) {
         this.offset = upd.update_id + 1;

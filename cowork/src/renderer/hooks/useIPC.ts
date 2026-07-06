@@ -1064,7 +1064,7 @@ export function useIPC() {
       }
       return duplicate;
     },
-    [addSession, invoke, isElectron]
+    [addSession, invoke]
   );
 
   const updateSessionSettings = useCallback(
@@ -1076,7 +1076,7 @@ export function useIPC() {
         payload: { sessionId, updates },
       });
     },
-    [invoke, isElectron, updateSession]
+    [invoke, updateSession]
   );
 
   const listSessions = useCallback(() => {
@@ -1181,7 +1181,7 @@ export function useIPC() {
 
   const geminiOauthLogin = useCallback(async () => {
     if (!isElectron) return { success: false, error: 'Not running in Electron' };
-    return invoke<{ success: boolean; tokens?: any; error?: string }>({
+    return invoke<{ success: boolean; tokens?: unknown; error?: string }>({
       type: 'config.geminiOauthLogin',
       payload: {},
     });

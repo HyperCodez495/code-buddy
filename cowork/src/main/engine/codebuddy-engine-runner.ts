@@ -355,14 +355,14 @@ export class CodeBuddyEngineRunner {
                         timestamp: Date.now()
                     }
                   },
-                } as any);
+                } as ServerEvent);
 
                 contentBlocks.push({
                   type: 'tool_use',
                   id: stepId,
                   name: 'AskUserQuestion',
                   input: inputData,
-                } as any);
+                } as ToolUseContent);
               }
               break;
 

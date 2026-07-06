@@ -134,7 +134,7 @@ function compileExpressions(str: string): string {
   return str.replace(/\$task_([a-zA-Z0-9_-]+)(?:\.output)?/g, '$task_task_$1');
 }
 
-function compileInput(input: any): any {
+function compileInput(input: unknown): unknown {
   if (typeof input === 'string') {
     return compileExpressions(input);
   }
@@ -142,7 +142,7 @@ function compileInput(input: any): any {
     return input.map(compileInput);
   }
   if (input !== null && typeof input === 'object') {
-    const res: Record<string, any> = {};
+    const res: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(input)) {
       res[key] = compileInput(val);
     }
@@ -228,7 +228,7 @@ interface BatchNodeConfig {
 }
 
 function ensureBatchConfig(node: WorkflowVisualNode): BatchNodeConfig {
-  const cfg = node.config as any;
+  const cfg = node.config as Partial<BatchNodeConfig> | undefined;
   if (!cfg || typeof cfg.itemsExpression !== 'string' || cfg.itemsExpression.length === 0) {
     throw new CompilationError(
       `Node '${node.id}' (batch): missing config.itemsExpression`
@@ -602,12 +602,12 @@ function compileSingle(
       const stepBase: CoreWorkflowStep = {
         id: makeStepId('step', node.id),
         name: node.name || 'batch',
-        type: 'batch' as any,
+        type: 'batch' as CoreWorkflowStep['type'],
         batchItemsExpression: compileExpressions(cfg.itemsExpression),
         batchVariableName: cfg.variableName,
         batchConcurrencyLimit: cfg.concurrencyLimit,
         batchBody,
-      } as any;
+      } as CoreWorkflowStep;
       return {
         step: stepBase,
         continueFrom: exitTarget,

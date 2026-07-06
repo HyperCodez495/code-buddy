@@ -132,7 +132,7 @@ export class RemoteGateway extends EventEmitter {
             this.publicUrl = await ngrok.connect({
               addr: this.config.port,
               authtoken: this.config.tunnel.ngrok.authToken,
-              region: (this.config.tunnel.ngrok.region as any) || 'us',
+              region: (this.config.tunnel.ngrok.region || 'us') as 'us' | 'eu' | 'au' | 'ap' | 'sa' | 'jp' | 'in',
             });
             log(`[Gateway] Ngrok tunnel established at ${this.publicUrl}`);
           } catch (err) {

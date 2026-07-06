@@ -99,7 +99,6 @@ function isDarkstarHostname(value: string): boolean {
 async function runTailscaleStatus(): Promise<unknown | null> {
   return new Promise((resolve) => {
     let stdout = '';
-    let stderr = '';
     const child = spawn(DARKSTAR_TAILSCALE_BIN, ['status', '--json'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -114,9 +113,7 @@ async function runTailscaleStatus(): Promise<unknown | null> {
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
     });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
+    child.stderr.resume();
     child.on('error', () => {
       clearTimeout(timer);
       resolve(null);

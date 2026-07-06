@@ -134,7 +134,7 @@ import { KyutaiBridge } from './voice/kyutai-bridge';
 import { ClipboardWatcher } from './clipboard/clipboard-watcher';
 import { SessionExportService } from './session/session-export-service';
 import { SessionInsightsBridge } from './session/session-insights-bridge';
-import { ActivityFeed } from './activity/activity-feed';
+import { ActivityFeed, type ActivityType } from './activity/activity-feed';
 import { BookmarksService } from './bookmarks/bookmarks-service';
 import { registerSnippetsIpcHandlers } from './ipc/snippets-ipc';
 import { registerCustomCommandsIpcHandlers } from './ipc/custom-commands-ipc';
@@ -1849,12 +1849,12 @@ app
 
     try {
       const { loadCoreModule } = await import('./utils/core-loader');
-      const eventBusMod = await loadCoreModule<any>('events/index.js');
-      const globalBus = eventBusMod?.getGlobalEventBus();
+      const eventBusMod = await loadCoreModule<{ getGlobalEventBus?: () => { on: (eventName: string, listener: (event: { activityType?: ActivityType; title: string; description?: string; metadata?: Record<string, unknown> }) => void) => void } }>('events/index.js');
+      const globalBus = eventBusMod?.getGlobalEventBus?.();
       if (globalBus && activityFeed) {
-        globalBus.on('fleet:activity', (event: any) => {
+        globalBus.on('fleet:activity', (event) => {
           activityFeed!.record({
-            type: event.activityType || 'fleet.activity',
+            type: (event.activityType || 'fleet.activity') as ActivityType,
             title: event.title,
             description: event.description,
             metadata: event.metadata
@@ -2711,7 +2711,7 @@ ipcMain.handle('autonomy.reclaimExpired', async (_event, dir?: string) => reclai
 // ── Pluggable memory provider selector (GAP-10) ─────────────────────────
 ipcMain.handle('memoryProvider.list', async () => {
   try {
-    const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => any }>(
+    const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => { list: () => unknown[] } }>(
       'memory/memory-provider.js'
     );
     if (!mod) throw new Error('Failed to load memory provider module');
@@ -2736,7 +2736,7 @@ ipcMain.handle('memoryProvider.setActive', async (_event, providerId: string) =>
     configStore.update({ memoryProvider: providerId });
     configStore.applyToEnv();
     try {
-      const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => any }>(
+      const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => { setActive: (providerId: string) => void } }>(
         'memory/memory-provider.js'
       );
       if (mod) {
@@ -5038,7 +5038,7 @@ ipcMain.handle(
         typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
       const rootDir = payloadCwd ?? getWorkingDir() ?? process.cwd();
       const { loadCoreModule } = await import('./utils/core-loader');
-      const mod = await loadCoreModule<{ getLessonsTracker: (workDir: string) => any }>(
+      const mod = await loadCoreModule<{ getLessonsTracker: (workDir: string) => { getConceptDetails?: (conceptName: string) => unknown } }>(
         'agent/lessons-tracker.js'
       );
       if (!mod?.getLessonsTracker) return null;

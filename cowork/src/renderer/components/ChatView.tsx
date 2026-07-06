@@ -335,7 +335,7 @@ export function ChatView() {
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
-  }, [messages.length, partialMessage.length, partialThinking.length]);
+  }, [messages.length, partialMessage.length, partialThinking.length, scrollToBottom]);
 
   // Phase 2 step 11: speak the latest assistant message when TTS is enabled.
   const lastSpokenIdRef = useRef<string | null>(null);
@@ -374,7 +374,7 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, []); // ResizeObserver is stable — no need to recreate on message count changes
+  }, [scrollToBottom]);
 
   // Cleanup scroll timeouts on unmount
   useEffect(() => {

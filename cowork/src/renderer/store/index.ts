@@ -1135,10 +1135,11 @@ export const useAppStore = create<AppState>((set) => ({
   removeSession: (sessionId) =>
     set((state) => {
       writeQueuedIntents(sessionId, []);
-      const { [sessionId]: _, ...restSessionStates } = state.sessionStates;
+      const nextSessionStates = { ...state.sessionStates };
+      delete nextSessionStates[sessionId];
       return {
         sessions: state.sessions.filter((s) => s.id !== sessionId),
-        sessionStates: restSessionStates,
+        sessionStates: nextSessionStates,
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
         openTabs: state.openTabs.filter((t) => t.sessionId !== sessionId),
       };
@@ -1691,8 +1692,9 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   clearDiffPreviews: (sessionId) =>
     set((state) => {
-      const { [sessionId]: _, ...rest } = state.diffPreviews;
-      return { diffPreviews: rest };
+      const nextDiffPreviews = { ...state.diffPreviews };
+      delete nextDiffPreviews[sessionId];
+      return { diffPreviews: nextDiffPreviews };
     }),
 
   // Checkpoint actions
@@ -2194,9 +2196,10 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ fleetPeers: { ...state.fleetPeers, [peer.id]: peer } })),
   removeFleetPeer: (peerId) =>
     set((state) => {
-      const { [peerId]: _dropped, ...rest } = state.fleetPeers;
+      const nextFleetPeers = { ...state.fleetPeers };
+      delete nextFleetPeers[peerId];
       return {
-        fleetPeers: rest,
+        fleetPeers: nextFleetPeers,
         fleetEvents: state.fleetEvents.filter((e) => e.peerId !== peerId),
       };
     }),
@@ -2242,8 +2245,9 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ a2aTasks: { ...state.a2aTasks, [task.taskId]: task } })),
   removeA2ATask: (taskId) =>
     set((state) => {
-      const { [taskId]: _dropped, ...rest } = state.a2aTasks;
-      return { a2aTasks: rest };
+      const nextA2ATasks = { ...state.a2aTasks };
+      delete nextA2ATasks[taskId];
+      return { a2aTasks: nextA2ATasks };
     }),
 
   // Team actions (Phase 4 layer 9)
@@ -2264,8 +2268,9 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   removeTeamMember: (memberId) =>
     set((state) => {
-      const { [memberId]: _dropped, ...rest } = state.teamMembers;
-      return { teamMembers: rest };
+      const nextTeamMembers = { ...state.teamMembers };
+      delete nextTeamMembers[memberId];
+      return { teamMembers: nextTeamMembers };
     }),
   upsertTeamTask: (task) =>
     set((state) => ({

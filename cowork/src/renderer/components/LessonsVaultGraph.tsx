@@ -197,13 +197,13 @@ function ConceptDetailsView({
 
   useEffect(() => {
     setLoading(true);
-    const api = (window.electronAPI as any)?.tools?.lessonsVault?.getConceptDetails;
+    const api = window.electronAPI?.tools?.lessonsVault?.getConceptDetails;
     if (!api) {
       setLoading(false);
       return;
     }
     api({ conceptName })
-      .then((data: any) => setDetails(data))
+      .then((data) => setDetails(data))
       .finally(() => setLoading(false));
   }, [conceptName]);
 

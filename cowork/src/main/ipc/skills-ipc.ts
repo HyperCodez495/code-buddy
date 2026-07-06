@@ -14,9 +14,9 @@ interface HubConfig {
 
 interface SkillsHubModule {
   getSkillsHub(config?: Partial<HubConfig>): {
-    list(): any[];
-    listEnabled(): any[];
-    setEnabled(name: string, enabled: boolean, options?: { path?: string; version?: string }): any;
+    list(): unknown[];
+    listEnabled(): unknown[];
+    setEnabled(name: string, enabled: boolean, options?: { path?: string; version?: string }): unknown;
   };
 }
 

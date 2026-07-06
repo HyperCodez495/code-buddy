@@ -57,7 +57,7 @@ export const SkillsBrowser: React.FC = () => {
       
       const [result, hubList] = await Promise.all([
         api.skillMd.list(),
-        api.skillsHub?.list ? api.skillsHub.list() : Promise.resolve([]),
+        api.skillsHub?.list ? api.skillsHub.list() as Promise<Array<{ name: string; enabled?: boolean }>> : Promise.resolve([]),
       ]);
       
       setSkills(result as SkillMdSummary[]);

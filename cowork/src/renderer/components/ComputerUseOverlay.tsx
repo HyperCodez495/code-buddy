@@ -209,7 +209,7 @@ export const ComputerUseOverlay: React.FC = () => {
           <div className="text-[10px] text-text-muted mt-1 flex flex-col gap-0.5">
             <span className="font-semibold opacity-80">Macro Sequence:</span>
             <div className="flex flex-wrap gap-1 mt-0.5">
-              {(current.details.macroResults as any[]).map((res, i) => (
+              {(current.details.macroResults as Array<{ action?: unknown }>).map((res, i) => (
                 <span key={i} className="px-1.5 py-[1px] bg-background border border-border-muted rounded-sm text-[9px]">
                   {String(res.action)}
                 </span>

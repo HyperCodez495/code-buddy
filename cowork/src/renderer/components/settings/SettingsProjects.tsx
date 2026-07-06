@@ -126,6 +126,7 @@ export function SettingsProjects() {
     draftAutoConsolidate,
     draftDescription,
     draftIncludeIcm,
+    draftMemoryStrategy,
     draftMaxEntries,
     draftName,
     draftWorkspacePath,

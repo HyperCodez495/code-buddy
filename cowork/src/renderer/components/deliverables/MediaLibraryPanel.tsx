@@ -66,13 +66,13 @@ export function MediaLibraryPanel() {
     setTimeout(() => setNotice(null), 2500);
   };
 
-  const useInChat = (item: MediaItem) => {
+  const handleUseInChat = (item: MediaItem) => {
     setChatComposerSeed(`En te servant du média ${item.path}, `);
     setActiveSession(null);
     setPrimaryView('chat');
   };
 
-  const useInStudio = (item: MediaItem) => {
+  const handleUseInStudio = (item: MediaItem) => {
     if (item.kind === 'audio') return;
     // With the original prompt (sidecar), a variant starts from the REAL
     // prompt; otherwise fall back to referencing the file path.
@@ -164,11 +164,11 @@ export function MediaLibraryPanel() {
                     <span className="shrink-0 tabular-nums">{formatSize(item.size)}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-1">
-                    <button type="button" title="Utiliser dans le chat" onClick={() => useInChat(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-use-chat">
+                    <button type="button" title="Utiliser dans le chat" onClick={() => handleUseInChat(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-use-chat">
                       <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                     {item.kind !== 'audio' ? (
-                      <button type="button" title="Variante dans le studio" onClick={() => useInStudio(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-use-studio">
+                      <button type="button" title="Variante dans le studio" onClick={() => handleUseInStudio(item)} className="rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground" data-testid="media-use-studio">
                         <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     ) : null}

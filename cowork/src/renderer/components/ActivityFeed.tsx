@@ -85,7 +85,7 @@ function groupByDay(entries: ActivityEntry[]): Array<[string, ActivityEntry[]]> 
 }
 
 export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<ActivityFilter>('all');
@@ -132,7 +132,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   );
   const grouped = useMemo(
     () => groupByDay(visibleEntries),
-    [visibleEntries, i18n.resolvedLanguage],
+    [visibleEntries],
   );
 
   const handleClick = (entry: ActivityEntry) => {

@@ -51,7 +51,7 @@ export const CheckpointPanel: React.FC<CheckpointPanelProps> = ({
   const [compareB, setCompareB] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
 
-  const snapshots = timeline?.snapshots ?? [];
+  const snapshots = useMemo(() => timeline?.snapshots ?? [], [timeline?.snapshots]);
   const currentIndex = timeline?.currentIndex ?? -1;
 
   const minTs = useMemo(() => (snapshots[0]?.timestamp ?? 0), [snapshots]);

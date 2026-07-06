@@ -202,7 +202,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
       setBuildPhase('error');
     }
     setBusy(false);
-  }, [apis, appendTerminal, beginPhase, projectRoot, refreshTree]);
+  }, [apis, appendTerminal, beginPhase, refreshTree]);
 
   const openFile = useCallback(async (path: string) => {
     if (!projectRoot) return;

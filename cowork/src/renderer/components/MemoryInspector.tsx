@@ -19,7 +19,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   decision: 'bg-warning/20 text-warning border-warning/30',
 };
 
-const CATEGORIES = ['preference', 'pattern', 'context', 'decision'];
+const CATEGORIES = ['preference', 'pattern', 'context', 'decision'] as const;
+type MemoryCategory = (typeof CATEGORIES)[number];
 
 export const MemoryInspector: React.FC = () => {
   const { t } = useTranslation();
@@ -31,11 +32,11 @@ export const MemoryInspector: React.FC = () => {
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
-  const [editCategory, setEditCategory] = useState('');
+  const [editCategory, setEditCategory] = useState<MemoryCategory>('preference');
 
   const [isAdding, setIsAdding] = useState(false);
   const [addContent, setAddContent] = useState('');
-  const [addCategory, setAddCategory] = useState(CATEGORIES[0]);
+  const [addCategory, setAddCategory] = useState<MemoryCategory>(CATEGORIES[0]);
 
   const loadEntries = async () => {
     setLoading(true);
@@ -45,7 +46,7 @@ export const MemoryInspector: React.FC = () => {
         setEntries([]);
         return;
       }
-      const result = (await api.memory.list(activeProjectId ?? undefined)) as any[];
+      const result = (await api.memory.list(activeProjectId ?? undefined)) as MemoryEntry[];
       setEntries(result.map((e, i) => ({ ...e, originalIndex: i })));
     } catch (err) {
       console.error('[MemoryInspector] Failed to load memories:', err);
@@ -74,7 +75,7 @@ export const MemoryInspector: React.FC = () => {
       await window.electronAPI.memory.update(
         index,
         editContent,
-        editCategory as any,
+        editCategory,
         activeProjectId ?? undefined
       );
       setEditingIndex(null);
@@ -88,7 +89,7 @@ export const MemoryInspector: React.FC = () => {
     if (!addContent.trim()) return;
     try {
       await window.electronAPI.memory.add(
-        addCategory as any,
+        addCategory,
         addContent,
         activeProjectId ?? undefined
       );
@@ -213,7 +214,7 @@ export const MemoryInspector: React.FC = () => {
             <div className="flex items-center gap-2 mb-2">
               <select
                 value={addCategory}
-                onChange={(e) => setAddCategory(e.target.value)}
+                onChange={(e) => setAddCategory(e.target.value as MemoryCategory)}
                 className="text-[10px] bg-background border border-border rounded px-1 py-0.5 outline-none"
               >
                 {categories.map((c) => (
@@ -272,7 +273,7 @@ export const MemoryInspector: React.FC = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <select
                       value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
+                      onChange={(e) => setEditCategory(e.target.value as MemoryCategory)}
                       className="text-[10px] bg-background border border-border rounded px-1 py-0.5 outline-none"
                     >
                       {categories.map((c) => (
@@ -329,7 +330,7 @@ export const MemoryInspector: React.FC = () => {
                       onClick={() => {
                         setEditingIndex(entry.originalIndex);
                         setEditContent(entry.content);
-                        setEditCategory(entry.category);
+                        setEditCategory(entry.category as MemoryCategory);
                       }}
                       className="p-1 rounded bg-surface border border-border hover:bg-surface-active text-text-muted hover:text-accent transition-colors"
                       title="Edit Fact"
