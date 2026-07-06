@@ -193,7 +193,9 @@ function StudioView() {
       activeSessionId,
       `Vérifie l'application web sur ${url} avec l'outil \`web_test\` : lance web_test avec cette URL, ` +
         `confirme qu'il n'y a aucune erreur console ni erreur de page et que l'interface principale s'affiche, ` +
-        `puis résume le rapport (PASSED/FAILED + points clés). Corrige si tu détectes une erreur.`,
+        `puis résume le rapport (PASSED/FAILED + points clés). Corrige si tu détectes une erreur. ` +
+        `Si \`web_test\` n'apparaît pas dans tes outils, appelle d'abord \`tool_search\` avec "web_test" pour le charger — ` +
+        `n'écris PAS ton propre script navigateur (le rapport web_test alimente la carte de vérification de l'interface).`,
     );
   }, [activeSessionId, viewProps.previewUrl, continueSession]);
 
