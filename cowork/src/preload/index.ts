@@ -798,8 +798,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Permission mode
   permission: {
     setMode: (mode: string) => ipcRenderer.invoke('permission.setMode', mode),
-    respondBridge: (id: string, response: string) =>
-      ipcRenderer.send('permission.bridge.response', { id, response }),
+    respondBridge: (id: string, response: string, reason?: string) =>
+      ipcRenderer.send('permission.bridge.response', { id, response, reason }),
   },
 
   // Model switching
@@ -4988,7 +4988,7 @@ declare global {
       };
       permission: {
         setMode: (mode: string) => Promise<void>;
-        respondBridge: (id: string, response: string) => void;
+        respondBridge: (id: string, response: string, reason?: string) => void;
       };
       model: {
         switch: (model: string) => Promise<boolean>;

@@ -81,6 +81,7 @@ export class ConfirmationService extends EventEmitter {
 
   // Remote approval service (for non-interactive fallback)
   private remoteApproval: RemoteApprovalService | null = null;
+  private interactiveBridge: ((options: ConfirmationOptions) => Promise<ConfirmationResult>) | null = null;
 
   static getInstance(): ConfirmationService {
     if (!ConfirmationService.instance) {
@@ -98,6 +99,19 @@ export class ConfirmationService extends EventEmitter {
    */
   setRemoteApprovalService(service: RemoteApprovalService): void {
     this.remoteApproval = service;
+  }
+
+  /**
+   * Register an interactive GUI bridge (e.g. Cowork's permission dialog).
+   * When set, non-TTY confirmation requests are routed to it INSTEAD of the
+   * fail-closed "requires an interactive terminal" path — the desktop app IS
+   * the interactive surface. The bridge returns a full ConfirmationResult so
+   * a user denial can carry a reason (surfaced to the agent as feedback).
+   */
+  setInteractiveBridge(
+    bridge: ((options: ConfirmationOptions) => Promise<ConfirmationResult>) | null
+  ): void {
+    this.interactiveBridge = bridge;
   }
 
   /**
@@ -321,6 +335,20 @@ export class ConfirmationService extends EventEmitter {
       const magnitude = isLargeChange ? `\n⚠ LARGE CHANGE: ${options.linesChanged} lines affected` : '';
       options.content = (options.content ? options.content + '\n\n' : '') +
         `Diff preview:${magnitude}\n${preview}`;
+    }
+
+    // Interactive GUI bridge (Cowork permission dialog): the desktop app is
+    // the interactive surface, so it takes precedence over the TTY check.
+    if (this.interactiveBridge) {
+      const bridged = await this.interactiveBridge(options);
+      if (bridged.dontAskAgain && bridged.confirmed) {
+        if (operationType === 'file') {
+          this.sessionFlags.fileOperations = true;
+        } else if (operationType === 'bash') {
+          this.sessionFlags.bashCommands = true;
+        }
+      }
+      return bridged;
     }
 
     // Remote approval fallback: when not in interactive terminal, try channels

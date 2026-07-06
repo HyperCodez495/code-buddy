@@ -17,6 +17,7 @@ import type {
   EngineStreamCallback,
   EnginePermissionCallback,
 } from './engine-adapter.js';
+import type { EnginePermissionResponse } from '../shared/engine-types.js';
 import type { StreamingChunk } from '../agent/types.js';
 import type { CodeBuddyClient } from '../codebuddy/client.js';
 import type {
@@ -520,6 +521,52 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
   setPermissionCallback(callback: EnginePermissionCallback): void {
     this.permissionCallback = callback;
     logger.debug('[CodeBuddyEngineAdapter] permission callback set');
+    void this.wireInteractiveConfirmationBridge();
+  }
+
+  /**
+   * Connect the ConfirmationService to the host's permission dialog. This was
+   * the dead link that made EVERY embedded confirmation fail closed with
+   * « Approval requires an interactive terminal »: Cowork wired its
+   * DesktopPermissionBridge to `setPermissionCallback`, but nothing ever
+   * called the callback. The interactive bridge routes each confirmation
+   * through the host dialog and carries an optional denial reason back to the
+   * agent as feedback (Hermes `/deny <reason>` parity).
+   */
+  private async wireInteractiveConfirmationBridge(): Promise<void> {
+    try {
+      const { ConfirmationService } = await import('../utils/confirmation-service.js');
+      const service = ConfirmationService.getInstance();
+      let nextId = 1;
+      service.setInteractiveBridge(async (options) => {
+        const callback = this.permissionCallback;
+        if (!callback) {
+          return { confirmed: false, feedback: 'No permission callback available' };
+        }
+        const raw = await callback({
+          id: `conf-${Date.now()}-${nextId++}`,
+          operation: options.operation,
+          filename: options.filename,
+          ...(options.content !== undefined ? { content: options.content } : {}),
+          ...(options.diffPreview !== undefined ? { diffPreview: options.diffPreview } : {}),
+        });
+        // Hosts may bind requestPermissionDetailed (object with a denial
+        // reason) or the legacy requestPermission (bare string) — accept both.
+        const detailed =
+          typeof raw === 'string'
+            ? { response: raw }
+            : (raw as { response: EnginePermissionResponse; reason?: string });
+        if (detailed.response === 'allow') return { confirmed: true };
+        if (detailed.response === 'allow_always') return { confirmed: true, dontAskAgain: true };
+        return {
+          confirmed: false,
+          feedback: detailed.reason ?? "Refusé par l'utilisateur depuis l'interface",
+        };
+      });
+      logger.info('[CodeBuddyEngineAdapter] interactive confirmation bridge wired');
+    } catch (err) {
+      logger.warn('[CodeBuddyEngineAdapter] failed to wire confirmation bridge', { err });
+    }
   }
 
   /**

@@ -15,10 +15,17 @@ import type {
   EnginePermissionResponse,
 } from '../shared/engine-types.js';
 
+/** Response enriched with the user's optional denial reason (Hermes parity:
+ * the reason travels back to the agent as confirmation feedback). */
+export interface DetailedPermissionResponse {
+  response: EnginePermissionResponse;
+  reason?: string;
+}
+
 /** Pending permission request with resolve callback */
 interface PendingRequest {
   request: EnginePermissionRequest;
-  resolve: (response: EnginePermissionResponse) => void;
+  resolve: (response: DetailedPermissionResponse) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -68,16 +75,26 @@ export class DesktopPermissionBridge {
   async requestPermission(
     request: EnginePermissionRequest
   ): Promise<EnginePermissionResponse> {
+    return (await this.requestPermissionDetailed(request)).response;
+  }
+
+  /**
+   * Same as {@link requestPermission} but keeps the user's optional denial
+   * reason so callers can surface it to the agent.
+   */
+  async requestPermissionDetailed(
+    request: EnginePermissionRequest
+  ): Promise<DetailedPermissionResponse> {
     // Auto-allow safe tools
     if (DesktopPermissionBridge.SAFE_TOOLS.has(request.operation)) {
-      return 'allow';
+      return { response: 'allow' };
     }
 
-    return new Promise<EnginePermissionResponse>((resolve) => {
+    return new Promise<DetailedPermissionResponse>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(request.id);
         logger.warn('[PermissionBridge] timed out', { id: request.id });
-        resolve('deny');
+        resolve({ response: 'deny', reason: 'Demande expirée sans réponse' });
       }, this.timeoutMs);
 
       this.pending.set(request.id, { request, resolve, timer });
@@ -115,7 +132,7 @@ export class DesktopPermissionBridge {
   /**
    * Handle user's response from the renderer via IPC.
    */
-  handleResponse(id: string, response: EnginePermissionResponse): void {
+  handleResponse(id: string, response: EnginePermissionResponse, reason?: string): void {
     const pending = this.pending.get(id);
     if (!pending) {
       logger.warn('[PermissionBridge] unknown request id', { id });
@@ -124,7 +141,7 @@ export class DesktopPermissionBridge {
 
     clearTimeout(pending.timer);
     this.pending.delete(id);
-    pending.resolve(response);
+    pending.resolve(reason !== undefined ? { response, reason } : { response });
     logger.debug('[PermissionBridge] resolved', { id, response });
   }
 
@@ -134,7 +151,7 @@ export class DesktopPermissionBridge {
   cancelAll(): void {
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.resolve('deny');
+      pending.resolve({ response: 'deny', reason: 'Session arrêtée' });
       logger.debug('[PermissionBridge] cancelled', { id });
     }
     this.pending.clear();

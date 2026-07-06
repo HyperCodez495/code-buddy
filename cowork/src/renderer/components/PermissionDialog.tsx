@@ -16,6 +16,10 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   const { t } = useTranslation();
   const { respondToPermission } = useIPC();
   const [pendingAlwaysAllow, setPendingAlwaysAllow] = useState(false);
+  // Two-step deny (Hermes /deny parity): first click reveals an optional
+  // reason field; the reason travels back to the agent as feedback.
+  const [denyMode, setDenyMode] = useState(false);
+  const [denyReason, setDenyReason] = useState('');
   const guiActions = useAppStore((s) => s.guiActions);
   const setShowComputerUseOverlay = useAppStore((s) => s.setShowComputerUseOverlay);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -283,14 +287,41 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
 
         {/* Actions */}
         <div className="mt-6 flex items-center gap-3">
-          <button
-            onClick={() => respondToPermission(permission.toolUseId, 'deny')}
-            className="flex-1 btn btn-secondary"
-            data-testid="permission-deny-button"
-          >
-            <X className="w-4 h-4" />
-            {t('permission.deny')}
-          </button>
+          {denyMode ? (
+            <div className="flex-1 flex items-center gap-2" data-testid="permission-deny-reason-row">
+              <input
+                autoFocus
+                type="text"
+                value={denyReason}
+                onChange={(e) => setDenyReason(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    respondToPermission(permission.toolUseId, 'deny', denyReason.trim() || undefined);
+                  }
+                }}
+                placeholder="Pourquoi ? (optionnel — l'agent le lira)"
+                className="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:border-accent"
+                data-testid="permission-deny-reason-input"
+              />
+              <button
+                onClick={() => respondToPermission(permission.toolUseId, 'deny', denyReason.trim() || undefined)}
+                className="btn btn-secondary"
+                data-testid="permission-deny-confirm-button"
+              >
+                <X className="w-4 h-4" />
+                {t('permission.deny')}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setDenyMode(true)}
+              className="flex-1 btn btn-secondary"
+              data-testid="permission-deny-button"
+            >
+              <X className="w-4 h-4" />
+              {t('permission.deny')}
+            </button>
+          )}
 
           <button
             onClick={() => respondToPermission(permission.toolUseId, 'allow')}

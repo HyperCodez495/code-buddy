@@ -1463,16 +1463,18 @@ app
             setPermissionCallback?: (cb: unknown) => void;
           };
           if (typeof adapterWithPerm.setPermissionCallback === 'function') {
+            // Detailed variant: the user's optional denial reason travels back
+            // to the agent as confirmation feedback (Hermes /deny parity).
             adapterWithPerm.setPermissionCallback(
-              permissionBridge.requestPermission.bind(permissionBridge)
+              permissionBridge.requestPermissionDetailed.bind(permissionBridge)
             );
           }
 
           // Handle permission responses from renderer
           ipcMain.on(
             'permission.bridge.response',
-            (_event, { id, response }: { id: string; response: string }) => {
-              permissionBridge.handleResponse(id, response as 'allow' | 'deny' | 'allow_always');
+            (_event, { id, response, reason }: { id: string; response: string; reason?: string }) => {
+              permissionBridge.handleResponse(id, response as 'allow' | 'deny' | 'allow_always', reason);
             }
           );
 

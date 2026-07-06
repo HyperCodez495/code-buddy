@@ -1115,7 +1115,7 @@ export function useIPC() {
   );
 
   const respondToPermission = useCallback(
-    (toolUseId: string, result: PermissionResult) => {
+    (toolUseId: string, result: PermissionResult, reason?: string) => {
       // The pending permission may have come from either runner. Engine
       // requests carry a `bridgeId` and expect their response on
       // `permission.bridge.response`; pi requests use the canonical
@@ -1124,7 +1124,7 @@ export function useIPC() {
       // request that's no longer pending (race), fall back to pi.
       const pending = useAppStore.getState().pendingPermission;
       if (pending?.bridgeId && pending.toolUseId === toolUseId) {
-        window.electronAPI?.permission?.respondBridge?.(pending.bridgeId, result);
+        window.electronAPI?.permission?.respondBridge?.(pending.bridgeId, result, reason);
       } else {
         send({
           type: 'permission.response',
