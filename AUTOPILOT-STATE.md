@@ -399,8 +399,21 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   (un binding utilisé aurait échoué). 2476→2449 warnings. Répartition du reste : 1655 no-explicit-any (vrai typage,
   PAS mécanique — risqué), ~750 autres no-unused-vars (imports/params — au cas par cas), 33 no-unsafe-function-type,
   5 require-yield (vrais smells async* sans yield).
-- **File suivante (idées)** : e2e confirmation organique ; require-yield (5, vrais bugs générateurs) ; autres
-  no-unused-vars imports morts (prudent) ; PAS no-explicit-any en masse (risqué sans tests par site).
+- **COPIE PRESSE-PAPIER + SÉLECTION + RECENCY ⌘K (`9fbff728`, demandes Patrice)** : (a) « Copier » de la
+  Bibliothèque copie l'IMAGE réelle (nativeImage+writeImage via media.copyToClipboard ; chemin pour vidéo/audio) —
+  prouvé « Image copiée » mode:image. (b) Mode sélection + « Exporter la sélection » (media.exportMany : 1 choix de
+  dossier, copie groupée) — accord singulier/pluriel OK. (c) ⌘K remonte les commandes récentes (localStorage).
+  2 modèles purs Codef (I+J) câblés + 1 direct.
+- **AUDIT BOLT.NEW (demande Patrice) — copie chat DÉJÀ là** : MessageCard a « copier le message » + CodeBlock a son
+  bouton copier. **Couvert vs bolt.new** : plan LLM, workbench arbre+éditeur multi-tabs ÉDITABLE+save, terminal
+  interactif (↑↓), preview auto/manuel, verify web_test, onglet Versions (diff+restore checkpoints), export zip,
+  déployer (outil core), historique projets, illustrations image+vidéo, prompt enhancer, templates (18). **GAP
+  identifié** : la génération est bridée « HTML/CSS/JS statique » — bolt.new crée React/Vue/Svelte/Next/Expo via
+  WebContainers. → vague Codex K (catalogue generation-stacks : static/react-vite/vue-vite/pwa/expo) EN COURS,
+  je câble le sélecteur + injection dans le prompt de génération. Preview : static=http.server, vite=npm run dev
+  (déjà détecté), expo=code seul (honnête, pas d'iframe).
+- **File suivante (idées)** : câbler vague K (stacks) ; e2e génération app React/PWA quand backend dispo ;
+  no-explicit-any PAS en masse.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
