@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { useAppStore } from './store';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
@@ -74,6 +75,11 @@ function installRendererDiagnostics(): void {
 }
 
 installRendererDiagnostics();
+
+// Pilotage/e2e hook: expose the zustand store for CDP-driven computer-use
+// sessions (Runtime.evaluate on window.useAppStore). Local desktop app — the
+// store is already reachable via devtools; this only makes it addressable.
+(window as unknown as { useAppStore: typeof useAppStore }).useAppStore = useAppStore;
 
 // Note: StrictMode removed to prevent double-rendering issues with IPC
 ReactDOM.createRoot(document.getElementById('root')!).render(

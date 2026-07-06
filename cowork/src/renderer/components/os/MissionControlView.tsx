@@ -5,7 +5,7 @@
  * matrix) plus the autonomy posture panel. Fleet data is read from the Cowork
  * renderer store; the store itself is fed by the existing fleet IPC events.
  */
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppStore } from '../../store';
 import { AutonomyControlPanel, type AutonomyControlState } from '../os-actions/AutonomyControlPanel';
@@ -95,12 +95,54 @@ export function MissionControlView() {
   const permissionMode = useAppStore((state) => state.permissionMode);
   const setPermissionMode = useAppStore((state) => state.setPermissionMode);
 
+  // Real council data: the latest CLI council run read from the
+  // ~/.codebuddy JSONL ledgers (os.councilHealth IPC). Null → honest empty.
+  const [council, setCouncil] = useState<CouncilSession | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI?.os
+      ?.councilHealth()
+      .then((payload) => {
+        if (!cancelled && payload?.session) setCouncil(payload.session);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Real autonomy daemon state (the always-on `codebuddy-autonomy` service).
+  const [daemonRunning, setDaemonRunning] = useState<boolean | null>(null);
+  const refreshDaemon = useCallback(() => {
+    void window.electronAPI?.autonomy
+      ?.daemonStatus()
+      .then((status) => setDaemonRunning(status.ok ? Boolean(status.service?.running) : null))
+      .catch(() => setDaemonRunning(null));
+  }, []);
+  useEffect(() => {
+    refreshDaemon();
+  }, [refreshDaemon]);
+
+  const controlDaemon = useCallback(
+    (action: 'start' | 'stop') => {
+      void window.electronAPI?.autonomy
+        ?.serviceControl(action)
+        .then((result) => {
+          if (result.service) setDaemonRunning(Boolean(result.service.running));
+          else refreshDaemon();
+        })
+        .catch(() => refreshDaemon());
+    },
+    [refreshDaemon],
+  );
+
   const peers = useMemo(() => Object.values(fleetPeers).map(toOsPeer), [fleetPeers]);
   const load = useMemo(() => deriveFleetLoad(peers), [peers]);
   const capabilities = useMemo(() => deriveCapabilities(peers), [peers]);
   const autonomyState: AutonomyControlState = {
     posture: postureFromPermissionMode(permissionMode),
-    daemonPaused: peers.length === 0,
+    // Honest: paused when the real daemon service is not running (unknown → paused).
+    daemonPaused: daemonRunning !== true,
     costCapUsd: DEFAULT_COST_CAP_USD,
   };
 
@@ -108,7 +150,7 @@ export function MissionControlView() {
     setPermissionMode(posture === 'full' ? 'bypassPermissions' : posture === 'auto' ? 'acceptEdits' : 'plan');
   };
 
-  // TODO(os-wiring): no pause/resume/cost-cap IPC exists in the renderer bridge yet.
+  // TODO(os-wiring): no cost-cap IPC exists in the renderer bridge yet.
   const noop = () => {};
 
   return (
@@ -126,15 +168,15 @@ export function MissionControlView() {
         <FleetTopologyView peers={peers} />
 
         <div className="grid gap-6 xl:grid-cols-2">
-          <CouncilArenaView session={EMPTY_COUNCIL} />
+          <CouncilArenaView session={council ?? EMPTY_COUNCIL} />
           <PeerCapabilityMatrix peers={peers} capabilities={capabilities} />
         </div>
 
         <AutonomyControlPanel
           state={autonomyState}
           onPostureChange={setPosture}
-          onDaemonPause={noop}
-          onDaemonResume={noop}
+          onDaemonPause={() => controlDaemon('stop')}
+          onDaemonResume={() => controlDaemon('start')}
           onCostCapChange={noop}
         />
       </div>

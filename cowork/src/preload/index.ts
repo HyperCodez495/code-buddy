@@ -3229,6 +3229,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('team.getInbox', { memberId, limit }),
   },
 
+  // Mission Control OS — real council ledgers (read-only)
+  os: {
+    /** Latest council run (DHI + per-model verdicts) + DHI history, from ~/.codebuddy JSONL ledgers. */
+    councilHealth: (historyLimit?: number): Promise<{
+      session: {
+        id: string;
+        title: string;
+        dhi: number;
+        verdicts: Array<{ agentId: string; model: string; label: string; score: number; stance: 'approve' | 'revise' | 'reject' }>;
+      } | null;
+      history: Array<{ at: string; taskType: string; dhi: number }>;
+    }> => ipcRenderer.invoke('os.councilHealth', historyLimit),
+  },
+
   // Fleet — multi-host Code Buddy listener (GAP 3)
   fleet: {
     list: (): Promise<
@@ -7122,6 +7136,23 @@ declare global {
             error?: string;
           }>
         >;
+      };
+      os: {
+        councilHealth: (historyLimit?: number) => Promise<{
+          session: {
+            id: string;
+            title: string;
+            dhi: number;
+            verdicts: Array<{
+              agentId: string;
+              model: string;
+              label: string;
+              score: number;
+              stance: 'approve' | 'revise' | 'reject';
+            }>;
+          } | null;
+          history: Array<{ at: string; taskType: string; dhi: number }>;
+        }>;
       };
       fleet: {
         list: () => Promise<

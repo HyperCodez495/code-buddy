@@ -38,6 +38,7 @@ import {
   type FleetDispatchInput,
 } from './ipc/fleet-ipc';
 import { wireFleetAggregator } from './fleet/aggregator-wiring';
+import { registerOsIpcHandlers } from './ipc/os-ipc';
 import { setMainWindow, setTray, getMainWindow } from './window-management';
 import { registerTeamIpcHandlers } from './ipc/team-ipc';
 import { registerMentionIpcHandlers } from './ipc/mention-ipc';
@@ -2479,6 +2480,9 @@ registerFleetIpcHandlers(
   () => activityFeed,
   () => projectManager
 );
+
+// ── Mission Control OS IPC handlers (council ledgers, read-only) ─────
+registerOsIpcHandlers();
 
 // ── Team IPC handlers (Phase 4 layer 9 — Agent Teams observability) ──
 registerTeamIpcHandlers(() => teamBridge);
