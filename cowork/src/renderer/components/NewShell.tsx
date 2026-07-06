@@ -150,11 +150,13 @@ function StudioView() {
 
   // AI generation: start a project-scoped agent session and STAY in App Studio —
   // the bolt.new split shows the chat (left) driving the workbench (right) live.
+  // memoryEnabled=true so the build taps Code Buddy's cross-session memory
+  // (remembered stack/design preferences) — App Studio isn't a silo.
   const onGenerateWithAI = useCallback(
     async (request: StudioScaffoldRequest) => {
       const prompt = buildAiGenerationPrompt(request);
       const cwd = request.targetDir?.trim() || workingDir || undefined;
-      const session = await startSession(getInitialSessionTitle(request.prompt), prompt, cwd);
+      const session = await startSession(getInitialSessionTitle(request.prompt), prompt, cwd, null, true);
       if (session?.id) setActiveSession(session.id);
     },
     [startSession, setActiveSession, workingDir],
