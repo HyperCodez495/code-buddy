@@ -78,7 +78,7 @@ async function discoverHttp() {
       clearTimeout(t);
       const ct = res.headers.get('content-type') || '';
       let body = '';
-      try { body = (await res.text()).slice(0, 240).replace(/\s+/g, ' ').trim(); } catch {}
+      try { body = (await res.text()).slice(0, 240).replace(/\s+/g, ' ').trim(); } catch { /* ignore */ }
       const tag = res.ok ? c.green(`${res.status}`) : c.yellow(`${res.status}`);
       log(`  ${tag}  GET ${route}  ${c.dim(ct)}  ${body ? c.dim('› ' + body) : ''}`);
       if (res.status !== 404) anything = true;
@@ -105,7 +105,7 @@ function printTranscript(src, raw) {
   let obj = null;
   if (typeof raw === 'string') {
     const s = raw.trim();
-    if (s.startsWith('{') || s.startsWith('[')) { try { obj = JSON.parse(s); } catch {} }
+    if (s.startsWith('{') || s.startsWith('[')) { try { obj = JSON.parse(s); } catch { /* ignore */ } }
     if (!obj) { log(`  ${c.cyan(src)} ${c.dim('text')} ${s.slice(0, 300)}`); return; }
   } else {
     obj = raw;
@@ -129,7 +129,7 @@ async function tryWebSocket(WebSocketCtor) {
       let settled = false;
       let ws;
       try { ws = new WebSocketCtor(url); } catch { resolve(false); return; }
-      const giveUp = setTimeout(() => { if (!settled) { settled = true; try { ws.close(); } catch {} resolve(false); } }, 1500);
+      const giveUp = setTimeout(() => { if (!settled) { settled = true; try { ws.close(); } catch { /* ignore */ } resolve(false); } }, 1500);
       ws.on('open', () => {
         clearTimeout(giveUp);
         settled = true; connected = true;
@@ -137,7 +137,7 @@ async function tryWebSocket(WebSocketCtor) {
         log(c.dim('  → parle dans Murmure (push-to-talk: ctrl+space). Ctrl-C pour quitter.\n'));
         // certaines API attendent un message d'abonnement — on en envoie quelques-uns inoffensifs
         for (const sub of ['{"type":"subscribe"}', '{"action":"start"}', 'start']) {
-          try { ws.send(sub); } catch {}
+          try { ws.send(sub); } catch { /* ignore */ }
         }
         resolve(true); // garde la socket ouverte
       });

@@ -27,7 +27,7 @@ import { sanitizeModelOutput, stripInvisibleChars } from '../utils/output-saniti
  * leaked Chinese clause carries). Stripped run-wise so the surrounding Latin text survives.
  */
 const NON_LATIN_SCRIPT_RUN =
-  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]+/gu;
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303F\uFF00-\uFFEF]+/gu;
 
 /** The floor for "this still says something speakable": at least one letter or digit. */
 const HAS_SPEAKABLE_CONTENT = /[\p{L}\p{N}]/u;
