@@ -20,6 +20,7 @@ import {
 import { parseBashCommand } from '../../security/bash-parser.js';
 import { isDangerousCommand } from '../../security/dangerous-patterns.js';
 import { auditLogger } from '../../security/audit-logger.js';
+import { checkUserDenyRules } from '../../security/bash-allowlist/deny-guard.js';
 
 /**
  * Extract the base command from a command string
@@ -110,6 +111,20 @@ export function hasShellBypassFeatures(command: string): { bypass: boolean; reas
  * since it requires instance state.
  */
 export function validateCommand(command: string): { valid: boolean; reason?: string } {
+  // User-defined deny rules (/allowlist deny <pattern>) are a HARD stop in
+  // every mode — YOLO skips confirmations, never validation. Checked first so
+  // a user rule wins even over commands the static checks would tolerate.
+  const denyVerdict = checkUserDenyRules(command);
+  if (denyVerdict.denied) {
+    return {
+      valid: false,
+      reason:
+        `Blocked by user deny rule "${denyVerdict.pattern}"` +
+        (denyVerdict.description ? ` (${denyVerdict.description})` : '') +
+        ' — manage with /allowlist',
+    };
+  }
+
   // Check for dangerous control characters
   if (BLOCKED_CONTROL_CHARS.test(command)) {
     return {

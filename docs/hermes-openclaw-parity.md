@@ -1,8 +1,24 @@
 # Hermes Agent & OpenClaw — parity and gaps (canonical)
 
-**Date: 2026-07-03** (supersedes 2026-06-09/13/14) · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified
-against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.11` (upgraded in place from 2026.6.1 on
-2026-07-03 and re-validated live).
+**Date: 2026-07-06** (supersedes 2026-06-09/13/14; previous anchor 2026-07-03) · Machine: Ministar Linux (Ryzen AI 9
+HX 470, Ollama Vulkan) · Verified against live installs: Hermes Agent `v0.16.0` (2026.6.5), OpenClaw `2026.6.11`
+(still npm latest on 2026-07-06 — zero drift).
+
+> **2026-07-06 upstream drift re-audit — Hermes moved 516 commits past v2026.7.1** (`origin/main` `7426c09be`).
+> Feature-delta triage: most of it is Hermes desktop/gateway UI (Capabilities page, dashboard console) or already
+> covered here — extra LLM headers, per-channel overrides and MoA were filled 2026-07-03; **inline MEDIA: images
+> for frontends (2068754d6) converged independently** (Cowork chat renders generated media as inline viewers,
+> `cd1f447f`, same day upstream landed theirs). **One real gap found and FILLED: user-defined deny rules that
+> block commands even under YOLO (e2fe529ef).** Our allowlist store + `/allowlist deny` existed but
+> `checkAndApprove` had NO caller on the execution path — deny patterns blocked nothing. A sync `deny-guard`
+> (mtime-cached read of `exec-approvals.json`, real pattern matcher) is now wired into the SHARED
+> `command-validator.validateCommand`, which both bash paths (buffered + streaming) run unconditionally — YOLO
+> skips confirmations, never validation. Proven on the built runtime (dist): force-push blocked with the rule's
+> description, normal commands pass; 6 real-store tests + 654 security/bash tests green. **Registered, smaller,
+> not yet filled:** `/deny <reason>` relaying the denial reason to the agent (our ConfirmationResult has a
+> `feedback` field but the tool-handler callback is boolean); pluggable SecretSource + 1Password `op://`
+> (structure fillable, any honest validation of the `op` source is account-gated); session prune filters/bulk
+> archive (CLI conveniences).
 
 > **2026-07-03 OpenClaw drift re-audit — ten versions, zero integration drift.** The local install was upgraded
 > 2026.6.1 → **2026.6.11** (npm latest stable) and every integration surface re-validated LIVE against the new
