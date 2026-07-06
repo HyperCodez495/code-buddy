@@ -372,7 +372,14 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   Save-As natif. Prouvé e2e : clic bouton → dialogue natif piloté xdotool → PDF 2 pages 60 Ko envoyé à Patrice.
   Bilan Codex du jour : 8 vagues, 8 récupérées. ⚠️ Récidive gotcha : kill+relance dans le MÊME bloc bash → bind
   failed (l'ancienne survit) — toujours kill par PID exact dans un bloc séparé, vérifier le log.
-- **File suivante (idées)** : e2e confirmation organique ; app vitrine vidéo hero e2e.
+- **APP VITRINE VIDÉO-HERO E2E + 14e CAUSE RACINE (`b74276f5`)** : e2e prouvé — app yoga « Lumière du Matin »
+  générée avec vidéo hero xAI en fond plein écran (contrat respecté : `<video autoplay muted loop>` chemin RELATIF
+  exact `.codebuddy/media-generation/videos/…`, MP4 1,6 Mo + sidecar prompt cinéma), preview servie, rendu validé
+  écran (dégradé doré, slogan). MAIS la génération a RÉVÉLÉ un bug : cwd de session RELATIF (slug nu quand
+  workingDir vide) → ensureCwdExists mkdir contre le process cwd = cowork/ → l'app a pollué le source tree
+  (famille cwd embarqué, nouvelle porte). Fix : resolveSafeCwd avant tout mkdir/trust dans les 2 chemins startSession
+  (absolu passe, relatif ancré sous default_working_dir, ./ et ../ retirés) — 4 tests, safeCwdBase dans le bundle.
+- **File suivante (idées)** : e2e confirmation organique ; vérifier les autres appelants de startSession pour cwd relatif.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
