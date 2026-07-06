@@ -9,6 +9,7 @@
  */
 
 import { CodeBuddyClient, CodeBuddyMessage, CodeBuddyToolCall } from "../../codebuddy/client.js";
+import { withStallGuard } from "../../utils/stream-stall-guard.js";
 import { ChatEntry, StreamingChunk } from "../types.js";
 import { ToolHandler, normalizeHallucinatedLocalToolCall } from "../tool-handler.js";
 import { ToolSelectionStrategy } from "./tool-selection-strategy.js";
@@ -870,10 +871,14 @@ export class AgentExecutor {
             ? { search_parameters: { mode: "auto" } }
             : { search_parameters: { mode: "off" } }
         );
-        
+
         this.deps.streamingHandler.reset();
 
-        for await (const chunk of stream) {
+        // Stall guard: some backends (ChatGPT/Codex OAuth observed) accept
+        // the request then never send a byte — without a bound this loop
+        // hangs FOREVER (turns stuck for hours in Cowork and headless waves).
+        // Fail fast with a clear error instead; the caller/user retries.
+        for await (const chunk of withStallGuard(stream)) {
           if (abortController?.signal.aborted) {
             yield { type: "content", content: "\n\n[Operation cancelled by user]" };
             yield { type: "done" };
