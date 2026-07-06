@@ -13,6 +13,7 @@
 
 import { withTimeout } from '../council/with-timeout.js';
 import type { CouncilChatClient } from '../council/types.js';
+import { extractJsonObject } from '../utils/json-salvage.js';
 import { renderUnifiedPreview } from './diff-model.js';
 import type {
   AnnotationSeverity,
@@ -54,23 +55,9 @@ interface ReviewerJson {
   why?: string;
 }
 
-/** Two-stage strict-JSON parse (same shape as the council judge's). */
+/** Two-stage strict-JSON parse (shared with the council judge). */
 function extractReviewerJson(text: string): ReviewerJson | null {
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as ReviewerJson;
-  } catch {
-    /* not pure JSON */
-  }
-  const m = text.match(/\{[\s\S]*\}/);
-  if (m) {
-    try {
-      return JSON.parse(m[0]) as ReviewerJson;
-    } catch {
-      /* salvage failed */
-    }
-  }
-  return null;
+  return extractJsonObject<ReviewerJson>(text);
 }
 
 function truncatePreview(text: string): string {

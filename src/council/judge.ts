@@ -26,6 +26,7 @@
 
 import type { CouncilCandidate, CouncilChatClient, JudgeVerdict } from './types.js';
 import { withTimeout } from './with-timeout.js';
+import { extractJsonObject } from '../utils/json-salvage.js';
 
 const JUDGE_MAX_CHARS_PER_ANSWER = 6000;
 
@@ -47,21 +48,7 @@ interface JudgeJson {
 }
 
 export function extractJson(text: string): JudgeJson | null {
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as JudgeJson;
-  } catch {
-    /* not pure JSON */
-  }
-  const m = text.match(/\{[\s\S]*\}/);
-  if (m) {
-    try {
-      return JSON.parse(m[0]) as JudgeJson;
-    } catch {
-      /* salvage failed */
-    }
-  }
-  return null;
+  return extractJsonObject<JudgeJson>(text);
 }
 
 export interface JudgeSelection {

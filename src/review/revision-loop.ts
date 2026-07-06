@@ -21,6 +21,7 @@
 
 import { withTimeout } from '../council/with-timeout.js';
 import type { CouncilChatClient } from '../council/types.js';
+import { extractJsonObject } from '../utils/json-salvage.js';
 import { reviewAndApply, type ReviewAndApplyResult } from './review-engine.js';
 import type { BuildProposedDiffInput, ProposedChangeInput } from './diff-model.js';
 import type { ApplyOptions } from './apply-transaction.js';
@@ -42,23 +43,9 @@ interface ReviserJson {
   note?: string;
 }
 
-/** Two-stage strict-JSON parse (same discipline as judge/reviewers). */
+/** Two-stage strict-JSON parse (shared with judge/reviewers). */
 function extractReviserJson(text: string): ReviserJson | null {
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as ReviserJson;
-  } catch {
-    /* not pure JSON */
-  }
-  const m = text.match(/\{[\s\S]*\}/);
-  if (m) {
-    try {
-      return JSON.parse(m[0]) as ReviserJson;
-    } catch {
-      /* salvage failed */
-    }
-  }
-  return null;
+  return extractJsonObject<ReviserJson>(text);
 }
 
 export function buildRevisionPrompt(diff: ProposedDiff, verdict: ReviewVerdict): { system: string; user: string } {
