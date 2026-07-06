@@ -29,6 +29,7 @@ import type {
 } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
+import { loadCoreModule } from '../utils/core-loader';
 import {
   SandboxAdapter,
   getSandboxAdapter,
@@ -715,6 +716,9 @@ export class SessionManager {
     }
 
     this.ensureCwdExists(effectiveCwd);
+    // Trust only a cwd the caller EXPLICITLY chose (GUI folder pick), not the
+    // active-project fallback — that one was trusted when the project opened.
+    if (cwd) await this.trustSessionCwd(cwd);
 
     const session = this.createSession(title, effectiveCwd, allowedTools, memoryEnabled);
 
@@ -759,6 +763,7 @@ export class SessionManager {
     }
 
     this.ensureCwdExists(effectiveCwd);
+    if (cwd) await this.trustSessionCwd(cwd);
 
     const session = this.createSession(title, effectiveCwd);
     session.isBackground = true;
@@ -799,6 +804,32 @@ export class SessionManager {
       }
     } catch (err) {
       log('[SessionManager] Could not create session cwd:', cwd, err);
+    }
+  }
+
+  /**
+   * Trust the cwd the USER designated for this session (same consent model as
+   * opening a workspace). Without it the core's trust gate blocks every write
+   * tool in the session — proven live: an App Studio generation targeting
+   * /tmp/e2e-meteo2 emitted its plan then stopped with "dossier non fiable,
+   * create_file indisponible". The embedded engine shares the core module
+   * graph, so the TrustFolderManager singleton applies immediately; blocked
+   * dirs (/, /home, …) are still refused by trustFolder itself. Fail-open.
+   */
+  private async trustSessionCwd(cwd?: string): Promise<void> {
+    if (!cwd) return;
+    try {
+      const mod = await loadCoreModule<{
+        getTrustFolderManager: () => { isTrusted(p: string): boolean; trustFolder(p: string): boolean };
+      }>('security/trust-folders.js');
+      if (!mod?.getTrustFolderManager) return;
+      const manager = mod.getTrustFolderManager();
+      if (!manager.isTrusted(cwd)) {
+        const trusted = manager.trustFolder(cwd);
+        log('[SessionManager] Session cwd trust:', cwd, trusted ? 'granted' : 'refused (blocked dir)');
+      }
+    } catch (err) {
+      log('[SessionManager] Could not trust session cwd:', cwd, err);
     }
   }
 

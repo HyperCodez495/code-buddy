@@ -64,6 +64,22 @@ vi.mock('../src/main/config/config-store', () => ({
   },
 }));
 
+const trustCalls: string[] = [];
+vi.mock('../src/main/utils/core-loader', () => ({
+  loadCoreModule: vi.fn(async (rel: string) => {
+    if (rel !== 'security/trust-folders.js') return null;
+    return {
+      getTrustFolderManager: () => ({
+        isTrusted: () => false,
+        trustFolder: (p: string) => {
+          trustCalls.push(p);
+          return true;
+        },
+      }),
+    };
+  }),
+}));
+
 import { SessionManager } from '../src/main/session/session-manager';
 
 function makeDb(): DatabaseInstance {
@@ -100,6 +116,9 @@ describe('SessionManager session cwd creation', () => {
     const session = await manager.startSession('t', 'p', cwd);
     expect(session.cwd).toBe(cwd);
     expect(existsSync(cwd)).toBe(true);
+    // The USER-designated cwd is trusted so the engine's write tools work
+    // (the /tmp/e2e-meteo2 incident: plan emitted, then "dossier non fiable").
+    expect(trustCalls).toContain(cwd);
 
     rmSync(join(tmpdir(), `sm-cwd-test-${process.pid}`), { recursive: true, force: true });
   });
