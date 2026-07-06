@@ -120,6 +120,22 @@ describe('BashTool', () => {
       expect(path.isAbsolute(result.output!.trim())).toBe(true);
     });
 
+    it('streams in the cwd override too (the path Cowork actually uses)', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-stream-cwd-'));
+      const real = fs.realpathSync(dir);
+      const gen = bashTool.executeStreaming('pwd', 30000, dir);
+      let out = '';
+      let r = await gen.next();
+      while (!r.done) {
+        out += r.value;
+        r = await gen.next();
+      }
+      const final = r.value;
+      expect(final.success).toBe(true);
+      expect(fs.realpathSync((out || final.output || '').trim())).toBe(real);
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
     it('runs in the cwd override when provided (embedded session workingDirectory)', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-cwd-'));
       const real = fs.realpathSync(dir);

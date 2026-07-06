@@ -1170,7 +1170,10 @@ export class ToolHandler {
           };
         }
 
-        const gen = this.bash.executeStreaming(command, timeout);
+        // Session cwd override — the streaming path is what embedded hosts
+        // (Cowork) actually exercise; without it, streamed bash ran in the
+        // Electron process cwd regardless of the session workingDirectory.
+        const gen = this.bash.executeStreaming(command, timeout, this.currentWorkingDirectory);
         let result = await gen.next();
         while (!result.done) {
           yield result.value;

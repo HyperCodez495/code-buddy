@@ -445,6 +445,7 @@ export class CodeBuddyEngineRunner {
           systemPromptAppend,
         }
       );
+      log('[EngineRunner] turn options', { sessionId: session.id, cwd: session.cwd ?? '(undefined)' });
 
       if (runtimeError && !fullContent && contentBlocks.length === 0) {
         fullContent = `**Error**: ${runtimeError}`;

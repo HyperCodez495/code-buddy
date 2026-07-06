@@ -95,10 +95,15 @@ export class BashTool implements Disposable {
    * Execute a command with streaming output.
    * Yields each line of stdout/stderr as it arrives.
    * Validates and confirms the command before execution.
+   *
+   * @param cwd Working-directory override — the tool-execution context's cwd
+   *   (an embedded engine's session workingDirectory). THIS is the path Cowork
+   *   actually exercises (the executor streams tools), so it must honor the
+   *   session cwd exactly like the non-streaming `execute` does.
    */
-  async *executeStreaming(command: string, timeout: number = 30000): AsyncGenerator<string, ToolResult, undefined> {
+  async *executeStreaming(command: string, timeout: number = 30000, cwd?: string): AsyncGenerator<string, ToolResult, undefined> {
     return yield* executeStreamingImpl(command, timeout, {
-      getCurrentDirectory: () => this.currentDirectory,
+      getCurrentDirectory: () => cwd ?? this.currentDirectory,
       getSandboxManager: () => this.sandboxManager,
       getRunningProcesses: () => this.runningProcesses,
     });

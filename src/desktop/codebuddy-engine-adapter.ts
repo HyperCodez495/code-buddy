@@ -201,6 +201,13 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // process directory while the review panels read the project dir — the
       // self-improvement review loop never closed. Re-applied every turn so a
       // hot-swapped/reused cached agent always targets the current project.
+      // NB: `{ ...this.config, ...options }` above lets an options key that is
+      // PRESENT but undefined clobber the adapter default — log the effective
+      // value so a missing session cwd is diagnosable from the host log.
+      logger.debug('[CodeBuddyEngineAdapter] turn workingDirectory', {
+        sessionId,
+        workingDirectory: config.workingDirectory ?? '(undefined)',
+      });
       agent.setWorkingDirectory(config.workingDirectory);
       agent.setSystemPromptAppend(config.systemPromptAppend);
 
