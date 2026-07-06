@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { navigate, pushCommand } from './terminal-input-model';
 
 export interface TerminalPaneProps {
   output: string[];
@@ -16,6 +17,8 @@ export function TerminalPane({ output, onInput, onClear }: TerminalPaneProps) {
   const fitRef = useRef<FitAddon | null>(null);
   const writtenLinesRef = useRef(0);
   const onInputRef = useRef(onInput);
+  const historyRef = useRef<string[]>([]);
+  const cursorRef = useRef(0);
 
   useEffect(() => {
     onInputRef.current = onInput;
@@ -45,11 +48,29 @@ export function TerminalPane({ output, onInput, onClear }: TerminalPaneProps) {
     let inputBuffer = '';
     const dataDisposable = terminal.onData((data) => {
       if (!onInputRef.current) return;
+      // Arrow-key history (vague Codex B model): xterm delivers the escape
+      // sequence in one data chunk — replace the visible line with the
+      // recalled command.
+      if (data === '\u001b[A' || data === '\u001b[B') {
+        const nav = navigate(historyRef.current, cursorRef.current, data === '\u001b[A' ? 'up' : 'down');
+        cursorRef.current = nav.cursor;
+        while (inputBuffer.length > 0) {
+          inputBuffer = inputBuffer.slice(0, -1);
+          terminal.write('\b \b');
+        }
+        inputBuffer = nav.value;
+        terminal.write(nav.value);
+        return;
+      }
       for (const char of data) {
         if (char === '\r') {
           const line = inputBuffer;
           inputBuffer = '';
           terminal.write('\r\n');
+          if (line.trim()) {
+            historyRef.current = pushCommand(historyRef.current, line);
+            cursorRef.current = historyRef.current.length;
+          }
           onInputRef.current(line);
         } else if (char === '\u007F') {
           if (inputBuffer.length > 0) {

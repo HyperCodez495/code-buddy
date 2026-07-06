@@ -1,4 +1,4 @@
-import { Code2, Eye, PanelBottom, Play, Plus, Download, Rocket } from 'lucide-react';
+import { Code2, Eye, PanelBottom, Play, Plus, Download, Rocket, History as HistoryIcon } from 'lucide-react';
 import { useState } from 'react';
 import { BuildStatusStrip, type BuildPhase } from './BuildStatusStrip.js';
 import { CodeEditorPane } from './CodeEditorPane.js';
@@ -9,6 +9,7 @@ import { TerminalPane } from './TerminalPane.js';
 import type { TreeNode } from './utils/file-tree-model.js';
 import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
 import { StudioProjectHistory } from './StudioProjectHistory';
+import { StudioVersionsPane } from './StudioVersionsPane';
 import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
 import { StudioChatPanel } from '../studio-iterate/StudioChatPanel.js';
 import { ChangedFilesStrip } from '../studio-iterate/ChangedFilesStrip.js';
@@ -75,7 +76,7 @@ export interface AppStudioViewProps {
   onStopBuild: () => void;
 }
 
-type MainTab = 'editor' | 'preview';
+type MainTab = 'editor' | 'preview' | 'versions';
 
 export function AppStudioView({
   tree,
@@ -148,6 +149,15 @@ export function AppStudioView({
             </button>
             <button
               type="button"
+              onClick={() => setTab('versions')}
+              className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs ${tab === 'versions' ? 'bg-background text-foreground' : 'text-muted-foreground hover:bg-background hover:text-foreground'}`}
+              data-testid="studio-tab-versions"
+            >
+              <HistoryIcon className="h-4 w-4" aria-hidden="true" />
+              Versions
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setTab('preview');
                 onStartPreview();
@@ -206,6 +216,8 @@ export function AppStudioView({
                   )}
                 </div>
               </div>
+            ) : tab === 'versions' ? (
+              <StudioVersionsPane onRestored={onReloadPreview} />
             ) : (
               <div className="flex h-full min-h-0 flex-col gap-1.5">
                 {tree.length > 0 ? (
