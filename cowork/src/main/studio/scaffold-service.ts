@@ -112,12 +112,20 @@ export class ScaffoldService {
       if (!engine) return { ok: false, error: 'Core TemplateEngine is unavailable' };
 
       const vars = input.vars ?? {};
-      const projectName = projectNameFrom(targetDir, vars);
+      // The core engine builds the project directory as
+      // `join(outputDir, projectName)`, so to land EXACTLY in `targetDir` the
+      // directory name must be `basename(targetDir)` — not `vars.projectName`.
+      // Otherwise a project whose chosen name differs from the target folder
+      // (e.g. targetDir `/ws/my-app`, vars.projectName `app`) lands in `/ws/app`
+      // instead of the folder the user picked. The user's chosen name still
+      // drives interpolation (package.json name, README, …) via the variable.
+      const dirName = basename(targetDir);
+      const interpolationName = projectNameFrom(targetDir, vars);
       const result = await engine.generate({
         template: input.template,
-        projectName,
+        projectName: dirName,
         outputDir: dirname(targetDir),
-        variables: { ...vars, projectName },
+        variables: { ...vars, projectName: interpolationName },
         ...(input.designSystem ? { designSystem: input.designSystem } : {}),
       });
       if (!result.success) {
