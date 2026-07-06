@@ -13,6 +13,7 @@ import type { AppStudioViewProps } from './AppStudioView.js';
 import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
 import { filterStudioTree, pickDefaultFile, type TreeNode } from './utils/file-tree-model.js';
+import { detectDevCommand } from '../studio-iterate/studio-preview-model.js';
 import type { AppStudioApis, CommandOutputEvent, StudioTemplateCard } from './studio-api.js';
 
 export interface UseAppStudioOptions {
@@ -234,10 +235,26 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     }
     beginPhase('starting');
     setPreviewStatus('starting');
+    // Detect the dev command/URL from the project's package.json (Vite/Next/
+    // Astro/CRA) so "Lancer" works beyond Vite; explicit input/options win.
+    let command = input?.command ?? options.devCommand;
+    let url = input?.url ?? options.devUrl;
+    if (!command || !url) {
+      try {
+        const pkg = await apis.files.read(cwd, 'package.json');
+        if (pkg.ok) {
+          const detected = detectDevCommand(JSON.parse(pkg.data.content) as { scripts?: Record<string, string> });
+          command = command ?? detected.command;
+          url = url ?? detected.url;
+        }
+      } catch {
+        /* fall back to Vite defaults below */
+      }
+    }
     const result = await apis.devServer.start({
       cwd,
-      command: input?.command ?? options.devCommand ?? 'npm run dev',
-      url: input?.url ?? options.devUrl ?? 'http://127.0.0.1:5173/',
+      command: command ?? 'npm run dev',
+      url: url ?? 'http://127.0.0.1:5173/',
     });
     if (result.ok) {
       setDevPid(result.data.pid);
