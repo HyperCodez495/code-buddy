@@ -21,6 +21,9 @@ interface MediaItem {
   size: number;
   mtimeMs: number;
   root: string;
+  prompt?: string;
+  model?: string;
+  provider?: string;
 }
 
 type Filter = 'all' | 'image' | 'video' | 'audio';
@@ -71,7 +74,9 @@ export function MediaLibraryPanel() {
 
   const useInStudio = (item: MediaItem) => {
     if (item.kind === 'audio') return;
-    setCreationsSeed(`Variante du média existant ${item.path} : `);
+    // With the original prompt (sidecar), a variant starts from the REAL
+    // prompt; otherwise fall back to referencing the file path.
+    setCreationsSeed(item.prompt ? `${item.prompt} — variante : ` : `Variante du média existant ${item.path} : `);
     setCreationsTab(item.kind === 'image' ? 'image' : 'video');
   };
 
@@ -148,6 +153,11 @@ export function MediaLibraryPanel() {
                   )}
                 </div>
                 <div className="p-2.5">
+                  {item.prompt ? (
+                    <p className="mb-1 line-clamp-2 text-[11px] italic text-muted-foreground" title={item.prompt}>
+                      « {item.prompt} »{item.model ? ` — ${item.model}` : ''}
+                    </p>
+                  ) : null}
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     {item.kind === 'image' ? <ImageIcon className="h-3 w-3" aria-hidden="true" /> : item.kind === 'video' ? <Clapperboard className="h-3 w-3" aria-hidden="true" /> : <Music className="h-3 w-3" aria-hidden="true" />}
                     <span className="min-w-0 flex-1 truncate" title={item.path}>{item.path.split('/').pop()}</span>

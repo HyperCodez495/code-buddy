@@ -42,6 +42,23 @@ describe('scanRoot', () => {
   });
 });
 
+describe('sidecar metadata', () => {
+  it('reads prompt/model/provider from <file>.meta.json, fail-open otherwise', () => {
+    const images = path.join(root, '.codebuddy', 'media-generation', 'images');
+    fs.writeFileSync(
+      path.join(images, 'a.jpg.meta.json'),
+      JSON.stringify({ prompt: 'un chiot sharpei', model: 'grok-imagine', provider: 'xai' }),
+    );
+    fs.writeFileSync(path.join(images, 'broken.png'), 'x');
+    fs.writeFileSync(path.join(images, 'broken.png.meta.json'), '{not json');
+    const items = scanRoot(root);
+    const withMeta = items.find((i) => i.path.endsWith('a.jpg'));
+    expect(withMeta).toMatchObject({ prompt: 'un chiot sharpei', model: 'grok-imagine', provider: 'xai' });
+    const broken = items.find((i) => i.path.endsWith('broken.png'));
+    expect(broken?.prompt).toBeUndefined();
+  });
+});
+
 describe('scanMediaLibrary', () => {
   it('deduplicates repeated roots and sorts newest first', () => {
     const items = scanMediaLibrary([root, root, path.join(root, 'missing')]);

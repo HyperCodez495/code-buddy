@@ -20,6 +20,12 @@ export interface MediaItem {
   mtimeMs: number;
   /** The session working directory this media belongs to. */
   root: string;
+  /** Original generation prompt (from the `<file>.meta.json` sidecar). */
+  prompt?: string;
+  /** Generation model (sidecar). */
+  model?: string;
+  /** Generation provider (sidecar). */
+  provider?: string;
 }
 
 const EXT_TO_KIND: Record<string, MediaKind> = {
@@ -36,6 +42,20 @@ const EXT_TO_KIND: Record<string, MediaKind> = {
   '.ogg': 'audio',
   '.flac': 'audio',
 };
+
+/** Read the generation sidecar (`<file>.meta.json`) if present — fail-open. */
+function readSidecar(filePath: string): { prompt?: string; model?: string; provider?: string } {
+  try {
+    const raw = JSON.parse(fs.readFileSync(`${filePath}.meta.json`, 'utf-8')) as Record<string, unknown>;
+    return {
+      ...(typeof raw.prompt === 'string' ? { prompt: raw.prompt } : {}),
+      ...(typeof raw.model === 'string' ? { model: raw.model } : {}),
+      ...(typeof raw.provider === 'string' ? { provider: raw.provider } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
 
 export function kindOf(filePath: string): MediaKind | null {
   return EXT_TO_KIND[path.extname(filePath).toLowerCase()] ?? null;
@@ -58,7 +78,7 @@ function scanDirRecursive(dir: string, root: string, out: MediaItem[], depth = 0
       if (!kind) continue;
       try {
         const stat = fs.statSync(full);
-        out.push({ path: full, kind, size: stat.size, mtimeMs: stat.mtimeMs, root });
+        out.push({ path: full, kind, size: stat.size, mtimeMs: stat.mtimeMs, root, ...readSidecar(full) });
       } catch {
         /* raced deletion — skip */
       }
@@ -82,7 +102,7 @@ export function scanRoot(root: string): MediaItem[] {
       const full = path.join(root, entry.name);
       try {
         const stat = fs.statSync(full);
-        out.push({ path: full, kind, size: stat.size, mtimeMs: stat.mtimeMs, root });
+        out.push({ path: full, kind, size: stat.size, mtimeMs: stat.mtimeMs, root, ...readSidecar(full) });
       } catch {
         /* skip */
       }

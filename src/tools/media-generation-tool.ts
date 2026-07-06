@@ -188,6 +188,16 @@ export async function generateImage(
     throw new Error('Image provider returned neither b64_json nor url');
   }
 
+  await writeMediaSidecar(outputPath, {
+    kind: 'image',
+    prompt,
+    ...(revisedPrompt ? { revisedPrompt } : {}),
+    provider: config.provider,
+    model: config.model,
+    aspect_ratio: aspect,
+    generatedAt,
+  });
+
   return {
     kind: 'image_generate_result',
     success: true,
@@ -364,6 +374,15 @@ async function generateComfyUIImage(
     prefix: 'image',
     extension: 'png',
     createId: runtime.createId,
+  });
+
+  await writeMediaSidecar(outputPath, {
+    kind: 'image',
+    prompt,
+    provider: 'comfyui',
+    model: config.model,
+    aspect_ratio: aspect,
+    generatedAt,
   });
 
   return {
@@ -619,6 +638,15 @@ async function materializeVideoResult(
   });
   const outputPath = downloaded.outputPath;
   const videoRef = outputPath ?? videoUrl;
+  await writeMediaSidecar(outputPath, {
+    kind: 'video',
+    prompt: options.prompt,
+    provider: options.provider,
+    model: options.model,
+    modality: options.modality,
+    aspect_ratio: options.aspectRatio,
+    duration: options.duration,
+  });
   return {
     kind: 'video_generate_result',
     success: true,
@@ -830,6 +858,24 @@ async function tryDownloadAsset(
     createId: options.createId,
   });
   return { outputPath };
+}
+
+/**
+ * Sidecar metadata next to a generated asset (`<file>.meta.json`) so the
+ * media library can show the ORIGINAL prompt/provider/model (ChatGPT-library
+ * parity) and regenerate variants from the real prompt. Fail-open: metadata
+ * must never break a successful generation.
+ */
+export async function writeMediaSidecar(
+  outputPath: string | undefined,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  if (!outputPath) return;
+  try {
+    await fs.writeFile(`${outputPath}.meta.json`, JSON.stringify(meta, null, 1));
+  } catch {
+    /* sidecar is best-effort */
+  }
 }
 
 async function saveGeneratedAsset(
