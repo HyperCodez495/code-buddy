@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppStudioViewProps } from './AppStudioView.js';
 import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
-import { filterStudioTree, type TreeNode } from './utils/file-tree-model.js';
+import { filterStudioTree, pickDefaultFile, type TreeNode } from './utils/file-tree-model.js';
 import type { AppStudioApis, CommandOutputEvent, StudioTemplateCard } from './studio-api.js';
 
 export interface UseAppStudioOptions {
@@ -214,6 +214,15 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     const result = await apis.files.write(projectRoot, activeFile, fileContent);
     appendTerminal(result.ok ? `Sauvegardé: ${activeFile}` : result.error);
   }, [activeFile, apis, appendTerminal, fileContent, projectRoot]);
+
+  // bolt.new opens a file immediately — auto-select a sensible default once the
+  // tree loads and nothing is open yet.
+  useEffect(() => {
+    if (!activeFile && tree.length > 0) {
+      const def = pickDefaultFile(tree);
+      if (def) void openFile(def);
+    }
+  }, [tree, activeFile, openFile]);
 
   const startDev = useCallback(async (input?: { cwd?: string; command?: string; url?: string }) => {
     const cwd = input?.cwd ?? projectRoot;
