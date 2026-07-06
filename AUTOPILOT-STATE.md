@@ -269,9 +269,17 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   (`creationsSeed` one-shot dans le store, consommé au mount du DeliverableStudioPanel partagé + hint sous les
   tuiles). Prouvé live : sujet tapé → clic Deck → studio prérempli. C'était le « sélecteur de sortie » Genspark,
   résolu sans widget supplémentaire (les tuiles SONT le sélecteur).
-- **File suivante (idées)** : e2e génération quand le backend Codex répond ; purge des 61 warnings lint ;
-  rafraîchissement périodique des données Mission Control ; app vitrine avec vidéo hero e2e (App Studio) ;
-  comparaison Genspark suite : page résultat de tâche (timeline + artefacts en fin de tour).
+- **PARITÉ HERMES/OPENCLAW RÉ-AUDITÉE (`a45d1ff3`, demande Patrice)** : OpenClaw 2026.6.11 = toujours latest (zéro
+  drift) ; Hermes upstream a bougé de 516 commits post-v2026.7.1 → triage : l'essentiel = desktop/gateway UI ou déjà
+  couvert (headers LLM, overrides canal, MoA, médias inline — convergence indépendante avec notre cd1f447f !).
+  **1 vrai gap trouvé et COMBLÉ : deny rules utilisateur bloquantes MÊME en YOLO** — notre store /allowlist deny
+  existait mais checkAndApprove n'avait AUCUN appelant (câblage dormant) → deny-guard sync (mtime-cache, vrai
+  matcher, fail-open) câblé dans le command-validator PARTAGÉ (les 2 chemins bash, inconditionnel). Prouvé sur dist.
+  Restes registrés : /deny <raison> relayée à l'agent (plomberie feedback existe, callback booléen) ; SecretSource
+  pluggable + 1Password (op gated) ; session prune/bulk-archive.
+- **File suivante (idées)** : /deny <raison> → agent ; e2e génération quand le backend Codex répond ; purge des
+  61 warnings lint ; rafraîchissement périodique Mission Control ; app vitrine vidéo hero e2e ;
+  Genspark suite : page résultat de tâche (timeline + artefacts en fin de tour).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
