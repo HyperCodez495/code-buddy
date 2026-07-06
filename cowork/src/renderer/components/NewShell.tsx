@@ -160,6 +160,20 @@ function StudioView() {
     [startSession, setActiveSession, workingDir],
   );
 
+  // "Vérifier" taps Code Buddy's web_test through the agent session (which owns
+  // the tool + the browser; the preview origin is already a registered dev
+  // origin via app_server). The verify report lands in the chat.
+  const onVerifyPreview = useCallback(() => {
+    const url = viewProps.previewUrl;
+    if (!activeSessionId || !url) return;
+    void continueSession(
+      activeSessionId,
+      `Vérifie l'application web sur ${url} avec l'outil \`web_test\` : lance web_test avec cette URL, ` +
+        `confirme qu'il n'y a aucune erreur console ni erreur de page et que l'interface principale s'affiche, ` +
+        `puis résume le rapport (PASSED/FAILED + points clés). Corrige si tu détectes une erreur.`,
+    );
+  }, [activeSessionId, viewProps.previewUrl, continueSession]);
+
   // The bolt.new iterate chat, driven by the active project session (a session
   // with a cwd). Absent → App Studio shows its composer entry screen.
   const chat = useMemo(() => {
@@ -197,7 +211,12 @@ function StudioView() {
   ]);
 
   return (
-    <AppStudioView {...viewProps} onGenerateWithAI={onGenerateWithAI} {...(chat ? { chat } : {})} />
+    <AppStudioView
+      {...viewProps}
+      onGenerateWithAI={onGenerateWithAI}
+      onVerifyPreview={onVerifyPreview}
+      {...(chat ? { chat } : {})}
+    />
   );
 }
 

@@ -55,6 +55,8 @@ export interface AppStudioViewProps {
   onStartPreview: () => void;
   onReloadPreview: () => void;
   onOpenPreviewExternal?: () => void;
+  /** Ask the agent session to verify the running app with web_test. */
+  onVerifyPreview?: () => void;
   onTerminalInput?: (line: string) => void;
   onClearTerminal?: () => void;
   onStopBuild: () => void;
@@ -88,6 +90,7 @@ export function AppStudioView({
   onStartPreview,
   onReloadPreview,
   onOpenPreviewExternal,
+  onVerifyPreview,
   onTerminalInput,
   onClearTerminal,
   onStopBuild,
@@ -155,6 +158,7 @@ export function AppStudioView({
                 status={previewStatus}
                 onReload={onReloadPreview}
                 onOpenExternal={onOpenPreviewExternal}
+                {...(onVerifyPreview ? { onVerify: onVerifyPreview } : {})}
               />
             )}
           </div>

@@ -6,11 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { buildDevPlan, advancePlan } from '../src/renderer/components/studio/dev-plan';
 
 describe('buildDevPlan', () => {
-  it('detects React by default and brackets the plan with scaffold + run', () => {
+  it('detects React by default and brackets the plan with scaffold + verify', () => {
     const plan = buildDevPlan('Une todo app avec thème sombre');
     expect(plan.stack).toBe('React + Vite');
     expect(plan.steps[0]!.id).toBe('scaffold');
-    expect(plan.steps[plan.steps.length - 1]!.id).toBe('run');
+    expect(plan.steps[plan.steps.length - 1]!.id).toBe('verify'); // Code Buddy web_test
+    expect(plan.steps.some((s) => s.id === 'run')).toBe(true);
     expect(plan.steps.every((s) => s.status === 'pending')).toBe(true);
   });
 
@@ -54,9 +55,10 @@ describe('advancePlan', () => {
     expect(p.steps.some((s) => s.status === 'active')).toBe(true);
   });
 
-  it('completes every step once the preview is running', () => {
+  it('completes every step up to run once the preview is running, verify becomes active', () => {
     const p = advancePlan(base, { hasFiles: true, previewRunning: true, busy: false });
-    expect(p.steps.every((s) => s.status === 'done')).toBe(true);
+    expect(p.steps.filter((s) => s.id !== 'verify').every((s) => s.status === 'done')).toBe(true);
+    expect(p.steps.find((s) => s.id === 'verify')!.status).toBe('active');
   });
 
   it('marks a feature step done when a changed path matches its keywords', () => {

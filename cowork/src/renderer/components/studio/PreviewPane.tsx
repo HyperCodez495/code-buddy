@@ -1,4 +1,4 @@
-import { ExternalLink, Monitor, RefreshCw, ServerOff, Smartphone, Tablet } from 'lucide-react';
+import { ExternalLink, Monitor, RefreshCw, ServerOff, ShieldCheck, Smartphone, Tablet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { isLoopbackUrl } from './utils/loopback-url.js';
 
@@ -15,6 +15,9 @@ export interface PreviewPaneProps {
   status: 'idle' | 'starting' | 'running' | 'dead';
   onReload: () => void;
   onOpenExternal?: () => void;
+  /** Ask Code Buddy to verify the running app (web_test): console/page errors,
+   *  snapshot, screenshot, assertions. Wired to the agent session. */
+  onVerify?: () => void;
 }
 
 function statusCopy(status: PreviewPaneProps['status'], unsafeUrl: boolean): { title: string; detail: string } {
@@ -33,7 +36,7 @@ function statusCopy(status: PreviewPaneProps['status'], unsafeUrl: boolean): { t
   return { title: 'Aucune preview', detail: 'Génère ou démarre une app pour afficher le rendu.' };
 }
 
-export function PreviewPane({ url, status, onReload, onOpenExternal }: PreviewPaneProps) {
+export function PreviewPane({ url, status, onReload, onOpenExternal, onVerify }: PreviewPaneProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [device, setDevice] = useState<PreviewDevice>('desktop');
   const safeUrl = useMemo(() => (url && isLoopbackUrl(url) ? url : null), [url]);
@@ -96,6 +99,19 @@ export function PreviewPane({ url, status, onReload, onOpenExternal }: PreviewPa
             aria-label="Ouvrir dans le navigateur"
           >
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
+        {onVerify && (
+          <button
+            type="button"
+            onClick={onVerify}
+            disabled={!canRender}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            title="Vérifier l’app avec Code Buddy (web_test)"
+            aria-label="Vérifier l’app avec web_test"
+          >
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            Vérifier
           </button>
         )}
       </header>

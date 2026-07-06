@@ -89,7 +89,8 @@ export function buildDevPlan(prompt: string): DevPlan {
   }
 
   push('wire', 'Câbler l’état & la navigation', 'Relier les composants et les données.');
-  push('run', 'Lancer et vérifier la preview', 'Démarrer le serveur de dev et tester le rendu.');
+  push('run', 'Lancer la preview', 'Démarrer le serveur de dev et afficher le rendu.');
+  push('verify', 'Vérifier avec web_test', 'Vérification navigateur par Code Buddy : erreurs console/page + assertions.');
 
   return { title: titleFrom(prompt), stack, steps };
 }
@@ -127,14 +128,19 @@ export function advancePlan(plan: DevPlan, s: PlanSignals): DevPlan {
   }
 
   if (s.previewRunning) {
-    for (const step of steps) if (step.id !== 'run') step.status = 'done';
+    // App is built + served; everything up to run is done. Verifying is the
+    // actionable next step (the user clicks "Vérifier" → Code Buddy web_test).
+    for (const step of steps) if (step.id !== 'run' && step.id !== 'verify') step.status = 'done';
   }
 
   const run = find('run');
   if (run) run.status = s.previewRunning ? 'done' : 'pending';
 
+  const verify = find('verify');
+  if (verify) verify.status = s.previewRunning ? 'active' : 'pending';
+
   if (s.busy) {
-    const firstPending = steps.find((x) => x.status === 'pending' && x.id !== 'run');
+    const firstPending = steps.find((x) => x.status === 'pending' && x.id !== 'run' && x.id !== 'verify');
     if (firstPending) firstPending.status = 'active';
   }
 
