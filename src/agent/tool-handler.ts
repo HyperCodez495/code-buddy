@@ -837,11 +837,16 @@ export class ToolHandler {
         }
       } catch { /* analytics module optional */ }
 
-      // Return final result
+      // Return final result. Hooks may rewrite success/output/error, but the
+      // structured `data` block must survive: downstream consumers rely on it
+      // (tool_search → data.names drives the selection expansion; web_test →
+      // data.passed; gui/browser overlays). Rebuilding without it silently
+      // stripped data from EVERY interactive tool result.
       return {
         success: finalHookResult.success,
         output: finalHookResult.output,
         error: finalHookResult.error,
+        ...(result.data !== undefined ? { data: result.data } : {}),
       };
     } catch (error: unknown) {
       const errorMessage = getErrorMessage(error);

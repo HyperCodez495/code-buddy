@@ -1126,6 +1126,10 @@ Look at the screenshot and find the element matching the user's intent. Output o
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // See processUserMessageStream — the system prompt builds async and a
+    // first turn must not race it (embedded hosts don't await it themselves).
+    await this.systemPromptReady;
+
     // Lazy-wire decision memory provider on first call
     this.ensureDecisionMemoryProvider();
 
@@ -1162,6 +1166,14 @@ Look at the screenshot and find the element matching the user's intent. Output o
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
+    // The system prompt is built ASYNC at construction. The CLI awaits
+    // systemPromptReady before its first turn, but embedded hosts (Cowork's
+    // engine adapter) did not — a turn fired right after agent creation went
+    // to the LLM with NO system message and no settled tool selection
+    // (observed live: 23-77 input tokens, "je ne peux pas générer d'image").
+    // Await here so every host is covered; resolved-promise cost is ~zero.
+    await this.systemPromptReady;
+
     // Lazy-wire decision memory provider on first call
     this.ensureDecisionMemoryProvider();
 
