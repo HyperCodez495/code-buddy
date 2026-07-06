@@ -3,7 +3,12 @@
  * block, summarize, and reject malformed input.
  */
 import { describe, expect, it } from 'vitest';
-import { parseWebTestResult, summarizeReport } from '../src/renderer/components/studio/web-test-report-model';
+import {
+  latestWebTestReport,
+  parseWebTestOutput,
+  parseWebTestResult,
+  summarizeReport,
+} from '../src/renderer/components/studio/web-test-report-model';
 
 describe('parseWebTestResult', () => {
   it('parses a real web_test data block', () => {
@@ -38,6 +43,67 @@ describe('parseWebTestResult', () => {
     expect(r.consoleErrorCount).toBe(0);
     expect(r.networkFailureCount).toBe(0);
     expect(r.screenshotPath).toBeUndefined();
+  });
+});
+
+describe('parseWebTestOutput', () => {
+  // Verbatim shape of web-test-tool.ts report() — the only form the renderer sees.
+  const realOutput = [
+    'Web test FAILED — http://127.0.0.1:5173/',
+    '✓ navigation: loaded http://127.0.0.1:5173/',
+    '✗ console: 2 error(s): TypeError: x is undefined | ReferenceError: y',
+    '✗ network: 1 request(s) failed: - GET /api/data → 500',
+    '✓ assert text "Todo": found',
+    'Screenshot: /tmp/codebuddy-shot.png',
+    '',
+    'Interactive elements:',
+    '[1] button "Ajouter"',
+    '',
+    'Fix the failures above, then re-run web_test to verify.',
+  ].join('\n');
+
+  it('parses the real text report emitted by web-test-tool', () => {
+    const r = parseWebTestOutput(realOutput)!;
+    expect(r.passed).toBe(false);
+    expect(r.url).toBe('http://127.0.0.1:5173/');
+    expect(r.checks.map((c) => c.name)).toEqual(['navigation', 'console', 'network', 'assert text "Todo"']);
+    expect(r.checks[1]!.passed).toBe(false);
+    expect(r.consoleErrorCount).toBe(2);
+    expect(r.networkFailureCount).toBe(1);
+    expect(r.screenshotPath).toBe('/tmp/codebuddy-shot.png');
+  });
+
+  it('parses a passing report with zero counts', () => {
+    const r = parseWebTestOutput(
+      'Web test PASSED — http://localhost:3000/\n✓ navigation: loaded\n✓ console: no console/page errors\n✓ network: no failed requests',
+    )!;
+    expect(r.passed).toBe(true);
+    expect(r.consoleErrorCount).toBe(0);
+    expect(r.networkFailureCount).toBe(0);
+    expect(r.screenshotPath).toBeUndefined();
+  });
+
+  it('returns null on non-report text and empty input', () => {
+    expect(parseWebTestOutput('Command completed successfully')).toBeNull();
+    expect(parseWebTestOutput('')).toBeNull();
+    expect(parseWebTestOutput(undefined)).toBeNull();
+  });
+});
+
+describe('latestWebTestReport', () => {
+  it('picks the LAST parseable web_test step in the trace', () => {
+    const steps = [
+      { toolName: 'web_test', toolOutput: 'Web test FAILED — http://a/\n✗ console: 1 error(s): boom' },
+      { toolName: 'str_replace', toolOutput: 'edited' },
+      { toolName: 'web_test', toolOutput: 'Web test PASSED — http://a/\n✓ console: no console/page errors' },
+    ];
+    const r = latestWebTestReport(steps)!;
+    expect(r.passed).toBe(true);
+  });
+
+  it('returns null when no web_test ran', () => {
+    expect(latestWebTestReport([{ toolName: 'bash', toolOutput: 'ok' }])).toBeNull();
+    expect(latestWebTestReport([])).toBeNull();
   });
 });
 

@@ -3,7 +3,7 @@
  * (stack detection, feature steps, theme, always-present scaffold/run bookends).
  */
 import { describe, expect, it } from 'vitest';
-import { buildDevPlan, advancePlan } from '../src/renderer/components/studio/dev-plan';
+import { buildDevPlan, advancePlan, parsePlanBlock, stripPlanBlocks, latestLlmPlan } from '../src/renderer/components/studio/dev-plan';
 
 describe('buildDevPlan', () => {
   it('detects React by default and brackets the plan with scaffold + verify', () => {
@@ -77,5 +77,79 @@ describe('advancePlan', () => {
   it('is pure — does not mutate the input plan', () => {
     advancePlan(base, { hasFiles: true, previewRunning: true, busy: false });
     expect(base.steps.every((s) => s.status === 'pending')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LLM plan (```plan block emitted by the agent, parsed by parsePlanBlock)
+// ---------------------------------------------------------------------------
+
+describe('parsePlanBlock', () => {
+  const block = (json: string) => 'Voici le plan :\n```plan\n' + json + '\n```\nJe construis maintenant.';
+
+  it('parses a real agent-emitted plan and normalizes anchors', () => {
+    const plan = parsePlanBlock(
+      block(
+        JSON.stringify({
+          title: 'Pomodoro néon',
+          stack: 'HTML/CSS/JS',
+          steps: [
+            { id: 'scaffold', title: 'Créer la structure' },
+            { id: 'timer-core', title: 'Minuteur 25/5', detail: 'start/pause/reset', match: ['timer'] },
+            { id: 'stats', title: 'Statistiques de sessions', match: ['stats', 'chart'] },
+          ],
+        }),
+      ),
+    )!;
+    expect(plan.title).toBe('Pomodoro néon');
+    expect(plan.stack).toBe('HTML/CSS/JS');
+    expect(plan.steps.map((s) => s.id)).toEqual(['scaffold', 'timer-core', 'stats', 'run', 'verify']);
+    expect(plan.steps[1]!.match).toEqual(['timer']);
+    expect(plan.steps.every((s) => s.status === 'pending')).toBe(true);
+  });
+
+  it('anchors the first step as scaffold when the agent forgot the id', () => {
+    const plan = parsePlanBlock(block('{"title":"App","steps":[{"title":"Créer les fichiers"},{"title":"Filtres"}]}'))!;
+    expect(plan.steps[0]!.id).toBe('scaffold');
+    expect(plan.steps.some((s) => s.id === 'run')).toBe(true);
+    expect(plan.steps.some((s) => s.id === 'verify')).toBe(true);
+  });
+
+  it('rejects malformed blocks (bad JSON, missing steps, no block)', () => {
+    expect(parsePlanBlock(block('{not json'))).toBeNull();
+    expect(parsePlanBlock(block('{"title":"x","steps":[]}'))).toBeNull();
+    expect(parsePlanBlock(block('{"steps":[{"title":"a"}]}'))).toBeNull();
+    expect(parsePlanBlock('Pas de plan ici.')).toBeNull();
+  });
+
+  it('feeds advancePlan like a deterministic plan (match keywords complete steps)', () => {
+    const plan = parsePlanBlock(block('{"title":"Todo","steps":[{"title":"Structure"},{"id":"filtres","title":"Filtres","match":["filter"]}]}'))!;
+    const advanced = advancePlan(plan, { hasFiles: true, previewRunning: false, busy: false, changedPaths: ['src/filter-bar.js'] });
+    expect(advanced.steps.find((s) => s.id === 'scaffold')!.status).toBe('done');
+    expect(advanced.steps.find((s) => s.id === 'filtres')!.status).toBe('done');
+  });
+});
+
+describe('stripPlanBlocks', () => {
+  it('removes the plan block from the visible reply', () => {
+    const text = 'Je commence.\n```plan\n{"title":"x","steps":[{"title":"a"}]}\n```\nEt voilà le reste.';
+    expect(stripPlanBlocks(text)).toBe('Je commence.\n\nEt voilà le reste.');
+    expect(stripPlanBlocks('Rien à retirer.')).toBe('Rien à retirer.');
+  });
+});
+
+describe('latestLlmPlan', () => {
+  const msg = (role: string, text: string) => ({ role, content: [{ type: 'text', text }] });
+  const planText = (title: string) => '```plan\n{"title":"' + title + '","steps":[{"title":"Structure"}]}\n```';
+
+  it('prefers the streaming partial, else the newest assistant plan', () => {
+    const messages = [msg('assistant', planText('Ancien')), msg('user', 'continue'), msg('assistant', planText('Récent'))];
+    expect(latestLlmPlan(messages)!.title).toBe('Récent');
+    expect(latestLlmPlan(messages, planText('Live'))!.title).toBe('Live');
+  });
+
+  it('returns null when no assistant message carries a plan', () => {
+    expect(latestLlmPlan([msg('assistant', 'Bonjour'), msg('user', 'salut')])).toBeNull();
+    expect(latestLlmPlan([])).toBeNull();
   });
 });

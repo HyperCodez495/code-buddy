@@ -21,8 +21,9 @@ import { useCallback, useMemo } from 'react';
 import { AppStudioView } from './studio/AppStudioView';
 import { useAppStudio } from './studio/use-app-studio';
 import { sessionToStudioMessages } from './studio/studio-chat-adapter';
-import { buildDevPlan, advancePlan } from './studio/dev-plan';
+import { buildDevPlan, advancePlan, latestLlmPlan } from './studio/dev-plan';
 import { changedFilesFromTrace } from './studio/trace-changes';
+import { latestWebTestReport } from './studio/web-test-report-model';
 import { createStudioApis } from './studio/studio-api-bridge';
 import type { StudioScaffoldRequest } from './studio/StudioComposer';
 import { buildAiGenerationPrompt } from './studio/studio-ai-generation';
@@ -181,12 +182,17 @@ function StudioView() {
   const chat = useMemo(() => {
     if (!activeSessionId || !sessionCwd) return undefined;
     const st = sessionStates[activeSessionId];
-    // bolt.new's "plan" step: derive a development plan from the app prompt
-    // (the session title is the user's raw description), then advance its steps
+    // bolt.new's "plan" step: prefer the plan the AGENT emitted (the ```plan
+    // block asked by buildAiGenerationPrompt — specific to this app), fall back
+    // to the deterministic plan derived from the prompt; then advance its steps
     // from the real project state (files present, preview running, building).
     const busy = Boolean(st?.activeTurn);
     const changes = changedFilesFromTrace(st?.traceSteps ?? []);
-    const plan = advancePlan(buildDevPlan(activeSession?.title ?? ''), {
+    // Latest web_test verification (the "Vérifier" button / the agent's own
+    // check) rendered as a PASSED/FAILED card under the chat.
+    const verifyReport = latestWebTestReport(st?.traceSteps ?? []);
+    const llmPlan = latestLlmPlan(st?.messages ?? [], st?.partialMessage);
+    const plan = advancePlan(llmPlan ?? buildDevPlan(activeSession?.title ?? ''), {
       hasFiles: viewProps.tree.length > 0,
       previewRunning: viewProps.previewStatus === 'running',
       busy,
@@ -201,6 +207,7 @@ function StudioView() {
       suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
       plan,
       changes,
+      verifyReport,
       onSend: (text: string) => {
         void continueSession(activeSessionId, text);
       },

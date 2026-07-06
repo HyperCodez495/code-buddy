@@ -155,3 +155,99 @@ function slug(s: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
 }
+
+// ---------------------------------------------------------------------------
+// LLM plan — the agent emits its own development plan as a fenced ```plan
+// JSON block at the start of its reply (asked by buildAiGenerationPrompt).
+// Parsed + normalized here; the deterministic buildDevPlan stays the fallback.
+// ---------------------------------------------------------------------------
+
+const PLAN_BLOCK_RE = /```plan\s*\n([\s\S]*?)```/;
+
+/** Max steps an LLM plan may carry (keeps the card readable). */
+const MAX_LLM_STEPS = 12;
+
+/**
+ * Parse a ```plan fenced JSON block out of an assistant reply into a DevPlan.
+ * Normalized so `advancePlan` semantics hold: the first step anchors as
+ * `scaffold` when no step claims that id, and `run`/`verify` steps are
+ * appended when missing. Returns null when there is no valid block.
+ */
+export function parsePlanBlock(text: string): DevPlan | null {
+  const match = (text ?? '').match(PLAN_BLOCK_RE);
+  if (!match) return null;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(match[1]!);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.title !== 'string' || !obj.title.trim()) return null;
+  if (!Array.isArray(obj.steps) || obj.steps.length === 0) return null;
+
+  const steps: PlanStep[] = [];
+  for (const entry of obj.steps.slice(0, MAX_LLM_STEPS)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const s = entry as Record<string, unknown>;
+    if (typeof s.title !== 'string' || !s.title.trim()) continue;
+    const id = typeof s.id === 'string' && s.id.trim() ? slug(s.id) : slug(s.title);
+    if (!id || steps.some((x) => x.id === id)) continue;
+    const matchKeys = Array.isArray(s.match)
+      ? s.match.filter((k): k is string => typeof k === 'string' && k.trim().length > 0).map((k) => k.toLowerCase())
+      : [];
+    steps.push({
+      id,
+      title: s.title.trim(),
+      ...(typeof s.detail === 'string' && s.detail.trim() ? { detail: s.detail.trim() } : {}),
+      status: 'pending',
+      ...(matchKeys.length > 0 ? { match: matchKeys } : {}),
+    });
+  }
+  if (steps.length === 0) return null;
+
+  if (!steps.some((s) => s.id === 'scaffold')) steps[0]!.id = 'scaffold';
+  if (!steps.some((s) => s.id === 'run')) {
+    steps.push({ id: 'run', title: 'Lancer la preview', detail: 'Démarrer le serveur de dev et afficher le rendu.', status: 'pending' });
+  }
+  if (!steps.some((s) => s.id === 'verify')) {
+    steps.push({ id: 'verify', title: 'Vérifier avec web_test', detail: 'Vérification navigateur par Code Buddy : erreurs console/page + assertions.', status: 'pending' });
+  }
+
+  const stack = typeof obj.stack === 'string' && obj.stack.trim() ? obj.stack.trim() : 'App web';
+  return { title: obj.title.trim().slice(0, 60), stack, steps };
+}
+
+/** Remove ```plan blocks from a reply's visible text (the card renders them). */
+export function stripPlanBlocks(text: string): string {
+  return text.replace(/```plan\s*\n[\s\S]*?```/g, '').trim();
+}
+
+export interface PlanSourceMessage {
+  role: string;
+  content: ReadonlyArray<{ type: string; text?: string }>;
+}
+
+/**
+ * The most recent LLM-emitted plan in a session: the streaming partial reply
+ * wins (live plan as it lands), else assistant messages scanned newest-first.
+ */
+export function latestLlmPlan(messages: ReadonlyArray<PlanSourceMessage>, partial?: string): DevPlan | null {
+  if (partial) {
+    const live = parsePlanBlock(partial);
+    if (live) return live;
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role !== 'assistant') continue;
+    const text = m.content
+      .filter((b) => b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text ?? '')
+      .join('');
+    const plan = parsePlanBlock(text);
+    if (plan) return plan;
+  }
+  return null;
+}

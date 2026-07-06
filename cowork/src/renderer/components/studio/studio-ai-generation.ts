@@ -17,6 +17,23 @@ export function buildAiGenerationPrompt(req: StudioScaffoldRequest): string {
   lines.push(`Génère une application web complète et fonctionnelle : ${req.prompt}`);
   lines.push('');
 
+  // bolt.new's plan step, LLM edition: the agent opens with a machine-readable
+  // plan block that App Studio renders as the "Plan de vol" card (parsed by
+  // dev-plan.ts parsePlanBlock; hidden from the chat bubble).
+  lines.push('COMMENCE ta réponse par un plan de développement dans un bloc ```plan (JSON strict) :');
+  lines.push('```plan');
+  lines.push(
+    '{"title":"<nom court de l\'app>","stack":"HTML/CSS/JS","steps":[' +
+      '{"id":"scaffold","title":"Créer la structure (index.html, style.css, app.js)"},' +
+      '{"id":"<kebab-case>","title":"<étape fonctionnelle>","detail":"<détail court>","match":["<mot-clé de fichier>"]}]}',
+  );
+  lines.push('```');
+  lines.push(
+    "3 à 6 étapes fonctionnelles SPÉCIFIQUES à cette app (pas de générique) ; `match` = mots-clés de chemins de fichiers " +
+      'qui marqueront l\'étape faite. N\'inclus PAS d\'étapes "run"/"verify" (ajoutées automatiquement). Après le bloc, construis l\'app.',
+  );
+  lines.push('');
+
   if (req.designSystem) {
     const ds = findDesignSystem(req.designSystem);
     const name = ds?.name ?? req.designSystem;

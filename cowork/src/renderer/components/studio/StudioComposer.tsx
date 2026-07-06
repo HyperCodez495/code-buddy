@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { suggestTemplate, type StudioTemplateId } from './utils/studio-intent.js';
 import { designSystemsByCategory, findDesignSystem } from './design-systems-catalog.js';
 import { DesignSystemGallery } from './DesignSystemGallery.js';
+import { PromptEnhancer } from './PromptEnhancer.js';
+import { enhancePrompt } from './prompt-enhance-model.js';
 
 export interface TemplateCard {
   id: StudioTemplateId;
@@ -77,6 +79,10 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
   const designGroups = useMemo(() => designSystemsByCategory(), []);
   const selectedDesign = designSystem ? findDesignSystem(designSystem) : undefined;
   const requiredVars = VARS_BY_TEMPLATE[template];
+  // bolt.new's "enhance prompt": offered only when the enrichment would
+  // actually change the description (terse prompt missing stack/style/features).
+  const enhancement = useMemo(() => enhancePrompt(prompt), [prompt]);
+  const showEnhancer = Boolean(prompt.trim()) && enhancement.enriched !== prompt.trim();
 
   useEffect(() => {
     if (templates.length === 0) return;
@@ -184,6 +190,14 @@ export function StudioComposer({ templates, onScaffold, onGenerateWithAI, onProm
             className="min-h-[104px] min-w-0 flex-1 resize-y bg-transparent py-1 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
           />
         </div>
+        {showEnhancer ? (
+          <PromptEnhancer
+            suggestions={enhancement.suggestions}
+            enriched={enhancement.enriched}
+            onApply={updatePrompt}
+            busy={busy}
+          />
+        ) : null}
         <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto]">
           <select
             value={selectedTemplate?.id ?? template}

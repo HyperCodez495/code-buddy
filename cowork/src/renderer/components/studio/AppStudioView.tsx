@@ -18,6 +18,8 @@ import { StaticPreviewNotice } from './StaticPreviewNotice.js';
 import { describePreviewMode, previewEntry } from './static-project-model.js';
 import { EditorTabs } from './EditorTabs.js';
 import type { EditorTab } from './editor-tabs-model.js';
+import { VerifyReportCard } from './VerifyReportCard.js';
+import type { WebTestReport } from './web-test-report-model.js';
 
 /** bolt.new-style iterate chat, driven by the active project session. */
 export interface StudioChatProps {
@@ -28,6 +30,8 @@ export interface StudioChatProps {
   plan?: DevPlan;
   /** Files the agent created/edited this session (bolt.new's changed-files strip). */
   changes?: StudioFileChange[];
+  /** Latest web_test verification report from the agent session, if any. */
+  verifyReport?: WebTestReport | null;
   onSend: (text: string) => void;
   onStop?: () => void;
 }
@@ -229,6 +233,11 @@ export function AppStudioView({
                 onStop={chat.onStop}
               />
             </div>
+            {chat.verifyReport ? (
+              <div className="max-h-64 shrink-0 overflow-y-auto border-t border-border p-2">
+                <VerifyReportCard report={chat.verifyReport} {...(onVerifyPreview ? { onRerun: onVerifyPreview } : {})} />
+              </div>
+            ) : null}
             {chat.changes && chat.changes.length > 0 ? (
               <div className="shrink-0 border-t border-border">
                 <ChangedFilesStrip changes={chat.changes} onOpen={onOpenFile} />
