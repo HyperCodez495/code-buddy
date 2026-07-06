@@ -3241,6 +3241,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       } | null;
       history: Array<{ at: string; taskType: string; dhi: number }>;
     }> => ipcRenderer.invoke('os.councilHealth', historyLimit),
+    /** Current Collective Knowledge Graph (folded from the append-only ledger). */
+    knowledgeGraph: (maxNodes?: number): Promise<{
+      nodes: Array<{ id: string; type: 'lesson' | 'decision' | 'fact' | 'discovery'; label: string; confidence?: number }>;
+      edges: Array<{ from: string; to: string; kind: string }>;
+      truncated: boolean;
+    }> => ipcRenderer.invoke('os.knowledgeGraph', maxNodes),
   },
 
   // Fleet — multi-host Code Buddy listener (GAP 3)
@@ -7152,6 +7158,16 @@ declare global {
             }>;
           } | null;
           history: Array<{ at: string; taskType: string; dhi: number }>;
+        }>;
+        knowledgeGraph: (maxNodes?: number) => Promise<{
+          nodes: Array<{
+            id: string;
+            type: 'lesson' | 'decision' | 'fact' | 'discovery';
+            label: string;
+            confidence?: number;
+          }>;
+          edges: Array<{ from: string; to: string; kind: string }>;
+          truncated: boolean;
         }>;
       };
       fleet: {

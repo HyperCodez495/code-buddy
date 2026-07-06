@@ -3,7 +3,7 @@
  * temp JSONL ledgers shaped exactly like ~/.codebuddy's (verbatim lines from
  * production) and asserts the arena session mapping.
  */
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }));
 
-import { readCouncilHealth } from '../src/main/ipc/os-ipc';
+import { readCouncilHealth, readKnowledgeGraph } from '../src/main/ipc/os-ipc';
 
 const HEALTH_LINES = [
   '{"at":"2026-07-01T22:10:31.900Z","taskType":"french","planMode":"collective","seats":3,"answers":3,"seatSurvival":1,"judgeAlive":1,"stanceDivergence":0.927,"judgeDiscrimination":0.4,"dissentRetention":0.253,"anchorRatio":0.159,"dhi":0.8318528867824643}',
@@ -69,5 +69,54 @@ describe('readCouncilHealth', () => {
     const { history } = await readCouncilHealth(1, makeLedgerDir());
     expect(history).toHaveLength(1);
     expect(history[0]!.dhi).toBe(0.61);
+  });
+});
+
+describe('readKnowledgeGraph', () => {
+  // Verbatim shape of the real CKG ledger (~/.codebuddy/collective/ckg-ledger.jsonl)
+  const LEDGER = [
+    '{"v":1,"kind":"entity","recordedAt":"2026-06-30T07:45:41.050Z","agentId":"ministar/code-buddy","id":"discovery:collective:arxiv-1","type":"discovery","name":"arxiv:1","text":"Personalized attention…","confidence":0.7}',
+    '{"v":1,"kind":"entity","recordedAt":"2026-06-30T07:46:00.000Z","agentId":"ministar/code-buddy","id":"lesson:collective:l1","type":"lesson","name":"toujours gater no-mocks","confidence":0.9}',
+    '{"v":1,"kind":"relation","recordedAt":"2026-06-30T07:45:41.846Z","agentId":"ministar/code-buddy","sourceId":"discovery:collective:arxiv-1","targetId":"lesson:collective:l1","relType":"related_to","reason":"semantic neighbour"}',
+    // Last write wins: same id re-ingested with a new confidence
+    '{"v":1,"kind":"entity","recordedAt":"2026-07-01T08:00:00.000Z","agentId":"ministar/code-buddy","id":"discovery:collective:arxiv-1","type":"discovery","name":"arxiv:1 v2","confidence":0.8}',
+    // Tombstone drops a node
+    '{"v":1,"kind":"entity","recordedAt":"2026-07-01T09:00:00.000Z","agentId":"a","id":"fact:collective:f1","type":"fact","name":"périmé","confidence":0.5}',
+    '{"v":1,"kind":"tombstone","recordedAt":"2026-07-01T10:00:00.000Z","agentId":"a","id":"fact:collective:f1"}',
+    // Unknown kinds/types ignored, corrupt line skipped
+    '{"v":1,"kind":"entity","id":"x:1","type":"weird","name":"ignored"}',
+    '{broken',
+  ].join('\n');
+
+  function ledgerDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'ckg-test-'));
+    const collective = join(dir, 'collective');
+    mkdirSync(collective, { recursive: true });
+    writeFileSync(join(collective, 'ckg-ledger.jsonl'), LEDGER);
+    return dir;
+  }
+
+  it('folds the ledger: last write wins, tombstones drop, relations kept', async () => {
+    const g = await readKnowledgeGraph(4000, ledgerDir());
+    expect(g.truncated).toBe(false);
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(['discovery:collective:arxiv-1', 'lesson:collective:l1']);
+    const arxiv = g.nodes.find((n) => n.id === 'discovery:collective:arxiv-1')!;
+    expect(arxiv.label).toBe('arxiv:1 v2');
+    expect(arxiv.confidence).toBe(0.8);
+    expect(g.edges).toEqual([{ from: 'discovery:collective:arxiv-1', to: 'lesson:collective:l1', kind: 'related_to' }]);
+  });
+
+  it('caps nodes to maxNodes keeping the newest, and filters dangling edges', async () => {
+    const g = await readKnowledgeGraph(1, ledgerDir());
+    expect(g.truncated).toBe(true);
+    expect(g.nodes).toHaveLength(1);
+    // arxiv-1 was re-written LAST → it is the newest kept node.
+    expect(g.nodes[0]!.id).toBe('discovery:collective:arxiv-1');
+    expect(g.edges).toEqual([]); // the lesson end is gone → edge dropped
+  });
+
+  it('is fail-open on a missing ledger', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'ckg-empty-'));
+    expect(await readKnowledgeGraph(4000, empty)).toEqual({ nodes: [], edges: [], truncated: false });
   });
 });

@@ -132,12 +132,95 @@ export async function readCouncilHealth(historyLimit = 20, dir = codebuddyDir())
   };
 }
 
+// ---------------------------------------------------------------------------
+// Collective Knowledge Graph — read the append-only CKG ledger
+// (~/.codebuddy/collective/ckg-ledger.jsonl, written by the core's
+// collective-knowledge-graph.ts). Read-only fold: last write per id wins,
+// tombstones/retracts drop the id.
+// ---------------------------------------------------------------------------
+
+interface CkgLedgerLine {
+  kind?: string;
+  id?: string;
+  type?: string;
+  name?: string;
+  text?: string;
+  confidence?: number;
+  sourceId?: string;
+  targetId?: string;
+  relType?: string;
+}
+
+export interface OsKnowledgeNode {
+  id: string;
+  type: 'lesson' | 'decision' | 'fact' | 'discovery';
+  label: string;
+  confidence?: number;
+}
+
+export interface OsKnowledgeEdge {
+  from: string;
+  to: string;
+  kind: string;
+}
+
+export interface OsKnowledgeGraphPayload {
+  nodes: OsKnowledgeNode[];
+  edges: OsKnowledgeEdge[];
+  /** True when nodes were dropped to respect maxNodes. */
+  truncated: boolean;
+}
+
+const KNOWN_NODE_TYPES = new Set(['lesson', 'decision', 'fact', 'discovery']);
+
+/** Fold the CKG ledger into current nodes + edges (newest last). */
+export async function readKnowledgeGraph(maxNodes = 4000, dir = codebuddyDir()): Promise<OsKnowledgeGraphPayload> {
+  const lines = await readJsonlLines<CkgLedgerLine>(path.join(dir, 'collective', 'ckg-ledger.jsonl'));
+  const nodes = new Map<string, OsKnowledgeNode>();
+  const edges: OsKnowledgeEdge[] = [];
+
+  for (const line of lines) {
+    if (line.kind === 'entity' && line.id && KNOWN_NODE_TYPES.has(line.type ?? '')) {
+      nodes.delete(line.id); // re-insert so the LAST write also gets the newest position
+      nodes.set(line.id, {
+        id: line.id,
+        type: line.type as OsKnowledgeNode['type'],
+        label: (line.name || line.text || line.id).slice(0, 160),
+        ...(typeof line.confidence === 'number' ? { confidence: line.confidence } : {}),
+      });
+    } else if (line.kind === 'relation' && line.sourceId && line.targetId) {
+      edges.push({ from: line.sourceId, to: line.targetId, kind: line.relType ?? 'related_to' });
+    } else if ((line.kind === 'tombstone' || line.kind === 'retract') && line.id) {
+      nodes.delete(line.id);
+    }
+  }
+
+  const all = Array.from(nodes.values());
+  const truncated = all.length > maxNodes;
+  // Newest entries are the most relevant in the cockpit — keep the tail.
+  const kept = truncated ? all.slice(all.length - maxNodes) : all;
+  const keptIds = new Set(kept.map((n) => n.id));
+  return {
+    nodes: kept,
+    edges: edges.filter((e) => keptIds.has(e.from) && keptIds.has(e.to)),
+    truncated,
+  };
+}
+
 export function registerOsIpcHandlers() {
   ipcMain.handle('os.councilHealth', async (_event, historyLimit?: number) => {
     try {
       return await readCouncilHealth(historyLimit);
     } catch {
       return { session: null, history: [] } satisfies OsCouncilHealthPayload;
+    }
+  });
+
+  ipcMain.handle('os.knowledgeGraph', async (_event, maxNodes?: number) => {
+    try {
+      return await readKnowledgeGraph(maxNodes);
+    } catch {
+      return { nodes: [], edges: [], truncated: false } satisfies OsKnowledgeGraphPayload;
     }
   });
 }

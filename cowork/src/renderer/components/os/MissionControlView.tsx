@@ -14,6 +14,8 @@ import { CouncilArenaView } from './CouncilArenaView';
 import { FleetLoadStrip } from './FleetLoadStrip';
 import { FleetTopologyView } from './FleetTopologyView';
 import { PeerCapabilityMatrix } from './PeerCapabilityMatrix';
+import { KnowledgeGraphView } from '../os-panels/KnowledgeGraphView';
+import type { KnowledgeGraphEdge, KnowledgeGraphNode } from '../os-panels/knowledge-graph-view-model.js';
 import type { CouncilSession } from './util/council-model';
 import type { FleetLoad } from './util/fleet-load-model';
 import type { Peer, PeerStatus } from './util/fleet-model';
@@ -111,6 +113,22 @@ export function MissionControlView() {
     };
   }, []);
 
+  // Real Collective Knowledge Graph (the robot's shared memory), folded from
+  // the append-only ledger by the os.knowledgeGraph IPC.
+  const [knowledge, setKnowledge] = useState<{ nodes: KnowledgeGraphNode[]; edges: KnowledgeGraphEdge[] }>({ nodes: [], edges: [] });
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI?.os
+      ?.knowledgeGraph()
+      .then((payload) => {
+        if (!cancelled && payload) setKnowledge({ nodes: payload.nodes, edges: payload.edges });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Real autonomy daemon state (the always-on `codebuddy-autonomy` service).
   const [daemonRunning, setDaemonRunning] = useState<boolean | null>(null);
   const refreshDaemon = useCallback(() => {
@@ -171,6 +189,8 @@ export function MissionControlView() {
           <CouncilArenaView session={council ?? EMPTY_COUNCIL} />
           <PeerCapabilityMatrix peers={peers} capabilities={capabilities} />
         </div>
+
+        <KnowledgeGraphView nodes={knowledge.nodes} edges={knowledge.edges} />
 
         <AutonomyControlPanel
           state={autonomyState}
