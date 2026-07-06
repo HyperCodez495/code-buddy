@@ -6,6 +6,7 @@ import {
   isStaticProject,
   previewEntry,
   describePreviewMode,
+  staticServePlan,
 } from '../src/renderer/components/studio/static-project-model';
 import type { TreeNode } from '../src/renderer/components/studio/utils/file-tree-model';
 
@@ -35,5 +36,20 @@ describe('static-project-model', () => {
   it('finds the static entry path', () => {
     expect(previewEntry(staticTree)).toBe('index.html');
     expect(previewEntry([{ name: 'src', path: 'src', type: 'directory' }])).toBeNull();
+  });
+});
+
+describe('staticServePlan', () => {
+  it('builds a loopback python http.server command with a path-stable port', () => {
+    const a = staticServePlan('/tmp/e2e-meteo5', 'linux');
+    expect(a.command).toMatch(/^python3 -m http\.server 8[7-8]\d\d --bind 127\.0\.0\.1$/);
+    expect(a.url).toMatch(/^http:\/\/127\.0\.0\.1:8[7-8]\d\d\/$/);
+    // Stable for the same path, different for another path (usually)
+    expect(staticServePlan('/tmp/e2e-meteo5', 'linux')).toEqual(a);
+    expect(staticServePlan('/tmp/autre-projet', 'linux').url).not.toBe(a.url);
+  });
+
+  it('uses python (not python3) on Windows', () => {
+    expect(staticServePlan('C:/apps/site', 'win32').command).toMatch(/^python -m http\.server/);
   });
 });

@@ -26,3 +26,28 @@ export function previewEntry(tree: readonly TreeNode[]): string | null {
 export function describePreviewMode(tree: readonly TreeNode[]): PreviewMode {
   return isStaticProject(tree) ? 'static' : 'dev-server';
 }
+
+export interface StaticServePlan {
+  command: string;
+  url: string;
+}
+
+/**
+ * Shell plan to serve a STATIC project ("Lancer" on a generated HTML/CSS/JS
+ * app): a loopback python http.server on a port derived from the project
+ * path (stable per project, avoids collisions between two open projects).
+ * Without this, startDev falls back to `npm run dev` and dies on
+ * ENOENT package.json — seen live on /tmp/e2e-meteo5.
+ */
+export function staticServePlan(projectRoot: string, platform: string): StaticServePlan {
+  let hash = 0;
+  for (let i = 0; i < projectRoot.length; i++) {
+    hash = (hash * 31 + projectRoot.charCodeAt(i)) | 0;
+  }
+  const port = 8700 + (Math.abs(hash) % 200);
+  const python = platform === 'win32' ? 'python' : 'python3';
+  return {
+    command: `${python} -m http.server ${port} --bind 127.0.0.1`,
+    url: `http://127.0.0.1:${port}/`,
+  };
+}

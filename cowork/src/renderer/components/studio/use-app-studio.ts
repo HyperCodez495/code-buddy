@@ -14,6 +14,7 @@ import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
 import { filterStudioTree, pickDefaultFile, type TreeNode } from './utils/file-tree-model.js';
 import { detectDevCommand } from '../studio-iterate/studio-preview-model.js';
+import { isStaticProject, staticServePlan } from './static-project-model.js';
 import { openTab, closeTab as closeTabModel, nextActiveAfterClose, type EditorTab } from './editor-tabs-model.js';
 import type { AppStudioApis, CommandOutputEvent, StudioTemplateCard } from './studio-api.js';
 
@@ -22,6 +23,8 @@ export interface UseAppStudioOptions {
   projectRoot?: string;
   devCommand?: string;
   devUrl?: string;
+  /** Host platform (process.platform) — picks the static-serve python binary. */
+  platform?: string;
   commandIdFactory?: () => string;
 }
 
@@ -257,6 +260,13 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     // Astro/CRA) so "Lancer" works beyond Vite; explicit input/options win.
     let command = input?.command ?? options.devCommand;
     let url = input?.url ?? options.devUrl;
+    // Static project (index.html, no package.json — the AI generation's usual
+    // output): serve it with a loopback http.server instead of npm run dev.
+    if (!command && isStaticProject(tree)) {
+      const plan = staticServePlan(cwd, options.platform ?? 'linux');
+      command = plan.command;
+      url = url ?? plan.url;
+    }
     if (!command || !url) {
       try {
         const pkg = await apis.files.read(cwd, 'package.json');
@@ -269,11 +279,38 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
         /* fall back to Vite defaults below */
       }
     }
-    const result = await apis.devServer.start({
+    const startInput = {
       cwd,
       command: command ?? 'npm run dev',
       url: url ?? 'http://127.0.0.1:5173/',
-    });
+    };
+    let result = await apis.devServer.start(startInput);
+    // Port occupé par NOTRE propre serveur d'une session précédente (le main
+    // garde le process quand le renderer se recharge et perd le pid) : le
+    // retrouver via status(), l'arrêter, retenter UNE fois. Un service
+    // inconnu sur le port reste une erreur (app_server n'adopte jamais).
+    if (!result.ok && /already in use/i.test(result.error)) {
+      const status = await apis.devServer.status();
+      // Plusieurs instances peuvent exister pour ce projet (les mortes des
+      // lancements précédents restent listées) — ne stopper que la VIVANTE
+      // la plus récente, sinon on stoppe un cadavre et le port reste pris.
+      const ours = status.ok
+        ? status.data.instances
+            .filter((inst) => (inst.cwd === cwd || inst.url === startInput.url) && inst.state === 'running')
+            .pop()
+        : undefined;
+      if (ours) {
+        appendTerminal(`Ancien serveur ${ours.pid} arrêté (reprise après rechargement).`);
+        await apis.devServer.stop(ours.pid);
+        // Le socket met un instant à se libérer après SIGTERM — retente avec
+        // un court backoff plutôt qu'échouer sur le premier essai.
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          result = await apis.devServer.start(startInput);
+          if (result.ok || !/already in use/i.test(result.error)) break;
+        }
+      }
+    }
     if (result.ok) {
       setDevPid(result.data.pid);
       setPreviewUrl(result.data.url);
@@ -286,7 +323,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
       setBuildPhase('error');
       appendTerminal(result.error);
     }
-  }, [apis, appendTerminal, beginPhase, options.devCommand, options.devUrl, projectRoot]);
+  }, [apis, appendTerminal, beginPhase, options.devCommand, options.devUrl, options.platform, projectRoot, tree]);
 
   const stopDev = useCallback(async () => {
     if (devPid === null) return;

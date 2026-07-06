@@ -144,7 +144,12 @@ function StudioView() {
   const sessionCwd = activeSession?.cwd ?? '';
   // Point the workbench at the active project session's dir so files/preview
   // populate as the app is generated (bolt.new-style unified workspace).
-  const { viewProps, actions } = useAppStudio({ apis, projectRoot: sessionCwd });
+  // platform picks the static-serve python binary (win32 → python).
+  const { viewProps, actions } = useAppStudio({
+    apis,
+    projectRoot: sessionCwd,
+    platform: window.electronAPI?.platform ?? 'linux',
+  });
   const { startSession, continueSession } = useIPC();
   const setActiveSession = useAppStore((st) => st.setActiveSession);
   const workingDir = useAppStore((st) => st.workingDir);
