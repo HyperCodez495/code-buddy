@@ -11,12 +11,16 @@ import { TemplateGallery } from '../template-gallery/TemplateGallery.js';
 import { DEFAULT_TEMPLATES } from '../template-gallery/template-kinds.js';
 import { StudioChatPanel } from '../studio-iterate/StudioChatPanel.js';
 import type { StudioMessage } from '../studio-iterate/iterate-model.js';
+import { DevPlanCard } from './DevPlanCard.js';
+import type { DevPlan } from './dev-plan.js';
 
 /** bolt.new-style iterate chat, driven by the active project session. */
 export interface StudioChatProps {
   messages: StudioMessage[];
   busy?: boolean;
   suggestions?: string[];
+  /** Development plan derived from the app prompt (bolt.new's plan step). */
+  plan?: DevPlan;
   onSend: (text: string) => void;
   onStop?: () => void;
 }
@@ -165,13 +169,16 @@ export function AppStudioView({
         <BuildStatusStrip phase={buildPhase} elapsedMs={buildElapsedMs} error={buildError} onStop={onStopBuild} />
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
           <div className="flex min-h-0 flex-col border-r border-border bg-surface">
-            <StudioChatPanel
-              messages={chat.messages}
-              busy={chat.busy}
-              suggestions={chat.suggestions}
-              onSend={chat.onSend}
-              onStop={chat.onStop}
-            />
+            {chat.plan ? <DevPlanCard plan={chat.plan} /> : null}
+            <div className="min-h-0 flex-1">
+              <StudioChatPanel
+                messages={chat.messages}
+                busy={chat.busy}
+                suggestions={chat.suggestions}
+                onSend={chat.onSend}
+                onStop={chat.onStop}
+              />
+            </div>
           </div>
           {hasProject ? (
             workbench

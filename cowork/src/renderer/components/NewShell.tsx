@@ -21,6 +21,7 @@ import { useCallback, useMemo } from 'react';
 import { AppStudioView } from './studio/AppStudioView';
 import { useAppStudio } from './studio/use-app-studio';
 import { sessionToStudioMessages } from './studio/studio-chat-adapter';
+import { buildDevPlan } from './studio/dev-plan';
 import { createStudioApis } from './studio/studio-api-bridge';
 import type { StudioScaffoldRequest } from './studio/StudioComposer';
 import { buildAiGenerationPrompt } from './studio/studio-ai-generation';
@@ -163,15 +164,19 @@ function StudioView() {
   const chat = useMemo(() => {
     if (!activeSessionId || !sessionCwd) return undefined;
     const st = sessionStates[activeSessionId];
+    // bolt.new's "plan" step: derive a development plan from the app prompt
+    // (the session title is the user's raw description).
+    const plan = buildDevPlan(activeSession?.title ?? '');
     return {
       messages: sessionToStudioMessages(st?.messages ?? [], { running: Boolean(st?.activeTurn) }),
       busy: Boolean(st?.activeTurn),
       suggestions: ['Change le thème', 'Ajoute un mode sombre', 'Rends-le responsive'],
+      plan,
       onSend: (text: string) => {
         void continueSession(activeSessionId, text);
       },
     };
-  }, [activeSessionId, sessionCwd, sessionStates, continueSession]);
+  }, [activeSessionId, sessionCwd, sessionStates, continueSession, activeSession?.title]);
 
   return (
     <AppStudioView {...viewProps} onGenerateWithAI={onGenerateWithAI} {...(chat ? { chat } : {})} />
