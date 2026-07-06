@@ -358,7 +358,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   par le modèle pur, overlay. F (OnboardingTour 7 étapes) — s'affiche à la PREMIÈRE ouverture (latch localStorage
   cowork.tourSeen) + ⌘K « Visite guidée ». Prouvé live (tour rendu, skip pose le latch). Vague E (8 templates)
   tourne encore — monitor armé.
-- **File suivante (idées)** : fin vague E ; e2e confirmation organique ; app vitrine vidéo hero e2e.
+- **SALVE 2 SOLDÉE — E CÂBLÉE (`suite 815c5311`)** : les 8 templates riches fusionnés dans la galerie via un pont
+  (EXTRA_GALLERY_ITEMS : format vague ≠ format galerie, la valeur = les PROMPTS complets — la sélection seed le
+  prompt riche verbatim). Prouvé live (18 cartes, « Portfolio créatif » → brief complet dans le composer).
+  Gotcha vagues : le brief référençait un fichier de type inexistant → Codex a inventé un format raisonnable ;
+  toujours vérifier l'id réel des données produites (extra-documentation-site ≠ extra-docs-site). Bilan salves
+  du jour : 6 vagues lancées, 6 récupérées+câblées.
+- **File suivante (idées)** : e2e confirmation organique ; app vitrine vidéo hero e2e.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
