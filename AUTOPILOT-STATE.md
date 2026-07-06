@@ -364,6 +364,14 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   Gotcha vagues : le brief référençait un fichier de type inexistant → Codex a inventé un format raisonnable ;
   toujours vérifier l'id réel des données produites (extra-documentation-site ≠ extra-docs-site). Bilan salves
   du jour : 6 vagues lancées, 6 récupérées+câblées.
+- **SALVE 3 (G/H) + EXPORT CONVERSATIONS (demandes Patrice)** : (a) /grill-me [--yolo] et /deepthink (mode plan +
+  thinking xhigh) — handlers Codex gatés/cherry-pickés, enregistrés au catalogue slash + map (smoke /deepthink
+  répond). (b) Export conversations : MD (exportToFile existant + bouton drawer) et PDF « de toute beauté » —
+  template adapté du pipeline corporate de Code Explorer (~/DEV/gitnexus-rs pdf.rs : page de garde dégradé,
+  @page A4, print-color-adjust) sur l'identité Ember, markdown-lite sans dépendance, offscreen printToPDF +
+  Save-As natif. Prouvé e2e : clic bouton → dialogue natif piloté xdotool → PDF 2 pages 60 Ko envoyé à Patrice.
+  Bilan Codex du jour : 8 vagues, 8 récupérées. ⚠️ Récidive gotcha : kill+relance dans le MÊME bloc bash → bind
+  failed (l'ancienne survit) — toujours kill par PID exact dans un bloc séparé, vérifier le log.
 - **File suivante (idées)** : e2e confirmation organique ; app vitrine vidéo hero e2e.
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
