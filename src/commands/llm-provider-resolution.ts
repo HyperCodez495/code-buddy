@@ -63,7 +63,11 @@ export function resolveCommandProvider(
       return {
         apiKey: configuredProvider.apiKey,
         baseURL: configuredProvider.baseURL,
-        model: configuredModel || configuredProvider.defaultModel,
+        model: reconcileModelForBackend(
+          configuredModel || configuredProvider.defaultModel,
+          configuredProvider.baseURL,
+          configuredProvider.defaultModel,
+        ),
         providerLabel: configuredProvider.provider,
       };
     }
@@ -77,7 +81,11 @@ export function resolveCommandProvider(
     return {
       apiKey: ambientProvider.apiKey,
       baseURL: ambientProvider.baseURL,
-      model: configuredModel || ambientProvider.defaultModel,
+      model: reconcileModelForBackend(
+        configuredModel || ambientProvider.defaultModel,
+        ambientProvider.baseURL,
+        ambientProvider.defaultModel,
+      ),
       providerLabel: ambientProvider.provider,
     };
   }
@@ -93,9 +101,35 @@ function fromEnvDetection(explicitModel?: string): ResolvedCommandProvider | nul
   return {
     apiKey: detected.apiKey,
     baseURL: detected.baseURL,
-    model: explicitModel || detected.defaultModel,
+    model: reconcileModelForBackend(
+      explicitModel || detected.defaultModel,
+      detected.baseURL,
+      detected.defaultModel,
+    ),
     providerLabel: detected.provider,
   };
+}
+
+/**
+ * The Codex / ChatGPT-OAuth backend (`chatgpt.com/backend-api/codex`) only
+ * accepts Codex-family models. When provider resolution crosses over to that
+ * backend — e.g. no Grok key, so the default `grok-code-fast-1` falls through
+ * to ChatGPT OAuth — the mismatched model is rejected by the backend (400
+ * "model … not supported when using Codex with a ChatGPT account"), breaking
+ * every headless command (`goal`/`loop`/`flow`/`research`) out of the box for a
+ * ChatGPT-authed user who never set a model. Coerce to the backend's own Codex
+ * default, preserving an already-Codex model. No-op for non-Codex backends.
+ */
+export function reconcileModelForBackend(
+  model: string | undefined,
+  baseURL: string | undefined,
+  backendDefaultModel: string | undefined,
+): string | undefined {
+  const isCodexBackend = !!baseURL && baseURL.includes('chatgpt.com/backend-api/codex');
+  if (!isCodexBackend) return model;
+  if (model && isChatGptSubscriptionModel(model)) return model;
+  if (backendDefaultModel && isChatGptSubscriptionModel(backendDefaultModel)) return backendDefaultModel;
+  return 'gpt-5.5';
 }
 
 function resolveExplicitOllamaModel(explicitModel: string | undefined): ResolvedCommandProvider | null {
