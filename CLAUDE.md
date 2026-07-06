@@ -277,7 +277,7 @@ buddy dev plan|run|pr|fix-ci  # Golden-path workflows (forces WritePolicy.strict
 buddy run list|show|tail|replay  # Observability
 buddy research "<topic>"    # Wide research (--deep: cited GPT-Researcher-style pipeline; --iterations N: gap-loop rounds; --perspectives N/--storm: STORM multi-perspective; --ckg: Collective Knowledge Graph bridge)
 buddy flow "<goal>"         # Planning flow (plan → execute → synthesize)
-buddy loop "<goal>"         # Dev loop: plan→execute→VERIFY(Verifier)→judge→decide, until proven done or budget (--max-turns/--budget/--no-verify). Thin layer over `buddy goal` (src/agent/dev-loop/dev-loop.ts): the independent Verifier GATES "done" — a judge "done" is overridden to "continue" until CONFIRMED, so a claimed-but-unproven fix never passes. `goal` stays unchanged.
+buddy loop "<goal>"         # Dev loop: plan→execute→VERIFY(Verifier)→judge→decide, until proven done or budget (--max-turns/--budget/--no-verify/--verify-cmd). Thin layer over `buddy goal` (src/agent/dev-loop/dev-loop.ts): the independent Verifier GATES "done" — a judge "done" is overridden to "continue" until CONFIRMED, so a claimed-but-unproven fix never passes. `--verify-cmd "<shell>"` swaps the LLM Verifier for a deterministic gate (exit 0 = CONFIRMED; `makeShellVerifier`) — $0, hermetic, ideal for "make the tests pass" loops. In-session equivalent: `/loop`. `goal` stays unchanged.
 buddy backup create|verify|list|restore
 buddy update [--channel …] [--tag main] [--from-source]
 ```

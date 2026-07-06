@@ -441,6 +441,11 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   (coût borné) ; no-op pour /goal et les hosts sans bridge verify (desktop/headless restent juge-seul, inchangés).
   Sentinel `__LOOP__` (enhanced + headless-slash), host interactif passe le bridge (réutilise defaultDevLoopVerifier).
   3 tests du gate + 112 tests goal/slash verts + build. Sous-commandes status/pause/resume/clear partagées avec /goal.
+- **`--verify-cmd` LIVRÉ (`cb5687ab`)** : gate de vérif DÉTERMINISTE pour `buddy loop` — commande shell dont exit 0 =
+  CONFIRMED (au lieu du Verifier LLM). `$0`, hermétique, idéal boucles « fais passer les tests »
+  (`buddy loop "fix" --verify-cmd "npm test -- auth"`). `makeShellVerifier(cmd,{cwd})` → DevLoopVerifier, même gate ;
+  fail-closed (spawn error → NEEDS REVIEW). Prouvé live (`test -f hello.txt`→CONFIRMED→exit 0) + 3 tests. Idée
+  remontée par le sous-agent de recherche loop-infra (celui arrêté puis complété), adaptée à ma vraie signature.
 - **File suivante (idées)** : e2e App Studio dev-server start→preview (computer-use/CDP) ; bug « Test de connexion »
   ChatGPT OAuth (route OneShot en openai-completions au lieu du protocole Codex) ; Cowork LiveLauncher « Loop ».
 
