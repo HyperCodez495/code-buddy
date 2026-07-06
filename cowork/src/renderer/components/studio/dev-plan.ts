@@ -92,6 +92,43 @@ export function buildDevPlan(prompt: string): DevPlan {
   return { title: titleFrom(prompt), stack, steps };
 }
 
+export interface PlanSignals {
+  /** The project tree has files → scaffolding happened. */
+  hasFiles: boolean;
+  /** The dev server is serving the app. */
+  previewRunning: boolean;
+  /** The agent is mid-turn (building). */
+  busy: boolean;
+}
+
+/**
+ * Reflect real project state into step statuses (bolt.new's plan advances as it
+ * builds). Honest by construction: only scaffold (files exist) and run (preview
+ * running) are known precisely; the first still-pending step is shown active
+ * while building; a running preview implies the middle steps completed.
+ */
+export function advancePlan(plan: DevPlan, s: PlanSignals): DevPlan {
+  const steps = plan.steps.map((step) => ({ ...step }));
+  const find = (id: string): PlanStep | undefined => steps.find((x) => x.id === id);
+
+  const scaffold = find('scaffold');
+  if (scaffold) scaffold.status = s.hasFiles ? 'done' : s.busy ? 'active' : 'pending';
+
+  if (s.previewRunning) {
+    for (const step of steps) if (step.id !== 'run') step.status = 'done';
+  }
+
+  const run = find('run');
+  if (run) run.status = s.previewRunning ? 'done' : 'pending';
+
+  if (s.busy) {
+    const firstPending = steps.find((x) => x.status === 'pending' && x.id !== 'run');
+    if (firstPending) firstPending.status = 'active';
+  }
+
+  return { ...plan, steps };
+}
+
 function slug(s: string): string {
   return s
     .toLowerCase()

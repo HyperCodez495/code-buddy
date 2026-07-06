@@ -3,7 +3,7 @@
  * (stack detection, feature steps, theme, always-present scaffold/run bookends).
  */
 import { describe, expect, it } from 'vitest';
-import { buildDevPlan } from '../src/renderer/components/studio/dev-plan';
+import { buildDevPlan, advancePlan } from '../src/renderer/components/studio/dev-plan';
 
 describe('buildDevPlan', () => {
   it('detects React by default and brackets the plan with scaffold + run', () => {
@@ -37,5 +37,30 @@ describe('buildDevPlan', () => {
     const plan = buildDevPlan('un formulaire et encore un formulaire');
     const formSteps = plan.steps.filter((s) => /Formulaire/.test(s.title));
     expect(formSteps).toHaveLength(1);
+  });
+});
+
+describe('advancePlan', () => {
+  const base = buildDevPlan('Une todo app avec thème sombre');
+
+  it('marks scaffold active while building an empty project', () => {
+    const p = advancePlan(base, { hasFiles: false, previewRunning: false, busy: true });
+    expect(p.steps.find((s) => s.id === 'scaffold')!.status).toBe('active');
+  });
+
+  it('marks scaffold done and the next step active once files exist', () => {
+    const p = advancePlan(base, { hasFiles: true, previewRunning: false, busy: true });
+    expect(p.steps.find((s) => s.id === 'scaffold')!.status).toBe('done');
+    expect(p.steps.some((s) => s.status === 'active')).toBe(true);
+  });
+
+  it('completes every step once the preview is running', () => {
+    const p = advancePlan(base, { hasFiles: true, previewRunning: true, busy: false });
+    expect(p.steps.every((s) => s.status === 'done')).toBe(true);
+  });
+
+  it('is pure — does not mutate the input plan', () => {
+    advancePlan(base, { hasFiles: true, previewRunning: true, busy: false });
+    expect(base.steps.every((s) => s.status === 'pending')).toBe(true);
   });
 });
