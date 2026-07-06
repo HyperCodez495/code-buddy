@@ -394,8 +394,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   `no-irregular-whitespace` (la regex non-latine du speech-sanitizer contenait des ponctuations CJK littérales
   U+3000 etc. → plages 　-〿/＀-￯, jeu de correspondance identique, 9 tests sanitizer verts).
   Comportement inchangé, arbre error-clean (2476 warnings inchangés). Pas de rebuild Cowork (src/ hors boot).
-- **File suivante (idées)** : e2e confirmation organique ; réduire les 2476 warnings (surtout unused caught errors
-  → renommer en _err, mécanique — bon lot Codex).
+- **27 UNUSED CAUGHT ERRORS RENOMMÉS (`c416451d`)** : chaque `catch (err)` inutilisé → `catch (_err)` (le pattern
+  caughtErrorsIgnorePattern `^_` l'accepte), 18 fichiers, script ciblé PAR LIGNE (jamais de sed aveugle), tsc vert
+  (un binding utilisé aurait échoué). 2476→2449 warnings. Répartition du reste : 1655 no-explicit-any (vrai typage,
+  PAS mécanique — risqué), ~750 autres no-unused-vars (imports/params — au cas par cas), 33 no-unsafe-function-type,
+  5 require-yield (vrais smells async* sans yield).
+- **File suivante (idées)** : e2e confirmation organique ; require-yield (5, vrais bugs générateurs) ; autres
+  no-unused-vars imports morts (prudent) ; PAS no-explicit-any en masse (risqué sans tests par site).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
