@@ -18,6 +18,8 @@ import { KnowledgeGraphView } from '../os-panels/KnowledgeGraphView';
 import type { KnowledgeGraphEdge, KnowledgeGraphNode } from '../os-panels/knowledge-graph-view-model.js';
 import { OsStatusBar } from '../os-panels/OsStatusBar';
 import type { OsStatusItem } from '../os-panels/os-status-bar-model.js';
+import { AutonomyQueueBoard } from '../os-panels/AutonomyQueueBoard';
+import { summarizeAutonomyQueue, type AutonomySnapshot } from '../os-panels/autonomy-queue-model.js';
 import { Sparkline } from '../viz/Sparkline';
 import type { CouncilSession } from './util/council-model';
 import type { FleetLoad } from './util/fleet-load-model';
@@ -120,19 +122,14 @@ export function MissionControlView() {
   }, []);
 
   // Real autonomy daemon queue (the ~/.codebuddy/fleet task board).
-  const [daemonQueue, setDaemonQueue] = useState<{ tasks: number; done: number; agents: number } | null>(null);
+  const [daemonSnapshot, setDaemonSnapshot] = useState<AutonomySnapshot | null>(null);
   useEffect(() => {
     let cancelled = false;
     void window.electronAPI?.autonomy
       ?.snapshot()
       .then((snap) => {
         if (cancelled || !snap?.ok) return;
-        const tasks = snap.tasks ?? [];
-        setDaemonQueue({
-          tasks: tasks.length,
-          done: tasks.filter((t) => t.status === 'completed' || t.status === 'done').length,
-          agents: Object.keys(snap.presence ?? {}).length,
-        });
+        setDaemonSnapshot({ tasks: snap.tasks ?? [], worklog: snap.worklog ?? [], presence: snap.presence ?? {} });
       })
       .catch(() => {});
     return () => {
@@ -269,13 +266,7 @@ export function MissionControlView() {
           onDaemonResume={() => controlDaemon('start')}
           onCostCapChange={noop}
         />
-        {daemonQueue ? (
-          <p className="text-xs text-muted-foreground">
-            File du daemon : {daemonQueue.tasks} tâche{daemonQueue.tasks > 1 ? 's' : ''} dont {daemonQueue.done} terminée
-            {daemonQueue.done > 1 ? 's' : ''} · {daemonQueue.agents} agent{daemonQueue.agents > 1 ? 's' : ''} présent
-            {daemonQueue.agents > 1 ? 's' : ''} · ~/.codebuddy/fleet
-          </p>
-        ) : null}
+        {daemonSnapshot ? <AutonomyQueueBoard summary={summarizeAutonomyQueue(daemonSnapshot, new Date())} /> : null}
       </div>
     </div>
   );
