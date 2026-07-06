@@ -14,6 +14,7 @@ import type { BuildPhase } from './BuildStatusStrip.js';
 import type { StudioScaffoldRequest } from './StudioComposer.js';
 import { filterStudioTree, pickDefaultFile, type TreeNode } from './utils/file-tree-model.js';
 import { detectDevCommand } from '../studio-iterate/studio-preview-model.js';
+import { openTab, closeTab as closeTabModel, nextActiveAfterClose, type EditorTab } from './editor-tabs-model.js';
 import type { AppStudioApis, CommandOutputEvent, StudioTemplateCard } from './studio-api.js';
 
 export interface UseAppStudioOptions {
@@ -96,6 +97,7 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
   const [projectRoot, setProjectRoot] = useState(options.projectRoot ?? '');
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<EditorTab[]>([]);
   const [fileContent, setFileContent] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewStatus, setPreviewStatus] = useState<AppStudioViewProps['previewStatus']>('idle');
@@ -204,11 +206,27 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
     const result = await apis.files.read(projectRoot, path);
     if (result.ok) {
       setActiveFile(path);
+      setOpenTabs((tabs) => openTab(tabs, path));
       setFileContent(result.data.content);
     } else {
       appendTerminal(result.error);
     }
   }, [apis, appendTerminal, projectRoot]);
+
+  // Close an editor tab; if it was active, focus a neighbour (bolt.new tabs).
+  const closeFileTab = useCallback((path: string) => {
+    setOpenTabs((tabs) => {
+      const nextActive = nextActiveAfterClose(tabs, path, activeFile);
+      if (nextActive !== activeFile) {
+        if (nextActive) void openFile(nextActive);
+        else {
+          setActiveFile(null);
+          setFileContent('');
+        }
+      }
+      return closeTabModel(tabs, path);
+    });
+  }, [activeFile, openFile]);
 
   const saveFile = useCallback(async () => {
     if (!projectRoot || !activeFile) return;
@@ -313,6 +331,8 @@ export function useAppStudio(options: UseAppStudioOptions = {}) {
   const viewProps: AppStudioViewProps = {
     tree,
     activeFile,
+    openTabs,
+    onCloseTab: closeFileTab,
     fileContent,
     previewUrl,
     previewStatus,

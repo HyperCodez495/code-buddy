@@ -16,6 +16,8 @@ import { DevPlanCard } from './DevPlanCard.js';
 import type { DevPlan } from './dev-plan.js';
 import { StaticPreviewNotice } from './StaticPreviewNotice.js';
 import { describePreviewMode, previewEntry } from './static-project-model.js';
+import { EditorTabs } from './EditorTabs.js';
+import type { EditorTab } from './editor-tabs-model.js';
 
 /** bolt.new-style iterate chat, driven by the active project session. */
 export interface StudioChatProps {
@@ -33,6 +35,8 @@ export interface StudioChatProps {
 export interface AppStudioViewProps {
   tree: TreeNode[];
   activeFile: string | null;
+  openTabs?: EditorTab[];
+  onCloseTab?: (path: string) => void;
   fileContent: string;
   previewUrl: string | null;
   previewStatus: PreviewPaneProps['status'];
@@ -71,6 +75,8 @@ type MainTab = 'editor' | 'preview';
 export function AppStudioView({
   tree,
   activeFile,
+  openTabs,
+  onCloseTab,
   fileContent,
   previewUrl,
   previewStatus,
@@ -150,13 +156,25 @@ export function AppStudioView({
           </div>
           <div className="min-h-0 flex-1">
             {tab === 'editor' ? (
-              activeFile ? (
-                <CodeEditorPane path={activeFile} value={fileContent} onChange={onChangeFileContent} onSave={onSaveFile} />
-              ) : (
-                <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted-foreground">
-                  Aucun fichier sélectionné.
+              <div className="flex h-full min-h-0 flex-col">
+                {openTabs && openTabs.length > 0 ? (
+                  <EditorTabs
+                    tabs={openTabs}
+                    activePath={activeFile}
+                    onSelect={onOpenFile}
+                    onClose={onCloseTab ?? (() => {})}
+                  />
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  {activeFile ? (
+                    <CodeEditorPane path={activeFile} value={fileContent} onChange={onChangeFileContent} onSave={onSaveFile} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted-foreground">
+                      Aucun fichier sélectionné.
+                    </div>
+                  )}
                 </div>
-              )
+              </div>
             ) : (
               <div className="flex h-full min-h-0 flex-col gap-1.5">
                 {tree.length > 0 ? (
