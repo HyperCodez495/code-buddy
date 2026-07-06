@@ -389,7 +389,13 @@ Patrice : « carte blanche, tests visuels, boucle loop, le but = le cerveau du r
   au SEAM (itération 50) couvre donc remote-manager, task-dispatch, index.ts et l'autonomie. Reste clos. (b) La
   Bibliothèque n'avait que des filtres par type → modèle pur filterMedia (type + recherche pliée sur
   prompt/modèle/nom, 4 tests) + champ de recherche. Prouvé live : « chaton » → 1 image (via son prompt).
-- **File suivante (idées)** : e2e confirmation organique ; suite lint warnings résiduels si le temps.
+- **7 ERREURS LINT NOYAU CORRIGÉES (`315aa8a5`)** : le lint noyau avait 7 ERREURS (pas juste des warnings) — 6
+  `no-empty` (catch{} vides : probe STT murmure + license-check + sbom-generate → catch { /* ignore */ }) et 1
+  `no-irregular-whitespace` (la regex non-latine du speech-sanitizer contenait des ponctuations CJK littérales
+  U+3000 etc. → plages 　-〿/＀-￯, jeu de correspondance identique, 9 tests sanitizer verts).
+  Comportement inchangé, arbre error-clean (2476 warnings inchangés). Pas de rebuild Cowork (src/ hors boot).
+- **File suivante (idées)** : e2e confirmation organique ; réduire les 2476 warnings (surtout unused caught errors
+  → renommer en _err, mécanique — bon lot Codex).
 
 ## SESSION 2026-07-05 NUIT+ — BATCH GENSPARK MASSIF (Patrice « lance un maximum » + « inspire-toi de Genspark »)
 ~13 vagues Codex lancées en parallèle (worktrees + setsid détachés) → **11 intégrées sur main** (gate tsc+vite+tests
