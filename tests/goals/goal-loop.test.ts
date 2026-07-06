@@ -209,4 +209,62 @@ describe('maybeContinueGoalAfterTurn', () => {
     expect(judgePrompt).toContain('T2 Verify parser after T1: focused regression test passes');
     expect(judgePrompt).toContain('T2.1 Verify parser / Run test: command output is included');
   });
+
+  describe('dev-loop Verifier gate (/loop)', () => {
+    it('downgrades a judge "done" to "continue" when the Verifier is not CONFIRMED', async () => {
+      const manager = getGoalManager();
+      manager.set('Ship the fix and prove it', { maxTurns: 4, verifyGated: true });
+      const client = judgeClient('{"done": true, "reason": "looks done to me"}');
+      const verify = vi.fn(async () => ({ verdict: 'NEEDS REVIEW' as const }));
+
+      const outcome = await maybeContinueGoalAfterTurn({
+        client: client as never,
+        lastResponse: 'I believe I fixed it.',
+        interrupted: false,
+        verify,
+      });
+
+      expect(verify).toHaveBeenCalledOnce();
+      expect(manager.state).toMatchObject({ status: 'active', lastVerdict: 'continue' });
+      expect(manager.state?.lastReason).toContain('verification not CONFIRMED');
+      expect(outcome?.continuationPrompt).toBeTruthy();
+    });
+
+    it('accepts a judge "done" once the Verifier CONFIRMS', async () => {
+      const manager = getGoalManager();
+      manager.set('Ship the fix and prove it', { maxTurns: 4, verifyGated: true });
+      const client = judgeClient('{"done": true, "reason": "patch + passing test shown"}');
+      const verify = vi.fn(async () => ({ verdict: 'CONFIRMED' as const }));
+
+      const outcome = await maybeContinueGoalAfterTurn({
+        client: client as never,
+        lastResponse: 'Applied the patch; the focused test passes (output shown).',
+        interrupted: false,
+        verify,
+      });
+
+      expect(verify).toHaveBeenCalledOnce();
+      expect(manager.state).toMatchObject({ status: 'done', lastVerdict: 'done' });
+      expect(outcome?.continuationPrompt).toBeUndefined();
+    });
+
+    it('never runs the Verifier for a classic /goal (not verifyGated)', async () => {
+      const manager = getGoalManager();
+      manager.set('Ship the fix and prove it', { maxTurns: 4 }); // no verifyGated
+      const client = judgeClient('{"done": true, "reason": "done"}');
+      const verify = vi.fn(async () => ({ verdict: 'NEEDS REVIEW' as const }));
+
+      await maybeContinueGoalAfterTurn({
+        client: client as never,
+        lastResponse: 'Done.',
+        interrupted: false,
+        verify,
+      });
+
+      // /goal is judge-only: the gate must not fire even though a verify bridge
+      // is present, so a plain judge "done" completes as before.
+      expect(verify).not.toHaveBeenCalled();
+      expect(manager.state).toMatchObject({ status: 'done', lastVerdict: 'done' });
+    });
+  });
 });

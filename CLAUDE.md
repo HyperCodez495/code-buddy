@@ -285,6 +285,8 @@ buddy update [--channel …] [--tag main] [--from-source]
 In-session slash commands (not exhaustive):
 ```
 /think off|shallow|medium|deep|exhaustive|status|<problem>
+/goal <text>|status|pause|resume|clear   # Standing goal + judge auto-continue loop (Ralph)
+/loop <text>|status|pause|resume|clear   # Dev-loop: /goal + independent Verifier gate (done only passes once CONFIRMED). In-session `buddy loop`.
 /batch <goal>                # Decompose into parallel sub-agents
 /swarm <task>                # Team-lead UX (Korben-inspired)
 /team start|add|status|...   # Agent Teams coordination

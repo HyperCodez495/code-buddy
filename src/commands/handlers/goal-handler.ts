@@ -12,6 +12,12 @@ export interface GoalHandlerOptions {
   sessionKey?: string;
   client?: CodeBuddyClient | null;
   planner?: (goal: string, client: CodeBuddyClient) => Promise<GoalPlan | null>;
+  /**
+   * Dev-loop mode (/loop). Marks the goal `verifyGated` so the after-turn hook
+   * gates a judge "done" behind the independent Verifier, and adjusts the intro
+   * copy. Off ⇒ classic /goal. Status/pause/resume/clear are shared verbatim.
+   */
+  loopMode?: boolean;
 }
 
 /**
@@ -77,6 +83,7 @@ export async function handleGoal(
     state = mgr.set(arg, {
       ...(plan ? { goalPlan: plan } : {}),
       ...(planAttempted ? { goalPlanAttempted: true } : {}),
+      ...(options.loopMode ? { verifyGated: true } : {}),
     });
     if (planAttempted && !plan && planError) {
       mgr.markGoalPlanAttempted(planError);
@@ -92,18 +99,27 @@ export async function handleGoal(
       ? `\n\nGoal planning was skipped after an LLM planner error: ${planError}`
       : '';
 
+  const intro = options.loopMode
+    ? `⊙ Dev-loop set (${state.maxTurns}-turn budget): ${state.goal}\n` +
+      'After each turn a judge checks the goal, and when it says "done" an ' +
+      'INDEPENDENT Verifier reproduces the work with fresh context — the goal ' +
+      'is only accepted once the Verifier CONFIRMS, so a claimed-but-unproven ' +
+      'result never passes. Code Buddy keeps working until then, you pause/clear ' +
+      'it, or the budget is exhausted. Use /loop status, /loop pause, /loop ' +
+      'resume, /loop clear. Tip: enable auto-approval (/yolo or auto-edit) for ' +
+      'unattended runs.'
+    : `⊙ Goal set (${state.maxTurns}-turn budget): ${state.goal}\n` +
+      'After each turn, a judge model checks if the goal is done. Code Buddy ' +
+      'keeps working until it is, you pause/clear it, or the budget is ' +
+      'exhausted. Use /goal status, /goal pause, /goal resume, /goal clear. ' +
+      'Tip: for unattended runs, enable auto-approval (/yolo or auto-edit) so ' +
+      'the loop is not blocked on confirmations.';
+
   return {
     handled: true,
     entry: {
       type: 'assistant',
-      content:
-        `⊙ Goal set (${state.maxTurns}-turn budget): ${state.goal}\n` +
-        'After each turn, a judge model checks if the goal is done. Code Buddy ' +
-        'keeps working until it is, you pause/clear it, or the budget is ' +
-        'exhausted. Use /goal status, /goal pause, /goal resume, /goal clear. ' +
-        'Tip: for unattended runs, enable auto-approval (/yolo or auto-edit) so ' +
-        'the loop is not blocked on confirmations.' +
-        planBlock,
+      content: intro + planBlock,
       timestamp: new Date(),
     },
     // Kick the loop off immediately — the dispatcher feeds the goal text as
@@ -111,6 +127,19 @@ export async function handleGoal(
     passToAI: true,
     prompt: state.goal,
   };
+}
+
+/**
+ * /loop — dev-loop: same standing-goal loop as /goal, but with the independent
+ * Verifier gate (a judge "done" is only accepted once the Verifier CONFIRMS).
+ * The in-session counterpart of `buddy loop`. Sub-commands (status/pause/resume/
+ * clear) are shared with /goal via the same GoalManager.
+ */
+export async function handleLoop(
+  args: string[],
+  options: GoalHandlerOptions = {}
+): Promise<CommandHandlerResult> {
+  return handleGoal(args, { ...options, loopMode: true });
 }
 
 /**

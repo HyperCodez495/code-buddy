@@ -845,6 +845,16 @@ const autonomyCommands: SlashCommand[] = [
     ]
   },
   {
+    name: 'loop',
+    description: 'Dev-loop: /goal + an independent Verifier gate (a judge "done" only passes once the Verifier CONFIRMS): /loop <text> | status | pause | resume | clear',
+    prompt: '__LOOP__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: '<text> to start a dev-loop, or status, pause, resume, clear', required: false }
+    ]
+  },
+  {
     name: 'subgoal',
     description: 'Add acceptance criteria to the active goal: /subgoal <text> | remove <n> | clear',
     prompt: '__SUBGOAL__',

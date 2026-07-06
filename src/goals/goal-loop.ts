@@ -32,6 +32,18 @@ export interface GoalTurnOutcome {
   lastReason?: string;
 }
 
+/**
+ * Independent-verification bridge for dev-loop mode (`/loop`). Given the goal
+ * and the turn's evidence, returns a fresh-context verdict. Only invoked when
+ * the goal is `verifyGated` AND the judge is about to say "done" — so the extra
+ * cost is bounded to the done boundary. Supplied by hosts that have the agent's
+ * tool bridge (interactive TUI); absent elsewhere ⇒ judge-only fallback.
+ */
+export type GoalVerifyFn = (ctx: {
+  goal: string;
+  evidence: string;
+}) => Promise<{ verdict: 'CONFIRMED' | 'NEEDS REVIEW' | 'unverified' }>;
+
 export interface GoalAfterTurnOptions {
   client: CodeBuddyClient | null;
   /** The assistant's full response text for the turn that just finished. */
@@ -40,6 +52,12 @@ export interface GoalAfterTurnOptions {
   interrupted: boolean;
   /** Optional goal-state key for host surfaces with their own session ids. */
   sessionKey?: string;
+  /**
+   * Optional independent Verifier for `/loop` (dev-loop) goals. When the goal
+   * is `verifyGated` and the judge returns "done", this gates it: a non-CONFIRMED
+   * verdict flips the turn back to "continue". No-op for classic `/goal` goals.
+   */
+  verify?: GoalVerifyFn;
 }
 
 // The executor appends a per-turn usage footer ("[tokens: … | cost: …]") as a
@@ -74,14 +92,36 @@ export async function maybeContinueGoalAfterTurn(
 
   const config = resolveGoalsConfig();
   await maybeAttachGoalPlan(manager, options.client, config.plannerModel);
+  // Dev-loop gate (/loop): only when the goal is verifyGated AND a Verifier
+  // bridge is supplied. Runs the independent Verifier only if the judge would
+  // otherwise say "done", and downgrades a non-CONFIRMED "done" to "continue"
+  // — a claimed-but-unproven goal never passes. Mirrors dev-loop.ts's gate.
+  const verifyGate = manager.state?.verifyGated && options.verify;
   const decision = await manager.evaluateAfterTurn(lastResponse, {
-    judge: params =>
-      judgeGoal(options.client, {
+    judge: async params => {
+      const base = await judgeGoal(options.client, {
         ...params,
         ...(config.judgeModel ? { model: config.judgeModel } : {}),
         maxTokens: config.judgeMaxTokens,
         timeoutMs: config.judgeTimeoutMs,
-      }),
+      });
+      if (verifyGate && base.verdict === 'done') {
+        let verdict: 'CONFIRMED' | 'NEEDS REVIEW' | 'unverified' = 'unverified';
+        try {
+          ({ verdict } = await options.verify!({ goal: manager.state!.goal, evidence: lastResponse }));
+        } catch (error) {
+          logger.debug('goal verify gate failed (fail-open, treated as unverified)', { error: String(error) });
+        }
+        if (verdict !== 'CONFIRMED') {
+          return {
+            verdict: 'continue',
+            reason: `🔎 verification not CONFIRMED (verifier=${verdict}); judge said done (${base.reason})`,
+            parseFailed: false,
+          };
+        }
+      }
+      return base;
+    },
   });
 
   if (decision.verdict === 'inactive') return null;

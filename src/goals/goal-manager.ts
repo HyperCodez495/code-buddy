@@ -83,7 +83,10 @@ export class GoalManager {
 
   // --- mutation -----------------------------------------------------
 
-  set(goal: string, options: { maxTurns?: number; goalPlan?: GoalPlan; goalPlanAttempted?: boolean } = {}): GoalState {
+  set(
+    goal: string,
+    options: { maxTurns?: number; goalPlan?: GoalPlan; goalPlanAttempted?: boolean; verifyGated?: boolean } = {},
+  ): GoalState {
     const text = (goal || '').trim();
     if (!text) {
       throw new Error('goal text is empty');
@@ -93,6 +96,7 @@ export class GoalManager {
     if (typeof options.goalPlanAttempted === 'boolean') {
       state.goalPlanAttempted = options.goalPlanAttempted;
     }
+    if (options.verifyGated) state.verifyGated = true;
     this._state = state;
     this.store.save(this.sessionKey, state);
     return state;

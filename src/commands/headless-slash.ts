@@ -94,12 +94,14 @@ export async function executeHeadlessSlashToken(
   if (ctx.client) handler.setCodeBuddyClient(ctx.client);
 
   try {
-    if (ctx.goalSessionKey && (token === '__GOAL__' || token === '__SUBGOAL__')) {
-      const { handleGoal, handleSubgoal } = await import('./handlers/goal-handler.js');
+    if (ctx.goalSessionKey && (token === '__GOAL__' || token === '__LOOP__' || token === '__SUBGOAL__')) {
+      const { handleGoal, handleLoop, handleSubgoal } = await import('./handlers/goal-handler.js');
       const result =
         token === '__GOAL__'
           ? await handleGoal(args, { sessionKey: ctx.goalSessionKey, client: ctx.client ?? null })
-          : await handleSubgoal(args, { sessionKey: ctx.goalSessionKey });
+          : token === '__LOOP__'
+            ? await handleLoop(args, { sessionKey: ctx.goalSessionKey, client: ctx.client ?? null })
+            : await handleSubgoal(args, { sessionKey: ctx.goalSessionKey });
       return {
         handled: result.handled,
         output: result.entry?.content,

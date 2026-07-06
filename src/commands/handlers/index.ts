@@ -266,7 +266,7 @@ export {
 export { handleHeartbeat } from './heartbeat-handler.js';
 
 // Goal handler (Hermes Agent parity — Ralph loop)
-export { handleGoal, handleSubgoal } from './goal-handler.js';
+export { handleGoal, handleLoop, handleSubgoal } from './goal-handler.js';
 
 // Daily reset handler (audit OpenClaw heritage activation)
 export { handleDailyReset } from './daily-reset-handler.js';

@@ -56,6 +56,14 @@ export interface GoalState {
   goalPlanAttempted?: boolean;
   /** Last planning failure, kept for status/debug without retrying forever. */
   goalPlanLastError?: string;
+  /**
+   * Dev-loop mode (set by /loop, not /goal). When true, the after-turn hook
+   * gates a judge "done" behind an independent Verifier: the goal is only
+   * accepted as done once the Verifier CONFIRMS. Off/absent ⇒ classic /goal
+   * judge-only loop (unchanged). Requires a `verify` bridge from the host;
+   * hosts without one (desktop/headless CLI) fall back to judge-only.
+   */
+  verifyGated?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────

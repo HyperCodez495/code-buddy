@@ -818,6 +818,13 @@ export function useInputHandler({
         client: agent.getClient(),
         lastResponse: fullResponseContent,
         interrupted: goalInterruptedRef.current,
+        // Dev-loop (/loop) gate: only invoked when the goal is verifyGated AND
+        // the judge says "done" (see goal-loop.ts). Reuses the headless
+        // Verifier bridge so in-session /loop matches `buddy loop`.
+        verify: async ({ goal, evidence }) => {
+          const { defaultDevLoopVerifier } = await import('../agent/dev-loop/dev-loop.js');
+          return defaultDevLoopVerifier({ agent, goal, evidence });
+        },
       });
       if (outcome?.message) {
         setChatHistory((prev) => [
