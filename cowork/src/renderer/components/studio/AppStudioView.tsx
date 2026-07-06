@@ -14,6 +14,8 @@ import { ChangedFilesStrip } from '../studio-iterate/ChangedFilesStrip.js';
 import type { StudioMessage, StudioFileChange } from '../studio-iterate/iterate-model.js';
 import { DevPlanCard } from './DevPlanCard.js';
 import type { DevPlan } from './dev-plan.js';
+import { StaticPreviewNotice } from './StaticPreviewNotice.js';
+import { describePreviewMode, previewEntry } from './static-project-model.js';
 
 /** bolt.new-style iterate chat, driven by the active project session. */
 export interface StudioChatProps {
@@ -156,13 +158,20 @@ export function AppStudioView({
                 </div>
               )
             ) : (
-              <PreviewPane
-                url={previewUrl}
-                status={previewStatus}
-                onReload={onReloadPreview}
-                onOpenExternal={onOpenPreviewExternal}
-                {...(onVerifyPreview ? { onVerify: onVerifyPreview } : {})}
-              />
+              <div className="flex h-full min-h-0 flex-col gap-1.5">
+                {tree.length > 0 ? (
+                  <StaticPreviewNotice mode={describePreviewMode(tree)} entry={previewEntry(tree)} />
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  <PreviewPane
+                    url={previewUrl}
+                    status={previewStatus}
+                    onReload={onReloadPreview}
+                    onOpenExternal={onOpenPreviewExternal}
+                    {...(onVerifyPreview ? { onVerify: onVerifyPreview } : {})}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>
