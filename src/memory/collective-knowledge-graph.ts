@@ -40,6 +40,16 @@ import { getCodeBuddyHome } from '../utils/codebuddy-home.js';
 import { EmbeddingProvider } from '../embeddings/embedding-provider.js';
 import { BM25Index } from '../search/bm25.js';
 import { cosineSimilarityF32, hybridMmrRank, type HybridCandidate } from './hybrid-mmr.js';
+import {
+  canonicalObject,
+  factMatchKey,
+  factRetention,
+  isKnownCategory,
+  reconcileFact,
+  type FactCategory,
+  type FactVerdict,
+  type StructuredFact,
+} from './ckg-fact-reconciliation.js';
 
 /** Multilingual embeddings — all-MiniLM (the global default) is English-leaning and misses
  *  French synonyms (measured: it failed paraphrase recall); this model discriminates French
@@ -648,6 +658,84 @@ export class CollectiveKnowledgeGraph {
     return null;
   }
 
+  // -- structured facts (Memory-Kernel reconciliation) ---------------------
+
+  /**
+   * Remember a STRUCTURED fact `(subject, predicate, object, category)` with
+   * Memory-Kernel discipline (jarvis-OS concepts, clean-room). The closed
+   * vocabulary is enforced here — an out-of-vocab predicate/category is
+   * QUARANTINED (never enters the active graph). Otherwise the fact is stored
+   * as a `fact` node whose `name` is the deterministic match key
+   * `subject|predicate|category` and whose `text` is the canonical object, so
+   * the ledger's own bi-temporal machinery gives us for free:
+   *   - same key + same object → reinforce (mentions++), no duplicate;
+   *   - same key + new object on a STABLE category → bi-temporal supersede;
+   *   - same key + new object on a non-stable category → a coexisting node
+   *     (multiple preferences may hold at once).
+   * Never-throws (mirrors `remember`).
+   */
+  rememberFact(
+    input: StructuredFact & { agentId?: string; source?: string; confidence?: number },
+  ): { verdict: FactVerdict; stored: CkgRecallResult | null } {
+    try {
+      this.load();
+      const key = factMatchKey(input);
+      const object = canonicalObject(input);
+      const existing = this.current.get(entityId('fact', key));
+      const verdict = reconcileFact(input, existing ? existing.text : null);
+
+      if (verdict.kind === 'quarantine') {
+        logger.debug(`[ckg] fact quarantined: ${verdict.reasons.join('; ')}`);
+        return { verdict, stored: null };
+      }
+
+      // A differing object on a non-stable category coexists as a distinct
+      // node (disambiguated by the object hash) instead of superseding.
+      const name = verdict.kind === 'coexist' ? `${key}#${contentHash('fact', object).slice(0, 8)}` : key;
+      const stored = this.remember({
+        type: 'fact',
+        name,
+        text: object,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        source: input.source ?? 'fact',
+        ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+      });
+      return { verdict, stored };
+    } catch (err) {
+      logger.warn(`[ckg] rememberFact failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { verdict: { kind: 'quarantine', reasons: [String(err)] }, stored: null };
+    }
+  }
+
+  /**
+   * Recall structured facts ranked by relevance × category-derived retention
+   * (jarvis-OS salience). Facts whose retention has decayed below
+   * `minRetention` are dropped (identity/decision are immortal → never drop).
+   * Reuses keyword recall over the fact nodes; the category is recovered from
+   * the match-key stored in the node name.
+   */
+  recallFacts(
+    query: string,
+    opts: { limit?: number; minRetention?: number } = {},
+  ): Array<CkgRecallResult & { category: FactCategory | null; retention: number }> {
+    const limit = opts.limit ?? 5;
+    const minRetention = opts.minRetention ?? 0;
+    const now = Date.now();
+    // Over-fetch then re-rank with retention (a faded fact can out-keyword a fresh one).
+    const hits = this.recall(query, { limit: limit * 4, types: ['fact'] });
+    const ranked = hits
+      .map((h) => {
+        const category = categoryFromFactName(h.name);
+        const node = this.current.get(h.id);
+        const ageDays = node ? (now - new Date(node.updatedAt).getTime()) / 86_400_000 : 0;
+        const retention = category ? factRetention(category, ageDays) : 1;
+        return { ...h, category, retention, salience: h.salience * retention };
+      })
+      .filter((h) => h.retention >= minRetention)
+      .sort((a, b) => b.salience - a.salience);
+    return ranked.slice(0, limit);
+  }
+
   // -- internals ------------------------------------------------------------
 
   private append(event: LedgerEvent): void {
@@ -800,6 +888,16 @@ export class CollectiveKnowledgeGraph {
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0.8));
+}
+
+/** Recover the fact category from a fact node's match-key name (`subject|predicate|category`,
+ *  optionally `…#objHash` for a coexisting node). Returns null if it doesn't parse. */
+function categoryFromFactName(name: string): FactCategory | null {
+  const key = name.split('#')[0] ?? name;
+  const parts = key.split('|');
+  if (parts.length < 3) return null;
+  const cat = parts[2];
+  return cat && isKnownCategory(cat) ? cat : null;
 }
 
 function safeAgentId(): string {

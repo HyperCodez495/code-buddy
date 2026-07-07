@@ -49,6 +49,19 @@ export interface KnowledgeIngestDeps {
     id: string | null;
     status: 'retracted' | 'already_retracted' | 'not_found';
   };
+  /** Ingest a STRUCTURED fact with Memory-Kernel reconciliation. For `research fact add`. */
+  rememberFact: (input: {
+    subject: string;
+    predicate: string;
+    object: string;
+    category: string;
+    source?: string;
+  }) => { verdict: { kind: string; reasons?: string[]; previousObject?: string }; stored: { mentions: number } | null };
+  /** Recall structured facts with decay-aware retention. For `research fact recall`. */
+  recallFacts: (
+    query: string,
+    opts: { limit?: number },
+  ) => Array<{ text: string; name: string; category: string | null; retention: number; mentions: number }>;
   log: (msg: string) => void;
 }
 
@@ -68,6 +81,8 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
     fetchCodeInsights: (opts) => fetchCodeExplorerInsights(opts),
     getEntity: (idOrName) => ckg.getEntity(idOrName),
     retract: (idOrName, opts) => ckg.retract(idOrName, opts ?? {}),
+    rememberFact: (input) => ckg.rememberFact(input),
+    recallFacts: (query, opts) => ckg.recallFacts(query, opts),
     log: (msg) => console.log(msg),
   };
 }
@@ -274,6 +289,54 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
         deps.log(`• [${r.type}] ${r.name}`);
         deps.log(`    ${date} · ${meta}${r.source ? ` · ${r.source}` : ''}`);
       }
+    });
+
+  // Structured facts (subject/predicate/object/category) with Memory-Kernel
+  // reconciliation: reinforcement without duplication, bi-temporal supersede,
+  // closed-vocabulary quarantine, category-derived decay.
+  const fact = cmd.command('fact').description('Structured facts in the collective memory (reconciled, decaying)');
+  fact
+    .command('add <subject> <predicate> <object>')
+    .description('Remember a structured fact (predicate ∈ closed vocab; out-of-vocab is quarantined)')
+    .requiredOption('-c, --category <category>', 'Fact category (identity, goal, preference, tool, …)')
+    .action(async (subject: string, predicate: string, object: string, opts: { category: string }) => {
+      const deps = await depsFactory();
+      const { verdict, stored } = deps.rememberFact({ subject, predicate, object, category: opts.category, source: 'cli' });
+      if (verdict.kind === 'quarantine') {
+        deps.log(`⚠️ Mis en quarantaine (hors vocabulaire) : ${verdict.reasons?.join('; ') ?? ''}`);
+        deps.log('   Prédicats/catégories fermés — voir buddy research fact vocab.');
+      } else if (verdict.kind === 'confirm') {
+        deps.log(`✅ Renforcé (${stored?.mentions ?? 1}× vu, aucun doublon) : ${subject} ${predicate} ${object}`);
+      } else if (verdict.kind === 'supersede') {
+        deps.log(`🔄 Remplacé « ${verdict.previousObject} » → « ${object} » (ancienne version archivée).`);
+      } else if (verdict.kind === 'coexist') {
+        deps.log(`➕ Coexiste (catégorie non-stable) : ${subject} ${predicate} ${object}`);
+      } else {
+        deps.log(`🆕 Nouveau fait : ${subject} ${predicate} ${object} [${opts.category}]`);
+      }
+    });
+  fact
+    .command('recall <query>')
+    .description('Recall structured facts, ranked by relevance × category-derived retention')
+    .option('-n, --limit <n>', 'Max results', '5')
+    .action(async (query: string, opts: { limit?: string }) => {
+      const deps = await depsFactory();
+      const hits = deps.recallFacts(query, { limit: clampInt(opts.limit, 5, 1, 50) });
+      if (hits.length === 0) {
+        deps.log('Aucun fait. Ajoute-en : buddy research fact add "<sujet>" "<prédicat>" "<objet>" -c <catégorie>');
+        return;
+      }
+      for (const h of hits) {
+        deps.log(`• ${h.text}  [${h.category ?? '?'}] — rétention ${h.retention.toFixed(2)}, vu ${h.mentions}×`);
+      }
+    });
+  fact
+    .command('vocab')
+    .description('Show the closed predicate/category vocabulary')
+    .action(async () => {
+      const { FACT_PREDICATES, FACT_CATEGORIES } = await import('../../memory/ckg-fact-reconciliation.js');
+      console.log(`Prédicats (${FACT_PREDICATES.length}) : ${FACT_PREDICATES.join(', ')}`);
+      console.log(`Catégories (${FACT_CATEGORIES.length}) : ${FACT_CATEGORIES.join(', ')}`);
     });
 
   cmd

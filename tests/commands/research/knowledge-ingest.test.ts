@@ -18,6 +18,8 @@ function stubDeps(over: Partial<KnowledgeIngestDeps> = {}): { deps: KnowledgeIng
     ingestPublication: async () => ({ relations: [{ predicate: 'related_to' }] }),
     recallHybrid: async () => [{ text: 'Transformers use attention.', similarity: 0.8, relations: [{ predicate: 'related_to' }] }],
     getStats: () => ({ entities: 2, relations: 1, ledgerPath: '/tmp/x' }),
+    rememberFact: () => ({ verdict: { kind: 'new' }, stored: { mentions: 1 } }),
+    recallFacts: () => [],
     log: (m) => logs.push(m),
     ...over,
   };
@@ -102,5 +104,54 @@ describe('research knowledge-ingest — Commander routing (subcommand vs <topic>
     const { cmd, wide } = buildResearchLike(deps);
     await cmd.parseAsync(['node', 'research', 'quantum computing']);
     expect(wide.topic).toBe('quantum computing');
+  });
+});
+
+describe('research fact — structured facts (reconciliation) routing', () => {
+  it('routes `research fact add` to rememberFact with the category and prints the verdict', async () => {
+    const calls: unknown[] = [];
+    const { deps, logs } = stubDeps({
+      rememberFact: (input) => {
+        calls.push(input);
+        return { verdict: { kind: 'new' }, stored: { mentions: 1 } };
+      },
+    });
+    const wide = { topic: null as string | null };
+    const cmd = new Command('research');
+    cmd.exitOverride();
+    cmd.argument('<topic>').action((t: string) => {
+      wide.topic = t;
+    });
+    addKnowledgeSubcommands(cmd, async () => deps);
+    await cmd.parseAsync(['node', 'research', 'fact', 'add', 'barth', 'targets', 'marathon sub-3h', '-c', 'goal']);
+    expect(wide.topic).toBeNull();
+    expect(calls[0]).toMatchObject({ subject: 'barth', predicate: 'targets', object: 'marathon sub-3h', category: 'goal' });
+    expect(logs.join('\n')).toContain('Nouveau fait');
+  });
+
+  it('prints the quarantine reasons for an out-of-vocab fact', async () => {
+    const { deps, logs } = stubDeps({
+      rememberFact: () => ({ verdict: { kind: 'quarantine', reasons: ['predicate "enjoys" not in closed vocabulary'] }, stored: null }),
+    });
+    const cmd = new Command('research');
+    cmd.exitOverride();
+    cmd.argument('<topic>').action(() => {});
+    addKnowledgeSubcommands(cmd, async () => deps);
+    await cmd.parseAsync(['node', 'research', 'fact', 'add', 'barth', 'enjoys', 'hiking', '-c', 'hobby']);
+    expect(logs.join('\n')).toContain('quarantaine');
+    expect(logs.join('\n')).toContain('enjoys');
+  });
+
+  it('routes `research fact recall` and prints retention', async () => {
+    const { deps, logs } = stubDeps({
+      recallFacts: () => [{ text: 'marathon sub-3h', name: 'barth|targets|goal', category: 'goal', retention: 0.87, mentions: 3 }],
+    });
+    const cmd = new Command('research');
+    cmd.exitOverride();
+    cmd.argument('<topic>').action(() => {});
+    addKnowledgeSubcommands(cmd, async () => deps);
+    await cmd.parseAsync(['node', 'research', 'fact', 'recall', 'marathon']);
+    expect(logs.join('\n')).toContain('rétention 0.87');
+    expect(logs.join('\n')).toContain('[goal]');
   });
 });
