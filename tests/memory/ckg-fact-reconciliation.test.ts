@@ -3,7 +3,7 @@
  * ledger (no mocks; recallFacts uses keyword recall, no embeddings needed).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -125,5 +125,51 @@ describe('CKG.rememberFact + recallFacts (integration, real ledger)', () => {
     expect(hits[0]!.retention).toBe(1); // identity never fades
     // A threshold above 1 drops everything (sanity that the filter is wired).
     expect(ckg.recallFacts('barth engineer identity', { minRetention: 1.1 })).toEqual([]);
+  });
+});
+
+describe('CKG.exportFactMirror + listFacts (read-only Markdown mirror)', () => {
+  let dir2: string;
+  let ledgerPath2: string;
+  beforeEach(() => {
+    dir2 = mkdtempSync(join(tmpdir(), 'ckg-mirror-'));
+    ledgerPath2 = join(dir2, 'ckg-ledger.jsonl');
+  });
+  afterEach(() => {
+    try { rmSync(dir2, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+
+  it('groups facts by category into one banner-topped file each (only non-empty)', () => {
+    const ckg = new CollectiveKnowledgeGraph({ ledgerPath: ledgerPath2, agentId: 'host/repo' });
+    ckg.rememberFact({ subject: 'barth', predicate: 'is', object: 'engineer', category: 'identity' });
+    ckg.rememberFact({ subject: 'barth', predicate: 'uses', object: 'code buddy', category: 'tool' });
+    ckg.rememberFact({ subject: 'barth', predicate: 'uses', object: 'code buddy', category: 'tool' }); // reinforce
+
+    const out = join(dir2, 'mirror');
+    const { files, factCount } = ckg.exportFactMirror(out);
+    expect(factCount).toBe(2);
+    expect(files.map((f) => f.split('/').pop()).sort()).toEqual(['identity.md', 'tool.md']);
+
+    const identity = readFileSync(join(out, 'identity.md'), 'utf8');
+    expect(identity).toContain('NE PAS ÉDITER');
+    expect(identity).toContain('barth is engineer');
+    const tool = readFileSync(join(out, 'tool.md'), 'utf8');
+    expect(tool).toContain('vu 2×'); // reinforcement reflected, no duplicate
+  });
+
+  it('listFacts parses subject/predicate/object/category and retention', () => {
+    const ckg = new CollectiveKnowledgeGraph({ ledgerPath: ledgerPath2, agentId: 'host/repo' });
+    ckg.rememberFact({ subject: 'barth', predicate: 'targets', object: 'marathon sub-3h', category: 'goal' });
+    const facts = ckg.listFacts();
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({ subject: 'barth', predicate: 'targets', object: 'marathon sub-3h', category: 'goal' });
+    expect(facts[0]!.retention).toBeCloseTo(1, 5); // fresh
+  });
+
+  it('exportFactMirror on an empty graph writes nothing', () => {
+    const ckg = new CollectiveKnowledgeGraph({ ledgerPath: ledgerPath2, agentId: 'host/repo' });
+    const { files, factCount } = ckg.exportFactMirror(join(dir2, 'empty'));
+    expect(factCount).toBe(0);
+    expect(files).toEqual([]);
   });
 });

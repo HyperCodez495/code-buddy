@@ -62,6 +62,8 @@ export interface KnowledgeIngestDeps {
     query: string,
     opts: { limit?: number },
   ) => Array<{ text: string; name: string; category: string | null; retention: number; mentions: number }>;
+  /** Export the read-only Markdown mirror of structured facts. For `research mirror`. */
+  exportFactMirror: (dir: string) => { files: string[]; factCount: number };
   log: (msg: string) => void;
 }
 
@@ -83,6 +85,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
     retract: (idOrName, opts) => ckg.retract(idOrName, opts ?? {}),
     rememberFact: (input) => ckg.rememberFact(input),
     recallFacts: (query, opts) => ckg.recallFacts(query, opts),
+    exportFactMirror: (dir) => ckg.exportFactMirror(dir),
     log: (msg) => console.log(msg),
   };
 }
@@ -337,6 +340,21 @@ export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise
       const { FACT_PREDICATES, FACT_CATEGORIES } = await import('../../memory/ckg-fact-reconciliation.js');
       console.log(`Prédicats (${FACT_PREDICATES.length}) : ${FACT_PREDICATES.join(', ')}`);
       console.log(`Catégories (${FACT_CATEGORIES.length}) : ${FACT_CATEGORIES.join(', ')}`);
+    });
+
+  cmd
+    .command('mirror')
+    .description('Write a read-only Markdown mirror of the structured facts (one file per category, Obsidian-friendly)')
+    .option('-d, --dir <dir>', 'Output directory', '.codebuddy/ckg-mirror')
+    .action(async (opts: { dir: string }) => {
+      const deps = await depsFactory();
+      const { files, factCount } = deps.exportFactMirror(opts.dir);
+      if (factCount === 0) {
+        deps.log('Aucun fait structuré. Ajoute-en : buddy research fact add "<sujet>" "<prédicat>" "<objet>" -c <catégorie>');
+        return;
+      }
+      deps.log(`Miroir écrit : ${files.length} fichier(s) pour ${factCount} fait(s) dans ${opts.dir}/`);
+      deps.log('Unidirectionnel (ledger → Markdown) : éditer un .md ne modifie PAS la mémoire.');
     });
 
   cmd

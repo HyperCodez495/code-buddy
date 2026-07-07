@@ -20,6 +20,7 @@ function stubDeps(over: Partial<KnowledgeIngestDeps> = {}): { deps: KnowledgeIng
     getStats: () => ({ entities: 2, relations: 1, ledgerPath: '/tmp/x' }),
     rememberFact: () => ({ verdict: { kind: 'new' }, stored: { mentions: 1 } }),
     recallFacts: () => [],
+    exportFactMirror: () => ({ files: [], factCount: 0 }),
     log: (m) => logs.push(m),
     ...over,
   };
@@ -153,5 +154,30 @@ describe('research fact — structured facts (reconciliation) routing', () => {
     await cmd.parseAsync(['node', 'research', 'fact', 'recall', 'marathon']);
     expect(logs.join('\n')).toContain('rétention 0.87');
     expect(logs.join('\n')).toContain('[goal]');
+  });
+});
+
+describe('research mirror — read-only Markdown export routing', () => {
+  it('routes `research mirror` to exportFactMirror and reports the count', async () => {
+    const { deps, logs } = stubDeps({
+      exportFactMirror: () => ({ files: ['/x/identity.md', '/x/tool.md'], factCount: 5 }),
+    });
+    const cmd = new Command('research');
+    cmd.exitOverride();
+    cmd.argument('<topic>').action(() => {});
+    addKnowledgeSubcommands(cmd, async () => deps);
+    await cmd.parseAsync(['node', 'research', 'mirror', '--dir', '/x']);
+    expect(logs.join('\n')).toContain('2 fichier(s) pour 5 fait(s)');
+    expect(logs.join('\n')).toContain('Unidirectionnel');
+  });
+
+  it('nudges to add facts when the graph has none', async () => {
+    const { deps, logs } = stubDeps({ exportFactMirror: () => ({ files: [], factCount: 0 }) });
+    const cmd = new Command('research');
+    cmd.exitOverride();
+    cmd.argument('<topic>').action(() => {});
+    addKnowledgeSubcommands(cmd, async () => deps);
+    await cmd.parseAsync(['node', 'research', 'mirror']);
+    expect(logs.join('\n')).toContain('Aucun fait structuré');
   });
 });

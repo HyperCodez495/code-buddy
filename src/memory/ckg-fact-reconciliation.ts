@@ -134,6 +134,22 @@ export function canonicalObject(fact: Pick<StructuredFact, 'object'>): string {
   return normalizeFactPart(fact.object);
 }
 
+/**
+ * Parse a fact node's match-key name back into its parts. Coexisting nodes
+ * carry a `#objHash` suffix (dropped here). Returns null if it doesn't parse
+ * to a subject|predicate|category triple with a known category.
+ */
+export function parseFactKey(
+  name: string,
+): { subject: string; predicate: string; category: FactCategory } | null {
+  const key = name.split('#')[0] ?? name;
+  const parts = key.split('|');
+  if (parts.length < 3) return null;
+  const [subject, predicate, category] = parts;
+  if (!subject || !predicate || !category || !isKnownCategory(category)) return null;
+  return { subject, predicate, category };
+}
+
 export type FactVerdict =
   | { kind: 'quarantine'; reasons: string[] }
   | { kind: 'new' }

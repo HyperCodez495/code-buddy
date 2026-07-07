@@ -44,12 +44,14 @@ import {
   canonicalObject,
   factMatchKey,
   factRetention,
-  isKnownCategory,
+  parseFactKey,
   reconcileFact,
+  FACT_CATEGORIES,
   type FactCategory,
   type FactVerdict,
   type StructuredFact,
 } from './ckg-fact-reconciliation.js';
+import { writeFileSync } from 'fs';
 
 /** Multilingual embeddings — all-MiniLM (the global default) is English-leaning and misses
  *  French synonyms (measured: it failed paraphrase recall); this model discriminates French
@@ -736,6 +738,89 @@ export class CollectiveKnowledgeGraph {
     return ranked.slice(0, limit);
   }
 
+  /**
+   * List all current structured facts (parsed from fact nodes), each annotated
+   * with its category-derived retention. For the Markdown mirror + inspection.
+   */
+  listFacts(): Array<{
+    subject: string;
+    predicate: string;
+    object: string;
+    category: FactCategory;
+    mentions: number;
+    confidence: number;
+    retention: number;
+    corroborations: number;
+    updatedAt: string;
+  }> {
+    this.load();
+    const now = Date.now();
+    const out: Array<{
+      subject: string; predicate: string; object: string; category: FactCategory;
+      mentions: number; confidence: number; retention: number; corroborations: number; updatedAt: string;
+    }> = [];
+    for (const e of this.current.values()) {
+      if (e.type !== 'fact') continue;
+      const parsed = parseFactKey(e.name);
+      if (!parsed) continue;
+      const ageDays = (now - new Date(e.updatedAt).getTime()) / 86_400_000;
+      out.push({
+        subject: parsed.subject,
+        predicate: parsed.predicate,
+        object: e.text,
+        category: parsed.category,
+        mentions: e.mentions,
+        confidence: e.confidence,
+        retention: factRetention(parsed.category, ageDays),
+        corroborations: e.contributors.size,
+        updatedAt: e.updatedAt,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Export a READ-ONLY Markdown mirror of the structured facts, one file per
+   * category (Memory-Kernel unidirectional mirror, jarvis-OS concept). Each file
+   * carries a "do not edit" banner — the ledger is the source of truth, editing
+   * an .md changes nothing. Obsidian-compatible. Returns the files written.
+   */
+  exportFactMirror(dir: string): { files: string[]; factCount: number } {
+    const facts = this.listFacts();
+    const byCategory = new Map<FactCategory, typeof facts>();
+    for (const cat of FACT_CATEGORIES) byCategory.set(cat, []);
+    for (const f of facts) byCategory.get(f.category)!.push(f);
+
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const files: string[] = [];
+    const generatedAt = new Date().toISOString();
+    for (const [category, items] of byCategory) {
+      if (items.length === 0) continue;
+      // Most salient first: retention × confidence, then reinforcement count.
+      items.sort(
+        (a, b) => b.retention * b.confidence - a.retention * a.confidence || b.mentions - a.mentions,
+      );
+      const lines = [
+        `<!-- AUTO-GÉNÉRÉ depuis le ledger CKG — NE PAS ÉDITER (régénéré à chaque \`buddy research mirror\`) -->`,
+        `# ${category}`,
+        '',
+        `_${items.length} fait(s) · miroir du ${generatedAt}_`,
+        '',
+      ];
+      for (const f of items) {
+        const corr = f.corroborations > 1 ? ` · ${f.corroborations} agents` : '';
+        lines.push(
+          `- **${f.subject} ${f.predicate} ${f.object}** ` +
+            `(conf ${f.confidence.toFixed(2)} · rét ${f.retention.toFixed(2)} · vu ${f.mentions}×${corr})`,
+        );
+      }
+      const file = join(dir, `${category}.md`);
+      writeFileSync(file, lines.join('\n') + '\n', 'utf8');
+      files.push(file);
+    }
+    return { files, factCount: facts.length };
+  }
+
   // -- internals ------------------------------------------------------------
 
   private append(event: LedgerEvent): void {
@@ -890,14 +975,9 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0.8));
 }
 
-/** Recover the fact category from a fact node's match-key name (`subject|predicate|category`,
- *  optionally `…#objHash` for a coexisting node). Returns null if it doesn't parse. */
+/** Recover the fact category from a fact node's match-key name. */
 function categoryFromFactName(name: string): FactCategory | null {
-  const key = name.split('#')[0] ?? name;
-  const parts = key.split('|');
-  if (parts.length < 3) return null;
-  const cat = parts[2];
-  return cat && isKnownCategory(cat) ? cat : null;
+  return parseFactKey(name)?.category ?? null;
 }
 
 function safeAgentId(): string {
