@@ -237,4 +237,42 @@ describe('produceFilm', () => {
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/ffmpeg died/);
   });
+
+  it('sizes a scene to its Piper narration and bakes the voiceover into the clip', async () => {
+    const narrate = vi.fn(async (_text: string, out: string) => ({ path: out, duration: 6 }));
+    const mux = vi.fn(async () => true);
+    const gen = vi.fn(async (scene: { id: string; duration?: number }) => ({
+      clipPath: `/clips/${scene.id}.mp4`,
+    }));
+    const deps = makeDeps({
+      narrate,
+      muxNarration: mux as ProduceFilmDeps['muxNarration'],
+      generateClip: gen as ProduceFilmDeps['generateClip'],
+    });
+    const res = await produceFilm(
+      { name: 'narr', scenes: [{ prompt: 'a', narration: 'Bonjour', duration: 3 }], rootDir: root },
+      deps
+    );
+    expect(res.success).toBe(true);
+    expect(narrate).toHaveBeenCalledTimes(1);
+    // duration bumped to narration(6) + lead(0.5) + trail(0.9) = 7.4, over the base 3.
+    const genScene = gen.mock.calls[0]![0] as { duration?: number };
+    expect(genScene.duration).toBeCloseTo(7.4, 1);
+    expect(mux).toHaveBeenCalledTimes(1);
+    // the ready clip is the muxed (narrated) one under film-work/.
+    const saved = await loadFilmProject(root, 'narr');
+    expect(saved!.scenes[0]!.clipPath).toMatch(/film-work\/.*\/clip-scene-1\.mp4$/);
+  });
+
+  it('proceeds without narration when Piper is unavailable (fail-open)', async () => {
+    const narrate = vi.fn(async () => null);
+    const mux = vi.fn(async () => true);
+    const res = await produceFilm(
+      { name: 'nofpiper', scenes: [{ prompt: 'a', narration: 'x' }], rootDir: root },
+      makeDeps({ narrate, muxNarration: mux as ProduceFilmDeps['muxNarration'] })
+    );
+    expect(res.success).toBe(true);
+    expect(mux).not.toHaveBeenCalled();
+    expect(res.warnings.join(' ')).toMatch(/narration skipped/i);
+  });
 });

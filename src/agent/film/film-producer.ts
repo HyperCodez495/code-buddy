@@ -41,6 +41,15 @@ import {
   type FilmQualityReport,
   type FilmProgress,
 } from '../../tools/video/film-project.js';
+import {
+  synthesizeNarration,
+  muxNarration as muxNarrationDefault,
+  type NarrationResult,
+} from '../../tools/video/narration.js';
+
+/** Silence padding (seconds) around a scene's narration inside its clip. */
+const NARRATION_LEAD = 0.5;
+const NARRATION_TRAIL = 0.9;
 
 // ============================================================================
 // Types
@@ -50,6 +59,8 @@ export interface ScenePlanEntry {
   prompt: string;
   seed?: number;
   duration?: number;
+  /** Spoken narration for this scene (synthesized with Piper, laid over the clip). */
+  narration?: string;
 }
 
 export interface ProduceFilmInput {
@@ -99,6 +110,16 @@ export interface ProduceFilmDeps {
   assessQuality?: (filmPath: string, expectedDuration?: number) => Promise<FilmQualityReport>;
   /** Extract a clip's last frame for continuity (default: ffmpeg). */
   extractLastFrame?: (clipPath: string, outPath: string) => Promise<string | null>;
+  /** Synthesize a scene's narration to a WAV (default: Piper). Null = skip. */
+  narrate?: (text: string, outPath: string) => Promise<NarrationResult | null>;
+  /** Bake a narration WAV into a clip's audio (default: ffmpeg). */
+  muxNarration?: (
+    clip: string,
+    wav: string,
+    out: string,
+    duration: number,
+    lead: number
+  ) => Promise<boolean>;
   now?: () => Date;
   spawn?: typeof realSpawn;
 }
@@ -199,6 +220,12 @@ export async function produceFilm(
       assessFilmQuality(f, expected !== undefined ? { expectedDuration: expected } : {}));
   const extractLastFrame =
     deps.extractLastFrame ?? defaultExtractLastFrame(deps.spawn ?? realSpawn);
+  const narrate =
+    deps.narrate ?? ((text: string, out: string) => synthesizeNarration(text, out, {}));
+  const muxNarrationFn =
+    deps.muxNarration ??
+    ((clip: string, wav: string, out: string, dur: number, lead: number) =>
+      muxNarrationDefault(clip, wav, out, dur, lead, {}));
   const warnings: string[] = [];
 
   const fail = (error: string, project?: FilmProject): ProduceFilmResult => ({
@@ -260,6 +287,23 @@ export async function produceFilm(
       scene.updatedAt = now().toISOString();
       await saveFilmProject(rootDir, project, now);
 
+      // Narration (Piper): synthesize FIRST so the scene is sized to fit the
+      // voiceover (the clip is then rendered at that duration, then the narration
+      // is baked in silence-padded so boundary crossfades only touch silence).
+      let narrationWav: string | null = null;
+      if (scene.narration) {
+        const workDir = path.join(rootDir, '.codebuddy', 'film-work', filmSlug(project.name));
+        await fs.mkdir(workDir, { recursive: true }).catch(() => undefined);
+        const nr = await narrate(scene.narration, path.join(workDir, `nar-${scene.id}.wav`));
+        if (nr) {
+          narrationWav = nr.path;
+          const needed = Math.round((nr.duration + NARRATION_LEAD + NARRATION_TRAIL) * 100) / 100;
+          scene.duration = Math.max(scene.duration ?? 0, needed);
+        } else {
+          warnings.push(`${scene.id}: narration skipped (Piper unavailable)`);
+        }
+      }
+
       // Continuity: use the previous ready clip's last frame as this scene's ref.
       // Written under .codebuddy/film-work/ (NOT the scanned media-generation tree)
       // so these internal reference frames never pollute the media library.
@@ -281,13 +325,28 @@ export async function produceFilm(
       });
 
       if (res.clipPath) {
-        scene.clipPath = res.clipPath;
+        let clipPath = res.clipPath;
+        // Bake the narration into the freshly-rendered clip.
+        if (narrationWav) {
+          const workDir = path.join(rootDir, '.codebuddy', 'film-work', filmSlug(project.name));
+          const muxed = path.join(workDir, `clip-${scene.id}.mp4`);
+          const ok = await muxNarrationFn(
+            clipPath,
+            narrationWav,
+            muxed,
+            scene.duration ?? 4,
+            NARRATION_LEAD
+          );
+          if (ok) clipPath = muxed;
+          else warnings.push(`${scene.id}: narration mux failed`);
+        }
+        scene.clipPath = clipPath;
         scene.status = 'ready';
         delete scene.error;
         logDecision(
           project,
           'scene-ready',
-          `${scene.id}${res.provider ? ` (${res.provider})` : ''}`,
+          `${scene.id}${res.provider ? ` (${res.provider})` : ''}${narrationWav ? ' +voix' : ''}`,
           now
         );
       } else {

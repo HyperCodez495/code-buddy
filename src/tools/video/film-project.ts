@@ -35,6 +35,8 @@ export interface FilmScene {
   referenceImage?: string;
   /** Desired clip duration in seconds. */
   duration?: number;
+  /** Optional spoken narration for this scene (Piper voiceover). */
+  narration?: string;
   /** Set once the clip has been generated. */
   clipPath?: string;
   status: SceneStatus;
@@ -81,7 +83,7 @@ export interface FilmProject {
 export interface CreateFilmProjectInput {
   name: string;
   pitch?: string;
-  scenes: Array<Pick<FilmScene, 'prompt' | 'seed' | 'duration' | 'referenceImage'>>;
+  scenes: Array<Pick<FilmScene, 'prompt' | 'seed' | 'duration' | 'referenceImage' | 'narration'>>;
   output?: FilmOutputConfig;
   transition?: string;
   transitionDuration?: number;
@@ -128,6 +130,7 @@ export function createFilmProject(input: CreateFilmProjectInput): FilmProject {
     ...(s.seed !== undefined ? { seed: s.seed } : {}),
     ...(s.duration !== undefined ? { duration: s.duration } : {}),
     ...(s.referenceImage !== undefined ? { referenceImage: s.referenceImage } : {}),
+    ...(s.narration !== undefined ? { narration: s.narration } : {}),
     status: 'pending',
   }));
   return {
