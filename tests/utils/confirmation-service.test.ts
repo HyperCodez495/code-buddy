@@ -239,4 +239,48 @@ describe('ConfirmationService', () => {
       }
     });
   });
+
+  describe('Ventilated audit (gate provenance)', () => {
+    it('records the deciding check + non-deterministic flag on a policy allow', async () => {
+      const { auditLogger } = await import('../../src/security/audit-logger.js');
+      auditLogger.clear();
+      const r = await service.requestConfirmation(
+        { operation: 'write_file', filename: 'x.txt', riskLevel: 'low' as any },
+        'file',
+      );
+      expect(r.confirmed).toBe(true);
+      const last = auditLogger.getEntries().at(-1)!;
+      expect(last.source).toBe('gate:policy-engine');
+      expect(last.action).toBe('confirmation_granted');
+      expect(JSON.parse(last.details!)).toMatchObject({ provenance: 'policy-engine', deterministic: false });
+    });
+
+    it('marks a non-interactive refusal as DETERMINISTIC (no prompt can override)', async () => {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      const { auditLogger } = await import('../../src/security/audit-logger.js');
+      auditLogger.clear();
+      const r = await service.requestConfirmation(
+        { operation: 'write_file', filename: 'y.txt', riskLevel: 'medium' as any },
+        'file',
+      );
+      expect(r.confirmed).toBe(false);
+      const denied = auditLogger.getEntriesByAction('confirmation_denied').at(-1)!;
+      expect(JSON.parse(denied.details!).deterministic).toBe(true);
+    });
+
+    it('attributes a session-flag auto-approve to its provenance', async () => {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      service.setSessionFlag('allOperations', true);
+      const { auditLogger } = await import('../../src/security/audit-logger.js');
+      auditLogger.clear();
+      const r = await service.requestConfirmation(
+        { operation: 'write_file', filename: 'z.txt', riskLevel: 'medium' as any },
+        'file',
+      );
+      expect(r.confirmed).toBe(true);
+      const last = auditLogger.getEntries().at(-1)!;
+      expect(last.source).toBe('gate:session-flag');
+    });
+  });
+
 });

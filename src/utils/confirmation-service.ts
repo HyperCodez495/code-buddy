@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import type { RemoteApprovalService } from '../security/remote-approval.js';
 import { checkDeclarativePermission } from '../security/declarative-rules.js';
+import { auditLogger } from '../security/audit-logger.js';
 import { getPermissionModeManager } from '../security/permission-modes.js';
 import { PolicyEngine, Capability } from '../security/policy-engine.js';
 import { commandExists } from './command-exists.js';
@@ -190,6 +191,40 @@ export class ConfirmationService extends EventEmitter {
     this.largeChangeThreshold = lines;
   }
 
+  /**
+   * Ventilated audit (jarvis-OS gate concept): record WHICH check in the
+   * confirmation chain produced this decision, and whether it is a
+   * DETERMINISTIC refusal that no interactive prompt can override (policy deny,
+   * declarative deny, a permission-mode block) versus a negotiable one. Pure
+   * side-effect — returns the result unchanged, never throws (audit logging is
+   * itself fail-safe). This is what lets you always answer "why was this
+   * allowed/blocked?" from the audit trail alone.
+   */
+  private auditGate(
+    provenance: string,
+    deterministic: boolean,
+    options: ConfirmationOptions,
+    result: ConfirmationResult,
+  ): ConfirmationResult {
+    try {
+      auditLogger.log({
+        action: result.confirmed ? 'confirmation_granted' : 'confirmation_denied',
+        decision: result.confirmed ? 'allow' : 'block',
+        source: `gate:${provenance}`,
+        target: options.filename,
+        details: JSON.stringify({
+          provenance,
+          deterministic,
+          operation: options.operation,
+          ...(result.feedback ? { feedback: result.feedback } : {}),
+        }),
+      });
+    } catch {
+      /* audit is best-effort — never let it affect the gate decision */
+    }
+    return result;
+  }
+
   async requestConfirmation(
     options: ConfirmationOptions,
     operationType: 'file' | 'bash' = 'file'
@@ -243,10 +278,10 @@ export class ConfirmationService extends EventEmitter {
     });
 
     if (policyResult.decision === 'deny') {
-      return {
+      return this.auditGate('policy-engine', true, options, {
         confirmed: false,
         feedback: policyResult.reason,
-      };
+      });
     }
 
     const isSelfImprovement = capability === 'self_improvement';
@@ -261,19 +296,18 @@ export class ConfirmationService extends EventEmitter {
     const modeToolName = operationType === 'bash' ? 'bash' : 'edit';
     const earlyModeDecision = getPermissionModeManager().checkPermission(options.operation, modeToolName);
     if (!isSelfImprovement && !earlyModeDecision.allowed) {
-      return { confirmed: false, feedback: earlyModeDecision.reason };
+      return this.auditGate('permission-mode', true, options, {
+        confirmed: false,
+        feedback: earlyModeDecision.reason,
+      });
     }
 
     if (!isSelfImprovement && process.env.CODEBUDDY_AUTO_CONFIRM === 'true') {
-      return {
-        confirmed: true,
-      };
+      return this.auditGate('auto-confirm-env', false, options, { confirmed: true });
     }
 
     if (!isSelfImprovement && policyResult.decision === 'allow') {
-      return {
-        confirmed: true,
-      };
+      return this.auditGate('policy-engine', false, options, { confirmed: true });
     }
 
     // CC18: Check permission mode before other checks
@@ -281,11 +315,14 @@ export class ConfirmationService extends EventEmitter {
     const permMgr = getPermissionModeManager();
     const modeDecision = permMgr.checkPermission(options.operation, toolName.toLowerCase());
     if (!modeDecision.allowed) {
-      return { confirmed: false, feedback: modeDecision.reason };
+      return this.auditGate('permission-mode', true, options, {
+        confirmed: false,
+        feedback: modeDecision.reason,
+      });
     }
     if (!isSelfImprovement && !modeDecision.prompted) {
       // Mode says auto-approve (e.g., acceptEdits for edits, dontAsk for non-destructive)
-      return { confirmed: true };
+      return this.auditGate('permission-mode', false, options, { confirmed: true });
     }
 
     // Check declarative permission rules (fast O(n) check before Guardian)
@@ -294,10 +331,13 @@ export class ConfirmationService extends EventEmitter {
       : { file_path: options.filename };
     const declarativeDecision = checkDeclarativePermission(toolName, toolArgs);
     if (!isSelfImprovement && declarativeDecision === 'allow') {
-      return { confirmed: true };
+      return this.auditGate('declarative-rule', false, options, { confirmed: true });
     }
     if (declarativeDecision === 'deny') {
-      return { confirmed: false, feedback: 'Blocked by declarative permission rule' };
+      return this.auditGate('declarative-rule', true, options, {
+        confirmed: false,
+        feedback: 'Blocked by declarative permission rule',
+      });
     }
 
     // Check session flags — but require re-confirmation for large changes
@@ -310,7 +350,7 @@ export class ConfirmationService extends EventEmitter {
         (operationType === 'bash' && this.sessionFlags.bashCommands)
       )
     ) {
-      return { confirmed: true };
+      return this.auditGate('session-flag', false, options, { confirmed: true });
     }
 
     // Self-improvement is intentionally not covered by CODEBUDDY_AUTO_CONFIRM.
@@ -318,12 +358,12 @@ export class ConfirmationService extends EventEmitter {
     // waiting on a prompt that cannot be answered.
     if (isSelfImprovement) {
       if (!process.stdin.isTTY && !this.remoteApproval?.hasChannels()) {
-        return {
+        return this.auditGate('self-improvement-no-channel', true, options, {
           confirmed: false,
           feedback:
             'Self-improvement requires explicit approval, but no interactive terminal or '
             + 'remote approval channel is available.',
-        };
+        });
       }
     }
 
@@ -348,7 +388,7 @@ export class ConfirmationService extends EventEmitter {
           this.sessionFlags.bashCommands = true;
         }
       }
-      return bridged;
+      return this.auditGate('interactive-bridge', false, options, bridged);
     }
 
     // Remote approval fallback: when not in interactive terminal, try channels
@@ -357,7 +397,7 @@ export class ConfirmationService extends EventEmitter {
         toolName: options.operation,
         summary: `${options.operation}: ${options.filename}`,
       });
-      return { confirmed: approved };
+      return this.auditGate('remote-approval', false, options, { confirmed: approved });
     }
 
     // If VS Code should be opened, try to open it
@@ -371,10 +411,10 @@ export class ConfirmationService extends EventEmitter {
     }
 
     if (!process.stdin.isTTY) {
-      return {
+      return this.auditGate('no-interactive-terminal', true, options, {
         confirmed: false,
         feedback: 'Approval requires an interactive terminal or configured remote approval channel',
-      };
+      });
     }
 
     // Create a promise that will be resolved by the UI component
