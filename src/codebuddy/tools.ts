@@ -6,6 +6,7 @@
  */
 
 import type { CodeBuddyTool, JsonSchemaProperty } from "./client.js";
+import { setDeferredMCPSchemas } from "../tools/deferred-schema-state.js";
 import { MCPManager, MCPTool } from "../mcp/client.js";
 import { loadMCPConfig } from "../mcp/config.js";
 import {
@@ -491,32 +492,14 @@ export function convertMCPToolToCodeBuddyTool(mcpTool: MCPTool): CodeBuddyTool {
  *  tool-selection pick the relevant ~15. Override with CODEBUDDY_MCP_DEFER_THRESHOLD. */
 const DEFERRED_SCHEMA_THRESHOLD = Number(process.env.CODEBUDDY_MCP_DEFER_THRESHOLD) || 30;
 
-/** Full MCP tool schemas stored for deferred retrieval */
-let _deferredMCPSchemas: Map<string, CodeBuddyTool> | null = null;
-
-/**
- * Get the deferred MCP schemas map (for tool_search to resolve full schemas).
- */
-export function getDeferredMCPSchemas(): Map<string, CodeBuddyTool> {
-  return _deferredMCPSchemas ?? new Map();
-}
-
-/**
- * Check if deferred MCP schema loading is active.
- */
-export function isDeferredSchemaMode(): boolean {
-  return _deferredMCPSchemas !== null && _deferredMCPSchemas.size > 0;
-}
-
-/**
- * Resolve full schemas for MCP tools by name (called by tool_search).
- */
-export function resolveDeferredSchemas(toolNames: string[]): CodeBuddyTool[] {
-  if (!_deferredMCPSchemas) return [];
-  return toolNames
-    .map(name => _deferredMCPSchemas!.get(name))
-    .filter((t): t is CodeBuddyTool => t !== undefined);
-}
+// The deferred-schema STATE lives in tools/deferred-schema-state.ts so that
+// tool_search reads it without importing this module (cycle break). These are
+// re-exported for the existing importers of tools.ts.
+export {
+  getDeferredMCPSchemas,
+  isDeferredSchemaMode,
+  resolveDeferredSchemas,
+} from '../tools/deferred-schema-state.js';
 
 export function addMCPToolsToCodeBuddyTools(baseTools: CodeBuddyTool[]): CodeBuddyTool[] {
   if (!mcpManager) {
@@ -527,19 +510,19 @@ export function addMCPToolsToCodeBuddyTools(baseTools: CodeBuddyTool[]): CodeBud
 
   // If below threshold, include full schemas as before
   if (mcpTools.length <= DEFERRED_SCHEMA_THRESHOLD) {
-    _deferredMCPSchemas = null;
+    setDeferredMCPSchemas(null);
     const codebuddyMCPTools = mcpTools.map(convertMCPToolToCodeBuddyTool);
     return [...baseTools, ...codebuddyMCPTools];
   }
 
   // Deferred mode: store full schemas, only send stubs to LLM
   logger.debug(`Deferred MCP schema loading active: ${mcpTools.length} tools exceed threshold ${DEFERRED_SCHEMA_THRESHOLD}`);
-  _deferredMCPSchemas = new Map();
+  const deferred = new Map<string, CodeBuddyTool>();
 
   const stubs: CodeBuddyTool[] = [];
   for (const mcpTool of mcpTools) {
     const full = convertMCPToolToCodeBuddyTool(mcpTool);
-    _deferredMCPSchemas.set(full.function.name, full);
+    deferred.set(full.function.name, full);
 
     // Stub: name + description only, no parameters (forces tool_search)
     stubs.push({
@@ -556,6 +539,7 @@ export function addMCPToolsToCodeBuddyTools(baseTools: CodeBuddyTool[]): CodeBud
     });
   }
 
+  setDeferredMCPSchemas(deferred);
   return [...baseTools, ...stubs];
 }
 

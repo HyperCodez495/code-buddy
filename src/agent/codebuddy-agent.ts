@@ -767,6 +767,16 @@ Look at the screenshot and find the element matching the user's intent. Output o
       }));
     }).catch((e) => { logger.debug('Delegate-agent tool provider wire failed (optional)', { error: String(e) }); });
 
+    // Wire the research-worker factory so WideResearchOrchestrator can spawn
+    // sub-agents WITHOUT importing this module (cycle break — same inversion as
+    // setDelegateAgentProvider). The tool path always runs inside an agent, so
+    // this constructor guarantees the factory is set before any research tool
+    // fires. Idempotent (last-writer-wins).
+    import('./research-worker-provider.js').then(({ setResearchWorkerFactory }) => {
+      setResearchWorkerFactory(({ apiKey, baseURL, model, maxRounds }) =>
+        new CodeBuddyAgent(apiKey, baseURL, model, maxRounds));
+    }).catch((e) => { logger.debug('Research-worker factory wire failed (optional)', { error: String(e) }); });
+
     // Phase (d).21 ship 3 — wake NotificationManager via default sink.
     // Idempotent. Once wired, anyone in the codebase can call notify()
     // / notifyQuick() and it will gate + log + emit on the manager bus.

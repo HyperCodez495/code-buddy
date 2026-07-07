@@ -207,6 +207,11 @@ export function createResearchCommand(): Command {
         }
       }
 
+      // CLI path: the agent constructor never ran, so wire the worker factory
+      // that lets the orchestrator spawn sub-agents.
+      const { ensureResearchWorkerFactory } = await import('./wire-research-worker.js');
+      await ensureResearchWorkerFactory();
+
       const orchestrator = new WideResearchOrchestrator({
         workers,
         maxRoundsPerWorker,

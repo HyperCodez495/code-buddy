@@ -179,7 +179,7 @@ export class ToolSearchTool extends BaseTool {
     // Check if deferred MCP schema loading is active
     let deferredSchemas: Map<string, unknown> | null = null;
     try {
-      const { getDeferredMCPSchemas, isDeferredSchemaMode } = await import('../codebuddy/tools.js');
+      const { getDeferredMCPSchemas, isDeferredSchemaMode } = await import('./deferred-schema-state.js');
       if (isDeferredSchemaMode()) {
         deferredSchemas = getDeferredMCPSchemas();
       }

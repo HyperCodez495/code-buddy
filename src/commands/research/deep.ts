@@ -114,6 +114,9 @@ export async function runDeepResearchCli(
   if (io.makeOrchestrator) {
     orchestrator = io.makeOrchestrator();
   } else {
+    // CLI path: wire the worker factory before the orchestrator spawns sub-agents.
+    const { ensureResearchWorkerFactory } = await import('./wire-research-worker.js');
+    await ensureResearchWorkerFactory();
     const { WideResearchOrchestrator } = await import('../../agent/wide-research.js');
     orchestrator = new WideResearchOrchestrator() as unknown as WideResearchOrchestrator;
   }

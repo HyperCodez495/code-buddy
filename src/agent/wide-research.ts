@@ -25,6 +25,7 @@
 
 import { EventEmitter } from 'events';
 import type { ToolResult } from '../types/index.js';
+import { getResearchWorkerFactory } from './research-worker-provider.js';
 import type {
   DeepResearchLoopOptions,
   DeepResearchLoopResult,
@@ -285,14 +286,23 @@ export class WideResearchOrchestrator extends EventEmitter {
     apiKey: string,
     providerConfig?: Record<string, unknown>
   ): Promise<string> {
-    const { CodeBuddyAgent } = await import('./codebuddy-agent.js');
-
-    const agent = new CodeBuddyAgent(
+    // The worker sub-agent is built by an INJECTED factory (research-worker-
+    // provider), not by importing CodeBuddyAgent here — that import closed the
+    // agent↔tool-registry cycle. The agent's constructor and the research CLI
+    // both wire the factory at startup.
+    const factory = getResearchWorkerFactory();
+    if (!factory) {
+      throw new Error(
+        'WideResearch: no research-worker factory wired. Call setResearchWorkerFactory() ' +
+          '(done automatically by the agent constructor and by `buddy research`).',
+      );
+    }
+    const agent = factory({
       apiKey,
-      providerConfig?.baseURL as string | undefined,
-      providerConfig?.model as string | undefined,
-      this.options.maxRoundsPerWorker
-    );
+      baseURL: providerConfig?.baseURL as string | undefined,
+      model: providerConfig?.model as string | undefined,
+      maxRounds: this.options.maxRoundsPerWorker,
+    });
 
     let output = '';
 
