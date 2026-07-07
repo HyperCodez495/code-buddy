@@ -461,6 +461,9 @@ export async function runDoctorChecks(cwd?: string): Promise<DoctorCheck[]> {
     ...(await checkLlmKeysLive()),
     await checkChatGptOAuth(),
     ...checkConfigFiles(dir),
+    // Accidents de collage dans .env (commande shell, guillemets, doublons) —
+    // détectés sans jamais afficher les valeurs. src/doctor/env-sanity.ts.
+    ...(await import('./env-sanity.js')).checkEnvSanity(dir),
     ...checkStaleLockFiles(dir),
     ...checkTtsProviders(),
     checkDiskSpace(dir),
