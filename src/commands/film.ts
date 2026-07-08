@@ -254,7 +254,11 @@ export function createFilmCommand(): Command {
     .description(
       'Génère une vidéo de présentation narrée depuis un simple sujet (le LLM planifie les scènes → narration Piper → rendu premium + sous-titres karaoké). $0 via ChatGPT.'
     )
-    .option('--scenes <n>', 'nombre de scènes visé', '6')
+    .option('--scenes <n>', 'nombre de scènes visé (défaut 6, ou 3 en --short)')
+    .option(
+      '--short',
+      'format court vertical 9:16 (réseaux) : narration percutante, ~3 scènes, 1080x1920'
+    )
     .option('--resolution <WxH>', "résolution de sortie (défaut '1920x1080')")
     .option('--music <file>', 'musique de fond (défaut : une nappe générée)')
     .option('--no-music', 'pas de musique de fond')
@@ -267,11 +271,15 @@ export function createFilmCommand(): Command {
       const { produceVideoFromPrompt } = await import('../agent/film/video-studio.js');
       console.log(`🎬  Production vidéo depuis le prompt : « ${pitch} »`);
       const music = typeof opts.music === 'string' ? opts.music : undefined;
+      const short = opts.short === true;
       const res = await produceVideoFromPrompt(
         pitch,
         {
-          count: num(typeof opts.scenes === 'string' ? opts.scenes : undefined) ?? 6,
-          resolution: typeof opts.resolution === 'string' ? opts.resolution : undefined,
+          count: num(typeof opts.scenes === 'string' ? opts.scenes : undefined) ?? (short ? 3 : 6),
+          resolution:
+            (typeof opts.resolution === 'string' ? opts.resolution : undefined) ??
+            (short ? '1080x1920' : undefined),
+          ...(short ? { style: 'short' as const } : {}),
           music,
           noMusic: opts.music === false,
           subtitles: opts.subtitles !== false,

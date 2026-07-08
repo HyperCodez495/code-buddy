@@ -109,7 +109,17 @@ export function buildKaraokeAss(
   leadSec = 0,
   style: KaraokeStyle = {}
 ): string {
-  const st = { ...DEFAULT_STYLE, ...style };
+  // Scale caption size/position with the target height, and use fewer words per
+  // line on vertical (9:16) videos — then let any explicit style override.
+  const h = style.playResY ?? DEFAULT_STYLE.playResY;
+  const vertical = (style.playResX ?? DEFAULT_STYLE.playResX) < h;
+  const scaled: Required<KaraokeStyle> = {
+    ...DEFAULT_STYLE,
+    fontSize: Math.round(h * 0.046),
+    marginV: Math.round(h * 0.072),
+    wordsPerLine: vertical ? 4 : 6,
+  };
+  const st = { ...scaled, ...style };
   const words = estimateWordTimings(text, durationSec);
   const header =
     `[Script Info]\nScriptType: v4.00+\nPlayResX: ${st.playResX}\nPlayResY: ${st.playResY}\nScaledBorderAndShadow: yes\n\n` +

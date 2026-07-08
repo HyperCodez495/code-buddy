@@ -126,9 +126,16 @@ export function buildHeroCardArgs(opts: {
   outPath: string;
   big: boolean;
 }): string[] {
+  // Scale text with the frame so a vertical (9:16) card reads as well as a wide one.
+  const w = opts.width;
+  const h = opts.height;
+  const titleSize = Math.round(w * (opts.big ? 0.068 : 0.045));
+  const subSize = Math.round(w * (opts.big ? 0.024 : 0.02));
+  const titleY = -Math.round(h * 0.037);
+  const subY = Math.round(h * 0.065);
   const args = [
     '-size',
-    `${opts.width}x${opts.height}`,
+    `${w}x${h}`,
     '-define',
     'gradient:angle=135',
     `gradient:${opts.c0}-${opts.c1}`,
@@ -137,11 +144,11 @@ export function buildHeroCardArgs(opts: {
     '-font',
     FB,
     '-pointsize',
-    String(opts.big ? 128 : 80),
+    String(titleSize),
     '-fill',
     'white',
     '-annotate',
-    '+0-40',
+    `+0${titleY}`,
     opts.title,
   ];
   if (opts.subtitle) {
@@ -149,11 +156,11 @@ export function buildHeroCardArgs(opts: {
       '-font',
       FR,
       '-pointsize',
-      String(opts.big ? 44 : 36),
+      String(subSize),
       '-fill',
       '#e6ecff',
       '-annotate',
-      '+0+70',
+      `+0+${subY}`,
       opts.subtitle
     );
   }
@@ -261,6 +268,16 @@ async function composeFramedStill(
 ): Promise<boolean> {
   const c0 = input.c0 ?? '#0f2027';
   const c1 = input.c1 ?? '#243b55';
+  // Aspect-aware layout: reserve a title band on top + a caption band at the
+  // bottom, fit the framed image into what's left (works for wide and 9:16).
+  const side = Math.round(w * 0.06);
+  const titleZone = Math.round(h * 0.14);
+  const imgBoxW = w - 2 * side;
+  const imgBoxH = Math.max(120, h - titleZone - Math.round(h * 0.14));
+  const brandSize = Math.round(h * 0.028);
+  const titleSize = Math.round(h * 0.05);
+  const subSize = Math.round(h * 0.028);
+  const tx = Math.round(w * 0.048);
   const resized = `${stillPath}.rs.png`;
   const rounded = `${stillPath}.rnd.png`;
   const bg = `${stillPath}.bg.png`;
@@ -275,7 +292,7 @@ async function composeFramedStill(
         await run(deps.spawn, deps.convertBin, [
           input.visual.imagePath!,
           '-resize',
-          '1480x740',
+          `${imgBoxW}x${imgBoxH}`,
           resized,
         ])
       ).code !== 0
@@ -337,27 +354,27 @@ async function composeFramedStill(
       '-gravity',
       'north',
       '-geometry',
-      '+0+184',
+      `+0+${titleZone}`,
       '-composite',
       '-gravity',
       'northwest',
       '-font',
       FB,
       '-pointsize',
-      '30',
+      String(brandSize),
       '-fill',
       '#9fb4ff',
       '-annotate',
-      '+92+56',
+      `+${tx}+${Math.round(h * 0.05)}`,
       '● code-buddy',
       '-font',
       FB,
       '-pointsize',
-      '56',
+      String(titleSize),
       '-fill',
       'white',
       '-annotate',
-      '+92+102',
+      `+${tx}+${Math.round(h * 0.092)}`,
       input.title,
     ];
     if (input.subtitle)
@@ -365,11 +382,11 @@ async function composeFramedStill(
         '-font',
         FR,
         '-pointsize',
-        '30',
+        String(subSize),
         '-fill',
         '#cdd6f4',
         '-annotate',
-        '+92+170',
+        `+${tx}+${Math.round(h * 0.152)}`,
         input.subtitle
       );
     composeArgs.push(stillPath);

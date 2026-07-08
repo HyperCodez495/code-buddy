@@ -42,6 +42,8 @@ export interface VideoStudioOptions {
   count?: number;
   lang?: string;
   model?: string;
+  /** 'short' = punchy vertical/social format (drives the planner's tone). */
+  style?: 'short' | 'standard';
   /** 'WxH' or a preset via assembleFilm; default 1920x1080. */
   resolution?: string;
   music?: string;
@@ -63,7 +65,7 @@ export interface VideoStudioProgress {
 export interface VideoStudioDeps {
   plan?: (
     pitch: string,
-    opts: { count?: number; lang?: string; model?: string }
+    opts: { count?: number; lang?: string; model?: string; style?: 'short' | 'standard' }
   ) => Promise<PlannedScene[]>;
   synthesize?: (
     text: string,
@@ -212,6 +214,7 @@ export async function produceVideoFromPrompt(
       ...(options.count !== undefined ? { count: options.count } : {}),
       ...(options.lang ? { lang: options.lang } : {}),
       ...(options.model ? { model: options.model } : {}),
+      ...(options.style ? { style: options.style } : {}),
     });
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e));
