@@ -17,7 +17,7 @@
 
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { logger } from '../utils/logger.js';
 import { commandExists } from '../utils/command-exists.js';
@@ -710,11 +710,24 @@ export async function* defaultStreamReply(
   }
 }
 
-/** Default synth: Piper neural TTS via the shared text_to_speech synthesizer. */
+/**
+ * Default synth for the assistant's voice. Active engine picked from
+ * CODEBUDDY_TTS_ENGINE: `pocket` → Kyutai Pocket TTS (Lisa's estelle, on-CPU,
+ * fail-open to Piper), else Piper via the shared text_to_speech synthesizer.
+ */
 function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
+  const engine = (process.env.CODEBUDDY_TTS_ENGINE ?? '').trim().toLowerCase();
   const resolvedVoice = voice || resolveDefaultPiperVoiceModel();
-  const cacheVoice = resolvedVoice;
+  const pocketVoice = process.env.CODEBUDDY_POCKET_VOICE ?? 'estelle';
+  // Cache key must reflect the engine+voice so Piper and Pocket clips never collide.
+  const cacheVoice = engine === 'pocket' ? `pocket:${pocketVoice}` : resolvedVoice;
   const synthFresh = async (text: string): Promise<string> => {
+    if (engine === 'pocket') {
+      const { synthesizePocketWav } = await import('../voice/local-tts.js');
+      const wavPath = join(tmpdir(), `cb-voice-${process.pid}-${Date.now()}.wav`);
+      if (await synthesizePocketWav(text, wavPath)) return wavPath;
+      logger.info('[voice] Pocket TTS unavailable/failed — falling back to Piper');
+    }
     const { synthesizeTextToSpeech } = await import('../tools/text-to-speech-tool.js');
     const res = await synthesizeTextToSpeech(
       { text, provider: 'piper', format: 'wav', ...(resolvedVoice ? { voice: resolvedVoice } : {}) },
