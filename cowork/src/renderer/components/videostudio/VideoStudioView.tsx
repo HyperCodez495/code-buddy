@@ -45,13 +45,23 @@ function phasePercent(p: Progress | null): number {
   return 10;
 }
 
+type Format = 'landscape' | 'short';
+
 export function VideoStudioView() {
   const [pitch, setPitch] = useState('');
   const [scenes, setScenes] = useState(6);
+  const [format, setFormat] = useState<Format>('landscape');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [result, setResult] = useState<ProduceResult | null>(null);
+  const [resultFormat, setResultFormat] = useState<Format>('landscape');
   const offRef = useRef<(() => void) | null>(null);
+
+  // Switching to Short defaults to a tighter, punchier scene count (and back).
+  const pickFormat = (f: Format): void => {
+    setFormat(f);
+    setScenes(f === 'short' ? 3 : 6);
+  };
 
   useEffect(() => {
     const film = window.electronAPI?.film;
@@ -68,9 +78,16 @@ export function VideoStudioView() {
     if (!film?.produce || !topic || busy) return;
     setBusy(true);
     setResult(null);
+    setResultFormat(format);
     setProgress({ phase: 'planning' });
     try {
-      const res = await film.produce({ pitch: topic, scenes });
+      const res = await film.produce({
+        pitch: topic,
+        scenes,
+        ...(format === 'short'
+          ? { resolution: '1080x1920', style: 'short' as const }
+          : {}),
+      });
       setResult(res);
     } catch (err) {
       setResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -115,6 +132,34 @@ export function VideoStudioView() {
         />
 
         <div className="flex flex-wrap items-center gap-4">
+          <div
+            className="inline-flex rounded-full border border-border bg-surface p-0.5 text-sm"
+            role="group"
+            aria-label="Format vidéo"
+          >
+            {(
+              [
+                ['landscape', '🖥 Paysage 16:9'],
+                ['short', '📱 Short 9:16'],
+              ] as const
+            ).map(([f, label]) => (
+              <button
+                key={f}
+                type="button"
+                data-testid={`video-studio-format-${f}`}
+                onClick={() => pickFormat(f)}
+                disabled={busy}
+                aria-pressed={format === f}
+                className={`rounded-full px-3 py-1 transition ${
+                  format === f
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Scènes</span>
             <input
@@ -170,7 +215,11 @@ export function VideoStudioView() {
                 <video
                   controls
                   src={result.url}
-                  className="w-full rounded-lg bg-black"
+                  className={
+                    resultFormat === 'short'
+                      ? 'mx-auto max-h-[70vh] w-auto rounded-lg bg-black'
+                      : 'w-full rounded-lg bg-black'
+                  }
                   data-testid="video-studio-player"
                 />
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

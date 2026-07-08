@@ -727,6 +727,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       noMusic?: boolean;
       subtitles?: boolean;
       lang?: string;
+      style?: 'short' | 'standard';
     }): Promise<{
       ok: boolean;
       filmPath?: string;
@@ -4640,7 +4641,7 @@ declare global {
         copyToClipboard: (sourcePath: string) => Promise<{ ok: boolean; mode?: 'image' | 'path'; error?: string }>;
       };
       film: {
-        produce: (request: { pitch: string; scenes?: number; resolution?: string; noMusic?: boolean; subtitles?: boolean; lang?: string }) => Promise<{ ok: boolean; filmPath?: string; url?: string; sceneCount?: number; duration?: number; qualityPass?: boolean; warnings?: string[]; error?: string }>;
+        produce: (request: { pitch: string; scenes?: number; resolution?: string; noMusic?: boolean; subtitles?: boolean; lang?: string; style?: 'short' | 'standard' }) => Promise<{ ok: boolean; filmPath?: string; url?: string; sceneCount?: number; duration?: number; qualityPass?: boolean; warnings?: string[]; error?: string }>;
         onProgress: (cb: (p: { phase: string; scene?: number; total?: number; message?: string }) => void) => () => void;
       };
       selectFiles: () => Promise<string[]>;
