@@ -171,7 +171,7 @@ export function wavDurationMs(buf: Buffer, sampleRate = SAMPLE_RATE): number {
  * When no voice is given the CLI picks a language-appropriate default itself
  * (estelle for French, giovanni/it, lola/es, juergen/de, rafael/pt, alba else).
  */
-const PRESET_VOICES = [
+export const PRESET_VOICES = [
   'alba',
   'anna',
   'azelma',
