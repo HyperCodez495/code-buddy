@@ -130,17 +130,41 @@ export function wavDurationMs(buf: Buffer, sampleRate = SAMPLE_RATE): number {
   return Math.round((dataBytes / (sampleRate * 2)) * 1000);
 }
 
-/** The documented preset voices (a representative catalog; any name/path works). */
-const PRESET_VOICES: Array<{ id: string; gender: 'male' | 'female'; lang: string }> = [
-  { id: 'alba', gender: 'female', lang: 'en-US' },
-  { id: 'anna', gender: 'female', lang: 'en-US' },
-  { id: 'charles', gender: 'male', lang: 'en-US' },
-  { id: 'estelle', gender: 'female', lang: 'en-US' },
-  { id: 'giovanni', gender: 'male', lang: 'it-IT' },
-  { id: 'lola', gender: 'female', lang: 'es-ES' },
-  { id: 'juergen', gender: 'male', lang: 'de-DE' },
-  { id: 'rafael', gender: 'male', lang: 'pt-BR' },
-];
+/**
+ * The 26 built-in preset voices — the SAME catalog is available in every
+ * language (a voice can speak any language; a non-native sample may transfer
+ * its accent). Any name here, or a path to a ~5 s sample, is a valid `--voice`.
+ * When no voice is given the CLI picks a language-appropriate default itself
+ * (estelle for French, giovanni/it, lola/es, juergen/de, rafael/pt, alba else).
+ */
+const PRESET_VOICES = [
+  'alba',
+  'anna',
+  'azelma',
+  'bill_boerst',
+  'caro_davy',
+  'charles',
+  'cosette',
+  'eponine',
+  'estelle',
+  'eve',
+  'fantine',
+  'george',
+  'giovanni',
+  'jane',
+  'javert',
+  'jean',
+  'juergen',
+  'lola',
+  'marius',
+  'mary',
+  'michael',
+  'paul',
+  'peter_yearsley',
+  'rafael',
+  'stuart_bell',
+  'vera',
+] as const;
 
 export class PocketTTSProvider implements ITTSProvider {
   readonly id = 'pocket' as const;
@@ -164,16 +188,15 @@ export class PocketTTSProvider implements ITTSProvider {
   }
 
   async listVoices(): Promise<Voice[]> {
-    return PRESET_VOICES.map((v, i) => ({
-      id: `pocket-${v.id}`,
-      name: `Pocket ${v.id}`,
-      language: v.lang,
-      gender: v.gender,
+    return PRESET_VOICES.map((id) => ({
+      id: `pocket-${id}`,
+      name: `Pocket ${id}`,
+      language: 'multi', // every preset works in every supported language
       provider: 'pocket' as const,
-      providerId: v.id,
+      providerId: id,
       quality: 'high',
       sampleRate: SAMPLE_RATE,
-      isDefault: i === 0,
+      isDefault: id === 'alba',
     }));
   }
 
