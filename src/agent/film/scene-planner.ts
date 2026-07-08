@@ -31,6 +31,8 @@ export interface PlanScenesOptions {
   lang?: string;
   /** Model override for the planner. */
   model?: string;
+  /** 'short' = punchy vertical/social format (1 short sentence/scene, tiny titles). */
+  style?: 'short' | 'standard';
 }
 
 export interface PlanScenesDeps {
@@ -38,7 +40,15 @@ export interface PlanScenesDeps {
   chat?: (system: string, user: string) => Promise<string>;
 }
 
-export function buildPlannerSystemPrompt(count: number, lang: string): string {
+export function buildPlannerSystemPrompt(
+  count: number,
+  lang: string,
+  style: 'short' | 'standard' = 'standard'
+): string {
+  const short =
+    style === 'short'
+      ? `\nFORMAT COURT (réseau social, vertical 9:16) : sois PERCUTANT — narration d'UNE seule phrase courte et frappante par scène, titres ultra-courts (≤ 3 mots), zéro remplissage. Accroche dès la première scène, conclusion qui claque.`
+      : '';
   return (
     `Tu es un scénariste de vidéos de présentation courtes et percutantes. ` +
     `À partir d'un sujet, produis un plan d'environ ${count} scènes formant un arc clair : ` +
@@ -49,8 +59,9 @@ export function buildPlannerSystemPrompt(count: number, lang: string): string {
     `- "narration": une narration PARLÉE, naturelle, en ${lang}, 1 à 2 phrases, ton clair et engageant ` +
     `(c'est ce qui sera lu à voix haute) ;\n` +
     `- "visual": {"kind":"diagram","mermaid":"<code Mermaid flowchart valide>"} UNIQUEMENT quand un schéma ` +
-    `clarifie vraiment (architecture, étapes, relations) ; sinon {"kind":"text"}.\n` +
-    `Réponds STRICTEMENT en JSON, sans texte autour :\n` +
+    `clarifie vraiment (architecture, étapes, relations) ; sinon {"kind":"text"}.` +
+    short +
+    `\nRéponds STRICTEMENT en JSON, sans texte autour :\n` +
     `{"scenes":[{"title":"...","subtitle":"...","narration":"...","visual":{"kind":"text"}}]}`
   );
 }
@@ -118,7 +129,7 @@ export async function planScenes(
 ): Promise<PlannedScene[]> {
   const count = options.count ?? 6;
   const lang = options.lang ?? 'français';
-  const system = buildPlannerSystemPrompt(count, lang);
+  const system = buildPlannerSystemPrompt(count, lang, options.style ?? 'standard');
   const user = buildPlannerUserPrompt(pitch, count);
   const chat = deps.chat ?? ((s: string, u: string) => defaultChat(s, u, options.model));
 
