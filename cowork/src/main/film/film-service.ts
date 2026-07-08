@@ -16,6 +16,8 @@ export interface FilmProduceRequest {
   subtitles?: boolean;
   lang?: string;
   model?: string;
+  /** 'short' = punchy vertical/social format (drives the planner's tone). */
+  style?: 'short' | 'standard';
 }
 
 export interface FilmProgress {
@@ -86,6 +88,7 @@ export class FilmService {
           subtitles: req.subtitles !== false,
           ...(req.lang ? { lang: req.lang } : {}),
           ...(req.model ? { model: req.model } : {}),
+          ...(req.style ? { style: req.style } : {}),
           rootDir: this.rootDir,
         },
         { ...(onProgress ? { onProgress } : {}) }
