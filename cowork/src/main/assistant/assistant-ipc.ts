@@ -1,0 +1,29 @@
+/**
+ * IPC surface for the Assistant settings panel. Side-effect free: the main
+ * entry calls `registerAssistantIpc` after creating the service.
+ */
+import type { IpcMain } from 'electron';
+import type { AssistantService } from './assistant-service.js';
+
+export const ASSISTANT_CHANNELS = {
+  get: 'assistant.get',
+  save: 'assistant.save',
+  voices: 'assistant.voices',
+  preview: 'assistant.preview',
+  restart: 'assistant.restart',
+} as const;
+
+export function registerAssistantIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  service: AssistantService
+): void {
+  ipcMain.handle(ASSISTANT_CHANNELS.get, async () => service.getConfig());
+  ipcMain.handle(ASSISTANT_CHANNELS.save, async (_event, updates: Record<string, string>) =>
+    service.save(updates ?? {})
+  );
+  ipcMain.handle(ASSISTANT_CHANNELS.voices, async () => service.voices());
+  ipcMain.handle(ASSISTANT_CHANNELS.preview, async (_event, name: string) =>
+    service.preview(name ?? '')
+  );
+  ipcMain.handle(ASSISTANT_CHANNELS.restart, async () => service.restart());
+}
