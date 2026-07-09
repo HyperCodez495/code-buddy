@@ -437,7 +437,7 @@ export function AssistantView() {
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3">
               <div className="text-sm text-muted-foreground">
                 {changedCount > 0
                   ? `${changedCount} changement${changedCount > 1 ? 's' : ''} en attente`
@@ -460,7 +460,7 @@ export function AssistantView() {
             </div>
 
             {volume !== null && (
-              <section className="rounded-lg border border-border bg-surface p-4">
+              <section className="shrink-0 rounded-lg border border-border bg-surface p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-semibold">Volume</h2>
@@ -488,7 +488,7 @@ export function AssistantView() {
               return (
                 <section
                   key={group}
-                  className="overflow-hidden rounded-lg border border-border bg-surface"
+                  className="shrink-0 overflow-hidden rounded-lg border border-border bg-surface"
                 >
                   <header className="flex items-start gap-3 border-b border-border px-4 py-3">
                     <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
