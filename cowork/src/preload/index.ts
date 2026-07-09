@@ -108,6 +108,49 @@ import type {
   HermesKanbanApi,
 } from '../renderer/types/hermes';
 
+type AssistantSettingGroup = 'voice' | 'speech' | 'behavior' | 'companion';
+type AssistantSettingType = 'toggle' | 'enum' | 'text' | 'voice';
+type AssistantEnvFile = 'vision' | 'lisa' | 'both';
+
+interface AssistantSetting {
+  key: string;
+  label: string;
+  group: AssistantSettingGroup;
+  type: AssistantSettingType;
+  options?: string[];
+  default: string;
+  envFile: AssistantEnvFile;
+  help: string;
+}
+
+interface AssistantErrorResponse {
+  ok: false;
+  error: string;
+}
+
+interface AssistantConfigSuccessResponse {
+  settings: AssistantSetting[];
+  values: Record<string, string>;
+  voices: string[];
+}
+
+interface AssistantConfigErrorResponse extends AssistantErrorResponse {
+  settings: AssistantSetting[];
+  values: Record<string, string>;
+  voices: string[];
+}
+
+type AssistantConfigResponse = AssistantConfigSuccessResponse | AssistantConfigErrorResponse;
+
+interface AssistantSaveSuccessResponse {
+  vision: string[];
+  lisa: string[];
+}
+
+type AssistantSaveResponse = AssistantSaveSuccessResponse | AssistantErrorResponse;
+type AssistantPreviewResponse = string | null | AssistantErrorResponse;
+type AssistantRestartResponse = Array<{ service: string; ok: boolean; error?: string }> | AssistantErrorResponse;
+
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
 let ipcListener: ((event: Electron.IpcRendererEvent, data: ServerEvent) => void) | null = null;
@@ -743,6 +786,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('film.progress', wrapped);
       return () => ipcRenderer.removeListener('film.progress', wrapped);
     },
+  },
+
+  // Assistant — voice assistant config + daemon lifecycle.
+  assistant: {
+    get: (): Promise<AssistantConfigResponse> => ipcRenderer.invoke('assistant.get'),
+    save: (updates: Record<string, string>): Promise<AssistantSaveResponse> =>
+      ipcRenderer.invoke('assistant.save', updates),
+    preview: (name: string): Promise<AssistantPreviewResponse> =>
+      ipcRenderer.invoke('assistant.preview', name),
+    restart: (): Promise<AssistantRestartResponse> => ipcRenderer.invoke('assistant.restart'),
   },
 
   // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
@@ -4643,6 +4696,12 @@ declare global {
       film: {
         produce: (request: { pitch: string; scenes?: number; resolution?: string; noMusic?: boolean; subtitles?: boolean; lang?: string; style?: 'short' | 'standard' }) => Promise<{ ok: boolean; filmPath?: string; url?: string; sceneCount?: number; duration?: number; qualityPass?: boolean; warnings?: string[]; error?: string }>;
         onProgress: (cb: (p: { phase: string; scene?: number; total?: number; message?: string }) => void) => () => void;
+      };
+      assistant: {
+        get: () => Promise<AssistantConfigResponse>;
+        save: (updates: Record<string, string>) => Promise<AssistantSaveResponse>;
+        preview: (name: string) => Promise<AssistantPreviewResponse>;
+        restart: () => Promise<AssistantRestartResponse>;
       };
       selectFiles: () => Promise<string[]>;
       artifacts: {
