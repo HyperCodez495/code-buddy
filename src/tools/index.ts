@@ -10,6 +10,7 @@ export {
 } from "./search.js";
 export { WebSearchTool } from "./web-search.js";
 export { WeatherTool } from "./weather.js";
+export { StockQuoteTool } from "./stock-quote.js";
 export { AppServerTool, getAppServerTool, resetAppServerTool } from "./app-server-tool.js";
 export { ImageTool, type ImageInput, type ProcessedImage } from "./image-tool.js";
 export { MorphEditorTool } from "./morph-editor.js";
