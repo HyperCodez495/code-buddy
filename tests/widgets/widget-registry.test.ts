@@ -106,6 +106,12 @@ describe('server-side rendering (no client script)', () => {
     expect(doc).toContain('<!doctype html>');
     expect(doc).toContain('<div>hi</div>');
   });
+
+  it('stamps the host theme as data-cbw-theme on <html> (dark/light), none when omitted', () => {
+    expect(renderWidgetDocument('<div>x</div>', 'dark')).toContain('<html data-cbw-theme="dark">');
+    expect(renderWidgetForData(sampleWeather, undefined, 'dark')).toContain('data-cbw-theme="dark"');
+    expect(renderWidgetDocument('<div>x</div>')).toContain('<html>'); // no attribute by default
+  });
 });
 
 describe('helpers', () => {

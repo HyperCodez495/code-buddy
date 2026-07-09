@@ -44,7 +44,7 @@ function emoji(cond: unknown): string {
 }
 
 const STYLE = `<style>
-.cbw-weather{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;border-radius:16px;padding:18px 20px;color:#0b1220;background:linear-gradient(135deg,#eaf3ff 0%,#f7fbff 100%);border:1px solid rgba(0,0,0,.06);max-width:460px}
+.cbw-weather{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;border-radius:16px;padding:16px 18px;color:#0b1220;background:linear-gradient(135deg,#eaf3ff 0%,#f7fbff 100%);border:1px solid rgba(0,0,0,.06);max-width:460px}
 .cbw-weather .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .cbw-weather .loc{font-size:14px;font-weight:600;opacity:.8}
 .cbw-weather .temp{font-size:44px;font-weight:700;line-height:1}
@@ -52,11 +52,12 @@ const STYLE = `<style>
 .cbw-weather .cond{margin-top:2px;font-size:14px;opacity:.85;text-transform:capitalize}
 .cbw-weather .meta{margin-top:8px;font-size:12px;opacity:.7;display:flex;gap:14px;flex-wrap:wrap}
 .cbw-weather .fc{margin-top:14px;display:flex;gap:10px;overflow-x:auto}
-.cbw-weather .day{flex:0 0 auto;text-align:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.6);min-width:62px}
+.cbw-weather .day{flex:0 0 auto;text-align:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.55);min-width:62px}
 .cbw-weather .day .d{font-size:11px;opacity:.7;text-transform:capitalize}
 .cbw-weather .day .e{font-size:20px;margin:2px 0}
 .cbw-weather .day .t{font-size:12px;font-weight:600}
-@media (prefers-color-scheme:dark){.cbw-weather{color:#e8eefc;background:linear-gradient(135deg,#101a2e 0%,#0b1220 100%);border-color:rgba(255,255,255,.08)}.cbw-weather .day{background:rgba(255,255,255,.06)}}
+:root[data-cbw-theme="dark"] .cbw-weather{color:#e8eefc;background:linear-gradient(135deg,#101a2e 0%,#0b1220 100%);border-color:rgba(255,255,255,.08)}
+:root[data-cbw-theme="dark"] .cbw-weather .day{background:rgba(255,255,255,.06)}
 </style>`;
 
 /** Render a weather payload to a self-contained HTML fragment (no script). */

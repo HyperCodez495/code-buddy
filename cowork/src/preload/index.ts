@@ -840,7 +840,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   widgets: {
-    render: (data: unknown): Promise<string | null> => ipcRenderer.invoke('widgets.render', data),
+    render: (data: unknown, theme?: 'dark' | 'light'): Promise<string | null> =>
+      ipcRenderer.invoke('widgets.render', data, theme),
   },
 
   // App Studio (bolt.diy-style file tree + editor + terminal + live preview).
@@ -4933,7 +4934,7 @@ declare global {
         setVolume: (percent: number) => Promise<AssistantSetVolumeResponse>;
       };
       widgets: {
-        render: (data: unknown) => Promise<string | null>;
+        render: (data: unknown, theme?: 'dark' | 'light') => Promise<string | null>;
       };
       selectFiles: () => Promise<string[]>;
       artifacts: {
