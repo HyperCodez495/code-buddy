@@ -23,6 +23,26 @@
 import { logger } from '../utils/logger.js';
 import type { ReplyFn, VoiceStepOptions } from './voice-loop.js';
 import type { PermissionMode } from '../security/permission-modes.js';
+import { matchPrefetched, loadPrefetchCache } from '../companion/prefetch-engine.js';
+import { loadPrefetchItems } from '../companion/prefetch-config.js';
+
+/**
+ * Instant answer for a common question from the prefetch cache (weather, news,
+ * agenda, date) — no LLM. Opt-in via CODEBUDDY_PREFETCH; null when disabled or
+ * no fresh match. See companion/prefetch-engine.ts.
+ */
+function defaultPrefetchMatch(heard: string): string | null {
+  if (process.env.CODEBUDDY_PREFETCH !== 'true') return null;
+  try {
+    return matchPrefetched(heard, {
+      cache: loadPrefetchCache(),
+      items: loadPrefetchItems(),
+      now: Date.now(),
+    });
+  } catch {
+    return null;
+  }
+}
 
 export interface HybridTurn {
   role: 'user' | 'assistant';
@@ -48,6 +68,9 @@ export interface HybridReplyOptions {
   /** Spoken filler played BEFORE a (slower) agent turn, e.g. "d'accord, je regarde…", so a real
    *  question isn't met with dead silence. Only used by the default agent path. */
   ack?: (heard: string) => Promise<void>;
+  /** Injectable: instant precomputed answer for a common question (null ⇒ none).
+   *  Default: the prefetch cache when CODEBUDDY_PREFETCH is on. */
+  prefetch?: (heard: string) => string | null;
 }
 
 /** Lowercase + strip diacritics so STT accent loss ("ca va" ≈ "ça va") still matches. */
@@ -150,10 +173,11 @@ export function makeHybridReply(options: HybridReplyOptions = {}): ReplyFn {
       if (process.env.CODEBUDDY_COMPANION_RELATIONAL === 'true') {
         try {
           const { detectRelationalSignal } = await import('../companion/reply-augment.js');
-          const { loadRelationshipState, saveRelationshipState, evolveTraits } = await import(
-            '../companion/relationship-state.js'
+          const { loadRelationshipState, saveRelationshipState, evolveTraits } =
+            await import('../companion/relationship-state.js');
+          saveRelationshipState(
+            evolveTraits(loadRelationshipState(), detectRelationalSignal(heard))
           );
-          saveRelationshipState(evolveTraits(loadRelationshipState(), detectRelationalSignal(heard)));
         } catch {
           /* trait drift is optional — never block a reply */
         }
@@ -163,6 +187,13 @@ export function makeHybridReply(options: HybridReplyOptions = {}): ReplyFn {
       if (fast) {
         remember(heard, fast);
         return fast;
+      }
+      // Instant precomputed answer for a common question (weather/news/agenda/date) — no LLM.
+      const pre = (options.prefetch ?? defaultPrefetchMatch)(heard);
+      if (pre) {
+        remember(heard, pre);
+        logger.info(`[voice-hybrid] prefetch → ${pre.slice(0, 60)}`);
+        return pre;
       }
       const substantive = classify(heard);
       const stepOpts = signal ? { signal } : undefined;

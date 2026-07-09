@@ -1395,6 +1395,18 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             });
             logger.info(`Voice improvement loop: Enabled (CODEBUDDY_VOICE_IMPROVE) — reflect + adapt every ${improveEvery} beats (behavioral; facts stay pending)`);
           }
+          // Prefetch (opt-in) — precompute common answers (weather/news/agenda/date) so the voice
+          // assistant serves them INSTANTLY (no LLM). Refreshed every N beats + once at startup.
+          if (process.env.CODEBUDDY_PREFETCH === 'true') {
+            const prefetchEvery = Math.max(1, Number(process.env.CODEBUDDY_PREFETCH_EVERY ?? 120));
+            const runPrefetch = async (): Promise<void> => {
+              const { runPrefetchCycle } = await import('../companion/prefetch-engine.js');
+              await runPrefetchCycle();
+            };
+            heart.register({ name: 'prefetch', everyBeats: prefetchEvery, handler: () => runPrefetch() });
+            void runPrefetch(); // warm the cache immediately, don't wait for the first beat
+            logger.info(`Prefetch: Enabled (CODEBUDDY_PREFETCH) — precompute common answers every ${prefetchEvery} beats`);
+          }
           heart.start();
           sensoryTeardown.push(() => heart.stop());
           logger.info(`Sensory bridge: Enabled (buddy-sense → event bus; heartbeat treatments every ${everyBeats} beats)`);
