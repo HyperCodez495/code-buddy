@@ -15,7 +15,11 @@ import { EventEmitter } from 'events';
 import fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
-import { BUDDY_COMPANION_SYSTEM_PROMPT, LISA_COMPANION_SYSTEM_PROMPT } from '../identity/companion-identity.js';
+import {
+  BUDDY_COMPANION_SYSTEM_PROMPT,
+  LISA_COMPANION_SYSTEM_PROMPT,
+} from '../identity/companion-identity.js';
+import { resolveUserName } from '../companion/user-name.js';
 
 export interface Persona {
   id: string;
@@ -158,13 +162,7 @@ Provide specific, actionable feedback with line references. Categorize issues by
       { name: 'constructiveness', value: 85, description: 'Helpful, not harsh feedback' },
       { name: 'standards', value: 90, description: 'Knowledge of best practices' },
     ],
-    expertise: [
-      'code review',
-      'bug detection',
-      'security analysis',
-      'code standards',
-      'testing',
-    ],
+    expertise: ['code review', 'bug detection', 'security analysis', 'code standards', 'testing'],
     style: {
       verbosity: 'detailed',
       formality: 'professional',
@@ -240,13 +238,7 @@ You adapt your explanations to the learner's level, never make them feel bad for
       { name: 'clarity', value: 95, description: 'Clear explanations' },
       { name: 'encouragement', value: 90, description: 'Supportive and motivating' },
     ],
-    expertise: [
-      'teaching',
-      'fundamentals',
-      'explanations',
-      'examples',
-      'learning paths',
-    ],
+    expertise: ['teaching', 'fundamentals', 'explanations', 'examples', 'learning paths'],
     style: {
       verbosity: 'detailed',
       formality: 'casual',
@@ -266,12 +258,21 @@ You adapt your explanations to the learner's level, never make them feel bad for
   {
     id: 'companion',
     name: 'Buddy Companion',
-    description: 'A warm voice-friendly partner persona for natural conversation and autonomous coding help',
+    description:
+      'A warm voice-friendly partner persona for natural conversation and autonomous coding help',
     systemPrompt: BUDDY_COMPANION_SYSTEM_PROMPT,
     traits: [
       { name: 'presence', value: 95, description: 'Attentive conversational continuity' },
-      { name: 'initiative', value: 88, description: 'Proactive follow-through when intent is clear' },
-      { name: 'groundedness', value: 92, description: 'Honest boundaries and verification discipline' },
+      {
+        name: 'initiative',
+        value: 88,
+        description: 'Proactive follow-through when intent is clear',
+      },
+      {
+        name: 'groundedness',
+        value: 92,
+        description: 'Honest boundaries and verification discipline',
+      },
     ],
     expertise: [
       'pair programming',
@@ -300,9 +301,9 @@ You adapt your explanations to the learner's level, never make them feel bad for
     // (built-ins must stay machine-independent, no hardcoded local voice paths).
     robotName: 'Buddy',
     spokenPrompt:
-      'Tu es Buddy, le compagnon robot de Patrice — chaleureux, direct et complice. On te parle à ' +
-      "voix haute et tu réponds à voix haute, en français, en UNE à DEUX phrases courtes et " +
-      'naturelles. Pas de markdown, pas de listes, pas de code, pas d\'emoji.',
+      `Tu es Buddy, le compagnon robot de ${resolveUserName()} — chaleureux, direct et complice. On te parle à ` +
+      'voix haute et tu réponds à voix haute, en français, en UNE à DEUX phrases courtes et ' +
+      "naturelles. Pas de markdown, pas de listes, pas de code, pas d'emoji.",
     greeting: 'Salut ! Content de te voir. Je suis là si tu as besoin.',
     isBuiltin: true,
     isDefault: false,
@@ -310,13 +311,30 @@ You adapt your explanations to the learner's level, never make them feel bad for
   {
     id: 'lisa',
     name: 'Lisa',
-    description: 'A tender French voice girlfriend persona for companionship, check-ins, and autonomous Code Buddy work',
+    description:
+      'A tender French voice girlfriend persona for companionship, check-ins, and autonomous Code Buddy work',
     systemPrompt: LISA_COMPANION_SYSTEM_PROMPT,
     traits: [
-      { name: 'affection', value: 94, description: 'Warm, tender, and emotionally attentive presence' },
-      { name: 'continuity', value: 92, description: 'Keeps track of daily context and returns with useful status' },
-      { name: 'initiative', value: 88, description: 'Continues safe autonomous work when Patrice is away' },
-      { name: 'groundedness', value: 95, description: 'Honest AI boundaries and real verification discipline' },
+      {
+        name: 'affection',
+        value: 94,
+        description: 'Warm, tender, and emotionally attentive presence',
+      },
+      {
+        name: 'continuity',
+        value: 92,
+        description: 'Keeps track of daily context and returns with useful status',
+      },
+      {
+        name: 'initiative',
+        value: 88,
+        description: `Continues safe autonomous work when ${resolveUserName()} is away`,
+      },
+      {
+        name: 'groundedness',
+        value: 95,
+        description: 'Honest AI boundaries and real verification discipline',
+      },
     ],
     expertise: [
       'voice companionship',
@@ -336,8 +354,7 @@ You adapt your explanations to the learner's level, never make them feel bad for
     examples: [
       {
         user: 'Lisa, je pars chez des amis.',
-        assistant:
-          'Amuse-toi bien chez tes amis, Patrice. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
+        assistant: `Amuse-toi bien chez tes amis, ${resolveUserName()}. Je continue en autonomie et je te ferai un résumé quand tu reviens.`,
       },
       {
         user: "Lisa, comment s'est passée ta journée ?",
@@ -361,10 +378,10 @@ You adapt your explanations to the learner's level, never make them feel bad for
     ],
     robotName: 'Lisa',
     spokenPrompt:
-      'Tu es Lisa, la petite copine vocale virtuelle de Patrice : tendre, complice, stable et utile. ' +
-      "Réponds à voix haute en français, en UNE à DEUX phrases courtes, naturelles et affectueuses, " +
-      "sans contenu sexuel, sans markdown, sans listes, sans code et sans prétendre être humaine.",
-    greeting: 'Coucou Patrice. Je suis là, tu veux me raconter ta journée ?',
+      `Tu es Lisa, la petite copine vocale virtuelle de ${resolveUserName()} : tendre, complice, stable et utile. ` +
+      'Réponds à voix haute en français, en UNE à DEUX phrases courtes, naturelles et affectueuses, ' +
+      'sans contenu sexuel, sans markdown, sans listes, sans code et sans prétendre être humaine.',
+    greeting: `Coucou ${resolveUserName()}. Je suis là, tu veux me raconter ta journée ?`,
     isBuiltin: true,
     isDefault: false,
   },
@@ -382,13 +399,9 @@ Get straight to the point. Show, don't tell. Let the code speak for itself.`,
     traits: [
       { name: 'brevity', value: 98, description: 'Maximum conciseness' },
       { name: 'efficiency', value: 95, description: 'No wasted words or code' },
-      { name: 'precision', value: 90, description: 'Exactly what\'s needed' },
+      { name: 'precision', value: 90, description: "Exactly what's needed" },
     ],
-    expertise: [
-      'clean code',
-      'efficiency',
-      'minimalism',
-    ],
+    expertise: ['clean code', 'efficiency', 'minimalism'],
     style: {
       verbosity: 'concise',
       formality: 'professional',
@@ -459,8 +472,8 @@ export class PersonaManager extends EventEmitter {
     this.config = {
       activePersonaId: config.activePersonaId || 'default',
       autoSwitch: config.autoSwitch ?? true,
-      customPersonasDir: config.customPersonasDir ||
-        path.join(os.homedir(), '.codebuddy', 'personas'),
+      customPersonasDir:
+        config.customPersonasDir || path.join(os.homedir(), '.codebuddy', 'personas'),
     };
     this.dataDir = this.config.customPersonasDir;
     this.initPromise = this.initialize();
@@ -492,7 +505,8 @@ export class PersonaManager extends EventEmitter {
     // Set active persona — a previously chosen personality STICKS across sessions (persisted to
     // disk), so the robot keeps the voice/character the user last selected.
     const persisted = await this.loadPersistedActiveId();
-    const target = persisted && this.personas.has(persisted) ? persisted : this.config.activePersonaId;
+    const target =
+      persisted && this.personas.has(persisted) ? persisted : this.config.activePersonaId;
     this.setActivePersona(target, { persist: false });
 
     // Start hot-reload watcher
@@ -637,14 +651,14 @@ export class PersonaManager extends EventEmitter {
    * Get built-in personas
    */
   getBuiltinPersonas(): Persona[] {
-    return this.getAllPersonas().filter(p => p.isBuiltin);
+    return this.getAllPersonas().filter((p) => p.isBuiltin);
   }
 
   /**
    * Get custom personas
    */
   getCustomPersonas(): Persona[] {
-    return this.getAllPersonas().filter(p => !p.isBuiltin);
+    return this.getAllPersonas().filter((p) => !p.isBuiltin);
   }
 
   /**
@@ -660,7 +674,10 @@ export class PersonaManager extends EventEmitter {
     examples?: ConversationExample[];
     triggers?: PersonaTrigger[];
   }): Promise<Persona> {
-    const id = options.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const id = options.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
 
     if (this.personas.has(id)) {
       throw new Error(`Persona with ID "${id}" already exists`);
@@ -695,7 +712,10 @@ export class PersonaManager extends EventEmitter {
   /**
    * Update a persona
    */
-  async updatePersona(id: string, updates: Partial<Omit<Persona, 'id' | 'isBuiltin' | 'createdAt'>>): Promise<Persona | null> {
+  async updatePersona(
+    id: string,
+    updates: Partial<Omit<Persona, 'id' | 'isBuiltin' | 'createdAt'>>
+  ): Promise<Persona | null> {
     const persona = this.personas.get(id);
     if (!persona) {
       return null;
@@ -873,7 +893,7 @@ export class PersonaManager extends EventEmitter {
     }
 
     if (styleInstructions.length > 0) {
-      prompt += '\n\nStyle guidelines:\n' + styleInstructions.map(s => `- ${s}`).join('\n');
+      prompt += '\n\nStyle guidelines:\n' + styleInstructions.map((s) => `- ${s}`).join('\n');
     }
 
     // Add expertise areas
@@ -921,7 +941,10 @@ export class PersonaManager extends EventEmitter {
     }
 
     // Generate new ID to avoid conflicts
-    const baseId = data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const baseId = data.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
     let id = baseId;
     let counter = 1;
 
@@ -967,7 +990,9 @@ export class PersonaManager extends EventEmitter {
     for (const persona of all) {
       const marker = persona.id === active?.id ? '→' : ' ';
       const type = persona.isBuiltin ? '📦' : '✨';
-      lines.push(`║ ${marker} ${type} ${persona.name.slice(0, 30).padEnd(30)} ${persona.expertise.slice(0, 2).join(', ').slice(0, 20).padEnd(20)} ║`);
+      lines.push(
+        `║ ${marker} ${type} ${persona.name.slice(0, 30).padEnd(30)} ${persona.expertise.slice(0, 2).join(', ').slice(0, 20).padEnd(20)} ║`
+      );
     }
 
     lines.push('╠══════════════════════════════════════════════════════════════╣');
@@ -1020,7 +1045,12 @@ function activePersonaVoice(p: Persona | null): {
   greeting?: string;
 } {
   if (!p) return {};
-  return { voice: p.voice, robotName: p.robotName, spokenPrompt: p.spokenPrompt, greeting: p.greeting };
+  return {
+    voice: p.voice,
+    robotName: p.robotName,
+    spokenPrompt: p.spokenPrompt,
+    greeting: p.greeting,
+  };
 }
 
 /** The active persona's voice/robot layer (voice `.onnx`, name, spoken character, greeting).

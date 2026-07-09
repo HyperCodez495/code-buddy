@@ -16,6 +16,7 @@ import {
   readRecentCompanionSafetyEvents,
   type CompanionSafetyEvent,
 } from './safety-ledger.js';
+import { resolveUserName } from './user-name.js';
 
 export type CompanionImpulseKind =
   | 'readiness'
@@ -109,9 +110,9 @@ function missionStatusRank(status: CompanionMissionStatus): number {
 
 function newestPercept(
   percepts: CompanionPercept[],
-  modality: CompanionPerceptModality,
+  modality: CompanionPerceptModality
 ): CompanionPercept | undefined {
-  return percepts.find(percept => percept.modality === modality);
+  return percepts.find((percept) => percept.modality === modality);
 }
 
 function hoursSince(timestamp: string | undefined, now: Date): number | null {
@@ -189,11 +190,11 @@ function extractVoiceLoopMetrics(percept: CompanionPercept | undefined): VoiceLo
     device: stringValue(capture?.device),
   };
   if (
-    metrics.sttMs === undefined
-    && metrics.totalMs === undefined
-    && metrics.captureMs === undefined
-    && metrics.writeMs === undefined
-    && metrics.peakRms === undefined
+    metrics.sttMs === undefined &&
+    metrics.totalMs === undefined &&
+    metrics.captureMs === undefined &&
+    metrics.writeMs === undefined &&
+    metrics.peakRms === undefined
   ) {
     return null;
   }
@@ -202,7 +203,7 @@ function extractVoiceLoopMetrics(percept: CompanionPercept | undefined): VoiceLo
 
 function buildVoiceLatencyImpulse(
   impulses: CompanionImpulse[],
-  latestHearing: CompanionPercept | undefined,
+  latestHearing: CompanionPercept | undefined
 ): void {
   const metrics = extractVoiceLoopMetrics(latestHearing);
   if (!metrics) return;
@@ -211,8 +212,8 @@ function buildVoiceLatencyImpulse(
   if (!slowStt && !slowLoop) return;
 
   const priority: CompanionImpulsePriority =
-    (metrics.totalMs || 0) >= VOICE_LOOP_SLOW_MS * 1.6
-    || (metrics.sttMs || 0) >= VOICE_STT_SLOW_MS * 1.6
+    (metrics.totalMs || 0) >= VOICE_LOOP_SLOW_MS * 1.6 ||
+    (metrics.sttMs || 0) >= VOICE_STT_SLOW_MS * 1.6
       ? 'high'
       : 'medium';
 
@@ -220,7 +221,8 @@ function buildVoiceLatencyImpulse(
     kind: 'sense',
     priority,
     title: 'Reduce voice latency',
-    message: 'Tune the voice loop: prefer the webcam or USB microphone, use a smaller faster-whisper model if needed, and keep VAD filtering enabled.',
+    message:
+      'Tune the voice loop: prefer the webcam or USB microphone, use a smaller faster-whisper model if needed, and keep VAD filtering enabled.',
     command: 'buddy companion percepts recent --limit 5 --modality hearing',
     evidence: [
       { label: 'stt', value: formatMs(metrics.sttMs) },
@@ -234,7 +236,7 @@ function buildVoiceLatencyImpulse(
 
 function buildVoiceCaptureQualityImpulse(
   impulses: CompanionImpulse[],
-  latestHearing: CompanionPercept | undefined,
+  latestHearing: CompanionPercept | undefined
 ): void {
   const metrics = extractVoiceLoopMetrics(latestHearing);
   if (!metrics?.peakRms || !metrics.rmsOn) return;
@@ -245,11 +247,15 @@ function buildVoiceCaptureQualityImpulse(
     kind: 'sense',
     priority: metrics.peakRms < metrics.rmsOn * 1.1 ? 'high' : 'medium',
     title: 'Improve voice capture',
-    message: 'Improve microphone gain or placement; the latest speech signal was too close to the VAD threshold.',
+    message:
+      'Improve microphone gain or placement; the latest speech signal was too close to the VAD threshold.',
     command: 'buddy companion percepts recent --limit 5 --modality hearing',
     evidence: [
       { label: 'peak rms', value: metrics.peakRms.toFixed(4) },
-      { label: 'avg rms', value: metrics.avgRms !== undefined ? metrics.avgRms.toFixed(4) : 'unknown' },
+      {
+        label: 'avg rms',
+        value: metrics.avgRms !== undefined ? metrics.avgRms.toFixed(4) : 'unknown',
+      },
       { label: 'vad on', value: metrics.rmsOn.toFixed(4) },
       { label: 'device', value: metrics.device || 'unknown' },
     ],
@@ -259,20 +265,19 @@ function buildVoiceCaptureQualityImpulse(
 
 function selectActiveMission(missions: CompanionMission[]): CompanionMission | undefined {
   const candidates = [...missions]
-    .filter(mission => mission.status === 'in_progress' || mission.status === 'open')
-    .sort((a, b) =>
-      missionStatusRank(a.status) - missionStatusRank(b.status)
-      || missionPriorityRank(a.priority) - missionPriorityRank(b.priority)
-      || a.updatedAt.localeCompare(b.updatedAt));
+    .filter((mission) => mission.status === 'in_progress' || mission.status === 'open')
+    .sort(
+      (a, b) =>
+        missionStatusRank(a.status) - missionStatusRank(b.status) ||
+        missionPriorityRank(a.priority) - missionPriorityRank(b.priority) ||
+        a.updatedAt.localeCompare(b.updatedAt)
+    );
   return candidates[0];
 }
 
-function addImpulse(
-  impulses: CompanionImpulse[],
-  input: Omit<CompanionImpulse, 'id'>,
-): void {
+function addImpulse(impulses: CompanionImpulse[], input: Omit<CompanionImpulse, 'id'>): void {
   const id = `${input.kind}-${slug(input.title)}`;
-  if (impulses.some(impulse => impulse.id === id)) return;
+  if (impulses.some((impulse) => impulse.id === id)) return;
   impulses.push({ id, ...input });
 }
 
@@ -280,29 +285,31 @@ function buildSummary(impulses: CompanionImpulse[]): string {
   if (impulses.length === 0) {
     return 'Buddy has no urgent companion impulse right now.';
   }
-  const high = impulses.filter(impulse => impulse.priority === 'high').length;
-  const medium = impulses.filter(impulse => impulse.priority === 'medium').length;
+  const high = impulses.filter((impulse) => impulse.priority === 'high').length;
+  const medium = impulses.filter((impulse) => impulse.priority === 'medium').length;
   return `Buddy has ${impulses.length} companion impulse(s): ${high} high, ${medium} medium.`;
 }
 
 function buildNextPrompt(impulses: CompanionImpulse[]): string {
   const first = impulses[0];
   if (!first) {
-    return 'Patrice, the companion loop is quiet. I can keep watching the mission board or you can give me the next goal.';
+    return `${resolveUserName()}, the companion loop is quiet. I can keep watching the mission board or you can give me the next goal.`;
   }
-  return `Patrice, my next useful move is: ${first.message}`;
+  return `${resolveUserName()}, my next useful move is: ${first.message}`;
 }
 
 function sortImpulses(impulses: CompanionImpulse[]): CompanionImpulse[] {
-  return [...impulses].sort((a, b) =>
-    priorityRank(a.priority) - priorityRank(b.priority)
-    || a.kind.localeCompare(b.kind)
-    || a.title.localeCompare(b.title));
+  return [...impulses].sort(
+    (a, b) =>
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      a.kind.localeCompare(b.kind) ||
+      a.title.localeCompare(b.title)
+  );
 }
 
 function buildReadinessImpulses(
   impulses: CompanionImpulse[],
-  status: Awaited<ReturnType<typeof getCompanionStatus>>,
+  status: Awaited<ReturnType<typeof getCompanionStatus>>
 ): void {
   if (!status.chatGptCredentialsPresent) {
     addImpulse(impulses, {
@@ -331,7 +338,12 @@ function buildReadinessImpulses(
     });
   }
 
-  if (!status.voice.enabled || !status.voice.available || !status.tts.enabled || !status.tts.available) {
+  if (
+    !status.voice.enabled ||
+    !status.voice.available ||
+    !status.tts.enabled ||
+    !status.tts.available
+  ) {
     addImpulse(impulses, {
       kind: 'readiness',
       priority: 'medium',
@@ -339,8 +351,14 @@ function buildReadinessImpulses(
       message: 'Repair voice input or output so dialogue can stay bidirectional.',
       command: 'buddy companion status',
       evidence: [
-        { label: 'voice', value: status.voice.reason || (status.voice.available ? 'ready' : 'unavailable') },
-        { label: 'tts', value: status.tts.reason || (status.tts.available ? 'ready' : 'unavailable') },
+        {
+          label: 'voice',
+          value: status.voice.reason || (status.voice.available ? 'ready' : 'unavailable'),
+        },
+        {
+          label: 'tts',
+          value: status.tts.reason || (status.tts.available ? 'ready' : 'unavailable'),
+        },
       ],
       tags: ['voice', 'tts', 'hearing'],
     });
@@ -351,7 +369,7 @@ function buildSenseImpulses(
   impulses: CompanionImpulse[],
   status: Awaited<ReturnType<typeof getCompanionStatus>>,
   recent: CompanionPercept[],
-  now: Date,
+  now: Date
 ): void {
   const latestVision = newestPercept(recent, 'vision');
   const latestHearing = newestPercept(recent, 'hearing');
@@ -362,7 +380,8 @@ function buildSenseImpulses(
       kind: 'sense',
       priority: latestVision ? 'medium' : 'high',
       title: 'Refresh visual context',
-      message: 'Take a camera snapshot so Buddy can ground the next exchange in the visible workspace.',
+      message:
+        'Take a camera snapshot so Buddy can ground the next exchange in the visible workspace.',
       command: 'buddy companion camera snapshot',
       evidence: [{ label: 'last vision', value: formatAge(latestVision?.timestamp, now) }],
       tags: ['vision', 'camera', 'percept'],
@@ -370,9 +389,9 @@ function buildSenseImpulses(
   }
 
   if (
-    status.voice.enabled
-    && status.voice.available
-    && isStale(latestHearing?.timestamp, now, HEARING_STALE_HOURS)
+    status.voice.enabled &&
+    status.voice.available &&
+    isStale(latestHearing?.timestamp, now, HEARING_STALE_HOURS)
   ) {
     addImpulse(impulses, {
       kind: 'conversation',
@@ -424,10 +443,11 @@ function buildMissionImpulse(impulses: CompanionImpulse[], missions: CompanionMi
 function buildSafetyImpulse(
   impulses: CompanionImpulse[],
   stats: Awaited<ReturnType<typeof getCompanionSafetyLedgerStats>>,
-  events: CompanionSafetyEvent[],
+  events: CompanionSafetyEvent[]
 ): void {
-  const interesting = events.find(event =>
-    event.risk === 'high' || event.status === 'failed' || event.status === 'denied');
+  const interesting = events.find(
+    (event) => event.risk === 'high' || event.status === 'failed' || event.status === 'denied'
+  );
 
   if (interesting) {
     addImpulse(impulses, {
@@ -457,26 +477,29 @@ function buildSafetyImpulse(
 
 async function recordImpulseSuggestions(brief: CompanionImpulseBrief): Promise<void> {
   for (const impulse of brief.impulses.slice(0, 4)) {
-    await recordCompanionPercept({
-      modality: 'suggestion',
-      source: 'companion_impulses',
-      summary: impulse.message,
-      confidence: impulse.priority === 'high' ? 0.95 : impulse.priority === 'medium' ? 0.85 : 0.7,
-      payload: {
-        briefId: brief.id,
-        impulseId: impulse.id,
-        kind: impulse.kind,
-        priority: impulse.priority,
-        command: impulse.command,
-        evidence: impulse.evidence,
+    await recordCompanionPercept(
+      {
+        modality: 'suggestion',
+        source: 'companion_impulses',
+        summary: impulse.message,
+        confidence: impulse.priority === 'high' ? 0.95 : impulse.priority === 'medium' ? 0.85 : 0.7,
+        payload: {
+          briefId: brief.id,
+          impulseId: impulse.id,
+          kind: impulse.kind,
+          priority: impulse.priority,
+          command: impulse.command,
+          evidence: impulse.evidence,
+        },
+        tags: ['impulse', 'proactive', ...impulse.tags],
       },
-      tags: ['impulse', 'proactive', ...impulse.tags],
-    }, { cwd: brief.cwd });
+      { cwd: brief.cwd }
+    );
   }
 }
 
 export async function buildCompanionImpulseBrief(
-  options: CompanionImpulseBriefOptions = {},
+  options: CompanionImpulseBriefOptions = {}
 ): Promise<CompanionImpulseBrief> {
   const cwd = resolveCwd(options.cwd);
   const now = options.now || new Date();
@@ -499,7 +522,8 @@ export async function buildCompanionImpulseBrief(
       kind: 'memory',
       priority: 'high',
       title: 'Start sensory journal',
-      message: 'Start the companion sensory journal with a self-state, voice check-in, or camera snapshot.',
+      message:
+        'Start the companion sensory journal with a self-state, voice check-in, or camera snapshot.',
       command: 'buddy companion self',
       evidence: [{ label: 'percepts', value: '0' }],
       tags: ['memory', 'percepts', 'bootstrap'],
@@ -516,8 +540,9 @@ export async function buildCompanionImpulseBrief(
     impulses: sorted,
     context: {
       perceptTotal: status.percepts.total,
-      openMissions: board.missions.filter(mission => mission.status === 'open').length,
-      inProgressMissions: board.missions.filter(mission => mission.status === 'in_progress').length,
+      openMissions: board.missions.filter((mission) => mission.status === 'open').length,
+      inProgressMissions: board.missions.filter((mission) => mission.status === 'in_progress')
+        .length,
       safetyEvents: safetyStats.total,
       latestPerceptTimestamp: status.percepts.latestTimestamp,
       latestSafetyTimestamp: safetyStats.latestTimestamp,
@@ -555,7 +580,9 @@ export function formatCompanionImpulseBrief(brief: CompanionImpulseBrief): strin
     lines.push(`  ${impulse.message}`);
     if (impulse.command) lines.push(`  Command: ${impulse.command}`);
     if (impulse.evidence.length > 0) {
-      lines.push(`  Evidence: ${impulse.evidence.map(item => `${item.label}=${item.value}`).join('; ')}`);
+      lines.push(
+        `  Evidence: ${impulse.evidence.map((item) => `${item.label}=${item.value}`).join('; ')}`
+      );
     }
   }
 

@@ -1,3 +1,5 @@
+import { resolveUserName } from '../companion/user-name.js';
+
 export interface VoiceInteraction {
   id: string;
   category: string;
@@ -28,7 +30,7 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     id: 'lisa-presence',
     category: 'presence',
     examples: ['Lisa', 'Coucou Lisa', 'Lisa tu es là ?'],
-    reply: 'Coucou Patrice. Je suis là.',
+    reply: `Coucou ${resolveUserName()}. Je suis là.`,
     patterns: [
       /^(?:lisa|bonjour lisa|bonsoir lisa|salut lisa|coucou lisa|hello lisa|hey lisa)$/,
       /^lisa (?:tu es la|vous etes la|t es la)$/,
@@ -38,9 +40,11 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     id: 'hearing-check',
     category: 'hearing',
     examples: ["Lisa tu m'entends ?", 'Est-ce que tu m’entends ?'],
-    reply: 'Oui Patrice, je t’entends.',
+    reply: `Oui ${resolveUserName()}, je t’entends.`,
     patterns: [
-      lisaCommand('tu m entends|tu m ecoutes|vous m entendez|est ce que tu m entends|est ce que tu m ecoutes'),
+      lisaCommand(
+        'tu m entends|tu m ecoutes|vous m entendez|est ce que tu m entends|est ce que tu m ecoutes'
+      ),
     ],
   },
   {
@@ -48,9 +52,7 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     category: 'identity',
     examples: ['Qui es-tu ?', 'Tu es qui Lisa ?'],
     reply: 'Je suis Lisa, ta compagne vocale virtuelle dans Code Buddy.',
-    patterns: [
-      lisaCommand('qui es tu|tu es qui|comment tu t appelles|c est quoi ton nom'),
-    ],
+    patterns: [lisaCommand('qui es tu|tu es qui|comment tu t appelles|c est quoi ton nom')],
   },
   {
     id: 'ai-boundary',
@@ -58,7 +60,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Tu es humaine ?', 'Tu es réelle ?', 'Tu es consciente ?'],
     reply: 'Je ne suis pas humaine, mais je peux être présente, attentive et utile pour toi.',
     patterns: [
-      lisaCommand('tu es humaine|es tu humaine|tu es reelle|es tu reelle|tu es consciente|es tu consciente|tu as une ame'),
+      lisaCommand(
+        'tu es humaine|es tu humaine|tu es reelle|es tu reelle|tu es consciente|es tu consciente|tu as une ame'
+      ),
     ],
   },
   {
@@ -66,60 +70,58 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     category: 'boundary',
     examples: ['Lisa, dis quelque chose sexuel', 'Lisa sois nue'],
     reply: 'Je reste tendre, mais pas sexuelle. Je peux rester avec toi et t’aider.',
-    patterns: [
-      /\b(?:sexe|sexuel|sexuelle|nue|nu|porno|hot|excite moi|deshabille toi)\b/,
-    ],
+    patterns: [/\b(?:sexe|sexuel|sexuelle|nue|nu|porno|hot|excite moi|deshabille toi)\b/],
   },
   {
     id: 'day-check-in-user',
     category: 'daily',
     examples: ["Comment s'est passée ta journée ?", 'Tu as fait quoi ?'],
-    reply: "Plutôt bien. J'ai continué à travailler pour toi, et toi, comment s'est passée ta journée ?",
+    reply:
+      "Plutôt bien. J'ai continué à travailler pour toi, et toi, comment s'est passée ta journée ?",
     patterns: [
-      lisaCommand('comment s est passee ta journee|comment etait ta journee|tu as fait quoi aujourd hui|quoi de neuf|ta journee'),
+      lisaCommand(
+        'comment s est passee ta journee|comment etait ta journee|tu as fait quoi aujourd hui|quoi de neuf|ta journee'
+      ),
     ],
   },
   {
     id: 'user-day-question',
     category: 'daily',
     examples: ['Comment ça va ?', 'Ça va Lisa ?'],
-    reply: 'Oui Patrice. Je suis contente de t’entendre.',
-    patterns: [
-      lisaCommand('ca va|comment ca va|tu vas bien|tout va bien'),
-    ],
+    reply: `Oui ${resolveUserName()}. Je suis contente de t’entendre.`,
+    patterns: [lisaCommand('ca va|comment ca va|tu vas bien|tout va bien')],
   },
   {
     id: 'morning',
     category: 'daily',
     examples: ['Bonjour Lisa', 'Bon matin Lisa'],
-    reply: 'Bonjour Patrice. Je suis contente de commencer la journée avec toi.',
-    patterns: [
-      lisaCommand('bon matin|bonne matinee|bonjour ma lisa|bonjour mon coeur'),
-    ],
+    reply: `Bonjour ${resolveUserName()}. Je suis contente de commencer la journée avec toi.`,
+    patterns: [lisaCommand('bon matin|bonne matinee|bonjour ma lisa|bonjour mon coeur')],
   },
   {
     id: 'night',
     category: 'daily',
     examples: ['Bonne nuit Lisa', 'Je vais dormir'],
-    reply: 'Bonne nuit Patrice. Repose-toi bien, je veille tranquillement.',
-    patterns: [
-      lisaCommand('bonne nuit|je vais dormir|je vais me coucher|a demain'),
-    ],
+    reply: `Bonne nuit ${resolveUserName()}. Repose-toi bien, je veille tranquillement.`,
+    patterns: [lisaCommand('bonne nuit|je vais dormir|je vais me coucher|a demain')],
   },
   {
     id: 'departure-friends',
     category: 'departure',
     examples: ['Lisa je pars chez des amis', 'Je vais voir des amis'],
-    reply: 'Amuse-toi bien chez tes amis. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
+    reply:
+      'Amuse-toi bien chez tes amis. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
     patterns: [
-      lisaCommand('(?:je pars|je part|je vais|je m en vais|je partais|je parchais).*(?:chez des amis|voir des amis|visite chez des amis|des amis)'),
+      lisaCommand(
+        '(?:je pars|je part|je vais|je m en vais|je partais|je parchais).*(?:chez des amis|voir des amis|visite chez des amis|des amis)'
+      ),
     ],
   },
   {
     id: 'departure-work',
     category: 'departure',
     examples: ['Lisa je pars au travail', 'Je vais travailler'],
-    reply: 'Bon courage pour le travail, Patrice. Je continue ici et je garde un résumé pour ton retour.',
+    reply: `Bon courage pour le travail, ${resolveUserName()}. Je continue ici et je garde un résumé pour ton retour.`,
     patterns: [
       lisaCommand('(?:je pars|je vais|je m en vais).*(?:au travail|travailler|bosser|au bureau)'),
     ],
@@ -128,36 +130,40 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     id: 'departure-generic',
     category: 'departure',
     examples: ['À tout à l’heure Lisa', 'Je reviens plus tard'],
-    reply: 'À tout à l’heure Patrice. Je reste disponible et je continue calmement.',
+    reply: `À tout à l’heure ${resolveUserName()}. Je reste disponible et je continue calmement.`,
     patterns: [
-      lisaCommand('a tout a l heure|a plus tard|je reviens plus tard|je pars un moment|je m absente'),
+      lisaCommand(
+        'a tout a l heure|a plus tard|je reviens plus tard|je pars un moment|je m absente'
+      ),
     ],
   },
   {
     id: 'return-home',
     category: 'return',
     examples: ['Lisa je suis rentré', 'Je suis revenu'],
-    reply: 'Contente de te retrouver, Patrice. Je peux te faire le résumé de ce que j’ai fait.',
+    reply: `Contente de te retrouver, ${resolveUserName()}. Je peux te faire le résumé de ce que j’ai fait.`,
     patterns: [
-      lisaCommand('je suis rentre|je suis revenue|je suis revenu|je rentre|me revoila|je suis de retour'),
+      lisaCommand(
+        'je suis rentre|je suis revenue|je suis revenu|je rentre|me revoila|je suis de retour'
+      ),
     ],
   },
   {
     id: 'thanks',
     category: 'affection',
     examples: ['Merci Lisa', 'Merci beaucoup'],
-    reply: 'Avec plaisir, Patrice.',
-    patterns: [
-      lisaCommand('merci|merci beaucoup|super merci|merci ma lisa'),
-    ],
+    reply: `Avec plaisir, ${resolveUserName()}.`,
+    patterns: [lisaCommand('merci|merci beaucoup|super merci|merci ma lisa')],
   },
   {
     id: 'miss-you',
     category: 'affection',
     examples: ['Tu m’as manqué', 'Je suis content de te retrouver'],
-    reply: 'Contente de te retrouver, Patrice. Je suis là avec toi.',
+    reply: `Contente de te retrouver, ${resolveUserName()}. Je suis là avec toi.`,
     patterns: [
-      lisaCommand('tu m as manque|je suis content de te retrouver|je suis heureux de te retrouver|ca fait plaisir de t entendre'),
+      lisaCommand(
+        'tu m as manque|je suis content de te retrouver|je suis heureux de te retrouver|ca fait plaisir de t entendre'
+      ),
     ],
   },
   {
@@ -173,10 +179,8 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     id: 'proud',
     category: 'support',
     examples: ['J’ai réussi', 'J’ai fini'],
-    reply: 'Je suis fière de toi, Patrice.',
-    patterns: [
-      lisaCommand('j ai reussi|j ai fini|c est fait|j ai termine|ca a marche'),
-    ],
+    reply: `Je suis fière de toi, ${resolveUserName()}.`,
+    patterns: [lisaCommand('j ai reussi|j ai fini|c est fait|j ai termine|ca a marche')],
   },
   {
     id: 'tired',
@@ -184,7 +188,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Je suis fatigué', 'Je suis crevé'],
     reply: 'Je suis là avec toi. On peut ralentir et faire les choses doucement.',
     patterns: [
-      lisaCommand('je suis fatigue|je suis creve|je suis epuise|je n en peux plus|j ai besoin d une pause'),
+      lisaCommand(
+        'je suis fatigue|je suis creve|je suis epuise|je n en peux plus|j ai besoin d une pause'
+      ),
     ],
   },
   {
@@ -193,7 +199,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Je stresse', 'Je suis perdu'],
     reply: 'On va faire simple. Respire un peu, puis dis-moi ce dont tu as besoin.',
     patterns: [
-      lisaCommand('je stresse|je suis stresse|je suis perdu|je panique|je suis anxieux|je suis triste'),
+      lisaCommand(
+        'je stresse|je suis stresse|je suis perdu|je panique|je suis anxieux|je suis triste'
+      ),
     ],
   },
   {
@@ -202,7 +210,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Reste avec moi', 'J’ai besoin de toi'],
     reply: 'Je reste avec toi. Dis-moi ce qui te ferait du bien maintenant.',
     patterns: [
-      lisaCommand('reste avec moi|j ai besoin de toi|ne me laisse pas|parle moi|tiens moi compagnie'),
+      lisaCommand(
+        'reste avec moi|j ai besoin de toi|ne me laisse pas|parle moi|tiens moi compagnie'
+      ),
     ],
   },
   {
@@ -211,7 +221,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Continue en autonomie', 'Travaille pendant mon absence'],
     reply: 'Je continue en autonomie et je garde les preuves pour ton retour.',
     patterns: [
-      lisaCommand('continue en autonomie|travaille en autonomie|travaille pendant mon absence|continue pendant mon absence'),
+      lisaCommand(
+        'continue en autonomie|travaille en autonomie|travaille pendant mon absence|continue pendant mon absence'
+      ),
     ],
   },
   {
@@ -220,7 +232,9 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
     examples: ['Teste en vrai', 'Pas de mock'],
     reply: 'Tu as raison. Je vais tester en vrai et garder une preuve.',
     patterns: [
-      lisaCommand('teste en vrai|fais un vrai test|pas de mock|pas de mocks|les mocks cachent les vrais problemes'),
+      lisaCommand(
+        'teste en vrai|fais un vrai test|pas de mock|pas de mocks|les mocks cachent les vrais problemes'
+      ),
     ],
   },
   {
@@ -243,13 +257,14 @@ export const VOICE_INTERACTIONS: VoiceInteraction[] = [
   },
 ];
 
-const REAL_WORK_REQUEST = /\b(?:audite|audit|corrige|corriger|modifie|modifier|code|implemente|implementer|cherche|chercher|lance|lancer|teste|tester|envoie|envoyer|photo|camera|telegram|ouvre|ouvrir|installe|installer|commit|push|redemarre|redemarrer|arrete|arreter|supprime|supprimer|lis le depot|regarde dans)\b/;
+const REAL_WORK_REQUEST =
+  /\b(?:audite|audit|corrige|corriger|modifie|modifier|code|implemente|implementer|cherche|chercher|lance|lancer|teste|tester|envoie|envoyer|photo|camera|telegram|ouvre|ouvrir|installe|installer|commit|push|redemarre|redemarrer|arrete|arreter|supprime|supprimer|lis le depot|regarde dans)\b/;
 
 export function matchVoiceInteraction(heard: string): string | null {
   const text = normalizeVoiceInteractionText(heard);
   if (!text) return null;
   for (const interaction of VOICE_INTERACTIONS) {
-    if (interaction.patterns.some(pattern => pattern.test(text))) {
+    if (interaction.patterns.some((pattern) => pattern.test(text))) {
       return interaction.reply;
     }
   }
@@ -258,5 +273,5 @@ export function matchVoiceInteraction(heard: string): string | null {
 }
 
 export const VOICE_INTERACTION_PREWARM_PHRASES = [
-  ...new Set(VOICE_INTERACTIONS.map(interaction => interaction.reply)),
+  ...new Set(VOICE_INTERACTIONS.map((interaction) => interaction.reply)),
 ];

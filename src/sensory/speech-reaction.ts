@@ -28,6 +28,7 @@ import {
   expandSpeechPath,
   type SpeechRecognitionEngine,
 } from './speech-engine-config.js';
+import { resolveUserName } from '../companion/user-name.js';
 
 // Re-exported for back-compat: callers + tests import these from speech-reaction.
 export { resolveSpeechRecognitionEngine };
@@ -52,10 +53,11 @@ export interface SpeechReactionOptions {
 }
 
 function resolveSpeechPython(): string {
-  const configured = process.env.CODEBUDDY_SPEECH_PYTHON
-    || process.env.CODEBUDDY_VOICE_PYTHON
-    || process.env.COWORK_VOICE_PYTHON
-    || process.env.CODEBUDDY_PYTHON_BIN;
+  const configured =
+    process.env.CODEBUDDY_SPEECH_PYTHON ||
+    process.env.CODEBUDDY_VOICE_PYTHON ||
+    process.env.COWORK_VOICE_PYTHON ||
+    process.env.CODEBUDDY_PYTHON_BIN;
   if (configured?.trim()) return configured.trim();
 
   const candidates = [
@@ -64,7 +66,7 @@ function resolveSpeechPython(): string {
     join(homedir(), 'ai-stack/voice/.venv/bin/python'),
     join(homedir(), 'vision_tests/venv/bin/python'),
   ];
-  return candidates.find(candidate => existsSync(candidate)) || 'python3';
+  return candidates.find((candidate) => existsSync(candidate)) || 'python3';
 }
 
 function truthyEnv(name: string, defaultValue: boolean): boolean {
@@ -89,7 +91,12 @@ export interface FasterWhisperTranscribeOptions {
 
 export interface NormalizedSpeechTranscript {
   text: string;
-  filteredReason?: 'subtitle_hallucination' | 'prompt_leakage' | 'non_speech' | 'repetitive_noise' | 'filler_noise';
+  filteredReason?:
+    | 'subtitle_hallucination'
+    | 'prompt_leakage'
+    | 'non_speech'
+    | 'repetitive_noise'
+    | 'filler_noise';
 }
 
 interface FasterWhisperWorkerMessage {
@@ -130,7 +137,7 @@ function defaultSpeechInitialPrompt(): string {
 function splitSpeechPhrases(value: string): string[] {
   return value
     .split(/[\n,;]/)
-    .map(item => item.trim())
+    .map((item) => item.trim())
     .filter(Boolean);
 }
 
@@ -173,7 +180,9 @@ function readSpeechHotwordsFile(filePath: string): string[] {
   try {
     return splitSpeechPhrases(readFileSync(expandSpeechPath(filePath), 'utf8'));
   } catch (err) {
-    logger.warn(`[speech] could not read CODEBUDDY_SPEECH_HOTWORDS_FILE '${filePath}': ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[speech] could not read CODEBUDDY_SPEECH_HOTWORDS_FILE '${filePath}': ${err instanceof Error ? err.message : String(err)}`
+    );
     return [];
   }
 }
@@ -184,7 +193,7 @@ function defaultSpeechHotwords(): string {
     'Lisa',
     'Buddy',
     'Code Buddy',
-    'Patrice',
+    resolveUserName(),
     ...splitSpeechPhrases(process.env.CODEBUDDY_SPEECH_HOTWORDS ?? ''),
     ...(process.env.CODEBUDDY_SPEECH_HOTWORDS_FILE?.trim()
       ? readSpeechHotwordsFile(process.env.CODEBUDDY_SPEECH_HOTWORDS_FILE.trim())
@@ -194,11 +203,12 @@ function defaultSpeechHotwords(): string {
 }
 
 export function resolveFasterWhisperOptions(): FasterWhisperTranscribeOptions {
-  const language = process.env.CODEBUDDY_SPEECH_LANG?.trim()
-    || process.env.CODEBUDDY_COMPANION_LANGUAGE?.trim()
-    || 'fr';
-  const initialPrompt = process.env.CODEBUDDY_SPEECH_INITIAL_PROMPT?.trim()
-    || defaultSpeechInitialPrompt();
+  const language =
+    process.env.CODEBUDDY_SPEECH_LANG?.trim() ||
+    process.env.CODEBUDDY_COMPANION_LANGUAGE?.trim() ||
+    'fr';
+  const initialPrompt =
+    process.env.CODEBUDDY_SPEECH_INITIAL_PROMPT?.trim() || defaultSpeechInitialPrompt();
   const hotwords = defaultSpeechHotwords();
   return {
     language,
@@ -252,10 +262,10 @@ export function normalizeSpeechTranscript(raw: string): NormalizedSpeechTranscri
   if (!/[\p{L}\p{N}]/u.test(text)) {
     return { text: '', filteredReason: 'non_speech' };
   }
-  if (SUBTITLE_HALLUCINATION_PATTERNS.some(pattern => pattern.test(text))) {
+  if (SUBTITLE_HALLUCINATION_PATTERNS.some((pattern) => pattern.test(text))) {
     return { text: '', filteredReason: 'subtitle_hallucination' };
   }
-  if (PROMPT_LEAKAGE_PATTERNS.some(pattern => pattern.test(text))) {
+  if (PROMPT_LEAKAGE_PATTERNS.some((pattern) => pattern.test(text))) {
     return { text: '', filteredReason: 'prompt_leakage' };
   }
   if (looksLikeRepetitiveNoise(text)) {
@@ -290,10 +300,15 @@ function buildPythonTranscribeKwargs(options: FasterWhisperTranscribeOptions): s
     `"condition_on_previous_text": ${options.conditionOnPreviousText ? 'True' : 'False'}`,
     options.initialPrompt ? `"initial_prompt": ${JSON.stringify(options.initialPrompt)}` : '',
     options.hotwords ? `"hotwords": ${JSON.stringify(options.hotwords)}` : '',
-  ].filter(Boolean).join(', ');
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
-function buildFasterWhisperWorkerScript(model: string, options: FasterWhisperTranscribeOptions): string {
+function buildFasterWhisperWorkerScript(
+  model: string,
+  options: FasterWhisperTranscribeOptions
+): string {
   const transcribeKwargs = buildPythonTranscribeKwargs(options);
   return [
     'import inspect, json, sys, traceback',
@@ -369,7 +384,7 @@ function buildParakeetWorkerScript(modelDir: string, numThreads: number): string
 function fasterWhisperWorkerKey(
   python: string,
   model: string,
-  options: FasterWhisperTranscribeOptions,
+  options: FasterWhisperTranscribeOptions
 ): string {
   return JSON.stringify({ python, model, options });
 }
@@ -405,7 +420,7 @@ function disposeParakeetWorker(worker: FasterWhisperWorker): void {
 async function createFasterWhisperWorker(
   python: string,
   model: string,
-  options: FasterWhisperTranscribeOptions,
+  options: FasterWhisperTranscribeOptions
 ): Promise<FasterWhisperWorker> {
   const { spawn } = await import('child_process');
   const { createInterface } = await import('readline');
@@ -480,7 +495,7 @@ async function createFasterWhisperWorker(
 async function createParakeetWorker(
   python: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<FasterWhisperWorker> {
   const { spawn } = await import('child_process');
   const { createInterface } = await import('readline');
@@ -555,7 +570,7 @@ async function createParakeetWorker(
 async function getFasterWhisperWorker(
   python: string,
   model: string,
-  options: FasterWhisperTranscribeOptions,
+  options: FasterWhisperTranscribeOptions
 ): Promise<FasterWhisperWorker> {
   const key = fasterWhisperWorkerKey(python, model, options);
   if (fasterWhisperWorker?.key === key) return fasterWhisperWorker;
@@ -566,7 +581,7 @@ async function getFasterWhisperWorker(
 async function getParakeetWorker(
   python: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<FasterWhisperWorker> {
   const key = parakeetWorkerKey(python, modelDir, numThreads);
   if (parakeetWorker?.key === key) return parakeetWorker;
@@ -582,8 +597,9 @@ async function waitForWorkerReady(worker: FasterWhisperWorker, timeoutMs?: numbe
       worker.ready,
       new Promise<void>((_, reject) => {
         timeout = setTimeout(
-          () => reject(new Error(`faster-whisper worker did not become ready within ${timeoutMs}ms`)),
-          timeoutMs,
+          () =>
+            reject(new Error(`faster-whisper worker did not become ready within ${timeoutMs}ms`)),
+          timeoutMs
         );
       }),
     ]);
@@ -596,7 +612,7 @@ async function transcribeWavWithWorker(
   wav: string,
   python: string,
   model: string,
-  options: FasterWhisperTranscribeOptions,
+  options: FasterWhisperTranscribeOptions
 ): Promise<string> {
   const worker = await getFasterWhisperWorker(python, model, options);
   await waitForWorkerReady(worker);
@@ -623,7 +639,7 @@ async function transcribeWavWithParakeetWorker(
   wav: string,
   python: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<string> {
   const worker = await getParakeetWorker(python, modelDir, numThreads);
   await waitForWorkerReady(worker);
@@ -650,7 +666,7 @@ async function transcribeWavOneShot(
   wav: string,
   python: string,
   model: string,
-  options: FasterWhisperTranscribeOptions,
+  options: FasterWhisperTranscribeOptions
 ): Promise<string> {
   const { spawn } = await import('child_process');
   const transcribeKwargs = buildPythonTranscribeKwargs(options);
@@ -673,12 +689,16 @@ async function transcribeWavOneShot(
     proc.stderr.on('data', (d) => (err += String(d)));
     proc.on('close', (code) => {
       if ((code !== 0 || !out.trim()) && err.trim()) {
-        logger.warn(`[speech] STT failed (python='${python}', exit=${code}): ${err.trim().slice(0, 300)}`);
+        logger.warn(
+          `[speech] STT failed (python='${python}', exit=${code}): ${err.trim().slice(0, 300)}`
+        );
       }
       resolve(out.trim());
     });
     proc.on('error', (e) => {
-      logger.warn(`[speech] STT spawn failed (python='${python}'): ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `[speech] STT spawn failed (python='${python}'): ${e instanceof Error ? e.message : String(e)}`
+      );
       resolve('');
     });
   });
@@ -688,13 +708,13 @@ async function transcribeWavParakeetOneShot(
   wav: string,
   python: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<string> {
   const { spawn } = await import('child_process');
   const py = [
     'import sys',
     buildParakeetWorkerScript(modelDir, numThreads),
-    "print(transcribe(sys.argv[1]))",
+    'print(transcribe(sys.argv[1]))',
   ].join('\n');
   return new Promise<string>((resolve) => {
     const proc = spawn(python, ['-c', py, wav], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -703,15 +723,22 @@ async function transcribeWavParakeetOneShot(
     proc.stdout.on('data', (d) => (out += String(d)));
     proc.stderr.on('data', (d) => (err += String(d)));
     proc.on('close', (code) => {
-      const lines = out.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-      const text = lines.filter(line => !line.startsWith('{')).at(-1) || '';
+      const lines = out
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const text = lines.filter((line) => !line.startsWith('{')).at(-1) || '';
       if ((code !== 0 || !text) && err.trim()) {
-        logger.warn(`[speech] Parakeet STT failed (python='${python}', exit=${code}): ${err.trim().slice(0, 300)}`);
+        logger.warn(
+          `[speech] Parakeet STT failed (python='${python}', exit=${code}): ${err.trim().slice(0, 300)}`
+        );
       }
       resolve(text.trim());
     });
     proc.on('error', (e) => {
-      logger.warn(`[speech] Parakeet STT spawn failed (python='${python}'): ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `[speech] Parakeet STT spawn failed (python='${python}'): ${e instanceof Error ? e.message : String(e)}`
+      );
       resolve('');
     });
   });
@@ -730,7 +757,9 @@ async function transcribeWavWithFasterWhisperRaw(wav: string): Promise<string> {
     try {
       return await transcribeWavWithWorker(wav, python, model, options);
     } catch (err) {
-      logger.warn(`[speech] STT worker unavailable, falling back to one-shot: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] STT worker unavailable, falling back to one-shot: ${err instanceof Error ? err.message : String(err)}`
+      );
       if (fasterWhisperWorker) disposeFasterWhisperWorker(fasterWhisperWorker);
     }
   }
@@ -740,12 +769,17 @@ async function transcribeWavWithFasterWhisperRaw(wav: string): Promise<string> {
 async function transcribeWavWithParakeetRaw(wav: string): Promise<string> {
   const python = resolveSpeechPython();
   const modelDir = resolveParakeetModelDir();
-  const numThreads = numericEnv('CODEBUDDY_PARAKEET_THREADS', numericEnv('CODEBUDDY_SPEECH_THREADS', 12));
+  const numThreads = numericEnv(
+    'CODEBUDDY_PARAKEET_THREADS',
+    numericEnv('CODEBUDDY_SPEECH_THREADS', 12)
+  );
   if (speechWorkerEnabled()) {
     try {
       return await transcribeWavWithParakeetWorker(wav, python, modelDir, numThreads);
     } catch (err) {
-      logger.warn(`[speech] Parakeet worker unavailable, falling back to one-shot: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] Parakeet worker unavailable, falling back to one-shot: ${err instanceof Error ? err.message : String(err)}`
+      );
       if (parakeetWorker) disposeParakeetWorker(parakeetWorker);
     }
   }
@@ -767,7 +801,7 @@ function disposeSherpaRustWorker(worker: FasterWhisperWorker): void {
 async function createSherpaRustWorker(
   bin: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<FasterWhisperWorker> {
   const { spawn } = await import('child_process');
   const { createInterface } = await import('readline');
@@ -836,7 +870,9 @@ async function createSherpaRustWorker(
       rejectReady(new Error(`sherpa-rs worker exited before ready (code=${code})`));
     }
     if (stderr.trim()) {
-      logger.warn(`[speech] sherpa-rs worker closed (code=${code}): ${stderr.trim().slice(0, 300)}`);
+      logger.warn(
+        `[speech] sherpa-rs worker closed (code=${code}): ${stderr.trim().slice(0, 300)}`
+      );
     }
   });
   proc.on('error', (err) => {
@@ -851,7 +887,7 @@ async function createSherpaRustWorker(
 async function getSherpaRustWorker(
   bin: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<FasterWhisperWorker> {
   const key = sherpaRustWorkerKey(bin, modelDir, numThreads);
   if (sherpaRustWorker?.key === key) return sherpaRustWorker;
@@ -863,7 +899,7 @@ async function transcribeWavWithSherpaRustWorker(
   wav: string,
   bin: string,
   modelDir: string,
-  numThreads: number,
+  numThreads: number
 ): Promise<string> {
   const worker = await getSherpaRustWorker(bin, modelDir, numThreads);
   // The Rust recognizer loads in ~1.8 s, so a tight ready-timeout fails fast on a
@@ -894,11 +930,22 @@ async function transcribeWavWithSherpaRustWorker(
  *  recognizer's value is the loaded-once persistent worker. */
 async function transcribeWavWithSherpaRustRaw(wav: string): Promise<string> {
   const bin = resolveSherpaRustBin();
-  if (!bin) throw new Error('buddy-sense stt binary not found (build with --features stt or set CODEBUDDY_SPEECH_STT_BIN)');
-  return transcribeWavWithSherpaRustWorker(wav, bin, resolveParakeetModelDir(), sherpaRustThreads());
+  if (!bin)
+    throw new Error(
+      'buddy-sense stt binary not found (build with --features stt or set CODEBUDDY_SPEECH_STT_BIN)'
+    );
+  return transcribeWavWithSherpaRustWorker(
+    wav,
+    bin,
+    resolveParakeetModelDir(),
+    sherpaRustThreads()
+  );
 }
 
-async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionEngine): Promise<string> {
+async function transcribeWavRaw(
+  wav: string,
+  engineOverride?: SpeechRecognitionEngine
+): Promise<string> {
   // `engineOverride` lets ONE call path (e.g. long/video transcription) prefer a faster
   // engine WITHOUT touching the global `CODEBUDDY_SPEECH_ENGINE` default that the
   // companion/sensory hot paths read. Unset → the env-driven resolution (unchanged).
@@ -911,10 +958,14 @@ async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionE
     try {
       const text = await transcribeWavWithSherpaRustRaw(wav);
       if (text || !parakeetFallbackEnabled()) return text;
-      logger.warn('[speech] sherpa-rs returned an empty transcript; falling back to faster-whisper');
+      logger.warn(
+        '[speech] sherpa-rs returned an empty transcript; falling back to faster-whisper'
+      );
     } catch (err) {
       if (!parakeetFallbackEnabled()) throw err;
-      logger.warn(`[speech] sherpa-rs failed; falling back to faster-whisper: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] sherpa-rs failed; falling back to faster-whisper: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
     return transcribeWavWithFasterWhisperRaw(wav);
   }
@@ -926,7 +977,9 @@ async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionE
       logger.warn('[speech] Parakeet returned an empty transcript; falling back to faster-whisper');
     } catch (err) {
       if (!parakeetFallbackEnabled()) throw err;
-      logger.warn(`[speech] Parakeet failed; falling back to faster-whisper: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] Parakeet failed; falling back to faster-whisper: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
     return transcribeWavWithFasterWhisperRaw(wav);
   }
@@ -939,7 +992,9 @@ async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionE
       if (text) return text;
       logger.warn('[speech] auto STT: sherpa-rs returned empty; trying Parakeet/faster-whisper');
     } catch (err) {
-      logger.warn(`[speech] auto STT: sherpa-rs unavailable; trying Parakeet/faster-whisper: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] auto STT: sherpa-rs unavailable; trying Parakeet/faster-whisper: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
   if (existsSync(resolveParakeetModelDir())) {
@@ -948,7 +1003,9 @@ async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionE
       if (text) return text;
       logger.warn('[speech] auto STT: Parakeet returned empty; trying faster-whisper');
     } catch (err) {
-      logger.warn(`[speech] auto STT: Parakeet unavailable; trying faster-whisper: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[speech] auto STT: Parakeet unavailable; trying faster-whisper: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
   return transcribeWavWithFasterWhisperRaw(wav);
@@ -959,7 +1016,10 @@ async function transcribeWavRaw(wav: string, engineOverride?: SpeechRecognitionE
  *  `engineOverride` (additive, back-compat with the `Transcriber` type) lets a specific caller
  *  pin/prefer an engine for its call only — e.g. the long/video path passes `auto` to lean on
  *  the in-process Rust sherpa-rs engine — without changing the global STT default. */
-export async function transcribeWav(wav: string, engineOverride?: SpeechRecognitionEngine): Promise<string> {
+export async function transcribeWav(
+  wav: string,
+  engineOverride?: SpeechRecognitionEngine
+): Promise<string> {
   return normalizeSpeechTranscript(await transcribeWavRaw(wav, engineOverride)).text;
 }
 
@@ -973,9 +1033,16 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   let activeWav: string | undefined;
   let disposed = false;
   let liveSeq = 0; // unique dedup key for live-mic finals (there's no WAV to key on)
-  let pendingSpeech: { p: ReturnType<typeof perceptionOf>; wav: string; presetText?: string } | null = null;
+  let pendingSpeech: {
+    p: ReturnType<typeof perceptionOf>;
+    wav: string;
+    presetText?: string;
+  } | null = null;
 
-  const startSpeechJob = (job: { p: ReturnType<typeof perceptionOf>; wav: string; presetText?: string }, bypassDebounce = false): void => {
+  const startSpeechJob = (
+    job: { p: ReturnType<typeof perceptionOf>; wav: string; presetText?: string },
+    bypassDebounce = false
+  ): void => {
     const t = now();
     if (isSpeaking(t)) return; // half-duplex: ignore the mic while the robot is speaking (+ echo tail)
     if (!bypassDebounce && t - lastAt < debounceMs) return; // one transcription per utterance
@@ -1013,7 +1080,9 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           decisionMs,
           actionMs,
           totalMs: sttMs,
-          ...(eventTimestamp !== undefined ? { eventToSttStartMs: Math.max(0, transcribeStartMs - eventTimestamp) } : {}),
+          ...(eventTimestamp !== undefined
+            ? { eventToSttStartMs: Math.max(0, transcribeStartMs - eventTimestamp) }
+            : {}),
         };
         const capturePayload = {
           device: payload.device,
@@ -1049,7 +1118,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
               },
               tags: ['speech', 'stt', 'latency', 'empty'],
             },
-            options.cwd ? { cwd: options.cwd } : {},
+            options.cwd ? { cwd: options.cwd } : {}
           );
           return;
         }
@@ -1101,16 +1170,18 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
             },
             tags: ['speech', 'stt', 'latency'],
           },
-          options.cwd ? { cwd: options.cwd } : {},
+          options.cwd ? { cwd: options.cwd } : {}
         );
         if (actionMs > 0 || decisionMs > 0) {
           logger.info(
-            `[speech] loop timings: stt=${sttMs}ms decision=${decisionMs}ms action=${actionMs}ms total=${totalMs}ms`
-              + (decisionReason ? ` reason=${decisionReason}` : ''),
+            `[speech] loop timings: stt=${sttMs}ms decision=${decisionMs}ms action=${actionMs}ms total=${totalMs}ms` +
+              (decisionReason ? ` reason=${decisionReason}` : '')
           );
         }
       } catch (err) {
-        logger.warn(`[speech] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(
+          `[speech] reaction failed: ${err instanceof Error ? err.message : String(err)}`
+        );
       } finally {
         // Re-stamp AFTER the full hear→think→speak cycle so the debounce window restarts from
         // end-of-playback — but ONLY when the robot actually spoke (that's the echo tail we must

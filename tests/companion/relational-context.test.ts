@@ -39,14 +39,18 @@ describe('buildRelationalContext — composition', () => {
       includeFacts: false,
       includePersonality: false,
       includePresence: false,
+      includeGuidance: false,
       episodeBlock: async () => 'Récemment, on a parlé de : la refonte.',
     });
-    expect(withEp).toBe('<recent_episode>\nRécemment, on a parlé de : la refonte.\n</recent_episode>');
+    expect(withEp).toBe(
+      '<recent_episode>\nRécemment, on a parlé de : la refonte.\n</recent_episode>'
+    );
 
     const noEp = await buildRelationalContext({
       includeFacts: false,
       includePersonality: false,
       includePresence: false,
+      includeGuidance: false,
       episodeBlock: async () => null,
     });
     expect(noEp).toBe('');
@@ -57,9 +61,12 @@ describe('buildRelationalContext — composition', () => {
       includeFacts: false,
       includeEpisode: false,
       includePresence: false,
+      includeGuidance: false,
       personalitySummary: () => 'Humeur actuelle : sereine (60/100). Lien : familier.',
     });
-    expect(ctx).toBe('<lisa_state>\nHumeur actuelle : sereine (60/100). Lien : familier.\n</lisa_state>');
+    expect(ctx).toBe(
+      '<lisa_state>\nHumeur actuelle : sereine (60/100). Lien : familier.\n</lisa_state>'
+    );
   });
 
   it('is best-effort: a throwing source contributes nothing and the rest survives', async () => {
@@ -87,6 +94,7 @@ describe('buildRelationalContext — composition', () => {
       episodeBlock: async () => null,
       personalitySummary: () => '',
       presenceBlock: async () => '',
+      guidanceBlock: () => null,
     });
     expect(ctx).toBe('');
   });
@@ -96,6 +104,7 @@ describe('buildRelationalContext — composition', () => {
       includeFacts: false,
       includeEpisode: false,
       includePersonality: false,
+      includeGuidance: false,
       presenceBlock: async () => '<presence>seul</presence>',
     });
     expect(ctx).toBe('<presence>seul</presence>');
@@ -116,18 +125,38 @@ describe('buildRelationalContext — real user-model (accepted-only + privacy, n
   it('surfaces only ACCEPTED facts, and a sensitive fact is refused at write so it can never leak', async () => {
     const model = getUserModel(tmp);
     // A proposed (pending) observation is NOT in the active model yet.
-    const { observation } = model.observe({ kind: 'preference', content: 'prefere TypeScript strict, pas de mocks' });
-    const before = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
+    const { observation } = model.observe({
+      kind: 'preference',
+      content: 'prefere TypeScript strict, pas de mocks',
+    });
+    const before = await buildRelationalContext({
+      cwd: tmp,
+      includePersonality: false,
+      includePresence: false,
+      includeEpisode: false,
+    });
     expect(before).not.toContain('TypeScript strict');
 
     // Human acceptance → now it surfaces.
     model.accept(observation.id, { reviewedBy: 'patrice' });
-    const after = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
+    const after = await buildRelationalContext({
+      cwd: tmp,
+      includePersonality: false,
+      includePresence: false,
+      includeEpisode: false,
+    });
     expect(after).toContain('TypeScript strict');
 
     // A sensitive fact is refused by the real privacy screen at WRITE time → never enters the model.
-    expect(() => model.observe({ kind: 'trait', content: 'his salary is 400 eur per day' })).toThrow();
-    const stillClean = await buildRelationalContext({ cwd: tmp, includePersonality: false, includePresence: false, includeEpisode: false });
+    expect(() =>
+      model.observe({ kind: 'trait', content: 'his salary is 400 eur per day' })
+    ).toThrow();
+    const stillClean = await buildRelationalContext({
+      cwd: tmp,
+      includePersonality: false,
+      includePresence: false,
+      includeEpisode: false,
+    });
     expect(stillClean).not.toMatch(/salary|400/i);
   });
 });
@@ -138,7 +167,8 @@ describe('buildLlmArrivalOpener — injects relationalContext into the system pr
     const line = await buildLlmArrivalOpener({
       now: Date.parse('2026-07-02T09:00:00'),
       lastSeenAt: null,
-      relationalContext: '<lisa_state>\nHumeur actuelle : joyeuse (72/100). Lien : complice.\n</lisa_state>',
+      relationalContext:
+        '<lisa_state>\nHumeur actuelle : joyeuse (72/100). Lien : complice.\n</lisa_state>',
       chat: async (messages) => {
         capturedSystem = messages.find((m) => m.role === 'system')?.content ?? '';
         return 'Content de te revoir, on est bien tous les deux.';

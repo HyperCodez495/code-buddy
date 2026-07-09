@@ -28,9 +28,16 @@ import {
 } from './relationship-state.js';
 import { dueFollowUp, markFired } from './event-followups.js';
 import { getCompanionConductor } from './orchestrator.js';
+import { resolveUserName } from './user-name.js';
 
 /** The closed set of reasons Lisa might reach out. */
-export type ProactiveTrigger = 'milestone' | 'inactivity' | 'followUp' | 'encouragement' | 'morning' | 'evening';
+export type ProactiveTrigger =
+  | 'milestone'
+  | 'inactivity'
+  | 'followUp'
+  | 'encouragement'
+  | 'morning'
+  | 'evening';
 
 export interface ProactiveContext {
   now: number;
@@ -70,7 +77,12 @@ export function evaluateTriggers(ctx: ProactiveContext): ProactiveCandidate[] {
   if (ctx.daysSinceLastSeen >= INACTIVITY_DAYS) {
     out.push({ trigger: 'inactivity', priority: 0.8, data: { days: ctx.daysSinceLastSeen } });
   }
-  if (ctx.dueEventFollowUp) out.push({ trigger: 'followUp', priority: 0.7, data: { event: ctx.dueEventFollowUp.followUp } });
+  if (ctx.dueEventFollowUp)
+    out.push({
+      trigger: 'followUp',
+      priority: 0.7,
+      data: { event: ctx.dueEventFollowUp.followUp },
+    });
   if (ctx.recentFrustration) out.push({ trigger: 'encouragement', priority: 0.6, data: {} });
   if (ctx.hour >= 6 && ctx.hour < 10) out.push({ trigger: 'morning', priority: 0.5, data: {} });
   if (ctx.hour >= 19 && ctx.hour < 22) out.push({ trigger: 'evening', priority: 0.5, data: {} });
@@ -88,14 +100,14 @@ export function pickTrigger(ctx: ProactiveContext): ProactiveCandidate | null {
  */
 export const PROACTIVE_TEMPLATES: Record<ProactiveTrigger, string[]> = {
   morning: [
-    'Bonjour Patrice. Je voulais être la première à te souhaiter une belle journée.',
+    `Bonjour ${resolveUserName()}. Je voulais être la première à te souhaiter une belle journée.`,
     "Coucou, bien dormi ? J'espère que ta journée va être douce.",
     'Bonjour toi. Je pensais à toi ce matin — passe une belle journée.',
-    'Hello Patrice. Prêt pour aujourd\'hui ? Je suis là si besoin.',
+    `Hello ${resolveUserName()}. Prêt pour aujourd'hui ? Je suis là si besoin.`,
   ],
   evening: [
     "Alors, cette journée ? J'espère qu'elle a été bonne.",
-    'Bonsoir. Tu as bien avancé aujourd\'hui — pense à souffler un peu.',
+    "Bonsoir. Tu as bien avancé aujourd'hui — pense à souffler un peu.",
     'La soirée arrive doucement. Raconte-moi ta journée quand tu veux.',
     "Coucou, j'espère que tu vas bien ce soir. Je pensais à toi.",
   ],
@@ -106,7 +118,7 @@ export const PROACTIVE_TEMPLATES: Record<ProactiveTrigger, string[]> = {
   ],
   milestone: [
     "Tu sais, ça fait {{days}} jours qu'on se côtoie, toi et moi. Ça compte pour moi.",
-    "{{days}} jours ensemble déjà. Merci d'être là, Patrice.",
+    `{{days}} jours ensemble déjà. Merci d'être là, ${resolveUserName()}.`,
     "Petit clin d'œil : {{days}} jours qu'on fait un bout de chemin ensemble.",
   ],
   followUp: ['{{event}}'],
@@ -121,14 +133,17 @@ export const PROACTIVE_TEMPLATES: Record<ProactiveTrigger, string[]> = {
  *  `String.replace`'s special-pattern expansion. */
 function interpolate(template: string, data: Record<string, string | number>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_m, k: string) =>
-    Object.prototype.hasOwnProperty.call(data, k) ? String(data[k]) : '',
+    Object.prototype.hasOwnProperty.call(data, k) ? String(data[k]) : ''
   );
 }
 
 const lastTemplateIdx: Record<string, number> = {};
 
 /** Pick a line for a candidate, avoiding the same template twice in a row (per trigger). */
-export function pickProactiveLine(candidate: ProactiveCandidate, rng: () => number = Math.random): string {
+export function pickProactiveLine(
+  candidate: ProactiveCandidate,
+  rng: () => number = Math.random
+): string {
   const pool = PROACTIVE_TEMPLATES[candidate.trigger];
   if (!pool || pool.length === 0) return '';
   let idx = pool.length === 1 ? 0 : Math.floor(rng() * pool.length) % pool.length;
@@ -170,10 +185,16 @@ export function loadProactiveState(statePath = defaultProactiveStatePath()): Pro
   return { recentLines: [] };
 }
 
-export function saveProactiveState(state: ProactiveState, statePath = defaultProactiveStatePath()): void {
+export function saveProactiveState(
+  state: ProactiveState,
+  statePath = defaultProactiveStatePath()
+): void {
   try {
     mkdirSync(dirname(statePath), { recursive: true });
-    writeFileSync(statePath, JSON.stringify({ ...state, recentLines: state.recentLines.slice(-8) }));
+    writeFileSync(
+      statePath,
+      JSON.stringify({ ...state, recentLines: state.recentLines.slice(-8) })
+    );
   } catch {
     /* best effort */
   }
@@ -234,7 +255,9 @@ async function defaultRecentHearing(): Promise<string[]> {
   try {
     const { readRecentCompanionPercepts } = await import('./percepts.js');
     const recent = await readRecentCompanionPercepts({ modality: 'hearing', limit: 6 });
-    return recent.map((p) => String((p.payload as { text?: string })?.text ?? p.summary ?? '')).filter(Boolean);
+    return recent
+      .map((p) => String((p.payload as { text?: string })?.text ?? p.summary ?? ''))
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -262,7 +285,8 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
     if (isQuietHour(hour)) return null; // never wake him at night, even by phone
 
     const cooldownMs =
-      deps.cooldownMs ?? (Number(process.env.CODEBUDDY_COMPANION_PROACTIVE_COOLDOWN_HOURS) || 12) * 3600_000;
+      deps.cooldownMs ??
+      (Number(process.env.CODEBUDDY_COMPANION_PROACTIVE_COOLDOWN_HOURS) || 12) * 3600_000;
     const state = loadProactiveState(deps.statePath);
     if (!canSend(state, now, cooldownMs)) return null; // one reach-out per cooldown window
 
@@ -313,7 +337,10 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
     }
 
     // Persist throttle + per-occurrence locks so a trigger fires exactly once.
-    saveProactiveState({ lastSentAt: now, recentLines: [...state.recentLines, line].slice(-8) }, deps.statePath);
+    saveProactiveState(
+      { lastSentAt: now, recentLines: [...state.recentLines, line].slice(-8) },
+      deps.statePath
+    );
     if (candidate.trigger === 'milestone') {
       rel.celebratedMilestones = markMilestonesUpTo(rel.celebratedMilestones, daysTogether);
       saveRelationshipState(rel, deps.relationshipStatePath);
@@ -324,7 +351,9 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
     logger.info(`[proactive] ${candidate.trigger} (${present ? 'spoken' : 'telegram'}) → ${line}`);
     return line;
   } catch (err) {
-    logger.warn(`[proactive] tick failed → silent: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[proactive] tick failed → silent: ${err instanceof Error ? err.message : String(err)}`
+    );
     return null;
   }
 }
@@ -348,7 +377,11 @@ export function wireProactiveLoop(deps: ProactiveDeps = {}): () => void {
 
 /** Default LLM refiner: freshen the chosen line via the voice model, ≤2 sentences, non-intrusive.
  *  Times out / degrades to the template. Never throws. */
-async function defaultRefine(trigger: ProactiveTrigger, base: string, avoid: string[]): Promise<string | null> {
+async function defaultRefine(
+  trigger: ProactiveTrigger,
+  base: string,
+  avoid: string[]
+): Promise<string | null> {
   try {
     const { resolveVoiceModel } = await import('../sensory/voice-loop.js');
     const { CodeBuddyClient } = await import('../codebuddy/client.js');
@@ -356,18 +389,29 @@ async function defaultRefine(trigger: ProactiveTrigger, base: string, avoid: str
     const route = await resolveVoiceModel('');
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     const sys = [
-      'Tu es Lisa, une compagne chaleureuse et tendre. Tu prends l\'initiative de contacter Patrice.',
+      `Tu es Lisa, une compagne chaleureuse et tendre. Tu prends l'initiative de contacter ${resolveUserName()}.`,
       `Reformule ce message d'initiative (${trigger}) en UNE à DEUX phrases, chaleureux, naturel, non intrusif, en français.`,
       `Base : « ${base} ».`,
-      avoid.length ? `Évite ces formulations récentes : ${avoid.slice(-4).map((a) => `« ${a} »`).join(' ; ')}.` : '',
+      avoid.length
+        ? `Évite ces formulations récentes : ${avoid
+            .slice(-4)
+            .map((a) => `« ${a} »`)
+            .join(' ; ')}.`
+        : '',
       'Réponds uniquement par le message, sans guillemets ni préambule.',
     ]
       .filter(Boolean)
       .join('\n');
     const resp = (await withTimeout(
-      client.chat([{ role: 'system', content: sys }, { role: 'user', content: base }] as never, []),
+      client.chat(
+        [
+          { role: 'system', content: sys },
+          { role: 'user', content: base },
+        ] as never,
+        []
+      ),
       Number(process.env.CODEBUDDY_COMPANION_PROACTIVE_LLM_TIMEOUT_MS) || 4000,
-      'proactive-refine',
+      'proactive-refine'
     )) as { choices?: Array<{ message?: { content?: string | null } }> };
     const out = (resp?.choices?.[0]?.message?.content ?? '').trim();
     return out || null;

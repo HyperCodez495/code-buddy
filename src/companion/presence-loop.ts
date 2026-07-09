@@ -28,6 +28,7 @@ import {
 } from './relationship-state.js';
 import { dueFollowUp, markFired } from './event-followups.js';
 import { getCompanionConductor } from './orchestrator.js';
+import { resolveUserName } from './user-name.js';
 
 export interface PresenceCtx {
   now: Date;
@@ -104,7 +105,8 @@ function pick(lines: string[], now: Date): string {
   return lines[Math.floor(now.getTime() / 60000) % lines.length]!;
 }
 
-const FRUSTRATION = /\b(j'?en peux plus|marre|galère|gal[èe]re|bloqu[ée]|coince|coincé|ça marche pas|ca marche pas|énerve|enerve|fatigu[ée]|épuis|sais plus)\b/i;
+const FRUSTRATION =
+  /\b(j'?en peux plus|marre|galère|gal[èe]re|bloqu[ée]|coince|coincé|ça marche pas|ca marche pas|énerve|enerve|fatigu[ée]|épuis|sais plus)\b/i;
 
 // ── relationship-aware moments (shared history) ───────────────────────
 // Warm, sparse, non-gamified: a reunion after a real absence and a tenure milestone. Placed
@@ -123,7 +125,7 @@ export const RELATIONSHIP_MOMENTS: Moment[] = [
               `Te revoilà — ça faisait ${ctx.daysSinceLastSeen} jours. Content de te retrouver, tout va bien ?`,
               `Ça faisait un moment, ${ctx.daysSinceLastSeen} jours sans te voir. Je suis contente que tu sois là.`,
             ],
-            ctx.now,
+            ctx.now
           )
         : null,
   },
@@ -146,9 +148,9 @@ export const RELATIONSHIP_MOMENTS: Moment[] = [
         : pick(
             [
               `Tu sais, ça fait ${m} jours qu'on se côtoie, toi et moi. J'aime bien notre bout de chemin.`,
-              `${m} jours ensemble déjà. Merci d'être là, Patrice.`,
+              `${m} jours ensemble déjà. Merci d'être là, ${resolveUserName()}.`,
             ],
-            ctx.now,
+            ctx.now
           );
     },
   },
@@ -166,17 +168,18 @@ export const DEFAULT_MOMENTS: Moment[] = [
         ? pick(
             [
               'On garde simple. Le prochain petit pas utile, on le fait ensemble ?',
-              "Respire — on prend un truc à la fois. Par quoi on commence ?",
-              "Je suis là. On découpe : quel est le bout le plus petit qui avance ?",
+              'Respire — on prend un truc à la fois. Par quoi on commence ?',
+              'Je suis là. On découpe : quel est le bout le plus petit qui avance ?',
             ],
-            ctx.now,
+            ctx.now
           )
         : null,
   },
   {
     id: 'break',
     cooldownMs: 45 * 60_000,
-    generate: (ctx) => (ctx.drowsy ? 'Tu veux faire une petite pause ? Quelques minutes te feraient du bien.' : null),
+    generate: (ctx) =>
+      ctx.drowsy ? 'Tu veux faire une petite pause ? Quelques minutes te feraient du bien.' : null,
   },
   {
     id: 'project',
@@ -190,15 +193,29 @@ export const DEFAULT_MOMENTS: Moment[] = [
     engage: true,
     generate: (ctx) =>
       ctx.hour >= 19 && ctx.hour < 23
-        ? pick(['Alors, comment s’est passée ta journée ?', "Raconte — ta journée, ça a donné quoi ?"], ctx.now)
+        ? pick(
+            ['Alors, comment s’est passée ta journée ?', 'Raconte — ta journée, ça a donné quoi ?'],
+            ctx.now
+          )
         : null,
   },
   {
     id: 'time-of-day',
     cooldownMs: 6 * 3600_000,
     generate: (ctx) => {
-      if (ctx.hour >= 6 && ctx.hour < 11) return pick(['Bonjour Patrice. Bien dormi ?', 'Salut, belle journée qui commence.'], ctx.now);
-      if (ctx.hour >= 21 && ctx.hour < 24) return pick(['Bonne soirée. Tu as bien avancé aujourd’hui.', 'Doucement, la soirée — tu as bossé dur.'], ctx.now);
+      if (ctx.hour >= 6 && ctx.hour < 11)
+        return pick(
+          [`Bonjour ${resolveUserName()}. Bien dormi ?`, 'Salut, belle journée qui commence.'],
+          ctx.now
+        );
+      if (ctx.hour >= 21 && ctx.hour < 24)
+        return pick(
+          [
+            'Bonne soirée. Tu as bien avancé aujourd’hui.',
+            'Doucement, la soirée — tu as bossé dur.',
+          ],
+          ctx.now
+        );
       return null;
     },
   },
@@ -240,7 +257,9 @@ async function defaultRecentHearing(): Promise<string[]> {
   try {
     const { readRecentCompanionPercepts } = await import('./percepts.js');
     const recent = await readRecentCompanionPercepts({ modality: 'hearing', limit: 6 });
-    return recent.map((p) => String((p.payload as { text?: string })?.text ?? p.summary ?? '')).filter(Boolean);
+    return recent
+      .map((p) => String((p.payload as { text?: string })?.text ?? p.summary ?? ''))
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -268,7 +287,8 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
     const relState = loadRelationshipState(deps.relationshipStatePath);
     if (relState.firstSeenAt == null) relState.firstSeenAt = nowMs;
     const daysTogether = daysBetween(relState.firstSeenAt, nowMs);
-    const daysSinceLastSeen = relState.lastPresentAt != null ? daysBetween(relState.lastPresentAt, nowMs) : 0;
+    const daysSinceLastSeen =
+      relState.lastPresentAt != null ? daysBetween(relState.lastPresentAt, nowMs) : 0;
     relState.lastPresentAt = nowMs;
     saveRelationshipState(relState, deps.relationshipStatePath);
 
@@ -316,7 +336,10 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
       if (moment.engage) deps.onEngage?.();
       // Record a celebrated tenure milestone (all marks up to today) so it never repeats.
       if (moment.id === 'milestone') {
-        relState.celebratedMilestones = markMilestonesUpTo(relState.celebratedMilestones, daysTogether);
+        relState.celebratedMilestones = markMilestonesUpTo(
+          relState.celebratedMilestones,
+          daysTogether
+        );
         saveRelationshipState(relState, deps.relationshipStatePath);
       }
       // Mark a fired follow-up done so it's asked exactly once.
@@ -328,18 +351,23 @@ export async function runPresenceTick(deps: PresenceDeps = {}): Promise<string |
     }
     return null; // nothing fit → silent present
   } catch (err) {
-    logger.warn(`[presence] tick failed → silent: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[presence] tick failed → silent: ${err instanceof Error ? err.message : String(err)}`
+    );
     return null;
   }
 }
 
 /** Start the presence loop on its own interval (works without the sensory daemon). Returns teardown. */
 export function wirePresenceLoop(deps: PresenceDeps = {}): () => void {
-  const tickMs = deps.tickMs ?? (Number(process.env.CODEBUDDY_COMPANION_PRESENCE_TICK_MS) || 300_000); // 5 min
+  const tickMs =
+    deps.tickMs ?? (Number(process.env.CODEBUDDY_COMPANION_PRESENCE_TICK_MS) || 300_000); // 5 min
   const timer = setInterval(() => {
     void runPresenceTick(deps);
   }, tickMs);
   if (typeof timer.unref === 'function') timer.unref();
-  logger.info(`Companion presence: Enabled (tick ${Math.round(tickMs / 1000)}s, cap ${hourlyCap(deps)}/h)`);
+  logger.info(
+    `Companion presence: Enabled (tick ${Math.round(tickMs / 1000)}s, cap ${hourlyCap(deps)}/h)`
+  );
   return () => clearInterval(timer);
 }

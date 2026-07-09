@@ -26,6 +26,7 @@ import type { PermissionMode } from '../security/permission-modes.js';
 import { matchPrefetched, loadPrefetchCache } from '../companion/prefetch-engine.js';
 import { loadPrefetchItems } from '../companion/prefetch-config.js';
 import { isJokeRequest, nextJoke } from '../companion/jokes.js';
+import { resolveUserName } from '../companion/user-name.js';
 
 /** Instant joke when the user asks for one (no LLM, no agent). null otherwise. */
 function defaultJokeMatch(heard: string): string | null {
@@ -137,7 +138,7 @@ export function isSubstantiveQuery(raw: string): boolean {
 export function buildContextPreamble(history: HybridTurn[]): string {
   if (!history.length) return '';
   const recent = history.slice(-4);
-  const lines = recent.map((t) => `${t.role === 'user' ? 'Patrice' : 'Toi'}: ${t.content}`);
+  const lines = recent.map((t) => `${t.role === 'user' ? resolveUserName() : 'Toi'}: ${t.content}`);
   return `Contexte récent de la conversation (pour résoudre les références comme "ça"/"l'autre") :\n${lines.join('\n')}`;
 }
 

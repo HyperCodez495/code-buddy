@@ -1,4 +1,8 @@
-import { getCompanionStatus, type CompanionStatus, type CompanionStatusOptions } from './companion-mode.js';
+import {
+  getCompanionStatus,
+  type CompanionStatus,
+  type CompanionStatusOptions,
+} from './companion-mode.js';
 import {
   readRecentCompanionPercepts,
   recordCompanionPercept,
@@ -6,6 +10,7 @@ import {
   type CompanionPerceptModality,
   type CompanionPerceptStats,
 } from './percepts.js';
+import { resolveUserName } from './user-name.js';
 
 export type CompanionEvaluationSeverity = 'info' | 'warning' | 'action';
 export type CompanionEvaluationArea =
@@ -63,14 +68,16 @@ function levelForScore(score: number): CompanionEvaluationLevel {
 function hasModality(
   modality: CompanionPerceptModality,
   stats: CompanionPerceptStats,
-  recent: CompanionPercept[],
+  recent: CompanionPercept[]
 ): boolean {
-  return Boolean(stats.byModality[modality]) || recent.some(percept => percept.modality === modality);
+  return (
+    Boolean(stats.byModality[modality]) || recent.some((percept) => percept.modality === modality)
+  );
 }
 
 function addFinding(
   findings: CompanionSelfEvaluationFinding[],
-  finding: CompanionSelfEvaluationFinding,
+  finding: CompanionSelfEvaluationFinding
 ): void {
   findings.push(finding);
 }
@@ -86,7 +93,7 @@ function unique(values: string[]): string[] {
 function buildFindings(
   status: CompanionStatus,
   stats: CompanionPerceptStats,
-  recent: CompanionPercept[],
+  recent: CompanionPercept[]
 ): CompanionSelfEvaluationFinding[] {
   const findings: CompanionSelfEvaluationFinding[] = [];
   const identityReady = status.identity.soulIsCompanion && status.identity.bootIsCompanion;
@@ -103,7 +110,8 @@ function buildFindings(
       area: 'brain',
       severity: 'action',
       summary: 'Le cerveau ChatGPT OAuth n est pas connecte.',
-      recommendation: 'Connecter l abonnement ChatGPT pour que Buddy utilise le cerveau principal du systeme.',
+      recommendation:
+        'Connecter l abonnement ChatGPT pour que Buddy utilise le cerveau principal du systeme.',
       command: 'buddy login',
       tags: ['chatgpt', 'brain', 'auth'],
     });
@@ -115,7 +123,8 @@ function buildFindings(
       area: 'identity',
       severity: 'action',
       summary: 'L identite compagnon n est pas entierement installee.',
-      recommendation: 'Installer ou rafraichir SOUL.md et BOOT.md pour donner une posture stable a Buddy.',
+      recommendation:
+        'Installer ou rafraichir SOUL.md et BOOT.md pour donner une posture stable a Buddy.',
       command: 'buddy companion setup',
       tags: ['identity', 'companion'],
     });
@@ -167,7 +176,8 @@ function buildFindings(
       area: 'vision',
       severity: 'action',
       summary: 'La camera est prete mais aucun percept visuel n a encore ete capture.',
-      recommendation: 'Capturer une image de contexte pour que Buddy puisse ancrer son attention dans le monde visible.',
+      recommendation:
+        'Capturer une image de contexte pour que Buddy puisse ancrer son attention dans le monde visible.',
       command: 'buddy companion camera snapshot',
       tags: ['vision', 'percept'],
     });
@@ -179,7 +189,8 @@ function buildFindings(
       area: 'hearing',
       severity: 'action',
       summary: 'Aucun percept auditif n est encore enregistre.',
-      recommendation: 'Parler a Buddy via Cowork afin que le journal conserve la boucle bidirectionnelle voix.',
+      recommendation:
+        'Parler a Buddy via Cowork afin que le journal conserve la boucle bidirectionnelle voix.',
       tags: ['hearing', 'voice', 'percept'],
     });
   }
@@ -190,7 +201,8 @@ function buildFindings(
       area: 'screen',
       severity: 'action',
       summary: 'Aucun percept ecran n est encore enregistre.',
-      recommendation: 'Demander une capture ou utiliser un outil ecran pour que Buddy voie aussi l espace de travail.',
+      recommendation:
+        'Demander une capture ou utiliser un outil ecran pour que Buddy voie aussi l espace de travail.',
       tags: ['screen', 'percept'],
     });
   }
@@ -201,7 +213,8 @@ function buildFindings(
       area: 'memory',
       severity: 'action',
       summary: 'Buddy n a pas encore note son propre etat interne.',
-      recommendation: 'Enregistrer un self-state pour fermer la boucle proprioceptive du compagnon.',
+      recommendation:
+        'Enregistrer un self-state pour fermer la boucle proprioceptive du compagnon.',
       command: 'buddy companion self',
       tags: ['self', 'memory', 'proprioception'],
     });
@@ -213,7 +226,8 @@ function buildFindings(
       area: 'memory',
       severity: 'warning',
       summary: 'Le journal sensoriel est vide.',
-      recommendation: 'Utiliser le panneau compagnon, la voix, la camera et les captures pour construire une memoire d interaction locale.',
+      recommendation:
+        'Utiliser le panneau compagnon, la voix, la camera et les captures pour construire une memoire d interaction locale.',
       tags: ['memory', 'percepts'],
     });
   }
@@ -224,7 +238,7 @@ function buildFindings(
       area: 'workflow',
       severity: 'info',
       summary: 'Le mot de reveil utilise le fallback text-match.',
-      recommendation: 'Ajouter PICOVOICE_ACCESS_KEY pour un vrai reveil vocal local si Patrice veut une experience mains-libres.',
+      recommendation: `Ajouter PICOVOICE_ACCESS_KEY pour un vrai reveil vocal local si ${resolveUserName()} veut une experience mains-libres.`,
       tags: ['wakeword', 'voice'],
     });
   }
@@ -234,7 +248,8 @@ function buildFindings(
     area: 'safety',
     severity: 'info',
     summary: 'Les sens du compagnon restent explicites et locaux.',
-    recommendation: 'Conserver cette frontiere: camera, micro et captures doivent rester visibles, intentionnels et rattaches au projet actif.',
+    recommendation:
+      'Conserver cette frontiere: camera, micro et captures doivent rester visibles, intentionnels et rattaches au projet actif.',
     tags: ['safety', 'privacy'],
   });
 
@@ -244,15 +259,18 @@ function buildFindings(
 function buildStrengths(
   status: CompanionStatus,
   stats: CompanionPerceptStats,
-  recent: CompanionPercept[],
+  recent: CompanionPercept[]
 ): string[] {
   const strengths: string[] = [];
-  if (status.chatGptCredentialsPresent) strengths.push(`Cerveau ChatGPT connecte via ${status.authPath}.`);
+  if (status.chatGptCredentialsPresent)
+    strengths.push(`Cerveau ChatGPT connecte via ${status.authPath}.`);
   if (status.identity.soulIsCompanion && status.identity.bootIsCompanion) {
     strengths.push('Identite compagnon installee et chargee.');
   }
-  if (status.voice.enabled && status.voice.available) strengths.push(`Entree vocale prete (${status.voice.provider}).`);
-  if (status.tts.enabled && status.tts.available) strengths.push(`Sortie vocale prete (${status.tts.provider}).`);
+  if (status.voice.enabled && status.voice.available)
+    strengths.push(`Entree vocale prete (${status.voice.provider}).`);
+  if (status.tts.enabled && status.tts.available)
+    strengths.push(`Sortie vocale prete (${status.tts.provider}).`);
   if (status.camera.available) strengths.push(`Camera disponible sur ${status.camera.platform}.`);
   if (status.wakeWord.available) strengths.push(`Mot de reveil actif (${status.wakeWord.engine}).`);
   if (stats.total > 0) strengths.push(`${stats.total} percept(s) dans le journal sensoriel.`);
@@ -263,79 +281,88 @@ function buildStrengths(
 
 function buildNextActions(findings: CompanionSelfEvaluationFinding[]): string[] {
   return findings
-    .filter(finding => finding.severity !== 'info')
+    .filter((finding) => finding.severity !== 'info')
     .slice(0, 5)
-    .map(finding => finding.command
-      ? `${finding.recommendation} (${finding.command})`
-      : finding.recommendation);
+    .map((finding) =>
+      finding.command ? `${finding.recommendation} (${finding.command})` : finding.recommendation
+    );
 }
 
 function computeScore(
   status: CompanionStatus,
   stats: CompanionPerceptStats,
-  recent: CompanionPercept[],
+  recent: CompanionPercept[]
 ): number {
   const identityReady = status.identity.soulIsCompanion && status.identity.bootIsCompanion;
   const voiceReady = status.voice.enabled && status.voice.available;
   const ttsReady = status.tts.enabled && status.tts.available;
   const wakeWordPoints = status.wakeWord.engine === 'porcupine' ? 5 : 2;
 
-  return Math.min(100, Math.round(
-    addScore(status.chatGptCredentialsPresent, 20)
-    + addScore(identityReady, 15)
-    + addScore(voiceReady, 10)
-    + addScore(ttsReady, 10)
-    + addScore(status.camera.available, 10)
-    + addScore(hasModality('vision', stats, recent), 5)
-    + addScore(hasModality('hearing', stats, recent), 5)
-    + addScore(hasModality('screen', stats, recent), 5)
-    + addScore(hasModality('self', stats, recent), 5)
-    + addScore(stats.total > 0, 5)
-    + wakeWordPoints
-    + 5,
-  ));
+  return Math.min(
+    100,
+    Math.round(
+      addScore(status.chatGptCredentialsPresent, 20) +
+        addScore(identityReady, 15) +
+        addScore(voiceReady, 10) +
+        addScore(ttsReady, 10) +
+        addScore(status.camera.available, 10) +
+        addScore(hasModality('vision', stats, recent), 5) +
+        addScore(hasModality('hearing', stats, recent), 5) +
+        addScore(hasModality('screen', stats, recent), 5) +
+        addScore(hasModality('self', stats, recent), 5) +
+        addScore(stats.total > 0, 5) +
+        wakeWordPoints +
+        5
+    )
+  );
 }
 
 async function recordEvaluationPercepts(evaluation: CompanionSelfEvaluation): Promise<void> {
-  await recordCompanionPercept({
-    modality: 'self',
-    source: 'companion_self_evaluation',
-    summary: `Buddy self-evaluation: ${evaluation.score}/100 (${evaluation.level}) with ${evaluation.findings.length} finding(s).`,
-    confidence: 1,
-    payload: {
-      evaluationId: evaluation.id,
-      score: evaluation.score,
-      level: evaluation.level,
-      findingIds: evaluation.findings.map(finding => finding.id),
-      nextActions: evaluation.nextActions,
+  await recordCompanionPercept(
+    {
+      modality: 'self',
+      source: 'companion_self_evaluation',
+      summary: `Buddy self-evaluation: ${evaluation.score}/100 (${evaluation.level}) with ${evaluation.findings.length} finding(s).`,
+      confidence: 1,
+      payload: {
+        evaluationId: evaluation.id,
+        score: evaluation.score,
+        level: evaluation.level,
+        findingIds: evaluation.findings.map((finding) => finding.id),
+        nextActions: evaluation.nextActions,
+      },
+      tags: ['self', 'evaluation', 'companion', 'self-improvement'],
     },
-    tags: ['self', 'evaluation', 'companion', 'self-improvement'],
-  }, { cwd: evaluation.cwd });
+    { cwd: evaluation.cwd }
+  );
 
   const suggestions = evaluation.findings
-    .filter(finding => finding.severity !== 'info')
+    .filter((finding) => finding.severity !== 'info')
     .slice(0, 3);
 
   for (const finding of suggestions) {
-    await recordCompanionPercept({
-      modality: 'suggestion',
-      source: 'companion_self_evaluation',
-      summary: finding.recommendation,
-      confidence: finding.severity === 'action' ? 0.95 : 0.8,
-      payload: {
-        evaluationId: evaluation.id,
-        findingId: finding.id,
-        area: finding.area,
-        severity: finding.severity,
-        command: finding.command,
+    await recordCompanionPercept(
+      {
+        modality: 'suggestion',
+        source: 'companion_self_evaluation',
+        summary: finding.recommendation,
+        confidence: finding.severity === 'action' ? 0.95 : 0.8,
+        payload: {
+          evaluationId: evaluation.id,
+          findingId: finding.id,
+          area: finding.area,
+          severity: finding.severity,
+          command: finding.command,
+        },
+        tags: unique(['suggestion', 'self-improvement', finding.area, ...finding.tags]),
       },
-      tags: unique(['suggestion', 'self-improvement', finding.area, ...finding.tags]),
-    }, { cwd: evaluation.cwd });
+      { cwd: evaluation.cwd }
+    );
   }
 }
 
 export async function evaluateCompanionSelf(
-  options: CompanionSelfEvaluationOptions = {},
+  options: CompanionSelfEvaluationOptions = {}
 ): Promise<CompanionSelfEvaluation> {
   const now = options.now || new Date();
   const status = await getCompanionStatus({ cwd: options.cwd });
@@ -377,7 +404,7 @@ export function formatCompanionSelfEvaluation(evaluation: CompanionSelfEvaluatio
   ];
 
   if (evaluation.strengths.length > 0) {
-    lines.push('', 'Strengths:', ...evaluation.strengths.map(item => `- ${item}`));
+    lines.push('', 'Strengths:', ...evaluation.strengths.map((item) => `- ${item}`));
   }
 
   if (evaluation.findings.length > 0) {
@@ -390,7 +417,7 @@ export function formatCompanionSelfEvaluation(evaluation: CompanionSelfEvaluatio
   }
 
   if (evaluation.nextActions.length > 0) {
-    lines.push('', 'Next actions:', ...evaluation.nextActions.map(item => `- ${item}`));
+    lines.push('', 'Next actions:', ...evaluation.nextActions.map((item) => `- ${item}`));
   }
 
   return lines.join('\n');

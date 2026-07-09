@@ -1,15 +1,13 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import * as path from 'path';
-import {
-  readCompanionMissionBoard,
-  type CompanionMission,
-} from './mission-board.js';
+import { readCompanionMissionBoard, type CompanionMission } from './mission-board.js';
 import {
   readRecentCompanionPercepts,
   recordCompanionPercept,
   type CompanionPercept,
 } from './percepts.js';
 import { recordCompanionSafetyEvent } from './safety-ledger.js';
+import { resolveUserName } from './user-name.js';
 
 export type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 export type CompanionSkillEvidenceKind = 'mission' | 'percept';
@@ -107,7 +105,9 @@ export function getCompanionPromotedSkillsDir(cwd = process.cwd()): string {
   return path.join(cwd, '.codebuddy', 'companion', 'skills');
 }
 
-function resolveStorePath(options: Pick<CompanionSkillCuratorOptions, 'cwd' | 'storePath'> = {}): string {
+function resolveStorePath(
+  options: Pick<CompanionSkillCuratorOptions, 'cwd' | 'storePath'> = {}
+): string {
   const cwd = resolveCwd(options.cwd);
   return path.resolve(cwd, options.storePath || getCompanionSkillCandidatePath(cwd));
 }
@@ -137,7 +137,7 @@ function slug(value: string): string {
 }
 
 function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map(tag => tag.trim().toLowerCase()).filter(Boolean))];
+  return [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
 }
 
 function isStatus(value: unknown): value is CompanionSkillCandidateStatus {
@@ -148,12 +148,12 @@ function parseCandidate(value: unknown): CompanionSkillCandidate | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Partial<CompanionSkillCandidate>;
   if (
-    typeof raw.id !== 'string'
-    || typeof raw.title !== 'string'
-    || !isStatus(raw.status)
-    || typeof raw.score !== 'number'
-    || typeof raw.trigger !== 'string'
-    || !Array.isArray(raw.routine)
+    typeof raw.id !== 'string' ||
+    typeof raw.title !== 'string' ||
+    !isStatus(raw.status) ||
+    typeof raw.score !== 'number' ||
+    typeof raw.trigger !== 'string' ||
+    !Array.isArray(raw.routine)
   ) {
     return null;
   }
@@ -164,21 +164,24 @@ function parseCandidate(value: unknown): CompanionSkillCandidate | null {
     status: raw.status,
     score: Math.max(0, Math.min(100, raw.score)),
     trigger: raw.trigger,
-    routine: raw.routine.filter((step): step is string => typeof step === 'string' && step.trim().length > 0),
+    routine: raw.routine.filter(
+      (step): step is string => typeof step === 'string' && step.trim().length > 0
+    ),
     command: raw.command,
     sourceTags: Array.isArray(raw.sourceTags)
       ? normalizeTags(raw.sourceTags.filter((tag): tag is string => typeof tag === 'string'))
       : [],
     evidence: Array.isArray(raw.evidence)
       ? raw.evidence
-          .filter((item): item is CompanionSkillEvidence => (
-            typeof item === 'object'
-            && item !== null
-            && (item as CompanionSkillEvidence).kind !== undefined
-            && typeof (item as CompanionSkillEvidence).id === 'string'
-            && typeof (item as CompanionSkillEvidence).summary === 'string'
-          ))
-          .map(item => ({
+          .filter(
+            (item): item is CompanionSkillEvidence =>
+              typeof item === 'object' &&
+              item !== null &&
+              (item as CompanionSkillEvidence).kind !== undefined &&
+              typeof (item as CompanionSkillEvidence).id === 'string' &&
+              typeof (item as CompanionSkillEvidence).summary === 'string'
+          )
+          .map((item) => ({
             kind: item.kind === 'mission' ? 'mission' : 'percept',
             id: item.id,
             summary: item.summary,
@@ -200,10 +203,12 @@ function sortCandidates(candidates: CompanionSkillCandidate[]): CompanionSkillCa
     promoted: 2,
     dismissed: 3,
   };
-  return [...candidates].sort((a, b) =>
-    statusRank[a.status] - statusRank[b.status]
-    || b.score - a.score
-    || a.title.localeCompare(b.title));
+  return [...candidates].sort(
+    (a, b) =>
+      statusRank[a.status] - statusRank[b.status] ||
+      b.score - a.score ||
+      a.title.localeCompare(b.title)
+  );
 }
 
 async function writeStore(store: CompanionSkillCandidateStore): Promise<void> {
@@ -212,7 +217,7 @@ async function writeStore(store: CompanionSkillCandidateStore): Promise<void> {
 }
 
 export async function readCompanionSkillCandidates(
-  options: CompanionSkillCuratorOptions = {},
+  options: CompanionSkillCuratorOptions = {}
 ): Promise<CompanionSkillCandidateStore> {
   const fallback = emptyStore(options);
   let raw: string;
@@ -225,7 +230,9 @@ export async function readCompanionSkillCandidates(
   try {
     const parsed = JSON.parse(raw) as Partial<CompanionSkillCandidateStore>;
     const candidates = Array.isArray(parsed.candidates)
-      ? parsed.candidates.map(parseCandidate).filter((candidate): candidate is CompanionSkillCandidate => Boolean(candidate))
+      ? parsed.candidates
+          .map(parseCandidate)
+          .filter((candidate): candidate is CompanionSkillCandidate => Boolean(candidate))
       : [];
     return {
       schemaVersion: 1,
@@ -239,7 +246,10 @@ export async function readCompanionSkillCandidates(
   }
 }
 
-function candidateFromMission(mission: CompanionMission, nowIso: string): CompanionSkillCandidate | null {
+function candidateFromMission(
+  mission: CompanionMission,
+  nowIso: string
+): CompanionSkillCandidate | null {
   if (mission.status !== 'done' && mission.status !== 'in_progress') {
     return null;
   }
@@ -250,23 +260,27 @@ function candidateFromMission(mission: CompanionMission, nowIso: string): Compan
     title: `${mission.dimension}: ${mission.title.replace(/^[^:]+:\s*/i, '')}`.slice(0, 96),
     status: 'draft',
     score,
-    trigger: `When a ${mission.dimension} companion gap recurs or Patrice asks for this routine again.`,
+    trigger: `When a ${mission.dimension} companion gap recurs or ${resolveUserName()} asks for this routine again.`,
     routine: [
       'Read companion status, recent percepts, mission board, and safety ledger before acting.',
-      mission.command ? `Run or adapt the seed command: ${mission.command}.` : `Use this recommendation as the action seed: ${mission.recommendation}`,
+      mission.command
+        ? `Run or adapt the seed command: ${mission.command}.`
+        : `Use this recommendation as the action seed: ${mission.recommendation}`,
       'Make one small workspace-scoped change or artifact that closes the loop.',
       'Record the outcome as a companion percept and update the mission board.',
       'Append a safety event for camera, microphone, screen, tool, or autonomy actions.',
     ],
     command: mission.command,
     sourceTags: normalizeTags(['mission', mission.dimension, ...mission.tags]),
-    evidence: [{
-      kind: 'mission',
-      id: mission.id,
-      summary: `${mission.status} mission: ${mission.recommendation}`,
-      timestamp: mission.updatedAt,
-      weight: mission.status === 'done' ? 3 : 2,
-    }],
+    evidence: [
+      {
+        kind: 'mission',
+        id: mission.id,
+        summary: `${mission.status} mission: ${mission.recommendation}`,
+        timestamp: mission.updatedAt,
+        weight: mission.status === 'done' ? 3 : 2,
+      },
+    ],
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -276,21 +290,29 @@ function newestFirstByTimestamp<T extends { timestamp?: string }>(items: T[]): T
   return [...items].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 }
 
-function candidateFromPerceptTag(tag: string, percepts: CompanionPercept[], nowIso: string): CompanionSkillCandidate | null {
+function candidateFromPerceptTag(
+  tag: string,
+  percepts: CompanionPercept[],
+  nowIso: string
+): CompanionSkillCandidate | null {
   if (percepts.length < 2) {
     return null;
   }
 
-  const evidence = newestFirstByTimestamp(percepts).slice(0, 6).map((percept): CompanionSkillEvidence => ({
-    kind: 'percept',
-    id: percept.id,
-    summary: percept.summary,
-    timestamp: percept.timestamp,
-    weight: percept.modality === 'suggestion' ? 2 : 1,
-  }));
+  const evidence = newestFirstByTimestamp(percepts)
+    .slice(0, 6)
+    .map(
+      (percept): CompanionSkillEvidence => ({
+        kind: 'percept',
+        id: percept.id,
+        summary: percept.summary,
+        timestamp: percept.timestamp,
+        weight: percept.modality === 'suggestion' ? 2 : 1,
+      })
+    );
   const score = Math.min(82, 32 + evidence.reduce((sum, item) => sum + item.weight * 8, 0));
   const command = percepts
-    .map(percept => percept.payload.command)
+    .map((percept) => percept.payload.command)
     .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 
   return {
@@ -301,12 +323,14 @@ function candidateFromPerceptTag(tag: string, percepts: CompanionPercept[], nowI
     trigger: `When companion percepts repeatedly mention ${tag}.`,
     routine: [
       `Review the newest ${tag} percept summaries and pick the smallest useful action.`,
-      command ? `Start from the observed command: ${command}.` : 'Convert the repeated observation into one concrete command, checklist, or code change.',
+      command
+        ? `Start from the observed command: ${command}.`
+        : 'Convert the repeated observation into one concrete command, checklist, or code change.',
       'Keep the action explicit, workspace-scoped, and reversible.',
       'Record a follow-up percept with what changed and whether it worked.',
     ],
     command,
-    sourceTags: normalizeTags(['pattern', tag, ...percepts.flatMap(percept => percept.tags)]),
+    sourceTags: normalizeTags(['pattern', tag, ...percepts.flatMap((percept) => percept.tags)]),
     evidence,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -316,7 +340,7 @@ function candidateFromPerceptTag(tag: string, percepts: CompanionPercept[], nowI
 function generatedCandidates(
   missions: CompanionMission[],
   percepts: CompanionPercept[],
-  nowIso: string,
+  nowIso: string
 ): CompanionSkillCandidate[] {
   const candidates: CompanionSkillCandidate[] = [];
   for (const mission of missions) {
@@ -326,7 +350,7 @@ function generatedCandidates(
 
   const byTag = new Map<string, CompanionPercept[]>();
   for (const percept of percepts) {
-    for (const tag of normalizeTags(percept.tags).filter(tag => !GENERIC_TAGS.has(tag))) {
+    for (const tag of normalizeTags(percept.tags).filter((tag) => !GENERIC_TAGS.has(tag))) {
       const bucket = byTag.get(tag) || [];
       bucket.push(percept);
       byTag.set(tag, bucket);
@@ -342,28 +366,31 @@ function generatedCandidates(
 }
 
 function sameCandidateContent(a: CompanionSkillCandidate, b: CompanionSkillCandidate): boolean {
-  return JSON.stringify({
-    title: a.title,
-    score: a.score,
-    trigger: a.trigger,
-    routine: a.routine,
-    command: a.command,
-    sourceTags: a.sourceTags,
-    evidence: a.evidence,
-  }) === JSON.stringify({
-    title: b.title,
-    score: b.score,
-    trigger: b.trigger,
-    routine: b.routine,
-    command: b.command,
-    sourceTags: b.sourceTags,
-    evidence: b.evidence,
-  });
+  return (
+    JSON.stringify({
+      title: a.title,
+      score: a.score,
+      trigger: a.trigger,
+      routine: a.routine,
+      command: a.command,
+      sourceTags: a.sourceTags,
+      evidence: a.evidence,
+    }) ===
+    JSON.stringify({
+      title: b.title,
+      score: b.score,
+      trigger: b.trigger,
+      routine: b.routine,
+      command: b.command,
+      sourceTags: b.sourceTags,
+      evidence: b.evidence,
+    })
+  );
 }
 
 function mergeCandidate(
   generated: CompanionSkillCandidate,
-  existing: CompanionSkillCandidate | undefined,
+  existing: CompanionSkillCandidate | undefined
 ): { candidate: CompanionSkillCandidate; changed: boolean; created: boolean } {
   if (!existing) {
     return { candidate: generated, changed: true, created: true };
@@ -392,7 +419,7 @@ function isStale(candidate: CompanionSkillCandidate, now: Date, staleDays: numbe
 }
 
 export async function curateCompanionSkills(
-  options: CompanionSkillCuratorOptions = {},
+  options: CompanionSkillCuratorOptions = {}
 ): Promise<CompanionSkillCuratorResult> {
   const cwd = resolveCwd(options.cwd);
   const now = options.now || new Date();
@@ -403,9 +430,11 @@ export async function curateCompanionSkills(
     cwd,
     limit: options.perceptLimit || DEFAULT_PERCEPT_LIMIT,
   });
-  const existingById = new Map(existingStore.candidates.map(candidate => [candidate.id, candidate]));
+  const existingById = new Map(
+    existingStore.candidates.map((candidate) => [candidate.id, candidate])
+  );
   const generated = generatedCandidates(board.missions, percepts, nowIso);
-  const generatedIds = new Set(generated.map(candidate => candidate.id));
+  const generatedIds = new Set(generated.map((candidate) => candidate.id));
   const merged: CompanionSkillCandidate[] = [];
   let created = 0;
   let updated = 0;
@@ -440,21 +469,24 @@ export async function curateCompanionSkills(
 
   let perceptId: string | undefined;
   if (options.recordSuggestions !== false && store.candidates.length > 0) {
-    const percept = await recordCompanionPercept({
-      modality: 'suggestion',
-      source: 'companion_skill_curator',
-      summary: `Companion skill curator refreshed ${store.candidates.length} candidate(s): ${created} created, ${updated} updated, ${pruned} pruned.`,
-      confidence: 0.9,
-      payload: {
-        storePath: store.storePath,
-        created,
-        updated,
-        unchanged,
-        pruned,
-        candidateIds: store.candidates.slice(0, 8).map(candidate => candidate.id),
+    const percept = await recordCompanionPercept(
+      {
+        modality: 'suggestion',
+        source: 'companion_skill_curator',
+        summary: `Companion skill curator refreshed ${store.candidates.length} candidate(s): ${created} created, ${updated} updated, ${pruned} pruned.`,
+        confidence: 0.9,
+        payload: {
+          storePath: store.storePath,
+          created,
+          updated,
+          unchanged,
+          pruned,
+          candidateIds: store.candidates.slice(0, 8).map((candidate) => candidate.id),
+        },
+        tags: ['skill-curator', 'learning-loop', 'self-improvement'],
       },
-      tags: ['skill-curator', 'learning-loop', 'self-improvement'],
-    }, { cwd });
+      { cwd }
+    );
     perceptId = percept.id;
   }
 
@@ -462,9 +494,10 @@ export async function curateCompanionSkills(
 }
 
 function buildSkillMarkdown(candidate: CompanionSkillCandidate, now: Date): string {
-  const evidence = candidate.evidence.length > 0
-    ? candidate.evidence.map(item => `- ${item.kind}/${item.id}: ${item.summary}`).join('\n')
-    : '- No evidence recorded.';
+  const evidence =
+    candidate.evidence.length > 0
+      ? candidate.evidence.map((item) => `- ${item.kind}/${item.id}: ${item.summary}`).join('\n')
+      : '- No evidence recorded.';
   const tags = candidate.sourceTags.length > 0 ? candidate.sourceTags.join(', ') : 'none';
   return [
     `# Companion Skill: ${candidate.title}`,
@@ -498,12 +531,14 @@ function buildSkillMarkdown(candidate: CompanionSkillCandidate, now: Date): stri
 
 async function updateCandidateInStore(
   store: CompanionSkillCandidateStore,
-  candidate: CompanionSkillCandidate,
+  candidate: CompanionSkillCandidate
 ): Promise<CompanionSkillCandidateStore> {
   const updated: CompanionSkillCandidateStore = {
     ...store,
     updatedAt: candidate.updatedAt,
-    candidates: sortCandidates(store.candidates.map(item => item.id === candidate.id ? candidate : item)),
+    candidates: sortCandidates(
+      store.candidates.map((item) => (item.id === candidate.id ? candidate : item))
+    ),
   };
   await writeStore(updated);
   return updated;
@@ -511,12 +546,12 @@ async function updateCandidateInStore(
 
 export async function promoteCompanionSkillCandidate(
   candidateId: string,
-  options: CompanionSkillPromotionOptions = {},
+  options: CompanionSkillPromotionOptions = {}
 ): Promise<CompanionSkillPromotionResult> {
   const cwd = resolveCwd(options.cwd);
   const now = options.now || new Date();
   const store = await readCompanionSkillCandidates({ cwd, storePath: options.storePath, now });
-  const candidate = store.candidates.find(item => item.id === candidateId);
+  const candidate = store.candidates.find((item) => item.id === candidateId);
   if (!candidate) {
     throw new Error(`Companion skill candidate not found: ${candidateId}`);
   }
@@ -540,35 +575,41 @@ export async function promoteCompanionSkillCandidate(
   let perceptId: string | undefined;
   let safetyEventId: string | undefined;
   if (options.recordPercept !== false) {
-    const percept = await recordCompanionPercept({
-      modality: 'tool',
-      source: 'companion_skill_curator',
-      summary: `Promoted companion skill candidate ${promoted.id}.`,
-      confidence: 1,
-      payload: {
-        candidateId: promoted.id,
-        artifactPath,
+    const percept = await recordCompanionPercept(
+      {
+        modality: 'tool',
+        source: 'companion_skill_curator',
+        summary: `Promoted companion skill candidate ${promoted.id}.`,
+        confidence: 1,
+        payload: {
+          candidateId: promoted.id,
+          artifactPath,
+        },
+        tags: ['skill-curator', 'skill-promoted', ...promoted.sourceTags],
       },
-      tags: ['skill-curator', 'skill-promoted', ...promoted.sourceTags],
-    }, { cwd, now });
+      { cwd, now }
+    );
     perceptId = percept.id;
   }
 
   try {
-    const event = await recordCompanionSafetyEvent({
-      kind: 'data',
-      risk: 'low',
-      action: 'companion_skill_promote',
-      reason: `Promoted reviewed companion routine ${promoted.id} into a workspace-local skill artifact.`,
-      status: 'completed',
-      source: 'companion_skill_curator',
-      artifactPath,
-      payload: {
-        candidateId: promoted.id,
-        score: promoted.score,
+    const event = await recordCompanionSafetyEvent(
+      {
+        kind: 'data',
+        risk: 'low',
+        action: 'companion_skill_promote',
+        reason: `Promoted reviewed companion routine ${promoted.id} into a workspace-local skill artifact.`,
+        status: 'completed',
+        source: 'companion_skill_curator',
+        artifactPath,
+        payload: {
+          candidateId: promoted.id,
+          score: promoted.score,
+        },
+        tags: ['skill-curator', 'skill-promoted'],
       },
-      tags: ['skill-curator', 'skill-promoted'],
-    }, { cwd, now });
+      { cwd, now }
+    );
     safetyEventId = event.id;
   } catch {
     // The promoted skill artifact remains useful even if audit append fails.
@@ -579,12 +620,12 @@ export async function promoteCompanionSkillCandidate(
 
 export async function dismissCompanionSkillCandidate(
   candidateId: string,
-  options: CompanionSkillPromotionOptions = {},
+  options: CompanionSkillPromotionOptions = {}
 ): Promise<CompanionSkillCandidate> {
   const cwd = resolveCwd(options.cwd);
   const now = options.now || new Date();
   const store = await readCompanionSkillCandidates({ cwd, storePath: options.storePath, now });
-  const candidate = store.candidates.find(item => item.id === candidateId);
+  const candidate = store.candidates.find((item) => item.id === candidateId);
   if (!candidate) {
     throw new Error(`Companion skill candidate not found: ${candidateId}`);
   }
@@ -597,14 +638,17 @@ export async function dismissCompanionSkillCandidate(
   await updateCandidateInStore(store, dismissed);
 
   if (options.recordPercept !== false) {
-    await recordCompanionPercept({
-      modality: 'tool',
-      source: 'companion_skill_curator',
-      summary: `Dismissed companion skill candidate ${dismissed.id}.`,
-      confidence: 1,
-      payload: { candidateId: dismissed.id },
-      tags: ['skill-curator', 'skill-dismissed'],
-    }, { cwd, now });
+    await recordCompanionPercept(
+      {
+        modality: 'tool',
+        source: 'companion_skill_curator',
+        summary: `Dismissed companion skill candidate ${dismissed.id}.`,
+        confidence: 1,
+        payload: { candidateId: dismissed.id },
+        tags: ['skill-curator', 'skill-dismissed'],
+      },
+      { cwd, now }
+    );
   }
 
   return dismissed;
@@ -622,7 +666,10 @@ export function formatCompanionSkillCandidates(store: CompanionSkillCandidateSto
   ];
 
   if (store.candidates.length === 0) {
-    lines.push('', 'No companion skill candidates yet. Run `buddy companion skills curate` after missions or percepts exist.');
+    lines.push(
+      '',
+      'No companion skill candidates yet. Run `buddy companion skills curate` after missions or percepts exist.'
+    );
     return lines.join('\n');
   }
 
@@ -632,7 +679,7 @@ export function formatCompanionSkillCandidates(store: CompanionSkillCandidateSto
       `[${candidate.status}] score=${candidate.score} ${candidate.id}`,
       `  ${candidate.title}`,
       `  Trigger: ${candidate.trigger}`,
-      `  Evidence: ${candidate.evidence.length}`,
+      `  Evidence: ${candidate.evidence.length}`
     );
     if (candidate.command) lines.push(`  Command: ${candidate.command}`);
     if (candidate.artifactPath) lines.push(`  Artifact: ${candidate.artifactPath}`);
@@ -647,7 +694,9 @@ export function formatCompanionSkillCuratorResult(result: CompanionSkillCuratorR
     result.perceptId ? `Percept recorded: ${result.perceptId}` : '',
     '',
     formatCompanionSkillCandidates(result.store),
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function formatCompanionSkillPromotion(result: CompanionSkillPromotionResult): string {

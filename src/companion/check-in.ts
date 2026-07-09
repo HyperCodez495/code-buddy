@@ -10,10 +10,8 @@ import {
   recordCompanionPercept,
   type CompanionPercept,
 } from './percepts.js';
-import {
-  recordCompanionSafetyEvent,
-  type CompanionSafetyEvent,
-} from './safety-ledger.js';
+import { recordCompanionSafetyEvent, type CompanionSafetyEvent } from './safety-ledger.js';
+import { resolveUserName } from './user-name.js';
 
 export type CompanionCheckInMood = 'steady' | 'encouraging' | 'urgent' | 'curious';
 
@@ -55,7 +53,8 @@ function resolveCwd(cwd?: string): string {
 }
 
 function checkInId(now: Date): string {
-  const stamp = now.toISOString()
+  const stamp = now
+    .toISOString()
     .replace(/[-:]/g, '')
     .replace(/\.\d{3}Z$/, '')
     .replace('T', '');
@@ -71,7 +70,11 @@ function compactText(text: string | undefined, max = 260): string {
 function detectUserMood(userText: string | undefined): CompanionCheckInMood | null {
   const text = (userText || '').toLowerCase();
   if (!text) return null;
-  if (/(bloque|coince|fatigue|epuise|stress|peur|angoisse|frustr|dur|hard|stuck|tired|anxious|afraid)/i.test(text)) {
+  if (
+    /(bloque|coince|fatigue|epuise|stress|peur|angoisse|frustr|dur|hard|stuck|tired|anxious|afraid)/i.test(
+      text
+    )
+  ) {
     return 'encouraging';
   }
   if (/[?]|quoi|idee|pense|avis|suggest|what|why|how|idea/.test(text)) {
@@ -80,7 +83,10 @@ function detectUserMood(userText: string | undefined): CompanionCheckInMood | nu
   return 'steady';
 }
 
-function moodFor(impulse: CompanionImpulse | undefined, userText: string | undefined): CompanionCheckInMood {
+function moodFor(
+  impulse: CompanionImpulse | undefined,
+  userText: string | undefined
+): CompanionCheckInMood {
   const userMood = detectUserMood(userText);
   if (userMood) return userMood;
   if (impulse?.priority === 'high') return 'urgent';
@@ -92,18 +98,24 @@ function priorityFor(impulse: CompanionImpulse | undefined): CompanionImpulsePri
   return impulse?.priority || 'low';
 }
 
-function latestByModality(percepts: CompanionPercept[], modality: CompanionPercept['modality']): CompanionPercept | undefined {
-  return percepts.find(percept => percept.modality === modality);
+function latestByModality(
+  percepts: CompanionPercept[],
+  modality: CompanionPercept['modality']
+): CompanionPercept | undefined {
+  return percepts.find((percept) => percept.modality === modality);
 }
 
 function evidenceFrom(
   impulse: CompanionImpulse | undefined,
   recent: CompanionPercept[],
-  brief: CompanionImpulseBrief,
+  brief: CompanionImpulseBrief
 ): CompanionCheckInEvidence[] {
   const evidence: CompanionCheckInEvidence[] = [];
   if (impulse) {
-    evidence.push({ label: 'impulse', value: `${impulse.priority}/${impulse.kind}: ${impulse.title}` });
+    evidence.push({
+      label: 'impulse',
+      value: `${impulse.priority}/${impulse.kind}: ${impulse.title}`,
+    });
     evidence.push(...impulse.evidence.slice(0, 3));
   }
   const latestVision = latestByModality(recent, 'vision');
@@ -113,7 +125,10 @@ function evidenceFrom(
   if (latestHearing) evidence.push({ label: 'latest hearing', value: latestHearing.timestamp });
   if (latestSelf) evidence.push({ label: 'latest self', value: latestSelf.timestamp });
   evidence.push({ label: 'memory', value: `${brief.context.perceptTotal} percept(s)` });
-  evidence.push({ label: 'missions', value: `${brief.context.openMissions} open, ${brief.context.inProgressMissions} active` });
+  evidence.push({
+    label: 'missions',
+    value: `${brief.context.openMissions} open, ${brief.context.inProgressMissions} active`,
+  });
   return evidence;
 }
 
@@ -121,12 +136,12 @@ function spokenFor(
   mood: CompanionCheckInMood,
   impulse: CompanionImpulse | undefined,
   brief: CompanionImpulseBrief,
-  userText: string | undefined,
+  userText: string | undefined
 ): string {
   const message = impulse?.message || brief.nextPrompt;
   const userLead = userText ? `Je t'entends: ${compactText(userText, 110)}. ` : '';
   if (mood === 'urgent') {
-    return `${userLead}Patrice, point rapide: ${message}`;
+    return `${userLead}${resolveUserName()}, point rapide: ${message}`;
   }
   if (mood === 'encouraging') {
     return `${userLead}On garde les choses simples. Mon prochain mouvement utile: ${message}`;
@@ -140,13 +155,13 @@ function spokenFor(
 function writtenFor(
   spokenText: string,
   evidence: CompanionCheckInEvidence[],
-  impulse: CompanionImpulse | undefined,
+  impulse: CompanionImpulse | undefined
 ): string {
   const lines = [
     spokenText,
     '',
     'Evidence:',
-    ...evidence.slice(0, 8).map(item => `- ${item.label}: ${item.value}`),
+    ...evidence.slice(0, 8).map((item) => `- ${item.label}: ${item.value}`),
   ];
   if (impulse?.command) {
     lines.push('', `Suggested command: ${impulse.command}`);
@@ -155,7 +170,7 @@ function writtenFor(
 }
 
 export async function buildCompanionCheckIn(
-  options: CompanionCheckInOptions = {},
+  options: CompanionCheckInOptions = {}
 ): Promise<CompanionCheckInCue> {
   const cwd = resolveCwd(options.cwd);
   const now = options.now || new Date();
@@ -187,62 +202,78 @@ export async function buildCompanionCheckIn(
   };
 
   if (options.recordPercept !== false) {
-    const percept = await recordCompanionPercept({
-      modality: 'suggestion',
-      source: 'companion_check_in',
-      summary: spokenText,
-      confidence: priority === 'high' ? 0.95 : priority === 'medium' ? 0.85 : 0.72,
-      payload: {
-        cueId: cue.id,
-        mood,
-        priority,
-        sourceImpulseId: impulse?.id,
-        suggestedCommand: impulse?.command,
-        userTextPreview: compactText(options.userText, 500),
-        evidence,
+    const percept = await recordCompanionPercept(
+      {
+        modality: 'suggestion',
+        source: 'companion_check_in',
+        summary: spokenText,
+        confidence: priority === 'high' ? 0.95 : priority === 'medium' ? 0.85 : 0.72,
+        payload: {
+          cueId: cue.id,
+          mood,
+          priority,
+          sourceImpulseId: impulse?.id,
+          suggestedCommand: impulse?.command,
+          userTextPreview: compactText(options.userText, 500),
+          evidence,
+        },
+        tags: ['check-in', 'conversation', 'proactive', mood, priority],
       },
-      tags: ['check-in', 'conversation', 'proactive', mood, priority],
-    }, { cwd, now });
+      { cwd, now }
+    );
     cue = { ...cue, percept };
   }
 
   if (options.createCard !== false) {
-    const card = await createCompanionCard({
-      kind: 'status',
-      title: mood === 'urgent' ? 'Buddy check-in urgent' : 'Buddy check-in',
-      body: spokenText,
-      priority,
-      actions: impulse?.command
-        ? [{ id: 'run-suggestion', label: 'Run', command: impulse.command, style: priority === 'high' ? 'primary' : 'secondary' }]
-        : [],
-      payload: {
-        cueId: cue.id,
-        mood,
-        sourceImpulseId: impulse?.id,
+    const card = await createCompanionCard(
+      {
+        kind: 'status',
+        title: mood === 'urgent' ? 'Buddy check-in urgent' : 'Buddy check-in',
+        body: spokenText,
+        priority,
+        actions: impulse?.command
+          ? [
+              {
+                id: 'run-suggestion',
+                label: 'Run',
+                command: impulse.command,
+                style: priority === 'high' ? 'primary' : 'secondary',
+              },
+            ]
+          : [],
+        payload: {
+          cueId: cue.id,
+          mood,
+          sourceImpulseId: impulse?.id,
+        },
+        tags: ['check-in', 'conversation', 'proactive', mood],
       },
-      tags: ['check-in', 'conversation', 'proactive', mood],
-    }, { cwd, now });
+      { cwd, now }
+    );
     cue = { ...cue, card };
   }
 
   if (options.recordSafety !== false) {
-    const safetyEvent = await recordCompanionSafetyEvent({
-      kind: 'tool',
-      risk: priority === 'high' ? 'medium' : 'low',
-      action: 'companion_check_in',
-      reason: 'Prepared a proactive companion check-in from local workspace state.',
-      status: 'completed',
-      source: 'companion_check_in',
-      payload: {
-        cueId: cue.id,
-        mood,
-        priority,
-        sourceImpulseId: impulse?.id,
-        cardId: cue.card?.id,
-        perceptId: cue.percept?.id,
+    const safetyEvent = await recordCompanionSafetyEvent(
+      {
+        kind: 'tool',
+        risk: priority === 'high' ? 'medium' : 'low',
+        action: 'companion_check_in',
+        reason: 'Prepared a proactive companion check-in from local workspace state.',
+        status: 'completed',
+        source: 'companion_check_in',
+        payload: {
+          cueId: cue.id,
+          mood,
+          priority,
+          sourceImpulseId: impulse?.id,
+          cardId: cue.card?.id,
+          perceptId: cue.percept?.id,
+        },
+        tags: ['check-in', 'conversation', 'proactive', mood],
       },
-      tags: ['check-in', 'conversation', 'proactive', mood],
-    }, { cwd, now });
+      { cwd, now }
+    );
     cue = { ...cue, safetyEvent };
   }
 

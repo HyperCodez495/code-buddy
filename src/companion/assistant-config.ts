@@ -138,6 +138,15 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     help: 'Name the voice assistant uses for itself.',
   },
   {
+    key: 'CODEBUDDY_USER_NAME',
+    label: 'Your name',
+    group: 'behavior',
+    type: 'text',
+    default: '',
+    envFile: 'both',
+    help: 'How the assistant addresses you (left empty falls back to a default).',
+  },
+  {
     key: 'CODEBUDDY_SENSORY_ALWAYS_RESPOND',
     label: 'Always respond',
     group: 'behavior',
