@@ -233,6 +233,15 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: true,
   },
   {
+    name: 'stock_quote',
+    category: 'web',
+    keywords: ['stock', 'bourse', 'cours', 'action', 'quote', 'ticker', 'market', 'index', 'indice', 'nasdaq', 'cac', 'cac 40', 'cotation', 'action en bourse', 'valeur boursière'],
+    priority: 8,
+    description: 'Real stock/index market quote via Yahoo Finance (free, no API key), Stooq fallback',
+    // Read-only (public market data API) — answerable under the plan posture.
+    fleetSafe: true,
+  },
+  {
     name: 'design_system',
     category: 'utility',
     keywords: ['design', 'design system', 'ui', 'brand', 'branding', 'style', 'theme', 'spotify', 'apple', 'brutalism', 'interface', 'landing', 'esthétique', 'charte', 'palette', 'typographie'],

@@ -8,7 +8,7 @@
 
 import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
-import { WebSearchTool, WeatherTool } from '../index.js';
+import { WebSearchTool, WeatherTool, StockQuoteTool } from '../index.js';
 
 // ============================================================================
 // Shared WebSearchTool Instance
@@ -288,6 +288,77 @@ export class WeatherExecuteTool implements ITool {
 }
 
 // ============================================================================
+// StockQuoteExecuteTool
+// ============================================================================
+
+// Lazy singleton — same lifecycle pattern as the weather instance above.
+let stockInstance: StockQuoteTool | null = null;
+function getStock(): StockQuoteTool {
+  if (!stockInstance) stockInstance = new StockQuoteTool();
+  return stockInstance;
+}
+
+/**
+ * StockQuoteExecuteTool - ITool adapter for the real stock/market quote tool.
+ * Emits a `data` payload of shape StockWidgetData so the curated stock widget
+ * renders inline.
+ */
+export class StockQuoteExecuteTool implements ITool {
+  readonly name = 'stock_quote';
+  readonly description =
+    'Real stock/index market quote via Yahoo Finance (free, no API key), Stooq fallback. Use for stock price / cours de bourse / market index questions. Symbol e.g. AAPL, MC.PA (LVMH), ^FCHI (CAC 40).';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    return await getStock().getQuote(input.symbol as string);
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description:
+              "Ticker symbol. US stocks plain (e.g. 'AAPL', 'TSLA'); other exchanges suffixed (e.g. 'MC.PA' for LVMH, 'BMW.DE'); indices prefixed with ^ (e.g. '^FCHI' CAC 40, '^GSPC' S&P 500).",
+          },
+        },
+        required: ['symbol'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const data = input as Record<string, unknown>;
+    if (typeof data.symbol !== 'string' || data.symbol.trim() === '') {
+      return { valid: false, errors: ['symbol must be a non-empty string'] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'web' as ToolCategoryType,
+      keywords: ['stock', 'bourse', 'cours', 'action', 'quote', 'ticker', 'market', 'index', 'indice', 'nasdaq', 'cac', 'cotation'],
+      priority: 8,
+      modifiesFiles: false,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+// ============================================================================
 // Factory Function
 // ============================================================================
 
@@ -299,5 +370,6 @@ export function createWebTools(): ITool[] {
     new WebSearchExecuteTool(),
     new WebFetchTool(),
     new WeatherExecuteTool(),
+    new StockQuoteExecuteTool(),
   ];
 }
