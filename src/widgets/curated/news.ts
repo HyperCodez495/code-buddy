@@ -4,9 +4,20 @@
  * @module widgets/curated/news
  */
 import type { NewsWidgetData } from '../widget-types.js';
+import { sanitizeURL } from '../../utils/sanitize.js';
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]!);
+}
+
+/** An http(s) URL, or null (drops javascript:/data:/relative/garbage). never throws. */
+function safeUrl(u: unknown): string | null {
+  if (typeof u !== 'string' || !u.trim()) return null;
+  try {
+    return sanitizeURL(u, ['http', 'https']);
+  } catch {
+    return null;
+  }
 }
 
 const STYLE = `<style>
@@ -30,8 +41,9 @@ export function renderNewsWidget(raw: unknown): string {
     ? `<ul>${items
         .map((it) => {
           const title = esc(it.title ?? '');
-          const inner = it.url
-            ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
+          const url = safeUrl(it.url);
+          const inner = url
+            ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
             : title;
           return `<li>${inner}${it.source ? `<span class="src">${esc(it.source)}</span>` : ''}</li>`;
         })

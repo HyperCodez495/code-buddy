@@ -52,12 +52,28 @@ describe('gateWidget', () => {
   });
 
   it('rejects a template that renders to empty output', () => {
-    const v = gateWidget(prop('<div class="cbw-stock">{{ missing.path }}</div>'));
-    // renders to "<div class=...></div>" which is non-empty; use a template that yields only whitespace
-    expect(v.accepted).toBe(true); // structural HTML remains → non-empty & safe
     const v2 = gateWidget({ kind: 'stock', template: '{{ missing.path }}', sample });
     expect(v2.accepted).toBe(false);
     expect(v2.reason).toBe('render-empty');
+  });
+
+  it('rejects a template with NO data interpolation (hardcoded by construction)', () => {
+    const v = gateWidget(prop('<div class="cbw-stock">ACME 42</div>'));
+    expect(v.accepted).toBe(false);
+    expect(v.reason).toBe('no-data-binding');
+  });
+
+  it('rejects a template that IGNORES the data (identical output for divergent data)', () => {
+    // Has a {{}} but binds a non-existent path → constant output → still hardcoded.
+    const v = gateWidget(prop('<div class="cbw-stock">ACME {{ nonexistent }}</div>'));
+    expect(v.accepted).toBe(false);
+    expect(v.reason).toBe('hardcoded');
+  });
+
+  it('accepts a template that actually reflects the data', () => {
+    const v = gateWidget(prop('<div class="cbw-stock">{{ symbol }} @ {{ price }}</div>'));
+    expect(v.accepted).toBe(true);
+    expect(v.fragment).toContain('ACME @ 42');
   });
 
   it('escaped data cannot smuggle a script past the gate', () => {
