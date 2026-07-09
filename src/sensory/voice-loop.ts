@@ -26,6 +26,7 @@ import { withSpeakingGuard, interruptSpeaking } from './voice-activity.js';
 import { prepareSpeech } from './speech-sanitizer.js';
 import { matchVoiceInteraction, VOICE_INTERACTION_PREWARM_PHRASES } from './voice-interactions.js';
 import { streamToSpeech } from './voice-stream.js';
+import { resolveUserName } from '../companion/user-name.js';
 
 /**
  * Cancellation handle threaded into the two interruptible steps of a spoken turn: the
@@ -155,7 +156,7 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
 }
 
 export const SPEAK_SYSTEM_PROMPT =
-  'Tu es le compagnon robot de Patrice. On te parle à voix haute et tu réponds à voix haute. ' +
+  `Tu es le compagnon robot de ${resolveUserName()}. On te parle à voix haute et tu réponds à voix haute. ` +
   'Réponds en français, en UNE à DEUX phrases courtes, naturelles, parlées. ' +
   "Pas de markdown, pas de listes, pas de code, pas d'emoji.";
 
@@ -196,14 +197,15 @@ export function fastCompanionReply(heard: string): string | null {
   if (process.env.CODEBUDDY_SENSORY_FAST_REPLIES === 'false') return null;
   const text = normalizeFastReplyInput(heard);
   if (!text) return null;
+  const userName = resolveUserName();
 
   if (/^(bonjour|bonsoir)$/.test(text)) return "Bonjour ! Je t'écoute.";
   if (/^(salut|coucou|hello|hey|allo|allô|yo)$/.test(text)) return "Salut ! Je t'écoute.";
   if (/^(lisa|bonjour lisa|bonsoir lisa|salut lisa|coucou lisa|hello lisa|hey lisa)$/.test(text)) {
-    return 'Coucou Patrice. Je suis là.';
+    return `Coucou ${userName}. Je suis là.`;
   }
   if (/^lisa (tu es la|tu es là|vous etes la|vous êtes là)$/.test(text)) {
-    return 'Oui Patrice, je suis là.';
+    return `Oui ${userName}, je suis là.`;
   }
   if (/^(merci|merci beaucoup|super merci)$/.test(text)) return 'Avec plaisir.';
   if (/^(tu es la|tu es là|vous etes la|vous êtes là|buddy tu es la|buddy tu es là)$/.test(text)) {
@@ -211,7 +213,7 @@ export function fastCompanionReply(heard: string): string | null {
   }
   if (/^(lisa )?(ca va|ça va|comment ca va|comment ça va)$/.test(text)) {
     return text.startsWith('lisa ')
-      ? 'Oui Patrice. Je suis contente de t’entendre.'
+      ? `Oui ${userName}. Je suis contente de t’entendre.`
       : 'Oui, je suis prêt.';
   }
   if (
@@ -238,7 +240,7 @@ export function fastCompanionReply(heard: string): string | null {
   if (
     /^(lisa )?(je suis rentre|je suis rentré|je suis revenue|je suis revenu|je rentre)$/.test(text)
   ) {
-    return 'Contente de te retrouver, Patrice. Je peux te faire le résumé de ce que j’ai fait.';
+    return `Contente de te retrouver, ${userName}. Je peux te faire le résumé de ce que j’ai fait.`;
   }
   return matchVoiceInteraction(heard);
 }
@@ -246,11 +248,11 @@ export function fastCompanionReply(heard: string): string | null {
 export const DEFAULT_TTS_PREWARM_PHRASES = [
   "Bonjour ! Je t'écoute.",
   "Salut ! Je t'écoute.",
-  'Coucou Patrice.',
-  'Coucou Patrice. Je suis là.',
-  'Oui Patrice, je suis là.',
-  'Oui Patrice. Je suis contente de t’entendre.',
-  'Contente de te retrouver, Patrice.',
+  `Coucou ${resolveUserName()}.`,
+  `Coucou ${resolveUserName()}. Je suis là.`,
+  `Oui ${resolveUserName()}, je suis là.`,
+  `Oui ${resolveUserName()}. Je suis contente de t’entendre.`,
+  `Contente de te retrouver, ${resolveUserName()}.`,
   'Je suis Lisa.',
   'Tu peux m’appeler Lisa.',
   'Avec plaisir.',
@@ -369,17 +371,17 @@ export const DEFAULT_TTS_PREWARM_PHRASES = [
   'Tu peux compter sur moi.',
   'Je suis prêt quand tu veux.',
   'Je t’accompagne.',
-  'C’est noté, Patrice.',
-  'Bien reçu, Patrice.',
-  'D’accord Patrice.',
-  'Je suis là, Patrice.',
-  'Merci Patrice.',
+  `C’est noté, ${resolveUserName()}.`,
+  `Bien reçu, ${resolveUserName()}.`,
+  `D’accord ${resolveUserName()}.`,
+  `Je suis là, ${resolveUserName()}.`,
+  `Merci ${resolveUserName()}.`,
   'C’est gentil.',
   'Ça marche.',
   'Parfait.',
   'Très bien.',
   'Bien sûr.',
-  'Avec plaisir, Patrice.',
+  `Avec plaisir, ${resolveUserName()}.`,
   'Je m’en charge avec plaisir.',
   'Je vais faire attention.',
   'Je vais être plus précis.',
@@ -439,7 +441,7 @@ export const DEFAULT_TTS_PREWARM_PHRASES = [
   'Je continue en autonomie pendant ton absence.',
   'Je te ferai un résumé quand tu reviens.',
   'Amuse-toi bien chez tes amis. Je continue en autonomie et je te ferai un résumé quand tu reviens.',
-  'Contente de te retrouver, Patrice. Je peux te faire le résumé de ce que j’ai fait.',
+  `Contente de te retrouver, ${resolveUserName()}. Je peux te faire le résumé de ce que j’ai fait.`,
   'Cache trouvé.',
   'Cache généré.',
   'Cache vocal réutilisé.',

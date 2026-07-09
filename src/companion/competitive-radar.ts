@@ -1,8 +1,6 @@
-import {
-  evaluateCompanionSelf,
-  type CompanionSelfEvaluation,
-} from './self-evaluation.js';
+import { evaluateCompanionSelf, type CompanionSelfEvaluation } from './self-evaluation.js';
 import { recordCompanionPercept } from './percepts.js';
+import { resolveUserName } from './user-name.js';
 
 export type CompanionRadarDimension =
   | 'channels'
@@ -109,7 +107,7 @@ function radarId(now: Date): string {
 }
 
 function hasFinding(evaluation: CompanionSelfEvaluation, id: string): boolean {
-  return evaluation.findings.some(finding => finding.id === id);
+  return evaluation.findings.some((finding) => finding.id === id);
 }
 
 function buildCurrentStrengths(evaluation: CompanionSelfEvaluation): string[] {
@@ -140,8 +138,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-cross-channel-gateway',
       dimension: 'channels',
       severity: 'parity',
-      summary: 'Buddy now has a companion gateway profile and local ingestion path for external chat messages.',
-      recommendation: 'Wire live Telegram/Discord/Signal/WhatsApp transports into the companion gateway profile.',
+      summary:
+        'Buddy now has a companion gateway profile and local ingestion path for external chat messages.',
+      recommendation:
+        'Wire live Telegram/Discord/Signal/WhatsApp transports into the companion gateway profile.',
       competitorRefs: ['hermes-agent', 'openclaw', 'uni'],
       command: 'buddy companion gateway profile',
       tags: ['channels', 'gateway', 'always-on'],
@@ -150,8 +150,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-skill-curator',
       dimension: 'learning',
       severity: 'parity',
-      summary: 'Buddy records lessons and suggestions and can now curate companion skills from repeated routines.',
-      recommendation: 'Run the companion skill curator after meaningful missions so repeated percept/suggestion patterns become reviewed local skills.',
+      summary:
+        'Buddy records lessons and suggestions and can now curate companion skills from repeated routines.',
+      recommendation:
+        'Run the companion skill curator after meaningful missions so repeated percept/suggestion patterns become reviewed local skills.',
       competitorRefs: ['hermes-agent', 'openclaw', 'lisa'],
       command: 'buddy companion skills curate',
       tags: ['skills', 'learning-loop', 'curation'],
@@ -160,8 +162,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-remote-runtime',
       dimension: 'runtime',
       severity: 'gap',
-      summary: 'Buddy is strong locally, but the companion does not yet hibernate/wake on a remote persistent runtime.',
-      recommendation: 'Finish the Daytona/Modal/Vercel backend path so the companion can keep working while the desktop sleeps.',
+      summary:
+        'Buddy is strong locally, but the companion does not yet hibernate/wake on a remote persistent runtime.',
+      recommendation:
+        'Finish the Daytona/Modal/Vercel backend path so the companion can keep working while the desktop sleeps.',
       competitorRefs: ['hermes-agent'],
       tags: ['runtime', 'remote', 'persistence'],
     },
@@ -169,8 +173,9 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-voice-barge-in',
       dimension: 'multimodal',
       severity: hasFinding(evaluation, 'voice-input-loop') ? 'gap' : 'parity',
-      summary: 'Voice input/TTS exists, but true real-time interruption and full-duplex conversation are not yet first-class.',
-      recommendation: 'Add barge-in semantics: stop speaking when Patrice talks, keep partial transcript state, and resume with the revised instruction.',
+      summary:
+        'Voice input/TTS exists, but true real-time interruption and full-duplex conversation are not yet first-class.',
+      recommendation: `Add barge-in semantics: stop speaking when ${resolveUserName()} talks, keep partial transcript state, and resume with the revised instruction.`,
       competitorRefs: ['uni', 'lisa'],
       tags: ['voice', 'barge-in', 'full-duplex'],
     },
@@ -179,7 +184,8 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       dimension: 'ui',
       severity: 'parity',
       summary: 'Buddy now has typed companion cards that Cowork can render as interactive state.',
-      recommendation: 'Wire Cowork renderer components to the companion card store for approvals, camera frames, checklists, and workflow steps.',
+      recommendation:
+        'Wire Cowork renderer components to the companion card store for approvals, camera frames, checklists, and workflow steps.',
       competitorRefs: ['uni', 'lisa'],
       command: 'buddy companion cards list',
       tags: ['ui', 'cards', 'cowork'],
@@ -188,8 +194,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-workflow-board',
       dimension: 'workflow',
       severity: 'gap',
-      summary: 'Agent teams and workflows exist, but the companion lacks a simple visible mission board with dependencies and checkpoints.',
-      recommendation: 'Expose a companion mission board that turns multi-step requests into visible steps, blockers, checkpoints, and resumable templates.',
+      summary:
+        'Agent teams and workflows exist, but the companion lacks a simple visible mission board with dependencies and checkpoints.',
+      recommendation:
+        'Expose a companion mission board that turns multi-step requests into visible steps, blockers, checkpoints, and resumable templates.',
       competitorRefs: ['lisa', 'hermes-agent', 'openclaw'],
       tags: ['workflow', 'planner', 'checkpoints'],
     },
@@ -197,8 +205,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-proactive-briefings',
       dimension: 'automation',
       severity: 'parity',
-      summary: 'Buddy can now generate opt-in companion impulses, but they are not yet scheduled or delivered across channels.',
-      recommendation: 'Connect companion impulses to heartbeat/automation so daily readiness briefs and stale-sense reminders can arrive proactively.',
+      summary:
+        'Buddy can now generate opt-in companion impulses, but they are not yet scheduled or delivered across channels.',
+      recommendation:
+        'Connect companion impulses to heartbeat/automation so daily readiness briefs and stale-sense reminders can arrive proactively.',
       competitorRefs: ['openclaw', 'uni', 'hermes-agent'],
       command: 'buddy companion impulses',
       tags: ['automation', 'briefing', 'impulses'],
@@ -207,8 +217,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-encrypted-senses',
       dimension: 'memory',
       severity: 'parity',
-      summary: 'The percept journal can encrypt summaries and payloads at rest when a companion memory key is configured.',
-      recommendation: 'Extend encryption/export/delete controls to camera snapshot files and any future binary sensory artifacts.',
+      summary:
+        'The percept journal can encrypt summaries and payloads at rest when a companion memory key is configured.',
+      recommendation:
+        'Extend encryption/export/delete controls to camera snapshot files and any future binary sensory artifacts.',
       competitorRefs: ['uni', 'openclaw'],
       command: 'set CODEBUDDY_COMPANION_ENCRYPTION_KEY',
       tags: ['memory', 'privacy', 'encryption'],
@@ -217,8 +229,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-action-safety-ledger',
       dimension: 'safety',
       severity: 'parity',
-      summary: 'Buddy has stronger approval plumbing than most companion demos, but sensory and autonomy decisions need one unified visible ledger.',
-      recommendation: 'Render a companion safety ledger: what sense/tool was used, why, user approval, output artifact, and rollback/delete affordances.',
+      summary:
+        'Buddy has stronger approval plumbing than most companion demos, but sensory and autonomy decisions need one unified visible ledger.',
+      recommendation:
+        'Render a companion safety ledger: what sense/tool was used, why, user approval, output artifact, and rollback/delete affordances.',
       competitorRefs: ['openclaw', 'hermes-agent', 'uni'],
       tags: ['safety', 'audit', 'permissions'],
     },
@@ -226,8 +240,10 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       id: 'companion-computer-skill-replay',
       dimension: 'plugins',
       severity: 'gap',
-      summary: 'Lisa-style learned desktop actions are not yet a companion-native reusable primitive.',
-      recommendation: 'Let Buddy save successful screen/computer-use action traces as reviewed replayable skills with parameters.',
+      summary:
+        'Lisa-style learned desktop actions are not yet a companion-native reusable primitive.',
+      recommendation:
+        'Let Buddy save successful screen/computer-use action traces as reviewed replayable skills with parameters.',
       competitorRefs: ['lisa', 'openclaw'],
       tags: ['computer-use', 'skills', 'replay'],
     },
@@ -239,7 +255,7 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
       dimension: 'memory',
       severity: 'gap',
       summary: 'The ChatGPT subscription brain is not connected in this environment.',
-      recommendation: 'Run `buddy login` so the companion uses Patrice\'s ChatGPT Pro brain route before deeper automation.',
+      recommendation: `Run \`buddy login\` so the companion uses ${resolveUserName()}'s ChatGPT Pro brain route before deeper automation.`,
       competitorRefs: ['hermes-agent', 'openclaw'],
       command: 'buddy login',
       tags: ['brain', 'auth', 'chatgpt'],
@@ -249,37 +265,46 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
   return gaps;
 }
 
-function scoreFromGaps(gaps: CompanionCompetitiveGap[], evaluation: CompanionSelfEvaluation): number {
-  const penalty = gaps.reduce((sum, gap) => sum + (gap.severity === 'gap' ? 7 : gap.severity === 'parity' ? 2 : 0), 0);
-  return Math.max(0, Math.min(100, Math.round((evaluation.score * 0.55) + (100 - penalty) * 0.45)));
+function scoreFromGaps(
+  gaps: CompanionCompetitiveGap[],
+  evaluation: CompanionSelfEvaluation
+): number {
+  const penalty = gaps.reduce(
+    (sum, gap) => sum + (gap.severity === 'gap' ? 7 : gap.severity === 'parity' ? 2 : 0),
+    0
+  );
+  return Math.max(0, Math.min(100, Math.round(evaluation.score * 0.55 + (100 - penalty) * 0.45)));
 }
 
 function sourceNotes(): string[] {
-  return COMPANION_COMPETITORS.map(profile => `${profile.name}: ${profile.sourceUrl}`);
+  return COMPANION_COMPETITORS.map((profile) => `${profile.name}: ${profile.sourceUrl}`);
 }
 
 async function recordRadarSuggestions(radar: CompanionCompetitiveRadar): Promise<void> {
-  for (const gap of radar.gaps.filter(item => item.severity === 'gap').slice(0, 5)) {
-    await recordCompanionPercept({
-      modality: 'suggestion',
-      source: 'companion_competitive_radar',
-      summary: gap.recommendation,
-      confidence: 0.86,
-      payload: {
-        radarId: radar.id,
-        gapId: gap.id,
-        dimension: gap.dimension,
-        severity: gap.severity,
-        competitors: gap.competitorRefs,
-        command: gap.command,
+  for (const gap of radar.gaps.filter((item) => item.severity === 'gap').slice(0, 5)) {
+    await recordCompanionPercept(
+      {
+        modality: 'suggestion',
+        source: 'companion_competitive_radar',
+        summary: gap.recommendation,
+        confidence: 0.86,
+        payload: {
+          radarId: radar.id,
+          gapId: gap.id,
+          dimension: gap.dimension,
+          severity: gap.severity,
+          competitors: gap.competitorRefs,
+          command: gap.command,
+        },
+        tags: ['competitive-radar', 'self-improvement', gap.dimension, ...gap.tags],
       },
-      tags: ['competitive-radar', 'self-improvement', gap.dimension, ...gap.tags],
-    }, { cwd: radar.cwd });
+      { cwd: radar.cwd }
+    );
   }
 }
 
 export async function buildCompanionCompetitiveRadar(
-  options: CompanionCompetitiveRadarOptions = {},
+  options: CompanionCompetitiveRadarOptions = {}
 ): Promise<CompanionCompetitiveRadar> {
   const now = options.now || new Date();
   const evaluation = await evaluateCompanionSelf({
@@ -297,9 +322,9 @@ export async function buildCompanionCompetitiveRadar(
     currentStrengths: buildCurrentStrengths(evaluation),
     gaps,
     nextMoves: gaps
-      .filter(gap => gap.severity === 'gap')
+      .filter((gap) => gap.severity === 'gap')
       .slice(0, 6)
-      .map(gap => gap.command ? `${gap.recommendation} (${gap.command})` : gap.recommendation),
+      .map((gap) => (gap.command ? `${gap.recommendation} (${gap.command})` : gap.recommendation)),
     sourceNotes: sourceNotes(),
     selfEvaluation: {
       score: evaluation.score,
@@ -325,10 +350,10 @@ export function formatCompanionCompetitiveRadar(radar: CompanionCompetitiveRadar
     `Radar: ${radar.id}`,
     `Competitive score: ${radar.score}/100`,
     `Self-evaluation: ${radar.selfEvaluation.score}/100 (${radar.selfEvaluation.level})`,
-    `Compared against: ${radar.comparedAgainst.map(profile => profile.name).join(', ')}`,
+    `Compared against: ${radar.comparedAgainst.map((profile) => profile.name).join(', ')}`,
   ];
 
-  lines.push('', 'Current strengths:', ...radar.currentStrengths.map(item => `- ${item}`));
+  lines.push('', 'Current strengths:', ...radar.currentStrengths.map((item) => `- ${item}`));
 
   lines.push('', 'Priority gaps:');
   for (const gap of radar.gaps.slice(0, 10)) {
@@ -339,9 +364,9 @@ export function formatCompanionCompetitiveRadar(radar: CompanionCompetitiveRadar
   }
 
   if (radar.nextMoves.length > 0) {
-    lines.push('', 'Next moves:', ...radar.nextMoves.map(item => `- ${item}`));
+    lines.push('', 'Next moves:', ...radar.nextMoves.map((item) => `- ${item}`));
   }
 
-  lines.push('', 'Sources:', ...radar.sourceNotes.map(item => `- ${item}`));
+  lines.push('', 'Sources:', ...radar.sourceNotes.map((item) => `- ${item}`));
   return lines.join('\n');
 }

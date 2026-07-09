@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFile, writeFile, mkdir, appendFile, stat, rename } from 'node:fs/promises';
 import { logger } from '../utils/logger.js';
+import { resolveUserName } from './user-name.js';
 
 /** A reminder definition (shape mirrors prospective-memory's Reminder; stored as JSON). */
 export interface Reminder {
@@ -52,7 +53,10 @@ function remindersFile(): string {
   return process.env.CODEBUDDY_REMINDERS_FILE || join(homedir(), '.codebuddy', 'reminders.json');
 }
 function logFile(): string {
-  return process.env.CODEBUDDY_REMINDER_LOG_FILE || join(homedir(), '.codebuddy', 'companion', 'reminder-log.jsonl');
+  return (
+    process.env.CODEBUDDY_REMINDER_LOG_FILE ||
+    join(homedir(), '.codebuddy', 'companion', 'reminder-log.jsonl')
+  );
 }
 
 // ── store ─────────────────────────────────────────────────────────────
@@ -62,11 +66,19 @@ export async function loadReminders(): Promise<Reminder[]> {
     const raw = (await readFile(remindersFile(), 'utf8')).trim();
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.reminders) ? parsed.reminders : [];
-    return list.filter((r: unknown): r is Reminder => !!r && typeof (r as Reminder).id === 'string');
+    const list = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.reminders)
+        ? parsed.reminders
+        : [];
+    return list.filter(
+      (r: unknown): r is Reminder => !!r && typeof (r as Reminder).id === 'string'
+    );
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      logger.warn(`[reminders] could not read store: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[reminders] could not read store: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
     return [];
   }
@@ -116,7 +128,8 @@ export interface AddReminderInput {
 export async function addReminder(input: AddReminderInput): Promise<Reminder> {
   if (!input.label?.trim()) throw new Error('reminder needs a label');
   if (!isValidTime(input.time)) throw new Error(`invalid time '${input.time}' (expected HH:MM)`);
-  if (input.date && !isValidDate(input.date)) throw new Error(`invalid date '${input.date}' (expected YYYY-MM-DD)`);
+  if (input.date && !isValidDate(input.date))
+    throw new Error(`invalid date '${input.date}' (expected YYYY-MM-DD)`);
   const now = input.now ?? new Date();
   const reminder: Reminder = {
     id: `r-${now.getTime().toString(36)}-${Math.floor((now.getTime() % 1000) + 1).toString(36)}`,
@@ -124,7 +137,11 @@ export async function addReminder(input: AddReminderInput): Promise<Reminder> {
     ...(input.message ? { message: input.message.trim() } : {}),
     time: input.time.trim(),
     // A dated one-shot ignores the weekly `days` mask (they're contradictory).
-    ...(input.date ? { date: input.date.trim() } : input.days && input.days.length ? { days: input.days } : {}),
+    ...(input.date
+      ? { date: input.date.trim() }
+      : input.days && input.days.length
+        ? { days: input.days }
+        : {}),
     enabled: true,
     createdAt: now.toISOString(),
   };
@@ -143,7 +160,10 @@ export async function addReminder(input: AddReminderInput): Promise<Reminder> {
 
 /** Identity key for de-duplication: normalized label + time + one-shot date + weekday mask. */
 function reminderKey(r: Pick<Reminder, 'label' | 'time' | 'date' | 'days'>): string {
-  return `${normLabel(r.label)}|${r.time}|${r.date ?? ''}|${(r.days ?? []).slice().sort((a, b) => a - b).join(',')}`;
+  return `${normLabel(r.label)}|${r.time}|${r.date ?? ''}|${(r.days ?? [])
+    .slice()
+    .sort((a, b) => a - b)
+    .join(',')}`;
 }
 
 export async function removeReminder(id: string): Promise<boolean> {
@@ -161,7 +181,11 @@ export async function listReminders(): Promise<Reminder[]> {
 // ── due detection ─────────────────────────────────────────────────────
 
 function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 /** Is the reminder due now (time reached today, right day, not already fired this occurrence)? */
@@ -196,7 +220,7 @@ export async function logReminderEvent(
   event: ReminderLogEvent,
   reminder: Pick<Reminder, 'id' | 'label'>,
   extra: Record<string, unknown> = {},
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<void> {
   try {
     const file = logFile();
@@ -210,10 +234,12 @@ export async function logReminderEvent(
     await appendFile(
       file,
       `${JSON.stringify({ ts: now.toISOString(), event, id: reminder.id, label: reminder.label, ...extra })}\n`,
-      'utf8',
+      'utf8'
     );
   } catch (err) {
-    logger.warn(`[reminders] could not log ${event}: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[reminders] could not log ${event}: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
@@ -237,7 +263,11 @@ export async function setReminderEnabled(id: string, enabled: boolean): Promise<
   return patchReminder(id, { enabled });
 }
 
-export async function markDone(id: string, via: 'voice' | 'telegram' | 'cli', now: Date = new Date()): Promise<Reminder | null> {
+export async function markDone(
+  id: string,
+  via: 'voice' | 'telegram' | 'cli',
+  now: Date = new Date()
+): Promise<Reminder | null> {
   // For a RECURRING reminder, "done" acks only today's occurrence (a meds reminder must return
   // tomorrow — health safety). For a ONE-SHOT, "done" retires it for good (else "c'est fait" would
   // leave a dead dated reminder enabled). We read the pre-state to decide, then write once.
@@ -248,7 +278,11 @@ export async function markDone(id: string, via: 'voice' | 'telegram' | 'cli', no
     return null;
   }
   const retire = isOneShot(list[idx]!);
-  list[idx] = { ...list[idx]!, lastDoneAt: now.toISOString(), ...(retire ? { enabled: false } : {}) };
+  list[idx] = {
+    ...list[idx]!,
+    lastDoneAt: now.toISOString(),
+    ...(retire ? { enabled: false } : {}),
+  };
   await saveReminders(list);
   await logReminderEvent('done', list[idx]!, { via, ...(retire ? { retired: true } : {}) }, now);
   closeAck(id);
@@ -288,7 +322,9 @@ export function bumpNag(id: string): number {
 }
 /** Pending acks still inside the window, newest first. */
 export function pendingAcks(nowMs: number, windowMs = ackWindowMs()): PendingAck[] {
-  return [...pending.values()].filter((a) => nowMs - a.firedAt < windowMs).sort((x, y) => y.firedAt - x.firedAt);
+  return [...pending.values()]
+    .filter((a) => nowMs - a.firedAt < windowMs)
+    .sort((x, y) => y.firedAt - x.firedAt);
 }
 /** Expire (return + drop) acks whose window elapsed — the "missed" candidates. */
 export function expireAcks(nowMs: number, windowMs = ackWindowMs()): PendingAck[] {
@@ -309,7 +345,8 @@ export function resetAcks(): void {
 
 function pendingAcksFile(): string {
   return (
-    process.env.CODEBUDDY_REMINDER_PENDING_FILE || join(homedir(), '.codebuddy', 'companion', 'pending-acks.json')
+    process.env.CODEBUDDY_REMINDER_PENDING_FILE ||
+    join(homedir(), '.codebuddy', 'companion', 'pending-acks.json')
   );
 }
 
@@ -319,7 +356,9 @@ async function savePendingAcks(): Promise<void> {
     await mkdir(join(file, '..'), { recursive: true });
     await writeFile(file, JSON.stringify([...pending.values()]), 'utf8');
   } catch (err) {
-    logger.warn(`[reminders] could not persist pending acks: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[reminders] could not persist pending acks: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
@@ -342,7 +381,9 @@ export async function loadPendingAcks(): Promise<void> {
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      logger.warn(`[reminders] could not load pending acks: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[reminders] could not load pending acks: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 }
@@ -373,7 +414,7 @@ const DONE_PHRASE = new RegExp(
     '\\bdone\\b',
     '\\btaken\\b',
   ].join('|'),
-  'i',
+  'i'
 );
 
 /**
@@ -394,7 +435,7 @@ export function reminderReadback(label: string): string {
 
 /** The spoken/sent reminder text. */
 export function reminderMessage(r: Reminder): string {
-  return r.message?.trim() || `Patrice, c'est l'heure : ${r.label}.`;
+  return r.message?.trim() || `${resolveUserName()}, c'est l'heure : ${r.label}.`;
 }
 
 const CREATE_VERB = /\b(rappelle[- ]?moi|rappelle moi|pense à me rappeler|note de)\b/i;
@@ -411,7 +452,10 @@ const FR_WEEKDAYS: Record<string, number> = {
 
 /** Lowercase + strip diacritics (STT drops accents). */
 function normFr(s: string): string {
-  return s.toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '');
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '');
 }
 
 /**
@@ -429,7 +473,8 @@ export function parseRelativeFrenchDate(text: string, now: Date = new Date()): s
   };
   if (/\bapres[- ]?demain\b/.test(t)) return at(now, 2);
   if (/\bdemain\b/.test(t)) return at(now, 1);
-  if (/\b(aujourd'?hui|ce soir|ce matin|cet apres[- ]?midi|ce midi|tout a l'heure)\b/.test(t)) return at(now, 0);
+  if (/\b(aujourd'?hui|ce soir|ce matin|cet apres[- ]?midi|ce midi|tout a l'heure)\b/.test(t))
+    return at(now, 0);
   // "dans N jours" / "la semaine prochaine".
   const inDays = t.match(/\bdans\s+(\d+)\s+jours?\b/);
   if (inDays) {
@@ -477,7 +522,9 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
   // NB: `\b` before "à" fails (à isn't an ASCII word char), so anchor on start/space instead.
   // Accept the spelled-out "heure(s)" too — otherwise "à 9 heures" matched only
   // the "h" of "heures" and left "eures" in the label (a reminder named "eures").
-  const tm = t.match(/(?:^|\s)(?:à|a)\s*(\d{1,2})\s*(?:h(?:eures?)?|:)\s*(\d{2})?/i) || t.match(/\b(\d{1,2}):(\d{2})\b/);
+  const tm =
+    t.match(/(?:^|\s)(?:à|a)\s*(\d{1,2})\s*(?:h(?:eures?)?|:)\s*(\d{2})?/i) ||
+    t.match(/\b(\d{1,2}):(\d{2})\b/);
   if (!tm) return null;
   const hh = parseInt(tm[1]!, 10);
   const mm = tm[2] ? parseInt(tm[2], 10) : 0;
@@ -507,7 +554,10 @@ export function parseVoiceReminder(text: string, now: Date = new Date()): AddRem
       .replace(/(?:^|\s)(?:à|a)\s*\d{1,2}\s*(?:h(?:eures?)?|:)\s*\d{0,2}/i, ' ')
       .replace(/\b\d{1,2}:\d{2}\b/, ' ')
       // Strip the date cue too, so the label is "train", not "train demain".
-      .replace(/\b(apr[èe]s[- ]?demain|demain|aujourd'?hui|ce soir|ce matin|cet apr[èe]s[- ]?midi|ce midi|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/gi, ' ')
+      .replace(
+        /\b(apr[èe]s[- ]?demain|demain|aujourd'?hui|ce soir|ce matin|cet apr[èe]s[- ]?midi|ce midi|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/gi,
+        ' '
+      )
       .replace(/\bdans\s+\d+\s+jours?\b/gi, ' ')
       .replace(/\b(la semaine prochaine|dans une semaine)\b/gi, ' ')
       .replace(/\ble\s+\d{1,2}\b/gi, ' ')
@@ -615,7 +665,10 @@ export function matchReminderByLabel(reminders: Reminder[], target: string): Rem
  * "chaque lundi, mercredi" for a weekday mask, else "tous les jours". So the confirmation reads back
  * the RECURRENCE (a mis-captured "tous les jours" is now audible — the train-bug class of confusion).
  */
-export function reminderCadencePhrase(r: Pick<Reminder, 'date' | 'days'>, now: Date = new Date()): string {
+export function reminderCadencePhrase(
+  r: Pick<Reminder, 'date' | 'days'>,
+  now: Date = new Date()
+): string {
   if (r.date) {
     const today = localDateKey(now);
     const tomorrow = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
@@ -625,7 +678,10 @@ export function reminderCadencePhrase(r: Pick<Reminder, 'date' | 'days'>, now: D
   }
   if (r.days?.length) {
     const names = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-    return `chaque ${r.days.map((d) => names[d]).filter(Boolean).join(', ')}`;
+    return `chaque ${r.days
+      .map((d) => names[d])
+      .filter(Boolean)
+      .join(', ')}`;
   }
   return 'tous les jours';
 }
@@ -660,7 +716,15 @@ export function agendaFor(reminders: Reminder[], nowMs: number, days: number): A
   const base = new Date(nowMs);
   // Window in CALENDAR days: from now through the END of the day `span` days ahead (so "demain" covers
   // ALL of tomorrow, not just now+24h). End-exclusive at the start of the day AFTER the last one.
-  const windowEnd = new Date(base.getFullYear(), base.getMonth(), base.getDate() + span + 1, 0, 0, 0, 0).getTime();
+  const windowEnd = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate() + span + 1,
+    0,
+    0,
+    0,
+    0
+  ).getTime();
   const out: AgendaEntry[] = [];
   for (const r of reminders) {
     if (!r.enabled || !isValidTime(r.time)) continue;
@@ -694,10 +758,12 @@ export function describeAgendaForSpeech(agenda: AgendaEntry[], nowMs: number): s
   const items = agenda.slice(0, 8).map((e) => {
     const d = new Date(e.at);
     const dk = localDateKey(d);
-    const when = dk === todayKey ? "aujourd'hui" : dk === tomorrowKey ? 'demain' : FR_DAY_NAMES[d.getDay()];
+    const when =
+      dk === todayKey ? "aujourd'hui" : dk === tomorrowKey ? 'demain' : FR_DAY_NAMES[d.getDay()];
     return `${e.label} ${when} à ${e.time}`;
   });
-  const head = agenda.length === 1 ? 'Tu as un rappel à venir :' : `Tu as ${agenda.length} rappels à venir :`;
+  const head =
+    agenda.length === 1 ? 'Tu as un rappel à venir :' : `Tu as ${agenda.length} rappels à venir :`;
   const tail = agenda.length > 8 ? ` … et ${agenda.length - 8} autres.` : '.';
   return `${head} ${items.join(' ; ')}${tail}`;
 }
@@ -728,7 +794,10 @@ export interface ReminderVoiceDeps {
  * if the utterance WAS such a command (handled), false otherwise so the caller falls through to
  * create/ack/reply. Never-throws.
  */
-export async function handleReminderVoiceCommand(text: string, deps: ReminderVoiceDeps): Promise<boolean> {
+export async function handleReminderVoiceCommand(
+  text: string,
+  deps: ReminderVoiceDeps
+): Promise<boolean> {
   const cmd = parseReminderCommand(text);
   if (!cmd) return false;
   try {
@@ -742,9 +811,14 @@ export async function handleReminderVoiceCommand(text: string, deps: ReminderVoi
       await deps.speak(describeAgendaForSpeech(agendaFor(reminders, now, cmd.days), now));
       return true;
     }
-    const match = matchReminderByLabel(reminders.filter((r) => r.enabled || cmd.kind === 'remove'), cmd.target);
+    const match = matchReminderByLabel(
+      reminders.filter((r) => r.enabled || cmd.kind === 'remove'),
+      cmd.target
+    );
     if (!match) {
-      await deps.speak(cmd.target ? `Je ne trouve pas de rappel « ${cmd.target} ».` : 'De quel rappel parles-tu ?');
+      await deps.speak(
+        cmd.target ? `Je ne trouve pas de rappel « ${cmd.target} ».` : 'De quel rappel parles-tu ?'
+      );
       return true;
     }
     if (cmd.kind === 'remove') {
@@ -755,8 +829,10 @@ export async function handleReminderVoiceCommand(text: string, deps: ReminderVoi
       await deps.speak(`D'accord, j'ai désactivé le rappel : ${match.label}.`);
     }
   } catch (err) {
-    logger.warn(`[reminders] voice command failed: ${err instanceof Error ? err.message : String(err)}`);
-    await deps.speak('Je n\'ai pas réussi à modifier tes rappels, désolée.').catch(() => undefined);
+    logger.warn(
+      `[reminders] voice command failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+    await deps.speak("Je n'ai pas réussi à modifier tes rappels, désolée.").catch(() => undefined);
   }
   return true;
 }
@@ -775,7 +851,11 @@ export function parseSnooze(text: string): number | null {
     const ms = /^h/.test(m[2]!) ? n * 3600_000 : n * 60_000;
     return ms > 0 && ms <= 12 * 3600_000 ? ms : null;
   }
-  if (/\b(plus tard|repousse|repousser|snooze|tout a l heure|un peu plus tard|dans un moment)\b/.test(t)) {
+  if (
+    /\b(plus tard|repousse|repousser|snooze|tout a l heure|un peu plus tard|dans un moment)\b/.test(
+      t
+    )
+  ) {
     return 10 * 60_000;
   }
   return null;
@@ -793,7 +873,8 @@ const snoozes = new Map<string, SnoozedReminder>();
 // dose. Mirrored to disk on every mutation and reloaded at runner start.
 function snoozesFile(): string {
   return (
-    process.env.CODEBUDDY_REMINDER_SNOOZE_FILE || join(homedir(), '.codebuddy', 'companion', 'snoozes.json')
+    process.env.CODEBUDDY_REMINDER_SNOOZE_FILE ||
+    join(homedir(), '.codebuddy', 'companion', 'snoozes.json')
   );
 }
 async function saveSnoozes(): Promise<void> {
@@ -802,7 +883,9 @@ async function saveSnoozes(): Promise<void> {
     await mkdir(join(file, '..'), { recursive: true });
     await writeFile(file, JSON.stringify([...snoozes.values()]), 'utf8');
   } catch (err) {
-    logger.warn(`[reminders] could not persist snoozes: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[reminders] could not persist snoozes: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
@@ -815,12 +898,18 @@ export async function loadSnoozes(): Promise<void> {
     if (!Array.isArray(list)) return;
     for (const s of list) {
       if (s && typeof s.id === 'string' && Number.isFinite(s.fireAt)) {
-        snoozes.set(s.id, { id: s.id, label: typeof s.label === 'string' ? s.label : s.id, fireAt: s.fireAt });
+        snoozes.set(s.id, {
+          id: s.id,
+          label: typeof s.label === 'string' ? s.label : s.id,
+          fireAt: s.fireAt,
+        });
       }
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      logger.warn(`[reminders] could not load snoozes: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(
+        `[reminders] could not load snoozes: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 }
@@ -846,7 +935,10 @@ export function resetSnoozes(): void {
  * If `text` is a snooze AND a reminder is currently pending its ack, defer that reminder: close its
  * ack and schedule a re-announce. Returns the deferral (for the spoken confirmation) or null.
  */
-export function snoozePending(text: string, nowMs: number): { id: string; label: string; delayMs: number } | null {
+export function snoozePending(
+  text: string,
+  nowMs: number
+): { id: string; label: string; delayMs: number } | null {
   const delayMs = parseSnooze(text);
   if (delayMs == null) return null;
   const target = pendingAcks(nowMs)[0]; // most-recently-fired pending
@@ -887,7 +979,8 @@ export function noteCreatedForUndo(r: Pick<Reminder, 'id' | 'label'>, nowMs: num
   lastCreated = { id: r.id, label: r.label, atMs: nowMs };
 }
 
-const UNDO_RE = /\b(annule|annuler|annule ca|efface|oublie|c est pas ca|pas ca|non non|je me suis trompe|erreur)\b/;
+const UNDO_RE =
+  /\b(annule|annuler|annule ca|efface|oublie|c est pas ca|pas ca|non non|je me suis trompe|erreur)\b/;
 
 /**
  * Is this utterance a BARE spoken correction? A targeted "supprime le rappel du
