@@ -76,19 +76,31 @@ export function renderWidgetFragment(data: unknown, env: NodeJS.ProcessEnv = pro
 
 const BASE_CSS = `*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent}`;
 
-/** Wrap a rendered fragment into a complete, self-contained HTML document (no script). Pure. */
-export function renderWidgetDocument(fragment: string): string {
+export type WidgetTheme = 'dark' | 'light';
+
+/**
+ * Wrap a rendered fragment into a complete, self-contained HTML document (no
+ * script). Pure. `theme` is stamped on <html> as `data-cbw-theme` so widgets can
+ * match the HOST's theme (Cowork dark/light) instead of the OS preference — the
+ * caller knows the host theme, the OS `prefers-color-scheme` does not.
+ */
+export function renderWidgetDocument(fragment: string, theme?: WidgetTheme): string {
+  const attr = theme === 'dark' || theme === 'light' ? ` data-cbw-theme="${theme}"` : '';
   return (
-    '<!doctype html><html><head><meta charset="utf-8">' +
+    `<!doctype html><html${attr}><head><meta charset="utf-8">` +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     `<style>${BASE_CSS}</style></head><body>${fragment}</body></html>`
   );
 }
 
 /** Resolve + server-render for a tool's `data` payload → a full HTML doc, or null. */
-export function renderWidgetForData(data: unknown, env: NodeJS.ProcessEnv = process.env): string | null {
+export function renderWidgetForData(
+  data: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+  theme?: WidgetTheme
+): string | null {
   const fragment = renderWidgetFragment(data, env);
-  return fragment ? renderWidgetDocument(fragment) : null;
+  return fragment ? renderWidgetDocument(fragment, theme) : null;
 }
 
 /** True when SOME widget (curated or authored) can render this data. */

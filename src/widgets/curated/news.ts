@@ -18,7 +18,8 @@ const STYLE = `<style>
 .cbw-news .src{display:block;font-size:11px;opacity:.55;margin-top:2px}
 .cbw-news a{color:inherit;text-decoration:none}
 .cbw-news a:hover{text-decoration:underline}
-@media (prefers-color-scheme:dark){.cbw-news{color:#e8eefc;background:#0f1626;border-color:rgba(255,255,255,.08)}.cbw-news li{border-color:rgba(255,255,255,.08)}}
+:root[data-cbw-theme="dark"] .cbw-news{color:#e8eefc;background:#0f1626;border-color:rgba(255,255,255,.08)}
+:root[data-cbw-theme="dark"] .cbw-news li{border-color:rgba(255,255,255,.08)}
 </style>`;
 
 /** Render a news payload to a self-contained HTML fragment (no script). */

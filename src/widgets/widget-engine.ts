@@ -20,6 +20,7 @@ import {
   hasWidgetForData,
   renderWidgetForData,
   resolveWidgetSource,
+  type WidgetTheme,
 } from './widget-registry.js';
 import { gateWidget } from './widget-gate.js';
 import { proposeWidget, type ProposeWidgetDeps } from './widget-proposer.js';
@@ -27,6 +28,8 @@ import { proposeWidget, type ProposeWidgetDeps } from './widget-proposer.js';
 export interface ResolveOrGenerateDeps extends ProposeWidgetDeps {
   /** Human-readable brief passed to the proposer. */
   brief?: string;
+  /** Host theme to stamp on the rendered widget (Cowork dark/light). */
+  theme?: WidgetTheme;
   /** Override the propose step (tests). */
   propose?: (kind: string, sample: unknown, brief?: string) => Promise<WidgetProposal | null>;
 }
@@ -103,7 +106,7 @@ export async function resolveOrGenerate(
   try {
     // Registry hit (curated or an already-authored kind) → render immediately.
     if (hasWidgetForData(data, env)) {
-      return renderWidgetForData(data, env);
+      return renderWidgetForData(data, env, deps.theme);
     }
 
     // Miss. Generation is strictly opt-in.
@@ -130,7 +133,7 @@ export async function resolveOrGenerate(
     if (!kept) return null;
 
     // Render fresh from the newly-kept authored template.
-    return renderWidgetForData(data, env);
+    return renderWidgetForData(data, env, deps.theme);
   } catch {
     return null;
   }
