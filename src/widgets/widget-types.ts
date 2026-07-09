@@ -33,9 +33,29 @@ export interface NewsWidgetData {
   items: Array<{ title: string; url?: string; source?: string }>;
 }
 
+/** The structured payload for a stock-market quote widget. */
+export interface StockWidgetData {
+  type: 'stock' | 'market' | 'bourse';
+  symbol?: string;
+  name?: string;
+  price?: number | string;
+  value?: number | string;
+  change?: number | string;
+  changePercent?: number | string;
+  currency?: string;
+  market?: string;
+  open?: number | string;
+  high?: number | string;
+  low?: number | string;
+  previousClose?: number | string;
+  volume?: number | string;
+  time?: string;
+}
+
 export type WidgetData =
   | WeatherWidgetData
   | NewsWidgetData
+  | StockWidgetData
   | { type: string; [k: string]: unknown };
 
 /** The `type` discriminator of a widget payload (also the widget "kind"). */
@@ -59,7 +79,10 @@ export interface WidgetProposal {
 /** Result of running a proposal through the widget gate (fail-closed). */
 export interface WidgetGateOutcome {
   accepted: boolean;
-  /** Short machine reason on reject (`static-scan` | `render-empty` | `render-unsafe` | `unrendered-tokens`). */
+  /**
+   * Short machine reason on reject: `static-scan` | `render-empty` |
+   * `render-unsafe` | `unrendered-tokens` | `no-data-binding` | `hardcoded`.
+   */
   reason?: string;
   reasons?: string[];
   /** The rendered sample fragment, present only on accept. */

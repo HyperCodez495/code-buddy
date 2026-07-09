@@ -93,10 +93,54 @@ export function readAuthoredTemplate(kind: string, env: NodeJS.ProcessEnv = proc
   }
 }
 
+function parseMs(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Race a promise against a timeout; resolves to `fallback` if it doesn't settle in time. */
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+}
+
+// Dedup concurrent generation of the same kind, and back off after a failure so a
+// broken/slow kind doesn't re-hit the LLM on every render. Module-scoped, in-memory.
+const inFlight = new Map<string, Promise<boolean>>();
+const failedAt = new Map<string, number>();
+
+/** Author → gate → keep for `kind`. Returns true if a widget for `kind` now exists. never-throws. */
+async function generateAndKeep(
+  kind: string,
+  data: unknown,
+  deps: ResolveOrGenerateDeps,
+  env: NodeJS.ProcessEnv
+): Promise<boolean> {
+  try {
+    const propose = deps.propose ?? ((k, s, b) => proposeWidget(k, s, b, deps));
+    const timeoutMs = parseMs(env.CODEBUDDY_WIDGETS_GEN_TIMEOUT_MS, 20000);
+    const proposal = await withTimeout(propose(kind, data, deps.brief), timeoutMs, null);
+    if (!proposal) {
+      recordLedger({ kind, accepted: false, reason: 'no-proposal-or-timeout' }, env);
+      return false;
+    }
+    const verdict = gateWidget(proposal);
+    if (!verdict.accepted) {
+      recordLedger({ kind, accepted: false, reason: verdict.reason, reasons: verdict.reasons }, env);
+      return false;
+    }
+    const kept = keepAuthoredWidget(proposal, env);
+    recordLedger({ kind, accepted: kept, reason: kept ? 'kept' : 'keep-failed' }, env);
+    return kept;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolve a widget document for `data`; if none exists and generation is enabled,
  * author one, gate it, keep it, then render. Returns the full HTML doc or null.
- * never-throws.
+ * Generation is bounded: per-kind timeout, in-flight dedup, and post-failure
+ * cooldown — a slow/looping proposer never freezes the render path. never-throws.
  */
 export async function resolveOrGenerate(
   data: unknown,
@@ -115,24 +159,27 @@ export async function resolveOrGenerate(
     const kind = widgetKind(data)?.toLowerCase();
     if (!kind) return null;
 
-    const propose = deps.propose ?? ((k, s, b) => proposeWidget(k, s, b, deps));
-    const proposal = await propose(kind, data, deps.brief);
-    if (!proposal) {
-      recordLedger({ kind, accepted: false, reason: 'no-proposal' }, env);
+    // Back off if this kind failed recently.
+    const last = failedAt.get(kind);
+    if (last !== undefined && Date.now() - last < parseMs(env.CODEBUDDY_WIDGETS_GEN_COOLDOWN_MS, 300000)) {
       return null;
     }
 
-    const verdict = gateWidget(proposal);
-    if (!verdict.accepted) {
-      recordLedger({ kind, accepted: false, reason: verdict.reason, reasons: verdict.reasons }, env);
+    // Dedup: one generation per kind at a time; concurrent callers share it.
+    let gen = inFlight.get(kind);
+    if (!gen) {
+      gen = generateAndKeep(kind, data, deps, env);
+      inFlight.set(kind, gen);
+      void gen.finally(() => {
+        if (inFlight.get(kind) === gen) inFlight.delete(kind);
+      });
+    }
+    const kept = await gen;
+    if (!kept) {
+      failedAt.set(kind, Date.now());
       return null;
     }
-
-    const kept = keepAuthoredWidget(proposal, env);
-    recordLedger({ kind, accepted: kept, reason: kept ? 'kept' : 'keep-failed' }, env);
-    if (!kept) return null;
-
-    // Render fresh from the newly-kept authored template.
+    // Render fresh from the newly-kept authored template (caller's own theme).
     return renderWidgetForData(data, env, deps.theme);
   } catch {
     return null;

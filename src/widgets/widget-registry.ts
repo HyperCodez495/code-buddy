@@ -16,6 +16,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { renderWeatherWidget } from './curated/weather.js';
 import { renderNewsWidget } from './curated/news.js';
+import { renderStockWidget } from './curated/stock.js';
 import { widgetKind } from './widget-types.js';
 import { renderTemplate } from './template-engine.js';
 
@@ -23,6 +24,9 @@ import { renderTemplate } from './template-engine.js';
 const CURATED: Record<string, (data: unknown) => string> = {
   weather: renderWeatherWidget,
   news: renderNewsWidget,
+  stock: renderStockWidget,
+  market: renderStockWidget,
+  bourse: renderStockWidget,
 };
 
 /** Root dir for authored widgets (env-overridable). */
@@ -46,6 +50,29 @@ export function resolveWidgetSource(
   return null;
 }
 
+const URL_ATTR_RE = /\b(href|src|action|xlink:href)(\s*=\s*)(["'])([^"']*)\3/gi;
+const DANGEROUS_SCHEME_RE = /^\s*(javascript|vbscript|data)\s*:/i;
+
+function isUnsafeUrlValue(v: string): boolean {
+  const m = DANGEROUS_SCHEME_RE.exec(v);
+  if (!m) return false;
+  // data:image/* (inline images) is allowed; every other data:/javascript:/vbscript: is not.
+  if (m[1]!.toLowerCase() === 'data') return !/^\s*data:\s*image\//i.test(v);
+  return true;
+}
+
+/**
+ * Defence-in-depth: neutralize URL-bearing attributes (href/src/action) whose
+ * value carries a dangerous scheme (javascript:/vbscript:/non-image data:). This
+ * runs at RENDER time, so it also covers runtime data the gate never re-checks
+ * (e.g. an authored `{{url}}` fed a malicious news link). Pure.
+ */
+export function neutralizeUnsafeUrls(html: string): string {
+  return html.replace(URL_ATTR_RE, (full, name, eq, q, val) =>
+    isUnsafeUrlValue(val) ? `${name}${eq}${q}#blocked${q}` : full
+  );
+}
+
 /** Server-render the widget FRAGMENT for a data payload (curated fn, else authored static). */
 export function renderWidgetFragment(data: unknown, env: NodeJS.ProcessEnv = process.env): string | null {
   const kind = widgetKind(data)?.toLowerCase();
@@ -54,7 +81,7 @@ export function renderWidgetFragment(data: unknown, env: NodeJS.ProcessEnv = pro
   if (curated) {
     try {
       const frag = curated(data);
-      return frag && frag.trim() ? frag : null;
+      return frag && frag.trim() ? neutralizeUnsafeUrls(frag) : null;
     } catch {
       return null;
     }
@@ -66,7 +93,7 @@ export function renderWidgetFragment(data: unknown, env: NodeJS.ProcessEnv = pro
       // Authored widgets are SAFE Mustache-style templates, rendered server-side
       // with the data interpolated (always escaped). No client script, CSP-proof.
       const frag = renderTemplate(tpl, data);
-      if (frag.trim()) return frag;
+      if (frag.trim()) return neutralizeUnsafeUrls(frag);
     }
   } catch {
     /* none */
@@ -86,8 +113,13 @@ export type WidgetTheme = 'dark' | 'light';
  */
 export function renderWidgetDocument(fragment: string, theme?: WidgetTheme): string {
   const attr = theme === 'dark' || theme === 'light' ? ` data-cbw-theme="${theme}"` : '';
+  // Self-defending CSP: even opened OUTSIDE Cowork (e.g. `buddy widgets preview`
+  // writes the doc to disk), the doc can never run a script or hit the network.
+  const csp =
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
   return (
     `<!doctype html><html${attr}><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     `<style>${BASE_CSS}</style></head><body>${fragment}</body></html>`
   );
