@@ -8,6 +8,7 @@
  * - knowledge_search / knowledge_add
  * - ask_human
  * - create_skill
+ * - extension_forge
  * - skill_discover
  * - device_manage
  * - spawn_parallel_agents
@@ -221,6 +222,84 @@ export const CREATE_SKILL_TOOL: CodeBuddyTool = {
         },
       },
       required: ['name', 'description', 'body'],
+    },
+  },
+};
+
+export const EXTENSION_FORGE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'extension_forge',
+    description:
+      'Write and install a safe runtime widget, sandboxed executable tool, or reusable skill. ' +
+      'The source must be supplied in the call and is accepted only after artifact-specific safety and behavior gates pass.',
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['widget', 'tool', 'skill'],
+          description: 'Extension type to create',
+        },
+        name: {
+          type: 'string',
+          description: 'Short extension name; a safe authored namespace is added automatically',
+        },
+        description: {
+          type: 'string',
+          description: 'Purpose and when this extension should be used',
+        },
+        template: {
+          type: 'string',
+          description: 'Widget only: complete inert Mustache HTML and CSS template',
+        },
+        sample: {
+          type: 'object',
+          description: 'Widget only: representative JSON payload used by the validation gate',
+        },
+        code: {
+          type: 'string',
+          description: 'Tool only: complete source that reads CODEBUDDY_TOOL_INPUT and writes its result to stdout',
+        },
+        language: {
+          type: 'string',
+          enum: ['javascript', 'typescript', 'python'],
+          description: 'Tool only: source language',
+        },
+        parameters: {
+          type: 'object',
+          description: 'Tool only: JSON Schema describing the generated tool arguments',
+        },
+        validation_cases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              input: { type: 'object' },
+              expect_includes: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['input', 'expect_includes'],
+          },
+          description: 'Tool only: functional examples the implementation must pass',
+        },
+        robustness_cases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              input: { type: 'object' },
+              expect_includes: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['input', 'expect_includes'],
+          },
+          description: 'Tool only: distinct edge inputs that catch hardcoding and fragile behavior',
+        },
+        body: {
+          type: 'string',
+          description: 'Skill only: complete reusable SKILL.md instructions',
+        },
+      },
+      required: ['kind', 'name', 'description'],
     },
   },
 };
@@ -1300,6 +1379,7 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   KNOWLEDGE_ADD_TOOL,
   ASK_HUMAN_TOOL,
   CREATE_SKILL_TOOL,
+  EXTENSION_FORGE_TOOL,
   SKILL_DISCOVER_TOOL,
   SKILLS_LIST_TOOL,
   SKILL_VIEW_TOOL,

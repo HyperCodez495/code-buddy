@@ -46,6 +46,7 @@ export const WRITE_TOOL_NAMES = new Set([
   'apply_patch',
   'edit_file',     // Morph Fast Apply
   'write_file',
+  'extension_forge',
 ]);
 
 // ──────────────────────────────────────────────────────────────────

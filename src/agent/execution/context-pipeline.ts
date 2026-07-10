@@ -41,6 +41,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   ]);
 }
 
+type OptionalContextBlock = CodeBuddyMessage | null;
+
+/** Run one best-effort context provider without delaying or failing its siblings. */
+async function buildOptionalContextBlock(
+  enabled: boolean | undefined,
+  build: () => OptionalContextBlock | Promise<OptionalContextBlock>
+): Promise<OptionalContextBlock> {
+  if (!enabled) return null;
+  try {
+    return await build();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Phase 1 — Compact via contextManager + repair orphaned tool_call/tool_result
  * pairs left by compression. Always runs at the start of every turn.
@@ -94,132 +109,122 @@ export async function injectInitialContext(
   preparedMessages: CodeBuddyMessage[],
   deps: InitialContextDeps
 ): Promise<void> {
-  if (deps.ctxLevel.workspace) {
-    try {
+  // Every provider below is independent. Start them together so a slow workspace,
+  // memory, or graph lookup contributes at most its own latency instead of making
+  // time-to-first-token the sum of all provider latencies. Promise.all preserves
+  // this array order, keeping the model-facing context deterministic.
+  const blocks = await Promise.all([
+    buildOptionalContextBlock(deps.ctxLevel.workspace, async () => {
       const wsCtx = await deps.loadWorkspaceContext(deps.cwd);
-      if (wsCtx) {
-        preparedMessages.push({ role: 'system', content: wsCtx });
-      }
-    } catch { /* workspace context optional */ }
-  }
+      return wsCtx ? { role: 'system', content: wsCtx } : null;
+    }),
 
-  if (deps.ctxLevel.lessons) {
-    // Budgeted + ranked against the current message (BM25) — the block used
-    // to inject EVERY lesson unconditionally on every turn.
-    const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock({ query: deps.message });
-    if (lessonsBlock) {
-      preparedMessages.push({
+    buildOptionalContextBlock(deps.ctxLevel.lessons, () => {
+      // Budgeted + ranked against the current message (BM25) — the block used
+      // to inject EVERY lesson unconditionally on every turn.
+      const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock({ query: deps.message });
+      return lessonsBlock ? {
         role: 'system',
         content: `<context type="lessons">\n${lessonsBlock}\n</context>`,
-      });
-    }
-  }
+      } : null;
+    }),
 
-  if (isFeatureEnabled('USER_MODEL_INJECTION')) {
-    try {
+    buildOptionalContextBlock(isFeatureEnabled('USER_MODEL_INJECTION'), () => {
       const userModelSummary = getUserModel(deps.cwd).summarize();
-      if (userModelSummary) {
-        preparedMessages.push({
-          role: 'system',
-          content: `<user_model_context>\n${userModelSummary}\n</user_model_context>`,
-        });
-      }
-    } catch { /* optional */ }
-  }
+      return userModelSummary ? {
+        role: 'system',
+        content: `<user_model_context>\n${userModelSummary}\n</user_model_context>`,
+      } : null;
+    }),
 
-  if (deps.ctxLevel.knowledgeGraph) {
-    try {
+    buildOptionalContextBlock(deps.ctxLevel.knowledgeGraph, async () => {
       const { getKnowledgeGraph } = await import('../../memory/knowledge-graph.js');
       const kg = getKnowledgeGraph();
       await kg.load();
       const kgBlock = kg.formatContextBlockSmart(deps.message, 600);
-      if (kgBlock) {
-        preparedMessages.push({ role: 'system', content: kgBlock });
-      }
-    } catch { /* knowledge graph is optional */ }
-  }
+      return kgBlock ? { role: 'system', content: kgBlock } : null;
+    }),
 
-  // Collective Knowledge Graph — shared cross-agent memory (Phase 0, opt-in & off by default
-  // via CODEBUDDY_COLLECTIVE_MEMORY so behavior is unchanged until enabled). Runs in PARALLEL
-  // with the per-process graph above; once validated it folds the fragmented blocks into one.
-  if (deps.ctxLevel.collectiveGraph && process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true') {
-    try {
-      const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
-      const ckgBlock = await getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
-      if (ckgBlock) {
-        preparedMessages.push({ role: 'system', content: ckgBlock });
+    // Collective Knowledge Graph — shared cross-agent memory (opt-in).
+    buildOptionalContextBlock(
+      deps.ctxLevel.collectiveGraph && process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true',
+      async () => {
+        const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
+        const ckgBlock = await getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
+        return ckgBlock ? { role: 'system', content: ckgBlock } : null;
       }
-    } catch { /* collective graph is optional */ }
-  }
+    ),
 
-  if (deps.ctxLevel.decisionMemory && deps.decisionContextProvider) {
-    try {
-      const decisionsBlock = await withTimeout(
-        deps.decisionContextProvider(deps.message),
-        3000,
-        null
-      );
-      if (decisionsBlock) {
-        preparedMessages.push({
+    buildOptionalContextBlock(
+      deps.ctxLevel.decisionMemory && deps.decisionContextProvider !== null,
+      async () => {
+        const decisionsBlock = await withTimeout(
+          deps.decisionContextProvider!(deps.message),
+          3000,
+          null
+        );
+        return decisionsBlock ? {
           role: 'system',
           content: `<context type="decision">\n${decisionsBlock}\n</context>`,
-        });
+        } : null;
       }
-    } catch { /* decision-memory optional */ }
-  }
+    ),
 
-  if (deps.ctxLevel.icmMemory && deps.icmBridgeProvider) {
-    try {
-      const icm = deps.icmBridgeProvider();
-      if (icm?.isAvailable()) {
-        const memories = await withTimeout(
-          icm.searchMemory(deps.message, { limit: 3 }),
-          3000,
-          [] as Array<{ content: string }>
-        );
-        if (memories.length > 0) {
-          const memoryLines = memories.map((m) => `- ${m.content}`).join('\n');
-          preparedMessages.push({
-            role: 'system',
-            content: `<context type="memory">\nRelevant cross-session memories:\n${memoryLines}\n</context>`,
-          });
+    buildOptionalContextBlock(
+      deps.ctxLevel.icmMemory && deps.icmBridgeProvider !== null,
+      async () => {
+        const icm = deps.icmBridgeProvider!();
+        if (icm?.isAvailable()) {
+          const memories = await withTimeout(
+            icm.searchMemory(deps.message, { limit: 3 }),
+            3000,
+            [] as Array<{ content: string }>
+          );
+          if (memories.length > 0) {
+            const memoryLines = memories.map((m) => `- ${m.content}`).join('\n');
+            return {
+              role: 'system',
+              content: `<context type="memory">\nRelevant cross-session memories:\n${memoryLines}\n</context>`,
+            };
+          }
         }
+        return null;
       }
-    } catch { /* ICM search optional */ }
-  }
+    ),
 
-  if (deps.ctxLevel.codeGraph && deps.codeGraphContextProvider) {
-    try {
-      const graphCtx = deps.codeGraphContextProvider(deps.message);
-      if (graphCtx) {
-        preparedMessages.push({
+    buildOptionalContextBlock(
+      deps.ctxLevel.codeGraph && deps.codeGraphContextProvider !== null,
+      () => {
+        const graphCtx = deps.codeGraphContextProvider!(deps.message);
+        return graphCtx ? {
           role: 'system',
           content: `<context type="code_graph">\n${graphCtx}\n</context>`,
-        });
+        } : null;
       }
-    } catch { /* code graph context optional */ }
-  }
+    ),
 
-  if (deps.ctxLevel.docs && deps.docsContextProvider) {
-    try {
-      const docsCtx = deps.docsContextProvider(deps.message);
-      if (docsCtx) {
-        preparedMessages.push({
+    buildOptionalContextBlock(
+      deps.ctxLevel.docs && deps.docsContextProvider != null,
+      () => {
+        const docsCtx = deps.docsContextProvider!(deps.message);
+        return docsCtx ? {
           role: 'system',
           content: `<context type="docs">\n${docsCtx}\n</context>`,
-        });
+        } : null;
       }
-    } catch { /* docs context optional */ }
-  }
+    ),
 
-  if (deps.ctxLevel.todo) {
-    const todoSuffix = getTodoTracker(deps.cwd).buildContextSuffix();
-    if (todoSuffix) {
-      preparedMessages.push({
+    buildOptionalContextBlock(deps.ctxLevel.todo, () => {
+      const todoSuffix = getTodoTracker(deps.cwd).buildContextSuffix();
+      return todoSuffix ? {
         role: 'system',
         content: `<context type="todo">\n${todoSuffix}\n</context>`,
-      });
-    }
+      } : null;
+    }),
+  ]);
+
+  for (const block of blocks) {
+    if (block) preparedMessages.push(block);
   }
 }
 

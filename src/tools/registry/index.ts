@@ -44,6 +44,13 @@ export {
 // Tool Adapters - Remind (dated reminders — the agent's proper path vs shelling `buddy remind add`)
 export { RemindTool, createRemindTools } from './remind-tools.js';
 
+// Safe runtime authoring for widgets, executable tools, and skills.
+export {
+  ExtensionForgeTool,
+  createExtensionForgeTool,
+  createExtensionForgeTools,
+} from '../extension-forge-tool.js';
+
 // Tool Adapters - Search
 export {
   UnifiedSearchTool,
@@ -577,6 +584,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createAskUserQuestionTools } = await import('./ask-user-question-tools.js');
   const { createExitPlanModeTools } = await import('./exit-plan-mode-tools.js');
   const { createCodeExplorerTools } = await import('./code-explorer-tools.js');
+  const { createExtensionForgeTools } = await import('../extension-forge-tool.js');
   const { createAuthoredExtraTools } = await import('./authored-extra-tools.js');
 
   // Await MCP Manager initialization before registering its tools
@@ -636,6 +644,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createAskUserQuestionTools(),
     ...createExitPlanModeTools(),
     ...createCodeExplorerTools(),
+    ...createExtensionForgeTools(),
     ...createAuthoredExtraTools(),
     ...createDesignTools(),
     ...createCsvTools(),
@@ -725,6 +734,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createGuiTools(),
     ...createSessionTools(),
     ...createCodeExplorerTools(),
+    ...createExtensionForgeTools(),
     ...createAuthoredExtraTools(),
     ...createDesignTools(),
     ...createCsvTools(),
@@ -805,4 +815,5 @@ import { createGuiTools } from './gui-tools.js';
 import { createSessionTools } from './session-tools.js';
 import { createAliasTools } from './tool-aliases.js';
 import { createCodeExplorerTools } from './code-explorer-tools.js';
+import { createExtensionForgeTools } from '../extension-forge-tool.js';
 export * from "./windows-tools.js";

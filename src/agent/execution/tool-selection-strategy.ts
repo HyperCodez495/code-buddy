@@ -121,8 +121,9 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   // Cowork's App Studio generation ("l'outil create_file n'est pas disponible
   // dans cette session"). `apply_patch` likewise: WritePolicy strict blocks
   // direct editors and points at apply_patch, so a selection without it
-  // re-opens the historical edit deadlock.
-  alwaysInclude: ['view_file', 'create_file', 'str_replace_editor', 'apply_patch', 'bash', 'search', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search', 'tool_search'],
+  // re-opens the historical edit deadlock. `extension_forge` is the one safe,
+  // confirmation-gated entry point for creating reusable runtime capabilities.
+  alwaysInclude: ['view_file', 'create_file', 'str_replace_editor', 'apply_patch', 'bash', 'search', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search', 'tool_search', 'extension_forge'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes

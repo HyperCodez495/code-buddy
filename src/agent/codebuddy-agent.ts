@@ -1136,6 +1136,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    const turnStartedAt = Date.now();
     // See processUserMessageStream — the system prompt builds async and a
     // first turn must not race it (embedded hosts don't await it themselves).
     await this.systemPromptReady;
@@ -1164,7 +1165,8 @@ Look at the screenshot and find the element matching the user's intent. Output o
     const newEntries = await this.executor.processUserMessage(
       message,
       this.chatHistory,
-      this.messages
+      this.messages,
+      turnStartedAt
     );
 
     // Fire-and-forget Hermes-style post-session learning review (interactive only).
@@ -1176,6 +1178,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
+    const turnStartedAt = Date.now();
     // The system prompt is built ASYNC at construction. The CLI awaits
     // systemPromptReady before its first turn, but embedded hosts (Cowork's
     // engine adapter) did not — a turn fired right after agent creation went
@@ -1265,7 +1268,8 @@ Look at the screenshot and find the element matching the user's intent. Output o
         message,
         this.chatHistory,
         this.messages,
-        this.abortController
+        this.abortController,
+        turnStartedAt
       );
     } finally {
       // Restore original model if it was changed by routing.

@@ -157,7 +157,7 @@ export function registerImproveCommands(program: Command): void {
             }`,
         ),
         kept.length
-          ? `Kept: ${kept.join(', ')} (archived + persisted to .codebuddy/self-improvement; reloaded at next start when CODEBUDDY_SELF_IMPROVE=true)`
+          ? `Kept: ${kept.join(', ')} (archived + persisted to .codebuddy/self-improvement; reloaded at next start unless CODEBUDDY_LOAD_AUTHORED_TOOLS=false)`
           : 'No tool kept this run',
       ].join('\n');
       print({ kind: 'self_improvement_tools', cycles: results }, options, text);

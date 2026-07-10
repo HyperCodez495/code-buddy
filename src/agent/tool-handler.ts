@@ -50,6 +50,7 @@ import {
 import { WritePolicy, WRITE_TOOL_NAMES } from "../security/write-policy.js";
 import { RunStore } from "../observability/run-store.js";
 import { isToolNameAllowed } from "../utils/tool-filter.js";
+import { loadAuthoredTools } from "./self-improvement/tool-skill-mutator.js";
 
 /**
  * Dependencies required to initialize the ToolHandler
@@ -262,6 +263,19 @@ export class ToolHandler {
    */
   setWorkingDirectory(dir: string | undefined): void {
     this.currentWorkingDirectory = dir;
+    if (dir) {
+      try {
+        const loaded = loadAuthoredTools(dir);
+        if (loaded.length > 0) {
+          logger.info(`[self-improve] loaded ${loaded.length} workspace-authored tool(s): ${loaded.join(', ')}`);
+        }
+      } catch (error) {
+        logger.warn('[self-improve] failed to load workspace-authored tools', {
+          cwd: dir,
+          error: getErrorMessage(error),
+        });
+      }
+    }
   }
 
   /**

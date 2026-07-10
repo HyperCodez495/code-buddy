@@ -16,14 +16,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// Opt-in registrations (register_tool + persisted authored tools) must not
-// leak into the surface from the developer's environment. Must run before the
-// module-singleton initializeToolRegistry() below.
+// Dynamic registrations must not leak into the committed built-in surface.
+// These flags must run before the module-singleton initialization below.
 delete process.env.CODEBUDDY_SELF_IMPROVE;
+process.env.CODEBUDDY_LOAD_AUTHORED_TOOLS = 'false';
 
-import { initializeToolRegistry } from '../../src/codebuddy/tools.js';
-import { getToolRegistry } from '../../src/tools/registry.js';
-import { createInteractiveToolAdapters } from '../../src/tools/registry/interactive-adapters.js';
+const { initializeToolRegistry } = await import('../../src/codebuddy/tools.js');
+const { getToolRegistry } = await import('../../src/tools/registry.js');
+const { createInteractiveToolAdapters } = await import('../../src/tools/registry/interactive-adapters.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

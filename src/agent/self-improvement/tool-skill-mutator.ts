@@ -95,7 +95,7 @@ export class LiveToolMutator implements ToolMutatorPort {
 /**
  * Re-register persisted authored tools into both registries at startup. Does NOT
  * re-persist (it's loading what's already on disk). Returns the names loaded.
- * Gated by callers on CODEBUDDY_SELF_IMPROVE.
+ * Every persisted spec is re-gated by `register`; callers may load it at boot.
  */
 export function loadAuthoredTools(workDir?: string): string[] {
   const store = new AuthoredToolStore(workDir ? { workDir } : {});

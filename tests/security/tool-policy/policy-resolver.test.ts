@@ -37,6 +37,12 @@ describe('PolicyResolver', () => {
       expect(decision.action).toBe('confirm');
     });
 
+    it('should require confirmation for authoring runtime extensions', () => {
+      const decision = resolver.resolve('extension_forge');
+      expect(decision.action).toBe('confirm');
+      expect(getToolGroups('extension_forge')).toContain('group:dangerous');
+    });
+
     it('should require confirmation for git write operations', () => {
       const decision = resolver.resolve('git_push');
       expect(decision.action).toBe('confirm');
@@ -77,6 +83,13 @@ describe('PolicyResolver', () => {
 
       const decision = resolver.resolve('git_push');
       expect(decision.action).toBe('confirm');
+    });
+
+    it('should still require confirmation for extension_forge in full profile', () => {
+      config.activeProfile = 'full';
+      resolver = new PolicyResolver(config);
+
+      expect(resolver.resolve('extension_forge').action).toBe('confirm');
     });
   });
 

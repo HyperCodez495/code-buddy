@@ -18,7 +18,7 @@ Code Buddy includes ~110 tools organized into categories. Tools are selected per
 | **Code Quality** | `resolve_conflicts` | Merge conflict resolution |
 | **Knowledge** | `knowledge_search`, `knowledge_add` | Search and add knowledge base entries |
 | **Agent** | `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, `resume_agent` | Multi-agent orchestration ([details](agents.md)) |
-| **Self-Extension** | `create_skill`, `lessons_add`, `lessons_search` | Create new skills at runtime, persist learned patterns |
+| **Self-Extension** | `extension_forge`, `create_skill`, `lessons_add`, `lessons_search` | Safely create runtime widgets, sandboxed tools, skills, and learned patterns |
 | **Human Input** | `ask_human` | Pause execution for mid-task user clarification (120s timeout) |
 | **Utility** | `code_exec`, `request_permissions`, `terminate` | JS sandbox with tool bridge, dynamic permission escalation, loop exit |
 

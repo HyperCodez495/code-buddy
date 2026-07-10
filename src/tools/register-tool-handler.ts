@@ -15,7 +15,7 @@
  * a tool is proposed as a self-improvement against a benchmark scenario.
  */
 
-import type { ITool, ToolSchema } from './registry/types.js';
+import type { ITool, IToolExecutionContext, ToolSchema } from './registry/types.js';
 import type { ToolResult } from '../types/index.js';
 import {
   AUTHORED_LANGUAGES,
@@ -23,6 +23,7 @@ import {
   type AuthoredToolSpec,
 } from '../agent/self-improvement/authored-tool-runtime.js';
 import { inspectAuthoredCode } from '../agent/self-improvement/authored-artifact-gate.js';
+import { AuthoredToolStore } from '../agent/self-improvement/authored-tool-store.js';
 import { LiveToolMutator } from '../agent/self-improvement/tool-skill-mutator.js';
 import type { ExecuteCodeLanguage } from './execute-code-runner.js';
 import { logger } from '../utils/logger.js';
@@ -33,9 +34,12 @@ export class RegisterToolTool implements ITool {
     'Author a NEW tool for yourself at runtime. Provide a name, description, JSON-schema params, ' +
     'a language (javascript|typescript|python) and the code. The code reads its call arguments as ' +
     'JSON from the CODEBUDDY_TOOL_INPUT env var and prints its result to stdout. On a passing safety ' +
-    'check the tool is registered as `authored__<name>` and becomes callable by you on your next turn.';
+    'check the tool is registered as `authored__<name>` and becomes callable in the same conversation.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const rawName = String(input.name ?? '').trim();
     const description = String(input.description ?? '').trim();
     const language = String(input.language ?? 'javascript').toLowerCase() as ExecuteCodeLanguage;
@@ -67,7 +71,8 @@ export class RegisterToolTool implements ITool {
     };
 
     try {
-      new LiveToolMutator().register(spec);
+      const store = new AuthoredToolStore({ workDir: context?.cwd ?? process.cwd() });
+      new LiveToolMutator({ store }).register(spec);
     } catch (err) {
       return {
         success: false,
@@ -79,8 +84,9 @@ export class RegisterToolTool implements ITool {
     return {
       success: true,
       output:
-        `Registered tool \`${spec.name}\`. It is now callable by you on your next turn — ` +
+        `Registered tool \`${spec.name}\`. It is now callable in this conversation — ` +
         `call it with arguments matching its params.`,
+      data: { artifactKind: 'tool', name: spec.name, createdTools: [spec.name] },
     };
   }
 

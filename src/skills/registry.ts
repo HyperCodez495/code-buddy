@@ -187,6 +187,16 @@ export class SkillRegistry extends EventEmitter {
     this.emit('skill:loaded', skill);
   }
 
+  /**
+   * Load and register one generated skill immediately, even when its active
+   * workspace differs from the process cwd used by the default registry.
+   */
+  async registerSkillFile(filePath: string, tier: SkillTier = 'workspace'): Promise<Skill> {
+    const skill = await this.loadSkillFile(filePath, tier);
+    this.registerSkill(skill);
+    return skill;
+  }
+
   // ==========================================================================
   // Retrieval
   // ==========================================================================

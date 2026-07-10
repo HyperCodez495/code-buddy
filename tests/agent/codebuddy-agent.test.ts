@@ -592,6 +592,42 @@ describe('CodeBuddyAgent', () => {
         await fs.remove(procDir);
       }
     });
+
+    it('loads persisted authored tools when Cowork selects a workspace', async () => {
+      const os = await import('os');
+      const path = await import('path');
+      const fs = await import('fs-extra');
+      const { AuthoredToolStore } = await import(
+        '../../src/agent/self-improvement/authored-tool-store.js'
+      );
+      const { FormalToolRegistry } = await import('../../src/tools/registry/tool-registry.js');
+      const { getToolRegistry } = await import('../../src/tools/registry.js');
+
+      const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-authored-tool-project-'));
+      const toolName = 'authored__cowork_workspace_echo';
+      try {
+        new AuthoredToolStore({ workDir: projectDir }).add({
+          name: toolName,
+          description: 'Echo text from a Cowork workspace-authored tool',
+          parameters: { type: 'object', properties: { text: { type: 'string' } } },
+          language: 'javascript',
+          code:
+            "const input=JSON.parse(process.env.CODEBUDDY_TOOL_INPUT||'{}'); " +
+            "console.log(String(input.text||''));",
+        });
+
+        agent = new CodeBuddyAgent('test-api-key');
+        agent.setWorkingDirectory(projectDir);
+
+        expect(FormalToolRegistry.getInstance().has(toolName)).toBe(true);
+        const result = await FormalToolRegistry.getInstance().execute(toolName, { text: 'loaded' });
+        expect(result.output).toContain('loaded');
+      } finally {
+        FormalToolRegistry.getInstance().unregister(toolName);
+        getToolRegistry().removeTool(toolName);
+        await fs.remove(projectDir);
+      }
+    });
   });
 
   // =========================================================================
@@ -765,7 +801,12 @@ describe('CodeBuddyAgent', () => {
 
       const entries = await agent.processUserMessage('Test message');
 
-      expect((agent as any).executor.processUserMessage).toHaveBeenCalled();
+      expect((agent as any).executor.processUserMessage).toHaveBeenCalledWith(
+        'Test message',
+        expect.any(Array),
+        expect.any(Array),
+        expect.any(Number),
+      );
       expect(entries).toEqual([
         expect.objectContaining({ type: 'user', content: 'Test message' }),
         assistantEntry,

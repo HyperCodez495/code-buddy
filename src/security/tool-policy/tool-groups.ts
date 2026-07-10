@@ -140,6 +140,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   // System - Modify
   set_env: ['group:system', 'group:system:modify'],
   install_package: ['group:system', 'group:system:modify'],
+  extension_forge: ['group:system', 'group:system:modify', 'group:dangerous'],
 
   // Planning/Reasoning (no special groups - generally safe)
   plan: [],

@@ -51,6 +51,7 @@ env_doctor
 execute_code
 exit_plan_mode
 export
+extension_forge
 feishu_doc_read
 feishu_drive_add_comment
 feishu_drive_list_comment_replies
@@ -157,6 +158,7 @@ spotify_playback
 spotify_playlists
 spotify_queue
 spotify_search
+stock_quote
 str_replace_editor
 task_verify
 terminal
@@ -173,6 +175,7 @@ verify
 video
 video_analyze
 video_generate
+video_stitch
 view_file
 vision_analyze
 weather

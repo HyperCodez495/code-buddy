@@ -102,9 +102,9 @@ export class LatencyOptimizer extends EventEmitter {
 
   /**
    * Start measuring an operation
+   * @param startTime Optional upstream start time for end-to-end measurements.
    */
-  startOperation(operation: string): string {
-    const startTime = Date.now();
+  startOperation(operation: string, startTime: number = Date.now()): string {
     const randomPart = Math.random().toString(36).slice(2);
     // Use :: as separator to avoid conflicts with operation names containing -
     const id = `${operation}::${startTime}::${randomPart}`;

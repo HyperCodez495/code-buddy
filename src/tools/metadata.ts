@@ -1043,6 +1043,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Create a new SKILL.md workflow'
   },
   {
+    name: 'extension_forge',
+    category: 'system',
+    keywords: ['extension', 'forge', 'create', 'widget', 'tool', 'skill', 'self-extension', 'code'],
+    priority: 9,
+    description: 'Safely author and install a runtime widget, tool, or skill'
+  },
+  {
     name: 'skill_discover',
     category: 'utility',
     keywords: ['skill', 'discover', 'search', 'hub', 'install', 'capability', 'plugin'],

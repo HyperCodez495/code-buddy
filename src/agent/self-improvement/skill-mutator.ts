@@ -73,6 +73,11 @@ export interface SkillFirewallCheck {
   reasons: string[];
 }
 
+const PROMPT_OVERRIDE_RE =
+  /\b(?:ignore|disregard|override|forget)\b.{0,80}\b(?:all|any|previous|prior|system|developer)\b.{0,80}\b(?:instruction|prompt|message)s?\b/is;
+const SECRET_EXFILTRATION_RE =
+  /\b(?:exfiltrat\w*|upload|send|transmit|post)\b.{0,180}(?:\.ssh|\.aws|credentials?|private[_ -]?key|api[_ -]?key|secret|token)/is;
+
 /** Write the skill body to a throwaway file and run the firewall scan (no install). */
 export function scanAuthoredSkillContent(content: string): SkillFirewallCheck {
   const dir = path.join(os.tmpdir(), `cb-skillscan-${randomUUID()}`);
@@ -97,6 +102,14 @@ export function scanAuthoredSkillContent(content: string): SkillFirewallCheck {
 export function safetyGateSkill(content: string): { ok: boolean; reasons: string[] } {
   const scan = inspectAuthoredCode(content, 'skill');
   if (!scan.ok) return { ok: false, reasons: scan.reasons };
+  const authoredReasons: string[] = [];
+  if (PROMPT_OVERRIDE_RE.test(content)) {
+    authoredReasons.push('contains an instruction to override higher-priority prompts');
+  }
+  if (SECRET_EXFILTRATION_RE.test(content)) {
+    authoredReasons.push('contains instructions to exfiltrate credentials or secrets');
+  }
+  if (authoredReasons.length > 0) return { ok: false, reasons: authoredReasons };
   const fw = scanAuthoredSkillContent(content);
   if (!fw.safe) return { ok: false, reasons: [`firewall: ${fw.verdict}`, ...fw.reasons] };
   return { ok: true, reasons: [] };
@@ -130,8 +143,13 @@ export class LiveSkillMutator implements SkillMutatorPort {
     return path.join(this.dirFor(name), 'SKILL.md');
   }
 
-  private reload(): void {
-    void getSkillRegistry().reloadAll().catch(() => {});
+  private reload(name: string): void {
+    const file = this.skillFile(name);
+    if (!fs.existsSync(file)) {
+      getSkillRegistry().unload(name);
+      return;
+    }
+    void getSkillRegistry().registerSkillFile(file, 'workspace').catch(() => {});
   }
 
   private readContent(name: string): string | null {
@@ -168,7 +186,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     const dir = this.dirFor(spec.name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(this.skillFile(spec.name), content, 'utf-8');
-    this.reload();
+    this.reload(spec.name);
     return { name: spec.name };
   }
 
@@ -181,7 +199,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     const gate = safetyGateSkill(withFm);
     if (!gate.ok) return gate;
     fs.writeFileSync(this.skillFile(name), withFm, 'utf-8');
-    this.reload();
+    this.reload(name);
     return { ok: true, reasons: [] };
   }
 
@@ -208,7 +226,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     const dir = this.dirFor(name);
     const existed = fs.existsSync(dir);
     if (existed) fs.rmSync(dir, { recursive: true, force: true });
-    this.reload();
+    this.reload(name);
     return existed;
   }
 
@@ -223,7 +241,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     let dest = path.join(archiveRoot, name);
     if (fs.existsSync(dest)) dest = `${dest}-${randomUUID().slice(0, 8)}`;
     fs.renameSync(dir, dest);
-    this.reload();
+    this.reload(name);
     return true;
   }
 
@@ -234,7 +252,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     const dir = this.dirFor(name);
     if (fs.existsSync(dir)) return false; // don't clobber a live skill
     fs.renameSync(src, dir);
-    this.reload();
+    this.reload(name);
     return true;
   }
 
@@ -254,7 +272,7 @@ export class LiveSkillMutator implements SkillMutatorPort {
     if (content === null) return false;
     const withFm = ensureFrontmatter(name, '', content);
     fs.writeFileSync(this.skillFile(name), setPinned(withFm, value), 'utf-8');
-    this.reload();
+    this.reload(name);
     return true;
   }
 

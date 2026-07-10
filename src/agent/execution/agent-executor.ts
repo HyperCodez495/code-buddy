@@ -57,11 +57,12 @@ import { compress as tokenJuice, isTokenJuiceEnabled, JUICE_MIN_CHARS } from "..
 import { getRestorableCompressor } from "../../context/restorable-compression.js";
 import { recordCompactionFork } from "../../context/compaction-fork.js";
 import { getActiveRunStore } from "../../observability/run-store.js";
-import { getResponseConstraintStack, resolveToolChoice } from "../response-constraint.js";
 import type { ICMBridge } from "../../memory/icm-bridge.js";
 import { shouldCompactBeforeToolExec, estimateToolResultTokens } from "../../context/proactive-compaction.js";
 import { formatTokenUsage, estimateCost } from "../../utils/token-display.js";
 import { classifyQuery } from "./query-classifier.js";
+import { getModelToolConfig } from "../../config/model-tools.js";
+import { getLatencyOptimizer, getStreamingOptimizer } from "../../optimization/latency-optimizer.js";
 
 /**
  * Tools whose (verbose, prose/HTML) output TokenJuice may losslessly compress before it
@@ -70,16 +71,7 @@ import { classifyQuery } from "./query-classifier.js";
  */
 const JUICE_WEB_TOOLS = new Set(['web_fetch', 'web_search', 'fetch', 'browser_fetch']);
 
-/**
- * Race a promise against a timeout, returning the fallback value if the
- * promise doesn't settle within `ms` milliseconds.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
+const CONTEXT_MENTION_PATTERN = /@(?:file:|url:|image:|git(?::|\s)|symbol:|search:|web\s|terminal\b)/i;
 
 function isIgnorableControlToolCall(toolCall: CodeBuddyToolCall): boolean {
   const name = toolCall.function?.name?.trim();
@@ -492,41 +484,47 @@ export class AgentExecutor {
     message: string,
     messages: CodeBuddyMessage[],
   ): Promise<string> {
-    // 1. Process @mentions and inject context blocks
-    try {
-      const { processMentions } = await import('../../input/context-mentions.js');
-      const mentionResult = await processMentions(message);
-      if (mentionResult.contextBlocks.length > 0) {
-        message = mentionResult.cleanedMessage;
-        // Update the last user message in the messages array to match
-        const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-        if (lastUserMsg && typeof lastUserMsg.content === 'string') {
-          lastUserMsg.content = message;
-        }
-        for (const block of mentionResult.contextBlocks) {
-          messages.push({
-            role: 'system' as const,
-            content: `<context type="${block.type}" source="${block.source}">\n${block.content}\n</context>`,
-          });
-        }
-      }
-    } catch { /* mention processing optional */ }
+    // Avoid loading the sizeable mention parser (fs-extra, axios, child_process)
+    // for the overwhelmingly common case where the message contains no mention.
+    const mentionPromise = CONTEXT_MENTION_PATTERN.test(message)
+      ? import('../../input/context-mentions.js')
+          .then(({ processMentions }) => processMentions(message))
+          .catch(() => null)
+      : Promise.resolve(null);
 
-    // 2. Auto-select persona (fire-and-forget, no await needed)
-    try {
-      const { getPersonaManager } = await import('../../personas/persona-manager.js');
-      getPersonaManager().autoSelectPersona({ message });
-    } catch { /* persona auto-select optional */ }
+    // Persona selection affects this turn's system prompt, so keep it on the
+    // critical path, but load it concurrently with explicit mention expansion.
+    const personaPromise = import('../../personas/persona-manager.js')
+      .then(({ getPersonaManager }) => getPersonaManager().autoSelectPersona({ message }))
+      .catch(() => null);
 
-    // 3. Auto-extract entities into the knowledge graph (background)
-    try {
-      const { getKnowledgeGraph, isTrivialMessage } = await import('../../memory/knowledge-graph.js');
-      if (!isTrivialMessage(message)) {
-        const kg = getKnowledgeGraph();
-        await kg.load();
-        kg.extractFromMessageDeduped(message);
+    const [mentionResult] = await Promise.all([mentionPromise, personaPromise]);
+
+    if (mentionResult && mentionResult.contextBlocks.length > 0) {
+      message = mentionResult.cleanedMessage;
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUserMsg && typeof lastUserMsg.content === 'string') {
+        lastUserMsg.content = message;
       }
-    } catch { /* non-critical */ }
+      for (const block of mentionResult.contextBlocks) {
+        messages.push({
+          role: 'system' as const,
+          content: `<context type="${block.type}" source="${block.source}">\n${block.content}\n</context>`,
+        });
+      }
+    }
+
+    // Entity extraction is persistence work. Defer even the module evaluation
+    // until the current call stack has started response preparation.
+    if (classifyQuery(message).complexity !== 'trivial') {
+      setImmediate(() => {
+        void import('../../memory/knowledge-graph.js').then(async ({ getKnowledgeGraph }) => {
+          const kg = getKnowledgeGraph();
+          await kg.load();
+          kg.extractFromMessageDeduped(message);
+        }).catch(() => { /* non-critical background persistence */ });
+      });
+    }
 
     return message;
   }
@@ -550,10 +548,11 @@ export class AgentExecutor {
   async processUserMessage(
     message: string,
     history: ChatEntry[],
-    messages: CodeBuddyMessage[]
+    messages: CodeBuddyMessage[],
+    turnStartedAt: number = Date.now()
   ): Promise<ChatEntry[]> {
     const initialHistoryLength = history.length;
-    for await (const _event of this.runTurnLoop(message, history, messages, null)) {
+    for await (const _event of this.runMeasuredTurn(message, history, messages, null, turnStartedAt)) {
       // Events dropped. runTurnLoop pushes ChatEntries to history directly.
     }
     return history.slice(initialHistoryLength);
@@ -582,11 +581,12 @@ export class AgentExecutor {
   async processUserMessageWithStreamingEvents(
     message: string,
     history: ChatEntry[],
-    messages: CodeBuddyMessage[]
+    messages: CodeBuddyMessage[],
+    turnStartedAt: number = Date.now()
   ): Promise<{ entries: ChatEntry[]; streamingEvents: ExecutorEvent[] }> {
     const initialHistoryLength = history.length;
     const streamingEvents: ExecutorEvent[] = [];
-    for await (const event of this.runTurnLoop(message, history, messages, null)) {
+    for await (const event of this.runMeasuredTurn(message, history, messages, null, turnStartedAt)) {
       streamingEvents.push(event);
     }
     return {
@@ -616,9 +616,38 @@ export class AgentExecutor {
     message: string,
     history: ChatEntry[],
     messages: CodeBuddyMessage[],
-    abortController: AbortController | null
+    abortController: AbortController | null,
+    turnStartedAt: number = Date.now()
   ): AsyncGenerator<StreamingChunk, void, unknown> {
-    yield* this.runTurnLoop(message, history, messages, abortController);
+    yield* this.runMeasuredTurn(message, history, messages, abortController, turnStartedAt);
+  }
+
+  /** Measure end-to-end perceived latency around the single authoritative loop. */
+  private async *runMeasuredTurn(
+    message: string,
+    history: ChatEntry[],
+    messages: CodeBuddyMessage[],
+    abortController: AbortController | null,
+    startedAt: number
+  ): AsyncGenerator<ExecutorEvent, void, unknown> {
+    const operationId = getLatencyOptimizer().startOperation('assistant_turn', startedAt);
+    let recordedFirstVisibleResponse = false;
+
+    try {
+      for await (const event of this.runTurnLoop(message, history, messages, abortController)) {
+        if (
+          !recordedFirstVisibleResponse &&
+          (event.type === 'content' || event.type === 'reasoning' || event.type === 'tool_calls')
+        ) {
+          recordedFirstVisibleResponse = true;
+          getStreamingOptimizer().recordFirstToken(Date.now() - startedAt);
+        }
+        yield event;
+      }
+    } finally {
+      getLatencyOptimizer().endOperation(operationId);
+      getStreamingOptimizer().recordTotalTime(Date.now() - startedAt);
+    }
   }
 
   /**
@@ -643,6 +672,9 @@ export class AgentExecutor {
     // auto-select, knowledge graph extraction). Single source of truth in
     // preprocessUserMessage (F10).
     message = await this.preprocessUserMessage(message, messages);
+
+    const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(message);
+    logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
 
     // Calculate input tokens
     let inputTokens = this.deps.tokenCounter.countMessageTokens(messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]);
@@ -727,111 +759,86 @@ export class AgentExecutor {
           }
         }
 
-        // Rebuild the system prompt query-aware on the first round only.
-        // Per-turn rebuild costs are dominated by manager .load() calls
-        // (~50ms); doing it only on toolRounds === 0 amortizes the cost
-        // over the whole turn loop. Sub-turn tool follow-ups reuse the
-        // SP picked at turn start.
+        // Start every independent pre-request task before awaiting any of it.
+        // Time-to-first-token is then bounded by the slowest task instead of the
+        // sum of prompt building, tool selection, and context enrichment.
         const rebuildSystemPromptForQuery = this.deps.rebuildSystemPromptForQuery;
-        if (toolRounds === 0 && rebuildSystemPromptForQuery) {
-          try {
-            const rebuiltSP = await rebuildSystemPromptForQuery(message);
-            const firstMessage = messages[0];
-            if (rebuiltSP && firstMessage && firstMessage.role === 'system') {
-              firstMessage.content = rebuiltSP;
-              logger.debug(
-                `[agent-executor] system prompt rebuilt query-aware (${rebuiltSP.length} chars)`,
-              );
-            }
-          } catch (err) {
-            logger.warn('[agent-executor] query-aware SP rebuild failed', { error: String(err) });
-          }
-        }
+        const rebuiltSystemPromptPromise: Promise<string | null> =
+          toolRounds === 0 && rebuildSystemPromptForQuery
+            ? rebuildSystemPromptForQuery(message).catch((err) => {
+                logger.warn('[agent-executor] query-aware SP rebuild failed', { error: String(err) });
+                return null;
+              })
+            : Promise.resolve(null);
 
         // Profile-aware tool selection. For `lite` (small Ollama models),
-        // shrink the tool set to ~5 with a minimal alwaysInclude — we
-        // don't want to dangle `remember`/`lessons_*` in front of a model
-        // that can't actually call tools and would inline-hallucinate them.
+        // shrink the tool set to a minimal, reliable core.
         const activeModelName = this.deps.client.getCurrentModel() ?? '';
+        const modelToolConfig = getModelToolConfig(activeModelName);
         let selectionOpts: Parameters<typeof this.deps.toolSelectionStrategy.selectToolsForQuery>[1] =
           activeModelName ? { modelName: activeModelName } : {};
-        try {
-          const { getModelToolConfig } = await import('../../config/model-tools.js');
-          const cfg = getModelToolConfig(activeModelName);
-          if (cfg.promptProfile === 'lite') {
-            selectionOpts = {
-              ...selectionOpts,
-              maxTools: 5,
-              alwaysInclude: ['view_file', 'bash', 'search'],
-            };
-          }
-        } catch { /* model-tools optional, never block */ }
-        const selectionResult = await this.deps.toolSelectionStrategy.selectToolsForQuery(message, selectionOpts);
+        if (modelToolConfig.promptProfile === 'lite') {
+          selectionOpts = {
+            ...selectionOpts,
+            maxTools: 5,
+            alwaysInclude: ['view_file', 'bash', 'search'],
+          };
+        }
+        const selectionPromise = this.deps.toolSelectionStrategy.selectToolsForQuery(message, selectionOpts);
+
+        // Build context in a scratch array while the prompt and tools are being
+        // prepared. It is appended only after transcript preparation so the
+        // existing compaction and repair ordering remains unchanged.
+        const contextBlocks: CodeBuddyMessage[] = [];
+        const contextPromise = toolRounds === 0
+          ? injectInitialContext(contextBlocks, {
+              message,
+              cwd: process.cwd(),
+              ctxLevel,
+              loadWorkspaceContext: lazyGetWorkspaceContext,
+              decisionContextProvider: this.getDecisionContextProvider(),
+              icmBridgeProvider: this.getICMBridgeProvider(),
+              codeGraphContextProvider: this.getCodeGraphContextProvider(),
+              docsContextProvider: this.getDocsContextProvider(),
+            })
+          : injectNextRoundContext(contextBlocks, {
+              message,
+              cwd: process.cwd(),
+              queryComplexity,
+            });
+
+        const [rebuiltSystemPrompt, selectionResult] = await Promise.all([
+          rebuiltSystemPromptPromise,
+          selectionPromise,
+          contextPromise,
+        ]);
+
+        const firstMessage = messages[0];
+        if (rebuiltSystemPrompt && firstMessage && firstMessage.role === 'system') {
+          firstMessage.content = rebuiltSystemPrompt;
+          logger.debug(
+            `[agent-executor] system prompt rebuilt query-aware (${rebuiltSystemPrompt.length} chars)`,
+          );
+        }
+
         let tools = selectionResult.tools;
         let forcedChatOnlyToolRunModel: string | null = null;
         if (toolRounds === 0) this.deps.toolSelectionStrategy.cacheTools(tools, activeModelName);
 
-        // If the active model is flagged `supportsToolCalls: false` in
-        // model-tools.ts (typical of small Ollama / LM Studio models that
-        // can't reliably emit OpenAI-style tool_call frames), drop the
-        // tool list entirely. Without this, the LLM still sees tool
-        // descriptors in the API contract and tries to "call" them by
-        // generating raw JSON in the assistant content — which we can't
-        // dispatch, so the user gets back the JSON literal instead of an
-        // executed tool result. Honest fallback: tool-less chat.
-        try {
-          const { getModelToolConfig } = await import('../../config/model-tools.js');
-          // CodeBuddyClient exposes `getCurrentModel()`; the previous
-          // `(client as { defaultModel? }).defaultModel` access always
-          // resolved to undefined because that field doesn't exist on
-          // the dispatcher class — left the guard latent for ages.
-          const modelName = activeModelName;
-          if (modelName) {
-            const cfg = getModelToolConfig(modelName);
-            if (cfg.supportsToolCalls === false && tools.length > 0) {
-              if (process.env.GROK_FORCE_TOOLS === 'true') {
-                forcedChatOnlyToolRunModel = modelName;
-              } else {
-                logger.debug(
-                  `[agent-executor] supportsToolCalls=false for ${modelName} — dropping ${tools.length} tools from chat call`,
-                );
-                tools = [];
-              }
-            }
+        // Models explicitly marked chat-only must not see callable schemas.
+        if (activeModelName && modelToolConfig.supportsToolCalls === false && tools.length > 0) {
+          if (process.env.GROK_FORCE_TOOLS === 'true') {
+            forcedChatOnlyToolRunModel = activeModelName;
+          } else {
+            logger.debug(
+              `[agent-executor] supportsToolCalls=false for ${activeModelName} — dropping ${tools.length} tools from chat call`,
+            );
+            tools = [];
           }
-        } catch { /* model-tools is optional, never block the loop */ }
+        }
 
         const preparedMessages = prepareTurnMessages(this.deps.contextManager, messages);
-
-        // --- Query-aware context injection (saves ~15-20K tokens for trivial messages) ---
-        const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(message);
-        logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
-
-        // Round-0 gets the FULL workspace/lessons/KG/decision/ICM/code-graph
-        // injection; rounds ≥1 get the lighter between-rounds refresh. These are
-        // mutually exclusive: injectInitialContext must NOT run every round or
-        // lessons/todo/KG/user-model would be injected TWICE per request on
-        // every round >0, and the expensive workspace/decision/ICM providers
-        // (each with a 3s timeout) would re-run on every tool round.
-        // Sentinel `TODO #4` covers the between-rounds invariant.
-        if (toolRounds === 0) {
-          await injectInitialContext(preparedMessages, {
-            message,
-            cwd: process.cwd(),
-            ctxLevel,
-            loadWorkspaceContext: lazyGetWorkspaceContext,
-            decisionContextProvider: this.getDecisionContextProvider(),
-            icmBridgeProvider: this.getICMBridgeProvider(),
-            codeGraphContextProvider: this.getCodeGraphContextProvider(),
-            docsContextProvider: this.getDocsContextProvider(),
-          });
-        } else {
-          await injectNextRoundContext(preparedMessages, {
-            message,
-            cwd: process.cwd(),
-            queryComplexity,
-          });
-        }
+        preparedMessages.push(...contextBlocks);
 
         // Context warning — always check regardless of pipeline state
         {
@@ -1110,20 +1117,29 @@ export class AgentExecutor {
               }
             }
 
-            // Progressive disclosure, second half: a successful tool_search
-            // EXPANDS this turn's cached selection so the discovered tools are
-            // invocable on the next round (finding without exposing was a
-            // dead-end — proven live: "tool_search le trouve, mais il n'est
-            // pas exposé comme outil invocable").
-            if (toolCall.function.name === 'tool_search' && result.success) {
-              const names = (result.data as { names?: string[] } | undefined)?.names;
-              logger.debug('tool_search post-hook', { hasData: result.data !== undefined, names: names?.length ?? 'none' });
-              if (Array.isArray(names) && names.length > 0) {
+            // Expand the current turn's cached schema after discovery or live
+            // authoring. Without this, a newly created tool is dispatchable but
+            // invisible to the model until the next user turn.
+            if (result.success) {
+              const data = result.data as { names?: string[]; createdTools?: string[] } | undefined;
+              const discoveredNames = toolCall.function.name === 'tool_search' ? data?.names : undefined;
+              const names = [...new Set([
+                ...(Array.isArray(discoveredNames) ? discoveredNames : []),
+                ...(Array.isArray(data?.createdTools) ? data.createdTools : []),
+              ])];
+              if (names.length > 0) {
                 try {
                   const added = await this.deps.toolSelectionStrategy.expandCachedTools(names);
-                  logger.debug('tool_search expansion result', { added });
+                  logger.debug('tool selection expanded after tool result', {
+                    source: toolCall.function.name,
+                    names,
+                    added,
+                  });
                 } catch (err) {
-                  logger.warn('tool_search expansion failed', { error: String(err) });
+                  logger.warn('tool selection expansion failed', {
+                    source: toolCall.function.name,
+                    error: String(err),
+                  });
                 }
               }
             }

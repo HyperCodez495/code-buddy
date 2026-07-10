@@ -12,9 +12,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// Keep the surface deterministic: opt-in registrations must not leak into the
-// baseline from the developer's environment.
+// Keep the surface deterministic: dynamic registrations must not leak into the
+// built-in baseline from the developer's environment.
 delete process.env.CODEBUDDY_SELF_IMPROVE;
+process.env.CODEBUDDY_LOAD_AUTHORED_TOOLS = 'false';
 
 const { initializeToolRegistry } = await import('../src/codebuddy/tools.js');
 const { getToolRegistry } = await import('../src/tools/registry.js');

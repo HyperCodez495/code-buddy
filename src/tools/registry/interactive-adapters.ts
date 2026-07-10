@@ -87,6 +87,7 @@ import {
 } from './index.js';
 import type { ITool } from './types.js';
 import { createAuthoredExtraTools } from './authored-extra-tools.js';
+import { createExtensionForgeTools } from '../extension-forge-tool.js';
 import { createRegisterToolTool } from '../register-tool-handler.js';
 import { ToolSearchTool } from '../tool-search.js';
 
@@ -170,6 +171,7 @@ export function createInteractiveToolAdapters(options: InteractiveAdapterOptions
     ...createBugFinderTools(),
     ...createDocumentGeneratorTools(),
     ...createDelegateAgentTools(),
+    ...createExtensionForgeTools(),
     ...createAuthoredExtraTools(),
     ...(includeSelfImprove ? [createRegisterToolTool()] : []),
   ];

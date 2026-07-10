@@ -12,6 +12,11 @@ import type { CodeBuddyMessage } from '../../../src/codebuddy/client';
 import { logger } from '../../../src/utils/logger.js';
 import { YIELD_SIGNAL } from '../../../src/agent/execution/yield-coordinator.js';
 import { INTERACTIVE_SHELL_SIGNAL } from '../../../src/agent/execution/turn-signals.js';
+import {
+  getLatencyOptimizer,
+  getStreamingOptimizer,
+  resetOptimizers,
+} from '../../../src/optimization/latency-optimizer.js';
 
 // ---------------------------------------------------------------------------
 // Mock modules
@@ -101,6 +106,7 @@ function createMockDeps(overrides: Partial<ExecutorDependencies> = {}): Executor
       shouldUseSearchFor: jest.fn().mockReturnValue(false),
       clearCache: jest.fn(),
       setActiveSkill: jest.fn(),
+      expandCachedTools: jest.fn().mockResolvedValue(1),
     } as any,
     streamingHandler: {
       reset: jest.fn(),
@@ -558,6 +564,28 @@ describe('AgentExecutor', () => {
       expect(deps.toolHandler.executeTool).toHaveBeenCalledTimes(2);
       const finalEntry = entries[entries.length - 1];
       expect(finalEntry.content).toBe('All done.');
+    });
+
+    it('exposes a tool created by extension_forge in the same conversation', async () => {
+      const toolCall = makeToolCall('extension_forge', {
+        kind: 'tool',
+        name: 'slugify',
+      });
+      (deps.toolHandler.executeTool as jest.Mock).mockResolvedValueOnce({
+        success: true,
+        output: 'Created tool authored__slugify',
+        data: { createdTools: ['authored__slugify'] },
+      });
+      setupLLMFlow(deps, [
+        { content: 'Creating the reusable tool...', tool_calls: [toolCall] },
+        { content: 'The new tool is ready.' },
+      ]);
+
+      await executor.processUserMessage('Create a slugify tool', [], []);
+
+      expect(deps.toolSelectionStrategy.expandCachedTools).toHaveBeenCalledWith([
+        'authored__slugify',
+      ]);
     });
 
     it('should stop after maxToolRounds', async () => {
@@ -2204,6 +2232,96 @@ describe('AgentExecutor', () => {
 
       // Exactly 1 call regardless of abort — cost recording happens once at end of loop.
       expect((streamConfig.recordSessionCost as jest.Mock).mock.calls.length).toBeLessThanOrEqual(1);
+    });
+
+    it('starts prompt building, tool selection, and context lookup before awaiting any one', async () => {
+      const started: string[] = [];
+      const release = new Map<string, () => void>();
+      const delayed = <T>(name: string, value: T): Promise<T> => {
+        started.push(name);
+        return new Promise<T>((resolve) => {
+          release.set(name, () => resolve(value));
+        });
+      };
+
+      const depsConcurrent = createMockDeps({
+        rebuildSystemPromptForQuery: () => delayed('prompt', 'REBUILT_SYSTEM_PROMPT'),
+        icmBridgeProvider: () => ({
+          isAvailable: () => true,
+          searchMemory: () => delayed('context', [{ content: 'relevant memory' }]),
+        } as unknown as NonNullable<ReturnType<NonNullable<ExecutorDependencies['icmBridgeProvider']>>>),
+      });
+      (depsConcurrent.toolSelectionStrategy.selectToolsForQuery as jest.Mock)
+        .mockImplementation(() => delayed('tools', {
+          tools: [],
+          selection: null,
+          fromCache: false,
+          query: 'implement latency fix',
+          timestamp: new Date(),
+        }));
+
+      const messages: CodeBuddyMessage[] = [{ role: 'system', content: 'OLD_SYSTEM_PROMPT' }];
+      const turn = collectChunks(
+        new AgentExecutor(depsConcurrent, createMockConfig()).processUserMessageStream(
+          'implement latency fix',
+          [],
+          messages,
+          null
+        )
+      );
+
+      const startDeadline = Date.now() + 1000;
+      while (started.length < 3 && Date.now() < startDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(started).toEqual(expect.arrayContaining(['prompt', 'tools', 'context']));
+
+      release.get('tools')?.();
+      release.get('context')?.();
+      release.get('prompt')?.();
+      await turn;
+
+      const providerMessages = (depsConcurrent.client.chatStream as jest.Mock).mock.calls[0]?.[0];
+      expect(providerMessages[0].content).toBe('REBUILT_SYSTEM_PROMPT');
+      expect(providerMessages.some((entry: CodeBuddyMessage) =>
+        String(entry.content).includes('relevant memory'))).toBe(true);
+    });
+
+    it('records one end-to-end latency sample per public turn path', async () => {
+      resetOptimizers();
+      try {
+        const sequentialDeps = createMockDeps();
+        (sequentialDeps.streamingHandler.accumulateChunk as jest.Mock).mockReturnValue({
+          displayContent: 'hello',
+          rawContent: 'hello',
+          hasNewToolCalls: false,
+          shouldEmitTokenCount: false,
+        });
+        await new AgentExecutor(sequentialDeps, createMockConfig()).processUserMessage(
+          'hello', [], [], Date.now() - 50
+        );
+        const sequentialLatency = getLatencyOptimizer().getStats().byOperation.assistant_turn;
+        expect(sequentialLatency?.count).toBe(1);
+        expect(sequentialLatency?.avg).toBeGreaterThanOrEqual(50);
+        expect(getStreamingOptimizer().getStats().meetingTarget).toBeGreaterThanOrEqual(0);
+
+        resetOptimizers();
+        const streamingDeps = createMockDeps();
+        (streamingDeps.streamingHandler.accumulateChunk as jest.Mock).mockReturnValue({
+          displayContent: 'hello',
+          rawContent: 'hello',
+          hasNewToolCalls: false,
+          shouldEmitTokenCount: false,
+        });
+        await collectChunks(
+          new AgentExecutor(streamingDeps, createMockConfig()).processUserMessageStream(
+            'hello', [], [], null
+          )
+        );
+        expect(getLatencyOptimizer().getStats().byOperation.assistant_turn?.count).toBe(1);
+      } finally {
+        resetOptimizers();
+      }
     });
   });
 });

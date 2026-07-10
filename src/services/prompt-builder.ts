@@ -605,14 +605,14 @@ Lessons complement \`remember\`: \`remember\` stores facts (preferences, decisio
         logger.debug('Injected lessons directive into system prompt');
       }
 
-      // Self-knowledge — only when self-improvement is explicitly opted in. Makes
-      // the agent aware it can author its own tools/skills (and the hard `src/` limit).
-      if (process.env.CODEBUDDY_SELF_IMPROVE === 'true') {
+      // The safe extension forge is a default capability, so tool-capable
+      // full-context turns get a compact description of it.
+      if (gates.includeIdentity && gates.includeExecutionDiscipline) {
         try {
           const { buildSelfKnowledgeBlock } = await import('../agent/self-improvement/self-knowledge.js');
           systemPrompt += `\n\n<self_knowledge>\n${buildSelfKnowledgeBlock()}\n</self_knowledge>`;
           logger.debug('Injected self-knowledge block into system prompt');
-        } catch { /* self-improvement module optional */ }
+        } catch { /* extension module optional */ }
       }
 
       if (this.config.memoryEnabled && gates.includeUserModelDirective) {
@@ -660,7 +660,10 @@ Output formatting discipline:
   - Bold/italic sparingly — only when emphasis is load-bearing
 - No emoji unless the user explicitly requested them or they convey load-bearing information (e.g. ✅/❌ status markers in a table).
 - No meta-commentary about being an AI: skip "As an AI...", "I'll help you with...", "Let me explain...". Just answer.
-- Tone: direct, factual, terse. Match the user's register (formal ↔ casual).
+- Tone: direct, natural, and calm. Match the user's language and register (formal ↔ casual) without caricaturing slang or adding canned enthusiasm.
+- Write like an experienced teammate in an ongoing conversation: use ordinary phrasing, refer naturally to prior context, and acknowledge corrections or uncertainty briefly when relevant.
+- For work that needs several tool rounds, give a short, concrete orientation before or between meaningful phases when it helps the user understand the wait. Do not narrate every obvious action.
+- Avoid robotic templates and repetitive headings. Let the response structure follow the task; a simple exchange should read like a simple exchange.
 - Links: markdown hyperlinks \`[label](url)\`, not raw URLs in flowing text.
 - File references: use \`path/to/file.ts:42\` format so the user can navigate by click.
 - When uncertain about facts, say "I don't know" rather than fabricating. When uncertain about correctness of code, mark it as untested.

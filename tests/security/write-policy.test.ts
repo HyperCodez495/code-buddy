@@ -107,6 +107,7 @@ describe('WritePolicy', () => {
       expect(policy.isWriteTool('create_file')).toBe(true);
       expect(policy.isWriteTool('multi_edit')).toBe(true);
       expect(policy.isWriteTool('apply_patch')).toBe(true);
+      expect(policy.isWriteTool('extension_forge')).toBe(true);
     });
 
     it('should not identify non-write tools', () => {
@@ -122,6 +123,7 @@ describe('WritePolicy', () => {
       expect(WRITE_TOOL_NAMES.has('create_file')).toBe(true);
       expect(WRITE_TOOL_NAMES.has('multi_edit')).toBe(true);
       expect(WRITE_TOOL_NAMES.has('apply_patch')).toBe(true);
+      expect(WRITE_TOOL_NAMES.has('extension_forge')).toBe(true);
     });
   });
 

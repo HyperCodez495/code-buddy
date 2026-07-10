@@ -232,14 +232,17 @@ export function initializeToolRegistry(): void {
   };
   registry.registerTool(MORPH_EDIT_TOOL, morphMetadata, isMorphEnabled);
 
-  // Self-improvement: expose `register_tool` + reload persisted authored tools,
-  // only when opted in.
+  // The legacy `register_tool` shortcut remains opt-in. Persisted authored
+  // tools are always re-gated and reloaded because `extension_forge` is a
+  // default, confirmation-gated authoring surface.
   if (process.env.CODEBUDDY_SELF_IMPROVE === 'true') {
     const schema = createRegisterToolTool().getSchema();
     registry.registerTool(
       { type: 'function', function: { name: schema.name, description: schema.description, parameters: schema.parameters as unknown as CodeBuddyTool['function']['parameters'] } },
       { name: schema.name, category: 'system', keywords: ['authored', 'self-extension', 'register', 'tool'], priority: 6, description: schema.description },
     );
+  }
+  if (process.env.CODEBUDDY_LOAD_AUTHORED_TOOLS !== 'false') {
     try {
       const loaded = loadAuthoredTools();
       if (loaded.length > 0) logger.info(`[self-improve] reloaded ${loaded.length} authored tool(s): ${loaded.join(', ')}`);

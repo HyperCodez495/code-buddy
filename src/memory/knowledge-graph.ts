@@ -316,6 +316,7 @@ export class KnowledgeGraph {
   private dbPath: string;
   private dirty = false;
   private loaded = false;
+  private loadPromise: Promise<void> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private idCounter = 0;
   /** memU Layer 3: auto-categories with summaries */
@@ -1005,51 +1006,58 @@ export class KnowledgeGraph {
 
   async load(): Promise<void> {
     if (this.loaded) return;
-    this.loaded = true;
+    if (this.loadPromise) return this.loadPromise;
 
-    try {
-      if (!existsSync(this.dbPath)) return;
-      const { readFile } = await import('fs/promises');
-      const content = await readFile(this.dbPath, 'utf-8');
-      const data = JSON.parse(content);
+    this.loadPromise = (async () => {
+      try {
+        if (!existsSync(this.dbPath)) return;
+        const { readFile } = await import('fs/promises');
+        const content = await readFile(this.dbPath, 'utf-8');
+        const data = JSON.parse(content);
 
-      // Restore entities
-      for (const e of data.entities || []) {
-        e.createdAt = new Date(e.createdAt);
-        e.updatedAt = new Date(e.updatedAt);
-        this.entities.set(e.id, e);
-        this.adjacency.set(e.id, new Set());
-        this.reverseAdjacency.set(e.id, new Set());
-        const idNum = parseInt(e.id.split('_')[1] || '0');
-        if (idNum > this.idCounter) this.idCounter = idNum;
+        // Restore entities
+        for (const e of data.entities || []) {
+          e.createdAt = new Date(e.createdAt);
+          e.updatedAt = new Date(e.updatedAt);
+          this.entities.set(e.id, e);
+          this.adjacency.set(e.id, new Set());
+          this.reverseAdjacency.set(e.id, new Set());
+          const idNum = parseInt(e.id.split('_')[1] || '0');
+          if (idNum > this.idCounter) this.idCounter = idNum;
+        }
+
+        // Restore relations
+        for (const r of data.relations || []) {
+          r.createdAt = new Date(r.createdAt);
+          r.updatedAt = new Date(r.updatedAt);
+          this.relations.set(r.id, r);
+          if (this.adjacency.has(r.sourceId)) this.adjacency.get(r.sourceId)!.add(r.id);
+          if (this.reverseAdjacency.has(r.targetId)) this.reverseAdjacency.get(r.targetId)!.add(r.id);
+          const idNum = parseInt(r.id.split('_')[1] || '0');
+          if (idNum > this.idCounter) this.idCounter = idNum;
+        }
+
+        // Restore categories (memU Layer 3)
+        for (const c of data.categories || []) {
+          c.updatedAt = new Date(c.updatedAt);
+          this.categories.set(c.name, c);
+        }
+
+        // Restore content hashes
+        for (const h of data.contentHashes || []) {
+          this.contentHashes.add(h);
+        }
+
+        logger.debug(`KnowledgeGraph: loaded ${this.entities.size} entities, ${this.relations.size} relations, ${this.categories.size} categories`);
+      } catch (err) {
+        logger.debug(`KnowledgeGraph load failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        this.loaded = true;
+        this.loadPromise = null;
       }
+    })();
 
-      // Restore relations
-      for (const r of data.relations || []) {
-        r.createdAt = new Date(r.createdAt);
-        r.updatedAt = new Date(r.updatedAt);
-        this.relations.set(r.id, r);
-        if (this.adjacency.has(r.sourceId)) this.adjacency.get(r.sourceId)!.add(r.id);
-        if (this.reverseAdjacency.has(r.targetId)) this.reverseAdjacency.get(r.targetId)!.add(r.id);
-        const idNum = parseInt(r.id.split('_')[1] || '0');
-        if (idNum > this.idCounter) this.idCounter = idNum;
-      }
-
-      // Restore categories (memU Layer 3)
-      for (const c of data.categories || []) {
-        c.updatedAt = new Date(c.updatedAt);
-        this.categories.set(c.name, c);
-      }
-
-      // Restore content hashes
-      for (const h of data.contentHashes || []) {
-        this.contentHashes.add(h);
-      }
-
-      logger.debug(`KnowledgeGraph: loaded ${this.entities.size} entities, ${this.relations.size} relations, ${this.categories.size} categories`);
-    } catch (err) {
-      logger.debug(`KnowledgeGraph load failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    return this.loadPromise;
   }
 
   async save(): Promise<void> {

@@ -129,6 +129,8 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).toContain('<auto_memory_directive>');
     expect(sp).toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    expect(sp).toContain('<self_knowledge>');
+    expect(sp).toContain('extension_forge');
     // Execution-discipline block injected on rich (complex gates) + tool-capable models.
     expect(sp).toContain('## Execution discipline');
   });
@@ -151,7 +153,11 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
 
     expect(sp).not.toContain('<auto_memory_directive>');
     expect(sp).not.toContain('<lessons_directive>');
+    expect(sp).not.toContain('<self_knowledge>');
     expect(sp).toContain('<writing_rules>');
+    expect(sp).toContain('Match the user\'s language and register');
+    expect(sp).toContain('experienced teammate in an ongoing conversation');
+    expect(sp).toContain('Avoid robotic templates');
     // Trivial query → execution-discipline gated off (greetings don't need it).
     expect(sp).not.toContain('## Execution discipline');
   });
@@ -178,6 +184,7 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).toContain('<auto_memory_directive>');
     expect(sp).toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    expect(sp).toContain('extension_forge');
     // Complex code task → execution-discipline present.
     expect(sp).toContain('## Execution discipline');
   });
@@ -202,6 +209,7 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
 
     expect(sp).not.toContain('<auto_memory_directive>');
     expect(sp).not.toContain('<lessons_directive>');
+    expect(sp).not.toContain('<self_knowledge>');
     expect(sp).toContain('<writing_rules>');
     // Models without tool-call support: execution-discipline force-off
     // (telling them to "use tools" would tempt JSON-call hallucination).
