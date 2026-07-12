@@ -63,6 +63,7 @@ const CODE_EXPLORER_BINARIES = ['code-explorer', 'gitnexus'] as const;
 export class CodeExplorerManager {
   private repoPath: string;
   private mcpProcess: ChildProcess | null = null;
+  private autoIndexAttemptedFor: string | null = null;
   /** Resolved binary name; undefined = not probed yet, null = none found. */
   private binaryName: string | null | undefined;
 
@@ -239,7 +240,13 @@ export class CodeExplorerManager {
 
     // Legacy flat schema: no commit recorded, trust the explicit stale flag.
     if (!lastCommit) {
-      return { indexed: true, stale: meta.stale === true, ...(indexedAt ? { indexedAt } : {}) };
+      const freshness = {
+        indexed: true,
+        stale: meta.stale === true,
+        ...(indexedAt ? { indexedAt } : {}),
+      };
+      this.maybeAutoIndex(freshness);
+      return freshness;
     }
 
     let commitsBehind: number | undefined;
@@ -251,13 +258,49 @@ export class CodeExplorerManager {
       // Not a git repo, unknown commit, or git unavailable → leave undefined.
     }
 
-    return {
+    const freshness = {
       indexed: true,
       lastCommit,
       ...(indexedAt ? { indexedAt } : {}),
       ...(commitsBehind !== undefined ? { commitsBehind } : {}),
       stale: (commitsBehind ?? 0) > 0,
     };
+    this.maybeAutoIndex(freshness);
+    return freshness;
+  }
+
+  /** Launch one detached incremental refresh per stale index revision when explicitly enabled. */
+  private maybeAutoIndex(freshness: CodeExplorerFreshness): void {
+    if (!freshness.stale || process.env.CODEBUDDY_CODE_EXPLORER_AUTOINDEX !== 'true') return;
+
+    const revision = freshness.lastCommit ?? freshness.indexedAt ?? 'legacy';
+    if (this.autoIndexAttemptedFor === revision) return;
+    this.autoIndexAttemptedFor = revision;
+
+    try {
+      const child = spawn('gitnexus', ['analyze', '--incremental'], {
+        cwd: this.repoPath,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.on('error', (err) => {
+        logger.warn('CodeExplorer: background auto-index failed', { error: err.message });
+      });
+      child.on('close', (code) => {
+        if (code === 0) {
+          logger.info('CodeExplorer: background auto-index complete');
+        } else {
+          logger.warn('CodeExplorer: background auto-index exited unsuccessfully', { code });
+        }
+      });
+      child.unref();
+      logger.info('CodeExplorer: background auto-index started');
+    } catch (err) {
+      logger.warn('CodeExplorer: failed to launch background auto-index', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
