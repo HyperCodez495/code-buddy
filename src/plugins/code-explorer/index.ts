@@ -20,4 +20,4 @@ export type {
   GNProcess,
 } from './CodeExplorerMCPClient.js';
 
-export type { CodeExplorerStats } from './CodeExplorerManager.js';
+export type { CodeExplorerStats, CodeExplorerFreshness } from './CodeExplorerManager.js';
