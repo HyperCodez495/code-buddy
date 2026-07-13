@@ -17,6 +17,8 @@ import type {
   BlindPreferenceReport,
 } from './conversation-blind-comparison.js';
 import { writePrivateJsonFile } from './conversation-pilot-corpus.js';
+import { planConversationResponse } from './discourse-planner.js';
+import type { ConversationTurn } from './types.js';
 import { detectEmotion } from '../companion/reply-augment.js';
 
 export type CompanionRoutingSurface = 'voice' | 'telegram' | 'cowork';
@@ -96,6 +98,8 @@ export interface RuntimeCandidate {
 export interface ResolveCompanionModelRouteOptions {
   surface: CompanionRoutingSurface;
   text: string;
+  /** Recent transport-independent turns, oldest first. */
+  history?: ConversationTurn[];
   requireLocal?: boolean;
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
@@ -149,6 +153,11 @@ const POLITE_ACTION_PATTERN = new RegExp(
 const CHAINED_ACTION_PATTERN = new RegExp(
   `\\b(?:puis|ensuite|et\\s+ensuite)\\s+${ACTION_VERB_PATTERN}\\b`
 );
+const DEEP_TOPIC_PATTERN =
+  /\b(philosoph|conscience|identite|liberte|amour|sens de la vie|raisonne|argumente|analyse|nuance|pourquoi|que faire|comprendre|ethique|morale|mort)\b/;
+const FACTUAL_TOPIC_PATTERN =
+  /\b(actualites?|aujourd hui|nouvelles|source|verifie|explique|comment fonctionne|qu est ce|c est quoi|qui est|quel(?:le)? est)\b/;
+const MAX_ROUTING_HISTORY_TURNS = 16;
 
 let candidateCache: { at: number; candidates: RuntimeCandidate[] } | null = null;
 
@@ -826,8 +835,8 @@ export function disableCompanionRoutingProfile(
   return disabled;
 }
 
-export function classifyCompanionRoutingLane(text: string): CompanionRoutingLane {
-  const normalized = text
+function normalizeRoutingText(text: string): string {
+  return text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -835,6 +844,13 @@ export function classifyCompanionRoutingLane(text: string): CompanionRoutingLane
     .replace(/[^a-z0-9\s/.-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Classify only the current utterance, preserving the established fast/action precedence. */
+function classifyCurrentCompanionRoutingLane(
+  text: string,
+  normalized = normalizeRoutingText(text)
+): CompanionRoutingLane {
   if (!normalized) return 'fast';
   if (
     /^\//.test(text.trim()) ||
@@ -853,24 +869,44 @@ export function classifyCompanionRoutingLane(text: string): CompanionRoutingLane
     return 'fast';
   }
   if (detectEmotion(text).emotion !== 'neutral') return 'emotional';
-  if (/\b(philosoph|conscience|identite|liberte|amour|sens de la vie|raisonne|argumente|analyse|nuance|pourquoi|que faire|comprendre|ethique|morale|mort)\b/.test(normalized)) {
+  if (DEEP_TOPIC_PATTERN.test(normalized)) {
     return 'deep';
   }
-  if (/\b(actualites?|aujourd hui|nouvelles|source|verifie|explique|comment fonctionne|qu est ce|c est quoi|qui est|quel(?:le)? est)\b/.test(normalized)) {
+  if (FACTUAL_TOPIC_PATTERN.test(normalized)) {
     return 'factual';
   }
   if (normalized.split(' ').length <= 7) return 'fast';
   return 'deep';
 }
 
+/**
+ * Classify a turn in its real discussion. Elliptical follow-ups inherit the
+ * active deliberation, so "Continue" and "Et la réciprocité ?" remain deep
+ * after a philosophical exchange. The planner explicitly cancels inheritance
+ * for a brief request, action, closing, phatic or ordinary backchannel turn.
+ * Explicit current-turn action, emotion, factual and deep signals still win.
+ */
+export function classifyCompanionRoutingLane(
+  text: string,
+  history: ConversationTurn[] = []
+): CompanionRoutingLane {
+  const current = classifyCurrentCompanionRoutingLane(text);
+  if (current !== 'fast' || history.length === 0) return current;
+  const plan = planConversationResponse(text, history.slice(-MAX_ROUTING_HISTORY_TURNS));
+  return plan.analysis.continuesDeliberation && plan.depth === 'deliberative'
+    ? 'deep'
+    : current;
+}
+
 export function decideCompanionRouting(
   profile: CompanionRoutingProfile | null,
   surface: CompanionRoutingSurface,
   text: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  history: ConversationTurn[] = []
 ): CompanionRoutingDecision | null {
   if (!profile?.enabled || Date.parse(profile.expiresAt) <= now.getTime()) return null;
-  const lane = classifyCompanionRoutingLane(text);
+  const lane = classifyCompanionRoutingLane(text, history);
   if (!profile.policy.surfaces.includes(surface) || !profile.policy.lanes.includes(lane)) return null;
   return {
     profileId: profile.profileId,
@@ -995,7 +1031,8 @@ export async function resolveCompanionModelRoute(
     profile,
     options.surface,
     options.text,
-    options.now?.() ?? new Date()
+    options.now?.() ?? new Date(),
+    options.history
   );
   if (!decision) return null;
   const record =

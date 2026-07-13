@@ -166,6 +166,13 @@ export class CodeBuddyEngineRunner {
     // active persona, and explicit Lisa-thread rendezvous are independent and
     // begin together so continuity never adds a serial first-token waterfall.
     const localEngineMessages = this.convertMessages(historyMessages, prompt);
+    const localRoutingHistory = localEngineMessages
+      .slice(0, -1)
+      .flatMap((message): Array<{ role: 'user' | 'assistant'; content: string }> =>
+        message.role === 'user' || message.role === 'assistant'
+          ? [{ role: message.role, content: message.content }]
+          : [],
+      );
     const runtimeConfig = session.intelligence?.configSetId
       ? configStore.getConfigForSet(session.intelligence.configSetId)
       : configStore.getAll();
@@ -173,7 +180,7 @@ export class CodeBuddyEngineRunner {
       this.createTurnCheckpoint(session, prompt),
       this.resolveActivePersonaPrompt(),
       this.continuity.prepare(session, localEngineMessages, prompt, userMessageId),
-      this.companionRouting.resolve(session, prompt, runtimeConfig),
+      this.companionRouting.resolve(session, prompt, runtimeConfig, localRoutingHistory),
     ]);
     const engineMessages = sharedContinuity.active
       ? [...sharedContinuity.messages, ...localEngineMessages]

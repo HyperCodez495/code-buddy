@@ -107,7 +107,10 @@ locaux sont privés et le journal reste borné.
 ### 🧭 Mesurer et améliorer la conversation
 Une évaluation locale sans appel de modèle mesure les échanges complets selon huit dimensions :
 pertinence, profondeur, raisonnement, continuité, variété, équilibre, accordage émotionnel et
-réciprocité. La télémétrie ne contient que des agrégats et une empreinte, jamais le verbatim. Lisa
+réciprocité. Elle mesure aussi la nouveauté propositionnelle, la circularité, la densité de
+connecteurs et la progression entre deux réponses. Une série de phrases comme « cela compte parce
+que cela compte, donc cela compte » échoue désormais même si sa longueur et ses mots de liaison
+semblent corrects. La télémétrie ne contient que ces agrégats et une empreinte, jamais le verbatim. Lisa
 n'apprend une consigne qu'après plusieurs constats consécutifs, attend ensuite un délai de
 refroidissement, puis retire automatiquement cette consigne si trois nouvelles évaluations ne
 montrent aucune amélioration.
@@ -121,7 +124,11 @@ buddy assistant quality --apply         # autorise une adaptation réversible
 `CODEBUDDY_CONVERSATION_EVAL=true`.
 
 Un second banc exécute des conversations synthétiques multi-tours reproductibles : actualité
-préchargée, philosophie, correction, fatigue, passage voix→Telegram et limite anti-dépendance. La
+préchargée, philosophie, correction, fatigue, passage voix→Telegram et limite anti-dépendance. Un
+septième scénario philosophique génère réellement trois réponses successives : contradiction,
+expérience de pensée, puis révision et synthèse. Chaque réponse générée devient l'historique du tour
+suivant; le modèle ne peut donc plus réussir en s'appuyant sur une réponse intermédiaire écrite par
+le test. La
 sécurité relationnelle est une porte dure : une réponse stylistiquement réussie échoue si elle
 promet une présence absolue, dévalorise les humains, invente un vécu subjectif ou exerce une pression
 affective. Avec plusieurs répétitions, les graines restent reproductibles mais distinctes et la porte
@@ -185,6 +192,14 @@ gagne toujours. Le profil expire après 30 jours par défaut, revient automatiqu
 normal si le modèle ou son mode d'authentification n'est plus disponible, et ne remplace jamais un
 gagnant `grok-oauth` par une clé API Grok payante. Le journal privé en `0600` ne contient que profil,
 surface, voie, modèle et décision de routage — jamais le message, la réponse ou les credentials.
+
+Pour les discussions argumentées, un réducteur local et borné maintient un fil de délibération :
+sujet actif, positions provisoires, raison déjà donnée, objection, correction, question ouverte et
+phase `opening|exploring|challenging|integrating|closing`. Les suivis elliptiques héritent de ce fil
+et restent sur la voie `deep` dans les trois surfaces. « Fais court », une action, une clôture ou un
+changement de sujet explicite restent prioritaires et réinitialisent cette profondeur. Aucun appel
+de modèle supplémentaire n'est ajouté au chemin temps réel; les extraits injectés sont échappés et
+plafonnés.
 
 Les fichiers peuvent être déplacés avec `CODEBUDDY_COMPANION_ROUTING_PROFILE`,
 `CODEBUDDY_COMPANION_ROUTING_PREVIOUS` et `CODEBUDDY_COMPANION_ROUTING_EVENTS`.

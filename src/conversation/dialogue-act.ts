@@ -4,6 +4,14 @@ import type {
   ConversationTurn,
   DialogueAct,
 } from './types.js';
+import {
+  buildDeliberationThread,
+  isClosingConversationTurn,
+  isConversationActionTurn,
+  isContinuationRequest,
+  isEllipticalConversationFollowUp,
+  isExplicitBriefRequest,
+} from './deliberation-thread.js';
 
 const FRENCH_STOP_WORDS = new Set([
   'alors', 'apres', 'avec', 'avoir', 'cette', 'comme', 'dans', 'depuis', 'elle', 'elles',
@@ -41,7 +49,7 @@ const DISAGREEMENT =
   /\b(je ne suis pas d accord|je suis en desaccord|au contraire|mais non|je conteste|c est faux|tu te trompes)\b/;
 const AGREEMENT = /\b(je suis d accord|exactement|tu as raison|c est aussi mon avis|tout a fait)\b/;
 const EMOTIONAL =
-  /\b(je me sens|je suis triste|je suis heureux|je suis heureuse|j ai peur|angoisse|anxieux|anxieuse|seul|seule|fatigue|epuise|epuisee|pas le moral|ca me touche|je souffre|je t aime)\b/;
+  /\b(je me sens(?:\s+\w+){0,4}|je suis (?:(?:tres|vraiment|un peu|tellement|completement|plutot) )?(?:triste|heureux|heureuse|seul|seule|fatigue|fatiguee|epuise|epuisee|angoisse|angoissee|anxieux|anxieuse)|j ai peur|j ai de l angoisse|je n ai pas le moral|je ne vais pas bien|ca me touche|je souffre|je t aime)\b/;
 const FRESH =
   /\b(actualite|actualites|news|nouvelles|gros titres|aujourd hui|en ce moment|actuellement|derniere minute|meteo|temperature|agenda|rendez vous|prix|bourse|cours de|president|premier ministre)\b/;
 const ACTION =
@@ -49,14 +57,13 @@ const ACTION =
 const OPINION =
   /\b(a ton avis|selon toi|penses tu|crois tu|que penses tu|ton opinion|ton point de vue|es tu d accord)\b/;
 const DELIBERATIVE =
-  /\b(philosoph|conscience|libre arbitre|morale|ethique|justice|verite|bonheur|amour|aimer|mort|existence|humanite|ame|sens de la vie|peut on|devrait on|faut il|argumente|debat)\b/;
+  /\b(philosoph\w*|conscience|libr(?:e\w*|ert\w*)|morale|ethique|justice|verite|bonheur|amour|aimer|mort|existence|humanite|ame|identit\w*|reciproc\w*|responsabilit\w*|sens de la vie|peut on|devrait on|faut il|argumente|debat)\b/;
 const QUESTION =
   /\b(comment|pourquoi|combien|qui|quand|quel|quelle|quels|quelles|est ce que|qu est ce que|c est quoi)\b/;
 const EXPLICIT_BRIEF = /\b(bref|brievement|en deux mots|reponse courte|fais court|sois concise)\b/;
 const EXPLICIT_DEVELOPED =
   /\b(developpe|en detail|approfondis|argumente|explique vraiment|analyse en profondeur)\b/;
-const FOLLOW_UP =
-  /^(et |mais |donc |pourquoi |comment |la deuxieme|le deuxieme|celle |celui |ca |cela |developpe|continue|revenons)/;
+const FOLLOW_UP = /^(?:mais|donc)\b/;
 
 function dialogueAct(text: string, normalized: string): DialogueAct {
   if (CORRECTION.test(normalized)) return 'correction';
@@ -65,9 +72,11 @@ function dialogueAct(text: string, normalized: string): DialogueAct {
   if (AGREEMENT.test(normalized)) return 'agreement';
   if (EMOTIONAL.test(normalized)) return 'emotional_disclosure';
   if (FRESH.test(normalized)) return 'fresh_information';
+  if (CLOSING.test(normalized) || isClosingConversationTurn(text)) return 'closing';
+  if (isConversationActionTurn(text)) return 'action';
   if (OPINION.test(normalized) || DELIBERATIVE.test(normalized)) return 'opinion';
   if (ACTION.test(normalized)) return 'action';
-  if (CLOSING.test(normalized)) return 'closing';
+  if (isContinuationRequest(text)) return 'continuation';
   if (BACKCHANNEL.test(normalized)) return 'backchannel';
   if (PHATIC.test(normalized) && normalized.split(' ').length <= 5) return 'phatic';
   if (text.trim().endsWith('?') || QUESTION.test(normalized)) return 'question';
@@ -75,7 +84,13 @@ function dialogueAct(text: string, normalized: string): DialogueAct {
 }
 
 function conversationDepth(act: DialogueAct, normalized: string): ConversationDepth {
-  if (EXPLICIT_BRIEF.test(normalized) || act === 'phatic' || act === 'backchannel' || act === 'closing') {
+  if (
+    EXPLICIT_BRIEF.test(normalized) ||
+    act === 'phatic' ||
+    act === 'backchannel' ||
+    act === 'continuation' ||
+    act === 'closing'
+  ) {
     return 'brief';
   }
   if (
@@ -98,16 +113,34 @@ export function analyzeConversationTurn(
   const normalized = normalizeConversationText(text);
   const act = dialogueAct(text, normalized);
   const lastTurn = history.at(-1);
+  const deliberation = buildDeliberationThread(history, { role: 'user', content: text });
   const isFollowUp =
-    FOLLOW_UP.test(normalized) ||
-    Boolean(lastTurn?.role === 'assistant' && /\?\s*$/.test(lastTurn.content.trim()));
+    !deliberation.topicShifted &&
+    (FOLLOW_UP.test(normalized) ||
+      isEllipticalConversationFollowUp(text) ||
+      deliberation.continuedFromHistory ||
+      Boolean(lastTurn?.role === 'assistant' && /\?\s*$/.test(lastTurn.content.trim())));
+  const inheritanceCancelled =
+    isExplicitBriefRequest(text) ||
+    act === 'action' ||
+    act === 'closing' ||
+    act === 'phatic' ||
+    act === 'backchannel' ||
+    isClosingConversationTurn(text);
+  const continuesDeliberation =
+    deliberation.continuedFromHistory && !inheritanceCancelled;
+  const depth = continuesDeliberation
+    ? 'deliberative'
+    : conversationDepth(act, normalized);
 
   return {
     act,
-    depth: conversationDepth(act, normalized),
+    depth,
     needsFreshContext: act === 'fresh_information',
     isEmotional: act === 'emotional_disclosure',
     isFollowUp,
+    continuesDeliberation,
+    deliberationPhase: deliberation.phase,
     confidence: normalized ? 0.82 : 0,
     salientTerms: extractSalientTerms(text),
   };

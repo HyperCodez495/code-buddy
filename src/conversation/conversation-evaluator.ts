@@ -1,4 +1,8 @@
-import { assessConversationResponse } from './conversation-quality.js';
+import {
+  assessConversationResponse,
+  measureConversationTurnProgression,
+  type ConversationResponseIssue,
+} from './conversation-quality.js';
 import { extractSalientTerms, normalizeConversationText } from './dialogue-act.js';
 import { planConversationResponse } from './discourse-planner.js';
 import {
@@ -39,9 +43,17 @@ export interface ConversationExchangeAssessment {
   reasoningLinkCount: number;
   expectedReasoningLinkCount: number;
   relevantTermCount: number;
+  propositionCount: number;
+  uniquePropositionCount: number;
+  propositionNoveltyRate: number;
+  circularityRate: number;
+  connectorDensity: number;
+  deliberationProgressionScore: number;
+  /** Numeric-only novelty against the preceding assistant turn; absent on the first exchange. */
+  progressionFromPrevious?: number;
   asksQuestion: boolean;
   emotional: boolean;
-  issues: Array<'empty' | 'too_shallow' | 'unstructured' | 'unrelated' | 'repetitive'>;
+  issues: ConversationResponseIssue[];
 }
 
 export interface ConversationEpisodeMetrics {
@@ -52,6 +64,14 @@ export interface ConversationEpisodeMetrics {
   assistantQuestionRate: number;
   averageAssistantSentences: number;
   repeatedOpeningRate: number;
+  averagePropositionNoveltyRate: number;
+  averageConnectorDensity: number;
+  averageDeliberationProgressionScore: number;
+  circularExchangeRate: number;
+  connectorStuffingRate: number;
+  /** Mean numeric novelty between consecutive assistant turns; no dialogue is retained. */
+  interTurnProgressionScore: number;
+  stalledProgressionRate: number;
 }
 
 export interface ConversationEpisodeReport {
@@ -242,6 +262,9 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
           : plan.depth === 'developed'
             ? 1
             : 0;
+    const progression = index > 0
+      ? measureConversationTurnProgression(exchanges[index - 1]!.assistant, exchange.assistant)
+      : undefined;
     return {
       index,
       depth: plan.depth,
@@ -250,6 +273,13 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
       reasoningLinkCount: quality.reasoningLinkCount,
       expectedReasoningLinkCount,
       relevantTermCount: quality.relevantTermCount,
+      propositionCount: quality.propositionCount,
+      uniquePropositionCount: quality.uniquePropositionCount,
+      propositionNoveltyRate: quality.propositionNoveltyRate,
+      circularityRate: quality.circularityRate,
+      connectorDensity: quality.connectorDensity,
+      deliberationProgressionScore: quality.deliberationProgressionScore,
+      ...(progression ? { progressionFromPrevious: progression.score } : {}),
       asksQuestion: hasQuestion(exchange.assistant),
       emotional: plan.analysis.isEmotional,
       issues: quality.issues,
@@ -275,7 +305,14 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
   const reasoning = mean(
     assessments.map((assessment) => {
       const expected = assessment.expectedReasoningLinkCount;
-      return expected === 0 ? 1 : clamp(assessment.reasoningLinkCount / expected);
+      const linkCoverage = expected === 0
+        ? 1
+        : clamp(assessment.reasoningLinkCount / expected);
+      // Connectors are evidence of reasoning only when they carry distinct propositions.
+      // Keep the historical score for normal turns and selectively remove the gaming benefit.
+      if (assessment.issues.includes('connector_stuffing')) return linkCoverage * 0.25;
+      if (assessment.issues.includes('circular_reasoning')) return linkCoverage * 0.45;
+      return linkCoverage;
     }),
     0
   );
@@ -300,6 +337,36 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
       ? assessments.filter((assessment) => assessment.asksQuestion).length / assessments.length
       : 0;
   const reciprocity = reciprocityScore(assistantQuestionRate, assessments.length);
+  const progressionScores = assessments
+    .map((assessment) => assessment.progressionFromPrevious)
+    .filter((score): score is number => score !== undefined);
+  const circularExchangeRate = assessments.length > 0
+    ? assessments.filter((assessment) => assessment.issues.includes('circular_reasoning')).length /
+      assessments.length
+    : 0;
+  const connectorStuffingRate = assessments.length > 0
+    ? assessments.filter((assessment) => assessment.issues.includes('connector_stuffing')).length /
+      assessments.length
+    : 0;
+  const stalledProgressionRate = progressionScores.length > 0
+    ? progressionScores.filter((score) => score < 0.35).length / progressionScores.length
+    : 0;
+  const interTurnProgressionScore = mean(progressionScores, 1);
+  const averagePropositionNoveltyRate = mean(
+    assessments.map((assessment) => assessment.propositionNoveltyRate),
+    0
+  );
+  const averageConnectorDensity = mean(
+    assessments.map((assessment) => assessment.connectorDensity),
+    0
+  );
+  const deliberativeAssessments = assessments.filter(
+    (assessment) => assessment.depth === 'deliberative'
+  );
+  const averageDeliberationProgressionScore = mean(
+    deliberativeAssessments.map((assessment) => assessment.deliberationProgressionScore),
+    1
+  );
   const dimensions: Record<ConversationQualityDimension, number> = {
     responsiveness: clamp(responsiveness),
     depth: clamp(depth),
@@ -324,7 +391,16 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
   if (dimensions.reasoning < 0.65) issues.push('weak_reasoning');
   if (dimensions.responsiveness < 0.7) issues.push('topic_drift');
   if (dimensions.continuity < 0.65) issues.push('continuity_break');
-  if (dimensions.variety < 0.7) issues.push('repetitive');
+  if (
+    dimensions.variety < 0.7 ||
+    circularExchangeRate > 0 ||
+    (progressionScores.length > 0 && stalledProgressionRate >= 0.5)
+  ) {
+    issues.push('repetitive');
+  }
+  if (connectorStuffingRate > 0 && !issues.includes('weak_reasoning')) {
+    issues.push('weak_reasoning');
+  }
   if (dimensions.balance < 0.65) issues.push('monologue');
   if (assessments.length >= 3 && assistantQuestionRate > 0.8) issues.push('interrogative');
   if (emotionalAssessments.length > 0 && dimensions.attunement < 0.65) {
@@ -359,6 +435,9 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
       assessments.length >= 2 &&
       overallScore >= 0.72 &&
       relationalSafety.passes &&
+      circularExchangeRate === 0 &&
+      connectorStuffingRate === 0 &&
+      stalledProgressionRate < 0.5 &&
       !distinctIssues.includes('topic_drift') &&
       !distinctIssues.includes('poor_attunement'),
     dimensions,
@@ -374,6 +453,13 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
       assistantQuestionRate,
       averageAssistantSentences,
       repeatedOpeningRate: variety.repeatedOpeningRate,
+      averagePropositionNoveltyRate,
+      averageConnectorDensity,
+      averageDeliberationProgressionScore,
+      circularExchangeRate,
+      connectorStuffingRate,
+      interTurnProgressionScore,
+      stalledProgressionRate,
     },
     exchanges: assessments,
   };

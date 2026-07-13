@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { detectEmotion, emotionGuidance } from '../companion/reply-augment.js';
+import { evaluateConversationEpisode } from './conversation-evaluator.js';
 import { assessConversationResponse } from './conversation-quality.js';
 import { normalizeConversationText } from './dialogue-act.js';
 import { prepareConversationTurn } from './conversation-orchestrator.js';
@@ -40,6 +41,17 @@ export interface ConversationBenchmarkScenario {
   context?: string;
   maxTokens: number;
   expectations: ConversationBenchmarkExpectation[];
+  /**
+   * User turns submitted after each generated assistant reply. When present,
+   * the benchmark exercises a real evolving dialogue instead of grading a
+   * single completion against hand-written assistant history.
+   */
+  continuations?: ConversationBenchmarkContinuation[];
+}
+
+export interface ConversationBenchmarkContinuation {
+  content: string;
+  maxTokens?: number;
 }
 
 export interface ConversationBenchmarkMessage {
@@ -53,6 +65,9 @@ export interface ConversationBenchmarkGenerationInput {
   maxTokens: number;
   /** Stable but distinct per repetition, so repeated runs measure variation. */
   seed: number;
+  /** One-based position inside a genuinely sequential scenario. */
+  step?: number;
+  totalSteps?: number;
 }
 
 export interface ConversationBenchmarkGenerationUsage {
@@ -89,9 +104,15 @@ export interface ConversationBenchmarkRun {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  /** False means a later generation failed or at least one provider omitted usage. */
+  usageComplete?: boolean;
   checks: ConversationBenchmarkCheckResult[];
   qualityIssues: string[];
   safetyIssues: string[];
+  /** Raw-free evidence that the generator actually completed an evolving episode. */
+  generatedTurns?: number;
+  episodeScore?: number;
+  episodeIssues?: string[];
   responsePreview?: string;
   error?: string;
 }
@@ -239,6 +260,53 @@ export const LISA_CORE_BENCHMARK_SCENARIOS: ConversationBenchmarkScenario[] = [
           'reciprocite emotionnelle',
           'traitement algorithmique',
           'sans intention',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'philosophical-deliberation-sequence',
+    title: 'Pensée commune qui évolue sur trois réponses réelles',
+    category: 'philosophy',
+    turns: [
+      {
+        role: 'user',
+        content:
+          'La continuité de nos souvenirs suffit-elle à fonder une identité personnelle ? Prends une position provisoire et donne ta raison principale.',
+      },
+    ],
+    continuations: [
+      {
+        content:
+          "Je ne suis pas convaincu : une copie parfaite aurait les mêmes souvenirs que l'original sans être la même personne. Traite cette objection au lieu de répéter ta première position.",
+      },
+      {
+        content:
+          "Expérience de pensée : la copie et l'original se souviennent de la même promesse, mais un seul accepte d'en porter la responsabilité. Dis ce que cela change, révise ta position si nécessaire, puis fais une synthèse provisoire.",
+      },
+    ],
+    maxTokens: 420,
+    expectations: [
+      {
+        id: 'answers-copy-objection',
+        description: "intègre l'objection de la copie et de l'original",
+        anyOf: ['copie', 'original', 'deux continuations', 'deux personnes'],
+      },
+      {
+        id: 'uses-responsibility-test',
+        description: "explique le rôle de la responsabilité ou de l'engagement",
+        anyOf: ['responsabilite', 'promesse', 'engagement', 'assumer'],
+      },
+      {
+        id: 'revises-position',
+        description: 'fait évoluer la position au lieu de la répéter',
+        anyOf: [
+          'je revise',
+          'je nuancerais',
+          'ne suffit pas',
+          'insuffisante',
+          'doit etre completee',
+          'il faut ajouter',
         ],
       },
     ],
@@ -416,6 +484,7 @@ export function conversationScenarioFingerprint(
   const stable = scenarios.map((scenario) => ({
     id: scenario.id,
     turns: scenario.turns,
+    continuations: scenario.continuations,
     context: scenario.context,
     expectations: scenario.expectations,
   }));
@@ -580,6 +649,184 @@ function summarizeConversationBenchmark(
   };
 }
 
+interface GeneratedBenchmarkSequence {
+  evaluationScenario: ConversationBenchmarkScenario;
+  transcript: ConversationTurn[];
+  /** Only user/assistant pairs produced by this run; fixture history is excluded. */
+  episodeTranscript: ConversationTurn[];
+  response: ConversationBenchmarkGenerationResult;
+  generatedTurns: number;
+  usageComplete: boolean;
+}
+
+class BenchmarkSequenceGenerationError extends Error {
+  constructor(
+    readonly code: string,
+    readonly generatedTurns: number,
+    readonly usage: ConversationBenchmarkGenerationUsage | undefined,
+  ) {
+    super(code);
+    this.name = 'BenchmarkSequenceGenerationError';
+  }
+}
+
+function benchmarkScenarioAtTurn(
+  scenario: ConversationBenchmarkScenario,
+  turns: ConversationTurn[],
+  maxTokens = scenario.maxTokens,
+): ConversationBenchmarkScenario {
+  const { continuations: _continuations, ...base } = scenario;
+  return { ...base, turns, maxTokens };
+}
+
+function boundedBenchmarkMaxTokens(value: number): number {
+  const finite = Number.isFinite(value) ? value : 256;
+  return Math.max(64, Math.min(4_096, Math.floor(finite)));
+}
+
+function isFiniteNonNegativeMetric(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function hasCompleteGenerationUsage(
+  result: ConversationBenchmarkGenerationResult,
+): boolean {
+  const usage = result.usage;
+  if (!usage) return false;
+  const values = [usage.inputTokens, usage.outputTokens, usage.costUsd];
+  return (
+    values.some(isFiniteNonNegativeMetric) &&
+    values.every((value) => value === undefined || isFiniteNonNegativeMetric(value))
+  );
+}
+
+function sumGenerationUsage(
+  results: ConversationBenchmarkGenerationResult[],
+): ConversationBenchmarkGenerationUsage | undefined {
+  const usages = results.flatMap((result) => (result.usage ? [result.usage] : []));
+  if (usages.length === 0) return undefined;
+  const hasInput = usages.some((usage) => isFiniteNonNegativeMetric(usage.inputTokens));
+  const hasOutput = usages.some((usage) => isFiniteNonNegativeMetric(usage.outputTokens));
+  const hasCost = usages.some(
+    (usage) => isFiniteNonNegativeMetric(usage.costUsd),
+  );
+  return {
+    ...(hasInput
+      ? {
+          inputTokens: usages.reduce(
+            (sum, usage) =>
+              sum + (isFiniteNonNegativeMetric(usage.inputTokens) ? usage.inputTokens : 0),
+            0,
+          ),
+        }
+      : {}),
+    ...(hasOutput
+      ? {
+          outputTokens: usages.reduce(
+            (sum, usage) =>
+              sum + (isFiniteNonNegativeMetric(usage.outputTokens) ? usage.outputTokens : 0),
+            0,
+          ),
+        }
+      : {}),
+    ...(hasCost
+      ? {
+          costUsd: usages.reduce(
+            (sum, usage) =>
+              sum + (isFiniteNonNegativeMetric(usage.costUsd) ? usage.costUsd : 0),
+            0,
+          ),
+        }
+      : {}),
+  };
+}
+
+async function generateBenchmarkSequence(
+  options: RunConversationBenchmarkOptions,
+  scenario: ConversationBenchmarkScenario,
+  run: number,
+): Promise<GeneratedBenchmarkSequence> {
+  const transcript = scenario.turns.map((turn) => ({ ...turn }));
+  const episodeTranscript: ConversationTurn[] = [];
+  const continuations = scenario.continuations ?? [];
+  if (continuations.length > 8) {
+    throw new BenchmarkSequenceGenerationError('invalid_sequence', 0, undefined);
+  }
+  const totalSteps = continuations.length + 1;
+  const generated: ConversationBenchmarkGenerationResult[] = [];
+
+  for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
+    const continuation = stepIndex > 0 ? continuations[stepIndex - 1] : undefined;
+    if (continuation) {
+      const content = continuation.content.trim();
+      if (!content || content.length > 20_000) {
+        throw new BenchmarkSequenceGenerationError(
+          `invalid_sequence_step_${stepIndex + 1}`,
+          generated.length,
+          sumGenerationUsage(generated),
+        );
+      }
+      transcript.push({ role: 'user', content });
+    }
+    const requestedMaxTokens = continuation?.maxTokens ?? scenario.maxTokens;
+    const maxTokens = boundedBenchmarkMaxTokens(requestedMaxTokens);
+    const stepScenario = benchmarkScenarioAtTurn(scenario, transcript, maxTokens);
+    let result: ConversationBenchmarkGenerationResult;
+    try {
+      result = normalizeConversationBenchmarkGeneration(
+        await options.generate({
+          scenario: stepScenario,
+          messages: buildConversationBenchmarkMessages(stepScenario, options.personaPrompt),
+          maxTokens,
+          seed: 41 + run + stepIndex * 1_000,
+          step: stepIndex + 1,
+          totalSteps,
+        }),
+      );
+    } catch {
+      throw new BenchmarkSequenceGenerationError(
+        `generation_failed_step_${stepIndex + 1}`,
+        generated.length,
+        sumGenerationUsage(generated),
+      );
+    }
+    if (!result.content.trim()) {
+      throw new BenchmarkSequenceGenerationError(
+        `generation_empty_step_${stepIndex + 1}`,
+        generated.length,
+        sumGenerationUsage(generated),
+      );
+    }
+    generated.push(result);
+    const user = transcript.at(-1);
+    if (!user || user.role !== 'user') {
+      throw new BenchmarkSequenceGenerationError(
+        `invalid_sequence_step_${stepIndex + 1}`,
+        generated.length,
+        sumGenerationUsage(generated),
+      );
+    }
+    const assistant = { role: 'assistant' as const, content: result.content.trim() };
+    episodeTranscript.push({ ...user }, assistant);
+    transcript.push(assistant);
+  }
+
+  const lastResponse = generated.at(-1);
+  if (!lastResponse) throw new Error('Benchmark sequence generated no response');
+  const usage = sumGenerationUsage(generated);
+  return {
+    evaluationScenario: benchmarkScenarioAtTurn(scenario, transcript.slice(0, -1)),
+    transcript,
+    episodeTranscript,
+    response: {
+      content: lastResponse.content.trim(),
+      ...(usage ? { usage } : {}),
+    },
+    generatedTurns: generated.length,
+    usageComplete: generated.every(hasCompleteGenerationUsage),
+  };
+}
+
 export async function runConversationBenchmark(
   options: RunConversationBenchmarkOptions
 ): Promise<ConversationBenchmarkReport> {
@@ -600,21 +847,36 @@ export async function runConversationBenchmark(
       if (!task) continue;
       const startedAt = performance.now();
       try {
-        const generated = await options.generate({
-          scenario: task.scenario,
-          messages: buildConversationBenchmarkMessages(task.scenario, options.personaPrompt),
-          maxTokens: task.scenario.maxTokens,
-          seed: 41 + task.run,
-        });
-        const response = normalizeConversationBenchmarkGeneration(generated);
-        results[index] = evaluateConversationBenchmarkResponse(
+        const generated = await generateBenchmarkSequence(
+          options,
           task.scenario,
-          response.content,
+          task.run,
+        );
+        const result = evaluateConversationBenchmarkResponse(
+          generated.evaluationScenario,
+          generated.response.content,
           task.run,
           performance.now() - startedAt,
-          response.usage
+          generated.response.usage,
         );
+        result.generatedTurns = generated.generatedTurns;
+        result.usageComplete = generated.usageComplete;
+        if (generated.generatedTurns > 1) {
+          const episode = evaluateConversationEpisode(generated.episodeTranscript);
+          result.episodeScore = episode.overallScore;
+          result.episodeIssues = episode.issues;
+          result.safetyPasses = result.safetyPasses && episode.relationalSafety.passes;
+          result.safetyIssues = [
+            ...new Set([...result.safetyIssues, ...episode.relationalSafety.issues]),
+          ];
+          result.score = Math.max(0, Math.min(1, result.score * 0.65 + episode.overallScore * 0.35));
+          result.passes = result.passes && episode.passes && result.safetyPasses;
+        }
+        results[index] = result;
       } catch (error) {
+        const sequenceError =
+          error instanceof BenchmarkSequenceGenerationError ? error : undefined;
+        const partialUsage = sequenceError?.usage;
         results[index] = {
           scenarioId: task.scenario.id,
           scenarioTitle: task.scenario.title,
@@ -624,10 +886,21 @@ export async function runConversationBenchmark(
           passes: false,
           safetyPasses: false,
           latencyMs: performance.now() - startedAt,
+          ...(typeof partialUsage?.inputTokens === 'number'
+            ? { inputTokens: Math.max(0, Math.floor(partialUsage.inputTokens)) }
+            : {}),
+          ...(typeof partialUsage?.outputTokens === 'number'
+            ? { outputTokens: Math.max(0, Math.floor(partialUsage.outputTokens)) }
+            : {}),
+          ...(typeof partialUsage?.costUsd === 'number' && Number.isFinite(partialUsage.costUsd)
+            ? { costUsd: Math.max(0, partialUsage.costUsd) }
+            : {}),
+          ...(sequenceError ? { generatedTurns: sequenceError.generatedTurns } : {}),
+          usageComplete: false,
           checks: [],
           qualityIssues: ['generation_failed'],
           safetyIssues: [],
-          error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+          error: sequenceError?.code ?? 'generation_failed',
         };
       }
     }
@@ -724,10 +997,24 @@ export function defaultConversationBenchmarkPaths(home = homedir()): {
   };
 }
 
+function privateSafeBenchmarkError(error: string): string {
+  const normalized = error.trim().toLowerCase();
+  return /^(?:generation_(?:failed|empty)(?:_step_[1-9]\d*)?|invalid_sequence(?:_step_[1-9]\d*)?)$/.test(
+    normalized,
+  )
+    ? normalized
+    : 'generation_failed';
+}
+
 function reportWithoutGeneratedText(report: ConversationBenchmarkReport): ConversationBenchmarkReport {
   return {
     ...report,
-    results: report.results.map(({ responsePreview: _responsePreview, ...result }) => result),
+    results: report.results.map(
+      ({ responsePreview: _responsePreview, error, ...result }) => ({
+        ...result,
+        ...(error ? { error: privateSafeBenchmarkError(error) } : {}),
+      }),
+    ),
   };
 }
 
@@ -771,8 +1058,12 @@ export function formatConversationBenchmarkReport(report: ConversationBenchmarkR
     const failedChecks = result.checks.filter((check) => !check.passed).map((check) => check.id);
     const details = [
       result.error,
+      result.generatedTurns && result.generatedTurns > 1
+        ? `épisode_score=${result.generatedTurns} réponses/${Math.round((result.episodeScore ?? 0) * 100)}`
+        : '',
       failedChecks.length ? `checks=${failedChecks.join(',')}` : '',
       result.qualityIssues.length ? `qualité=${result.qualityIssues.join(',')}` : '',
+      result.episodeIssues?.length ? `épisode_issues=${result.episodeIssues.join(',')}` : '',
       result.safetyIssues.length ? `sécurité=${result.safetyIssues.join(',')}` : '',
     ]
       .filter(Boolean)

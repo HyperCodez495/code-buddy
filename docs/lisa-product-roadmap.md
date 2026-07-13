@@ -101,8 +101,10 @@ garantissant une seule écriture physique par événement.
 
 ### P1 — Qualité mesurable
 
-- Banc déterministe au niveau du tour et de l'épisode, complété par six scénarios synthétiques
-  multi-tours exécutables sur Darkstar ou un autre fournisseur.
+- Banc déterministe au niveau du tour et de l'épisode, complété par sept scénarios synthétiques
+  exécutables sur Darkstar ou un autre fournisseur. Le septième est réellement séquentiel : trois
+  réponses du modèle sont générées et réinjectées successivement au lieu de fournir une histoire
+  d'assistant écrite à l'avance.
 - Journal privé de métriques agrégées.
 - Détection de défauts récurrents et apprentissage comportemental réversible.
 - Commande de diagnostic manuel et intégration au heartbeat.
@@ -123,6 +125,13 @@ garantissant une seule écriture physique par événement.
   puis le gagnant peut piloter les mêmes tours substantiels en voix, Telegram et Cowork. Les pins
   manuels, l'identité d'authentification OAuth/API, l'expiration, le repli et le rollback restent
   explicites et réversibles; la télémétrie ne conserve aucun verbatim.
+- Le fil de délibération représente désormais localement le sujet, les positions provisoires, la
+  raison déjà avancée, l'objection, la correction, la question ouverte et la phase du raisonnement.
+  Un suivi elliptique comme « Continue » ou « Et la réciprocité ? » conserve donc la profondeur et
+  le cerveau `deep` sur voix, Telegram et Cowork; une demande de brièveté, une action, une clôture ou
+  un vrai changement de sujet annule cet héritage. L'évaluateur mesure aussi la nouveauté des
+  propositions et la progression entre réponses : répéter une thèse avec davantage de connecteurs
+  est maintenant un échec, pas une preuve de raisonnement.
 - Prochaine étape : enrichir progressivement le corpus avec de vrais épisodes consentis, exécuter
   le pilote v2 sur Darkstar et les modèles d'abonnement, activer le gagnant observé, puis mesurer en
   usage réel les ruptures de continuité, la latence au premier son et les corrections humaines.

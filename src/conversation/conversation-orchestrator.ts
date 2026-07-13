@@ -1,9 +1,14 @@
 import { ConversationStateManager } from './conversation-state.js';
 import { planConversationResponse } from './discourse-planner.js';
-import type { ConversationPlan, ConversationTurn } from './types.js';
+import type {
+  ConversationPlan,
+  ConversationTurn,
+  DeliberationThreadSnapshot,
+} from './types.js';
 
 export interface PreparedConversationTurn {
   plan: ConversationPlan;
+  deliberation: DeliberationThreadSnapshot;
   commonGround: string;
   systemGuidance: string;
   envelopedPrompt: string;
@@ -26,7 +31,11 @@ export function prepareConversationTurn(
 ): PreparedConversationTurn {
   const state = new ConversationStateManager(history);
   const plan = planConversationResponse(heard, history);
-  const commonGround = state.renderForPrompt();
+  const suppressHistoricalContext =
+    plan.deliberation.topicShifted || plan.act === 'action' || plan.act === 'closing';
+  const commonGround = state.renderForPrompt(plan.deliberation, {
+    suppressHistoricalContext,
+  });
   const systemGuidance = [plan.guidance, commonGround, options.freshContext]
     .filter(Boolean)
     .join('\n\n');
@@ -37,7 +46,13 @@ export function prepareConversationTurn(
     '',
     `Message de l'utilisateur : ${heard.trim()}`,
   ].join('\n');
-  return { plan, commonGround, systemGuidance, envelopedPrompt };
+  return {
+    plan,
+    deliberation: plan.deliberation,
+    commonGround,
+    systemGuidance,
+    envelopedPrompt,
+  };
 }
 
 export function buildConversationTurnEnvelope(

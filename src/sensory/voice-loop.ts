@@ -714,6 +714,8 @@ export function resetVoiceModelCache(): void {
 export interface VoiceModelResolverDeps {
   env?: NodeJS.ProcessEnv;
   now?: () => number;
+  /** Recent shared/local dialogue, oldest first, used to keep follow-up depth stable. */
+  history?: ConversationTurn[];
   /** Summaries/utility calls stay on the fast lane even if their transcript looks factual. */
   forceFastLane?: boolean;
   selectFastestModel?: (
@@ -729,6 +731,7 @@ export interface VoiceModelResolverDeps {
   resolveCompanionRoute?: (options: {
     surface: 'voice';
     text: string;
+    history: ConversationTurn[];
     requireLocal: boolean;
     env: NodeJS.ProcessEnv;
   }) => Promise<VoiceModelRoute | null>;
@@ -831,6 +834,7 @@ export async function resolveVoiceModel(
       const pilotRoute = await resolveCompanionModelRoute({
         surface: 'voice',
         text: heard,
+        history: deps.history ?? [],
         requireLocal: localOnly,
         env,
       });
@@ -1110,7 +1114,7 @@ async function prepareSpokenTurn(
   const [clientModule, personaVoice, route, augmentation] = await Promise.all([
     import('../codebuddy/client.js'),
     import('../personas/persona-manager.js').then((m) => m.getActivePersonaVoiceAsync()),
-    resolveVoiceModel(heard),
+    resolveVoiceModel(heard, { history }),
     buildSpokenPromptAugmentation(heard, history, spokenPrefix),
   ]);
   const basePrompt = personaVoice.spokenPrompt || SPEAK_SYSTEM_PROMPT;

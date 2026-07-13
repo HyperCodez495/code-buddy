@@ -19,12 +19,14 @@ describe('human conversation planning', () => {
     expect(philosophy.depth).toBe('deliberative');
   });
 
-  it('builds a claim/reason/counterpoint/concession/synthesis plan', () => {
+  it('opens a deliberation without compressing the whole debate into one answer', () => {
     const prepared = prepareConversationTurn('Argumente sur le libre arbitre.');
     expect(prepared.plan.depth).toBe('deliberative');
     expect(prepared.plan.moves).toEqual(
-      expect.arrayContaining(['position', 'reason', 'counterpoint', 'concession', 'synthesis'])
+      expect.arrayContaining(['position', 'reason', 'example'])
     );
+    expect(prepared.plan.moves).not.toContain('synthesis');
+    expect(prepared.deliberation.phase).toBe('opening');
     expect(prepared.plan.targetTokens).toBeGreaterThanOrEqual(300);
     expect(prepared.systemGuidance).toContain('conversation_response_plan');
   });

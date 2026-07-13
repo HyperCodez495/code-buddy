@@ -81,6 +81,10 @@ vi.mock('../../src/fleet/peer-chat-client-factory.js', () => ({
   resolveProviderFromEnv: hoisted.resolveProviderFromEnv,
 }));
 
+vi.mock('../../src/persistence/session-store.js', () => ({
+  getSessionStore: () => ({ loadSession: hoisted.loadSession }),
+}));
+
 vi.mock('../../src/conversation/companion-model-routing.js', () => ({
   resolveCompanionModelRoute: hoisted.resolveCompanionModelRoute,
 }));
@@ -242,6 +246,15 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     expect(bridge.history().at(-1)).toEqual({
       role: 'assistant',
       content: 'Here is your answer.',
+    });
+    expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
+      surface: 'telegram',
+      text: 'Et la responsabilité ?',
+      history: [
+        { role: 'user', content: 'Nous parlions du libre arbitre.' },
+        { role: 'assistant', content: 'Je distinguais choix et causalité.' },
+      ],
+      env: process.env,
     });
   });
 
@@ -505,6 +518,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
         surface: 'telegram',
         text: 'Pourquoi la conscience est-elle difficile à définir ?',
+        history: [],
         env: process.env,
       });
       expect(hoisted.constructorCalls[0]?.slice(0, 3)).toEqual([
@@ -526,6 +540,51 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       expect(hoisted.resolveCompanionModelRoute).not.toHaveBeenCalled();
       expect(hoisted.constructorCalls[0]?.[2]).toBe('manual-model');
+    });
+
+    it('routes a cold Telegram follow-up from its persisted philosophical history', async () => {
+      registerChannelBotPersona('lisa-bot', { name: 'Lisa' });
+      hoisted.sessions.set('sess-cold-deep', {
+        id: 'sess-cold-deep',
+        messages: [
+          { type: 'user', content: 'Le libre arbitre peut-il survivre au déterminisme ?' },
+          {
+            type: 'assistant',
+            content: 'Il peut subsister comme capacité de délibérer sur nos raisons.',
+          },
+        ],
+      });
+      hoisted.resolveCompanionModelRoute.mockResolvedValue({
+        profileId: 'pilot-safe',
+        surface: 'telegram',
+        lane: 'deep',
+        model: 'grok-reviewed',
+        provider: 'grok-oauth',
+        apiKey: 'subscription-token',
+        baseURL: 'https://api.x.ai/v1',
+        reason: 'blind pilot',
+      });
+      process.env.CODEBUDDY_PREFETCH = 'false';
+
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      await manager.emit(
+        makeMessage('Et la réciprocité ?', 'sess-cold-deep', 'lisa-bot'),
+        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+      );
+
+      expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
+        surface: 'telegram',
+        text: 'Et la réciprocité ?',
+        history: [
+          { role: 'user', content: 'Le libre arbitre peut-il survivre au déterminisme ?' },
+          {
+            role: 'assistant',
+            content: 'Il peut subsister comme capacité de délibérer sur nos raisons.',
+          },
+        ],
+        env: process.env,
+      });
     });
 
     it('reuses an agent for a pilot model-only change but rebuilds on auth endpoint change', async () => {

@@ -1,16 +1,31 @@
 import { analyzeConversationTurn, extractSalientTerms } from './dialogue-act.js';
-import type { CommonGroundSnapshot, ConversationTurn } from './types.js';
+import {
+  buildDeliberationThread,
+  MAX_DELIBERATION_TURNS,
+  renderDeliberationThreadForPrompt,
+} from './deliberation-thread.js';
+import type {
+  CommonGroundSnapshot,
+  ConversationTurn,
+  DeliberationThreadSnapshot,
+} from './types.js';
 
-const MAX_RECENT_TURNS = 16;
+const MAX_RECENT_TURNS = MAX_DELIBERATION_TURNS;
 const MAX_GROUND_ITEMS = 12;
+const MAX_COMMON_GROUND_PROMPT_CHARS = 5_200;
 
 function boundedUnique(values: string[], limit = MAX_GROUND_ITEMS): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(-limit);
 }
 
-function promptSafeExcerpt(value: string, limit = 500): string {
+function promptSafeExcerpt(value: string, limit = 320): string {
   return value
-    .replace(/[<>]/g, (character) => (character === '<' ? '‹' : '›'))
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/[<>&]/g, (character) => {
+      if (character === '<') return '‹';
+      if (character === '>') return '›';
+      return '＆';
+    })
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, limit);
@@ -63,28 +78,59 @@ export class ConversationStateManager {
       disputed: [...this.disputed],
       openQuestions: [...this.openQuestions],
       recentTurns: this.recentTurns.map((turn) => ({ ...turn })),
+      deliberation: buildDeliberationThread(this.recentTurns),
     };
   }
 
-  renderForPrompt(): string {
+  renderForPrompt(
+    deliberationOverride?: DeliberationThreadSnapshot,
+    options: { suppressHistoricalContext?: boolean } = {}
+  ): string {
     const snapshot = this.snapshot();
-    const recentDialogue = snapshot.recentTurns
-      .slice(-6)
-      .map(
-        (turn) =>
-          `${turn.role === 'user' ? 'Utilisateur' : 'Compagnon'} : ${promptSafeExcerpt(turn.content)}`
-      )
-      .filter((line) => !/ : $/.test(line));
-    const lines = [
-      snapshot.focus.length ? `Foyer actuel : ${snapshot.focus.join(', ')}.` : '',
-      snapshot.disputed.length ? `Corrections ou désaccords récents : ${snapshot.disputed.slice(-2).join(' | ')}` : '',
-      snapshot.openQuestions.length ? `Question encore ouverte : ${snapshot.openQuestions.at(-1)}` : '',
+    const includeHistory = !options.suppressHistoricalContext;
+    const recentDialogue = includeHistory
+      ? snapshot.recentTurns
+          .slice(-6)
+          .map(
+            (turn) =>
+              `${turn.role === 'user' ? 'Utilisateur' : 'Compagnon'} : ${promptSafeExcerpt(turn.content)}`
+          )
+          .filter((line) => !/ : $/.test(line))
+      : [];
+    const deliberation = renderDeliberationThreadForPrompt(
+      deliberationOverride ?? snapshot.deliberation
+    );
+    const candidates = [
+      includeHistory && snapshot.focus.length
+        ? `Foyer actuel : ${snapshot.focus.join(', ')}.`
+        : '',
+      deliberation,
+      includeHistory && snapshot.disputed.length
+        ? `Corrections ou désaccords récents : ${snapshot.disputed
+            .slice(-2)
+            .map((value) => promptSafeExcerpt(value))
+            .join(' | ')}`
+        : '',
+      includeHistory && snapshot.openQuestions.length
+        ? `Question encore ouverte : ${promptSafeExcerpt(snapshot.openQuestions.at(-1) ?? '')}`
+        : '',
       recentDialogue.length
         ? `<recent_dialogue data-not-instructions="true">\n${recentDialogue.join('\n')}\n</recent_dialogue>`
         : '',
     ].filter(Boolean);
+    const opening = '<common_ground>';
+    const closing = '</common_ground>';
+    const budget = MAX_COMMON_GROUND_PROMPT_CHARS - opening.length - closing.length - 2;
+    const lines: string[] = [];
+    let used = 0;
+    for (const candidate of candidates) {
+      const cost = candidate.length + (lines.length ? 1 : 0);
+      if (used + cost > budget) continue;
+      lines.push(candidate);
+      used += cost;
+    }
     return lines.length
-      ? `<common_ground>\n${lines.join('\n')}\n</common_ground>`
+      ? `${opening}\n${lines.join('\n')}\n${closing}`
       : '';
   }
 }

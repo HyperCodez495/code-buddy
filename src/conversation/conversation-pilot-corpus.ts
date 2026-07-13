@@ -300,22 +300,30 @@ export function createBuiltinConversationPilotCorpus(
     locale: 'fr-FR',
     privacy: 'local-private',
     createdAt: now.toISOString(),
-    scenarios: LISA_CORE_BENCHMARK_SCENARIOS.map((scenario) => ({
-      ...scenario,
-      turns: scenario.turns.map((turn) => ({ ...turn })),
-      expectations: scenario.expectations.map((expectation) => ({
-        ...expectation,
-        ...(expectation.anyOf ? { anyOf: [...expectation.anyOf] } : {}),
-        ...(expectation.noneOf ? { noneOf: [...expectation.noneOf] } : {}),
-        ...(expectation.noneOfOpening ? { noneOfOpening: [...expectation.noneOfOpening] } : {}),
+    // A pilot trial is intentionally one blind response. Sequential benchmark
+    // scenarios have a different review unit (the whole generated episode) and
+    // stay in conversation-benchmark until the sealed corpus gains an explicit
+    // episode schema; silently flattening them would invalidate the comparison.
+    scenarios: LISA_CORE_BENCHMARK_SCENARIOS
+      .filter((scenario) => !scenario.continuations?.length)
+      .map((scenario) => ({
+        ...scenario,
+        turns: scenario.turns.map((turn) => ({ ...turn })),
+        expectations: scenario.expectations.map((expectation) => ({
+          ...expectation,
+          ...(expectation.anyOf ? { anyOf: [...expectation.anyOf] } : {}),
+          ...(expectation.noneOf ? { noneOf: [...expectation.noneOf] } : {}),
+          ...(expectation.noneOfOpening
+            ? { noneOfOpening: [...expectation.noneOfOpening] }
+            : {}),
+        })),
+        annotation: {
+          ...CATEGORY_ANNOTATIONS[scenario.category],
+          criteria: [...CATEGORY_ANNOTATIONS[scenario.category].criteria],
+          channels: [...CATEGORY_ANNOTATIONS[scenario.category].channels],
+          dataClass: 'synthetic',
+        },
       })),
-      annotation: {
-        ...CATEGORY_ANNOTATIONS[scenario.category],
-        criteria: [...CATEGORY_ANNOTATIONS[scenario.category].criteria],
-        channels: [...CATEGORY_ANNOTATIONS[scenario.category].channels],
-        dataClass: 'synthetic',
-      },
-    })),
   };
 }
 

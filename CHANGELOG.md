@@ -58,6 +58,14 @@ once it reaches `1.0.0`.
 ## [Unreleased]
 
 ### Added
+- **Lisa fait évoluer une pensée sur plusieurs tours au lieu de recommencer sa réponse.** Un
+  `Deliberation Thread` local et borné suit sujet, positions, raison, objection, correction,
+  question ouverte et phase argumentative. Les suivis elliptiques conservent la profondeur et le
+  cerveau `deep` entre voix, Telegram et Cowork, tandis que brièveté explicite, action, clôture et
+  changement de sujet restent prioritaires. Le banc ajoute une vraie conversation séquentielle où
+  trois réponses du modèle sont réinjectées tour après tour. L'évaluateur détecte désormais le
+  raisonnement circulaire, le bourrage de connecteurs et la stagnation inter-tours avec uniquement
+  des métriques agrégées sans verbatim.
 - **Lisa peut sélectionner son cerveau sur un véritable pilote aveugle et privé.**
   `buddy assistant corpus-init` crée un corpus local versionné, annoté par risque, canal et critères;
   `buddy assistant compare --models …` exécute les mêmes tours et graines sur 2 à 12 modèles,

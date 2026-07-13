@@ -255,9 +255,14 @@ describe('voice loop — model resolution (env authoritative)', () => {
       baseURL: 'https://api.x.ai/v1',
       reason: 'blind pilot reviewed',
     }));
+    const history = [
+      { role: 'user' as const, content: 'La conscience fonde-t-elle notre liberté ?' },
+      { role: 'assistant' as const, content: 'Elle éclaire le choix sans abolir la causalité.' },
+    ];
 
-    const route = await resolveVoiceModel('Pourquoi la conscience nous échappe-t-elle ?', {
+    const route = await resolveVoiceModel('Continue.', {
       env: { CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY: 'true' },
+      history,
       resolveCompanionRoute,
       selectFastestModel,
     });
@@ -269,7 +274,8 @@ describe('voice loop — model resolution (env authoritative)', () => {
     });
     expect(resolveCompanionRoute).toHaveBeenCalledWith({
       surface: 'voice',
-      text: 'Pourquoi la conscience nous échappe-t-elle ?',
+      text: 'Continue.',
+      history,
       requireLocal: true,
       env: { CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY: 'true' },
     });

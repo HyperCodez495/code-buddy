@@ -102,21 +102,51 @@ describe('CoworkCompanionModelRouting', () => {
 
   it('resolves the evidence-backed route only for an explicitly linked Lisa session', async () => {
     const resolveCompanionModelRoute = vi.fn(async () => pilotRoute);
-    const { load, loader } = makeRoutingLoader({ resolveCompanionModelRoute });
-    const routing = new CoworkCompanionModelRouting(loader);
+    const load = vi.fn(async (modulePath: string) => {
+      if (modulePath === 'conversation/companion-model-routing.js') {
+        return { resolveCompanionModelRoute };
+      }
+      if (modulePath === 'conversation/cross-channel-bridge.js') {
+        return {
+          CrossChannelConversationBridge: class {
+            isActive = () => true;
+            history = () => [
+              { role: 'user' as const, content: 'La voix posait la question du libre arbitre.' },
+              { role: 'assistant' as const, content: 'Telegram a formulé une première objection.' },
+            ];
+          },
+          resolveCrossChannelBridgeConfig: () => ({ enabled: true, coworkEnabled: true }),
+        };
+      }
+      if (modulePath === 'companion/assistant-config.js') {
+        return { readAssistantConfig: () => ({}) };
+      }
+      return null;
+    });
+    const routing = new CoworkCompanionModelRouting(load as unknown as RoutingLoader);
+    const localHistory = [
+      { role: 'user' as const, content: 'Dans Cowork, distinguons volonté et responsabilité.' },
+      { role: 'assistant' as const, content: 'La responsabilité suppose une capacité de réponse.' },
+    ];
 
     await expect(
       routing.resolve(
         makeSession({ tags: ['#LiSa'] }),
-        'Construis une réponse argumentée.',
+        'Et la réciprocité ?',
         { model: 'runtime-model' },
+        localHistory,
       ),
     ).resolves.toEqual(pilotRoute);
 
     expect(load).toHaveBeenCalledWith('conversation/companion-model-routing.js');
     expect(resolveCompanionModelRoute).toHaveBeenCalledWith({
       surface: 'cowork',
-      text: 'Construis une réponse argumentée.',
+      text: 'Et la réciprocité ?',
+      history: [
+        { role: 'user', content: 'La voix posait la question du libre arbitre.' },
+        { role: 'assistant', content: 'Telegram a formulé une première objection.' },
+        ...localHistory,
+      ],
       env: process.env,
     });
 
@@ -127,7 +157,45 @@ describe('CoworkCompanionModelRouting', () => {
         { model: 'runtime-model' },
       ),
     ).resolves.toBeNull();
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not read a stale shared journal when the Cowork bridge is opted out', async () => {
+    const resolveCompanionModelRoute = vi.fn(async () => pilotRoute);
+    const history = vi.fn(() => [
+      { role: 'user' as const, content: 'Ancien débat qui ne doit pas influencer Cowork.' },
+    ]);
+    const load = vi.fn(async (modulePath: string) => {
+      if (modulePath === 'conversation/companion-model-routing.js') {
+        return { resolveCompanionModelRoute };
+      }
+      if (modulePath === 'conversation/cross-channel-bridge.js') {
+        return {
+          CrossChannelConversationBridge: class {
+            isActive = () => true;
+            history = history;
+          },
+          resolveCrossChannelBridgeConfig: () => ({ enabled: true, coworkEnabled: false }),
+        };
+      }
+      if (modulePath === 'companion/assistant-config.js') {
+        return { readAssistantConfig: () => ({}) };
+      }
+      return null;
+    });
+    const routing = new CoworkCompanionModelRouting(load as unknown as RoutingLoader);
+
+    await expect(
+      routing.resolve(makeSession(), 'Continue.', { model: 'runtime-model' }),
+    ).resolves.toEqual(pilotRoute);
+
+    expect(history).not.toHaveBeenCalled();
+    expect(resolveCompanionModelRoute).toHaveBeenCalledWith({
+      surface: 'cowork',
+      text: 'Continue.',
+      history: [],
+      env: process.env,
+    });
   });
 
   it('keeps a deliberate per-session model pin authoritative', async () => {
@@ -203,7 +271,23 @@ describe('CoworkCompanionModelRouting', () => {
       companionRouting,
     );
 
-    await runner.run(session, 'Approfondis cette idée.', []);
+    const priorMessages: Message[] = [
+      {
+        id: 'prior-user',
+        sessionId: session.id,
+        role: 'user',
+        content: [{ type: 'text', text: 'La conscience suffit-elle pour être libre ?' }],
+        timestamp: 1,
+      },
+      {
+        id: 'prior-assistant',
+        sessionId: session.id,
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Elle permet la réflexion, sans abolir tous les déterminismes.' }],
+        timestamp: 2,
+      },
+    ];
+    await runner.run(session, 'Approfondis cette idée.', priorMessages);
 
     expect(companionRouting.resolve).toHaveBeenCalledWith(
       session,
@@ -213,6 +297,13 @@ describe('CoworkCompanionModelRouting', () => {
         baseUrl: 'https://runtime.example/v1',
         model: 'runtime-model',
       }),
+      [
+        { role: 'user', content: 'La conscience suffit-elle pour être libre ?' },
+        {
+          role: 'assistant',
+          content: 'Elle permet la réflexion, sans abolir tous les déterminismes.',
+        },
+      ],
     );
     expect(adapter.runSession).toHaveBeenCalledTimes(1);
     expect(adapter.runSession.mock.calls[0]?.[3]).toMatchObject({

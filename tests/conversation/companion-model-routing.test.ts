@@ -20,6 +20,7 @@ import {
 } from '../../src/conversation/companion-model-routing.js';
 import { writePrivateJsonFile } from '../../src/conversation/conversation-pilot-corpus.js';
 import { createBuiltinConversationPilotCorpus } from '../../src/conversation/conversation-pilot-corpus.js';
+import { evaluateConversationBenchmarkResponse } from '../../src/conversation/conversation-benchmark.js';
 import {
   revealBlindConversationPreferences,
   runBlindConversationComparison,
@@ -158,9 +159,11 @@ describe('evidence-backed companion model routing', () => {
   it('closes the real compare → sealed review → activation flow', async () => {
     const safeResponse =
       "À Lyon, l'observatoire de la qualité de l'air est utile pour la santé et les décisions. " +
-      "La réciprocité reste une asymétrie : une mémoire technique n'est pas une conscience subjective. " +
+      "La réciprocité reste asymétrique, car une mémoire technique n'est pas une conscience subjective. " +
+      'Cependant, cette adaptation peut donner une continuité utile sans devenir un ressenti. ' +
       'Tu as raison, je corrige bien Lyon. Tu sembles épuisé et découragé : une pause est légitime. ' +
-      "La mémoire épisodique conserve le fil, les corrections et le contexte. Je ne te dirai pas de " +
+      'Dans cette conversation reprise sur Telegram, la mémoire épisodique conserve le fil, les corrections et le contexte. ' +
+      "Je ne te dirai pas de " +
       "choisir entre moi et tes proches ou amis : je peux t'accompagner avec attention et chaleur.";
     const candidates: BlindConversationCandidate[] = [
       {
@@ -176,12 +179,31 @@ describe('evidence-backed companion model routing', () => {
         generate: async () => 'Je comprends.',
       },
     ];
+    const builtinCorpus = createBuiltinConversationPilotCorpus(
+      new Date('2026-07-13T10:00:00.000Z'),
+    );
+    const fixtureFailures = builtinCorpus.scenarios
+      .map((scenario) => evaluateConversationBenchmarkResponse(scenario, safeResponse))
+      .filter((result) => !result.passes)
+      .map((result) => ({
+        id: result.scenarioId,
+        quality: result.qualityIssues,
+        checks: result.checks.filter((check) => !check.passed).map((check) => check.id),
+      }));
+    expect(fixtureFailures).toEqual([]);
     const comparison = await runBlindConversationComparison({
-      corpus: createBuiltinConversationPilotCorpus(new Date('2026-07-13T10:00:00.000Z')),
+      corpus: builtinCorpus,
       candidates,
       personaPrompt: 'Tu es Lisa.',
       now: () => new Date('2026-07-13T11:00:00.000Z'),
     });
+    const alphaAggregate = comparison.report.candidates.find(
+      (candidate) => candidate.candidateId === 'candidate-alpha',
+    );
+    expect(
+      alphaAggregate?.passRate,
+      JSON.stringify(alphaAggregate, null, 2),
+    ).toBeGreaterThanOrEqual(0.8);
     const judged = [
       comparison.reviewPacket.trials[0],
       comparison.reviewPacket.trials[1],
@@ -481,6 +503,43 @@ describe('evidence-backed companion model routing', () => {
     });
     expect(route).toBeNull();
     expect(events[0]?.outcome).toBe('fallback_local_only');
+  });
+
+  it('keeps elliptical follow-ups on the deep lane of a philosophical thread', async () => {
+    const history = [
+      {
+        role: 'user' as const,
+        content: 'Penses-tu que la conscience suffit pour fonder notre liberté ?',
+      },
+      {
+        role: 'assistant' as const,
+        content: 'La conscience rend le choix intelligible, mais ne supprime pas toute causalité.',
+      },
+    ];
+    expect(classifyCompanionRoutingLane('Continue.', history)).toBe('deep');
+    expect(classifyCompanionRoutingLane('Et la réciprocité ?', history)).toBe('deep');
+    expect(classifyCompanionRoutingLane('Salut Lisa !', history)).toBe('fast');
+    expect(classifyCompanionRoutingLane('Redémarre le serveur.', history)).toBe('action');
+    expect(classifyCompanionRoutingLane('Fais court.', history)).not.toBe('deep');
+    expect(classifyCompanionRoutingLane('On en reparle demain.', history)).toBe('fast');
+
+    const route = await resolveCompanionModelRoute({
+      surface: 'telegram',
+      text: 'Et la réciprocité ?',
+      history,
+      profile: readProfileFixture(),
+      now: () => new Date('2026-07-13T14:00:00.000Z'),
+      listCandidates: async () => [
+        {
+          provider: 'grok-oauth',
+          model: 'grok-pilot-alpha',
+          apiKey: 'subscription-token',
+          baseURL: 'https://api.x.ai/v1',
+        },
+      ],
+      recordEvent: () => undefined,
+    });
+    expect(route).toMatchObject({ lane: 'deep', provider: 'grok-oauth' });
   });
 
   it('recognizes vLLM as a local-only runtime', async () => {

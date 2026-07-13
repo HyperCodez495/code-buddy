@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import type { ChatEntry } from '../../agent/types.js';
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import type { CompanionRuntimeRoute } from '../../conversation/companion-model-routing.js';
+import type { ConversationTurn } from '../../conversation/types.js';
 import {
   MODEL_NAME_PATTERN,
   clearSessionModelOverride,
@@ -496,6 +497,53 @@ function hashForLog(value: unknown): string | undefined {
   return createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
 }
 
+function channelHistoryTurn(
+  entry: { type?: unknown; role?: unknown; content?: unknown },
+): ConversationTurn | null {
+  const role = entry.role ?? entry.type;
+  if (role !== 'user' && role !== 'assistant') return null;
+  if (typeof entry.content !== 'string') return null;
+  const content = entry.content
+    .replace(/<companion_turn>[\s\S]*?<\/companion_turn>\s*/g, '')
+    .replace(/^Message de l'utilisateur\s*:\s*/i, '')
+    .trim();
+  return content ? { role, content } : null;
+}
+
+/**
+ * Read the real Telegram/channel discussion before choosing the companion
+ * model. Warm agents are authoritative; a cold daemon falls back to the same
+ * persisted SessionStore used by restoreChannelSession().
+ */
+async function resolveChannelRoutingHistory(
+  sessionKey: string,
+  sharedHistory: ConversationTurn[],
+): Promise<ConversationTurn[]> {
+  if (sharedHistory.length > 0) return sharedHistory.slice(-12);
+  const cached = channelAgentCache.get(sessionKey)?.agent;
+  if (cached) {
+    return cached
+      .getChatHistory()
+      .flatMap((entry) => {
+        const turn = channelHistoryTurn(entry);
+        return turn ? [turn] : [];
+      })
+      .slice(-12);
+  }
+  try {
+    const { getSessionStore } = await import('../../persistence/session-store.js');
+    const session = await getSessionStore().loadSession(sessionKey);
+    return (session?.messages ?? [])
+      .flatMap((entry) => {
+        const turn = channelHistoryTurn(entry);
+        return turn ? [turn] : [];
+      })
+      .slice(-12);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Per-bot persona for multi-bot channels: each bot (keyed by its id) can run its
  * own model + appended system prompt. Registered at instantiateChannel time from
@@ -901,6 +949,10 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         !hasExplicitModel
       ) {
         try {
+          const routingHistory = await resolveChannelRoutingHistory(
+            sessionKey,
+            sharedConversationHistory,
+          );
           const { resolveCompanionModelRoute } = await import(
             '../../conversation/companion-model-routing.js'
           );
@@ -908,6 +960,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
             (await resolveCompanionModelRoute({
               surface: 'telegram',
               text: message.content,
+              history: routingHistory,
               env: process.env,
             })) ?? undefined;
         } catch (error) {

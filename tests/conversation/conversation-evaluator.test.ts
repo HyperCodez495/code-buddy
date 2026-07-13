@@ -44,6 +44,9 @@ describe('evaluateConversationEpisode', () => {
     expect(report.overallScore).toBeGreaterThanOrEqual(0.8);
     expect(report.dimensions.reasoning).toBeGreaterThanOrEqual(0.8);
     expect(report.dimensions.attunement).toBe(1);
+    expect(report.metrics.circularExchangeRate).toBe(0);
+    expect(report.metrics.connectorStuffingRate).toBe(0);
+    expect(report.metrics.interTurnProgressionScore).toBeGreaterThan(0.35);
     expect(report.issues).not.toContain('poor_attunement');
     expect(report.passes).toBe(true);
   });
@@ -73,5 +76,30 @@ describe('evaluateConversationEpisode', () => {
 
     expect(report.issues).toContain('incomplete_exchange');
     expect(formatConversationEpisodeReport(report)).not.toContain('strictement privée');
+  });
+
+  it('aggregates circularity, connector stuffing and stalled inter-turn progression', () => {
+    const privateMarker = 'DETAIL_PRIVE_QUI_NE_DOIT_PAS_SORTIR';
+    const repeated =
+      `La liberté compte parce que la responsabilité est importante ${privateMarker}. ` +
+      'Donc la responsabilité est importante parce que la liberté compte. ' +
+      'Ainsi, la liberté compte car son importance compte.';
+    const report = evaluateConversationEpisode([
+      { role: 'user', content: 'Argumente sur la liberté et la responsabilité.' },
+      { role: 'assistant', content: repeated },
+      { role: 'user', content: 'Quelle objection ferait évoluer cette position ?' },
+      { role: 'assistant', content: repeated },
+      { role: 'user', content: 'Fais maintenant une vraie synthèse.' },
+      { role: 'assistant', content: repeated },
+    ]);
+
+    expect(report.metrics.circularExchangeRate).toBe(1);
+    expect(report.metrics.connectorStuffingRate).toBeGreaterThan(0);
+    expect(report.metrics.interTurnProgressionScore).toBe(0);
+    expect(report.metrics.stalledProgressionRate).toBe(1);
+    expect(report.issues).toEqual(expect.arrayContaining(['repetitive', 'weak_reasoning']));
+    expect(report.passes).toBe(false);
+    expect(JSON.stringify(report)).not.toContain(privateMarker);
+    expect(formatConversationEpisodeReport(report)).not.toContain(privateMarker);
   });
 });
