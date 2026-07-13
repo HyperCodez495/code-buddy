@@ -18,6 +18,7 @@ describe('resolveChannelModel', () => {
     sessionOverride: 'session-m',
     routeModel: 'route-m',
     personaModel: 'persona-m',
+    companionModel: 'companion-m',
     routeDefaultModel: 'default-m',
     globalModel: 'global-m',
   };
@@ -29,9 +30,19 @@ describe('resolveChannelModel', () => {
       model: 'persona-m',
       source: 'persona',
     });
-    expect(
-      resolveChannelModel({ ...all, sessionOverride: undefined, routeModel: undefined, personaModel: undefined }),
-    ).toEqual({ model: 'default-m', source: 'route-default' });
+    expect(resolveChannelModel({
+      ...all,
+      sessionOverride: undefined,
+      routeModel: undefined,
+      personaModel: undefined,
+    })).toEqual({ model: 'companion-m', source: 'companion-profile' });
+    expect(resolveChannelModel({
+      ...all,
+      sessionOverride: undefined,
+      routeModel: undefined,
+      personaModel: undefined,
+      companionModel: undefined,
+    })).toEqual({ model: 'default-m', source: 'route-default' });
     expect(resolveChannelModel({ globalModel: 'global-m' })).toEqual({ model: 'global-m', source: 'global' });
   });
 
@@ -41,6 +52,7 @@ describe('resolveChannelModel', () => {
         sessionOverride: '   ',
         routeModel: '',
         personaModel: '\t',
+        companionModel: '  ',
         routeDefaultModel: undefined,
         globalModel: 'global-m',
       }),

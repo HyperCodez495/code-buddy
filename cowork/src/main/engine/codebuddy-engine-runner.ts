@@ -15,6 +15,7 @@ import { getReasoningBridge } from '../reasoning/reasoning-bridge';
 import { createReasoningCapture } from '../reasoning/reasoning-capture';
 import { configStore } from '../config/config-store';
 import { CoworkCrossChannelContinuity } from '../companion/cross-channel-continuity';
+import { CoworkCompanionModelRouting } from '../companion/model-routing';
 import type { ContextOptimizationMetadata } from '@codebuddy/shared/context-optimization-metadata';
 import type {
   Session,
@@ -107,15 +108,18 @@ export class CodeBuddyEngineRunner {
   private adapter: EngineAdapter;
   private callbacks: RunnerCallbacks;
   private continuity: Pick<CoworkCrossChannelContinuity, 'prepare'>;
+  private companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'>;
 
   constructor(
     adapter: EngineAdapter,
     callbacks: RunnerCallbacks,
     continuity: Pick<CoworkCrossChannelContinuity, 'prepare'> = new CoworkCrossChannelContinuity(),
+    companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'> = new CoworkCompanionModelRouting(),
   ) {
     this.adapter = adapter;
     this.callbacks = callbacks;
     this.continuity = continuity;
+    this.companionRouting = companionRouting;
   }
 
   /**
@@ -162,10 +166,14 @@ export class CodeBuddyEngineRunner {
     // active persona, and explicit Lisa-thread rendezvous are independent and
     // begin together so continuity never adds a serial first-token waterfall.
     const localEngineMessages = this.convertMessages(historyMessages, prompt);
-    const [snapshot, personaPrompt, sharedContinuity] = await Promise.all([
+    const runtimeConfig = session.intelligence?.configSetId
+      ? configStore.getConfigForSet(session.intelligence.configSetId)
+      : configStore.getAll();
+    const [snapshot, personaPrompt, sharedContinuity, companionRoute] = await Promise.all([
       this.createTurnCheckpoint(session, prompt),
       this.resolveActivePersonaPrompt(),
       this.continuity.prepare(session, localEngineMessages, prompt, userMessageId),
+      this.companionRouting.resolve(session, prompt, runtimeConfig),
     ]);
     const engineMessages = sharedContinuity.active
       ? [...sharedContinuity.messages, ...localEngineMessages]
@@ -173,6 +181,18 @@ export class CodeBuddyEngineRunner {
     const systemPromptAppend = [personaPrompt, sharedContinuity.systemPrompt]
       .filter((part): part is string => Boolean(part?.trim()))
       .join('\n\n') || undefined;
+    const effectiveModel = companionRoute?.model ?? session.model ?? runtimeConfig.model;
+    const effectiveApiKey = companionRoute?.apiKey ?? runtimeConfig.apiKey;
+    const effectiveBaseURL = companionRoute?.baseURL ?? runtimeConfig.baseUrl;
+    if (companionRoute) {
+      log('[EngineRunner] evidence-backed companion route', {
+        sessionId: session.id,
+        profileId: companionRoute.profileId,
+        lane: companionRoute.lane,
+        model: companionRoute.model,
+        provider: companionRoute.provider,
+      });
+    }
     if (snapshot) {
       sendToRenderer({
         type: 'checkpoint.created',
@@ -194,14 +214,10 @@ export class CodeBuddyEngineRunner {
       toolUseId: `${session.id}:reasoning:${userMessageId}`,
       sessionId: session.id,
       problem: prompt,
-      mode: session.model ?? 'embedded',
+      mode: effectiveModel ?? 'embedded',
     });
     const engineStartedAt = Date.now();
     let firstVisibleEventRecorded = false;
-    const runtimeConfig = session.intelligence?.configSetId
-      ? configStore.getConfigForSet(session.intelligence.configSetId)
-      : configStore.getAll();
-
     try {
       await this.adapter.runSession(
         session.id,
@@ -225,7 +241,7 @@ export class CodeBuddyEngineRunner {
                 firstTokenMs: Date.now() - turnStartedAt,
                 measuredAt: Date.now(),
                 configSetId: session.intelligence?.configSetId,
-                model: session.model || runtimeConfig.model,
+                model: effectiveModel,
               },
             };
             log('[EngineRunner] first visible stream event', {
@@ -480,9 +496,9 @@ export class CodeBuddyEngineRunner {
         },
         {
           workingDirectory: session.cwd,
-          apiKey: runtimeConfig.apiKey,
-          baseURL: runtimeConfig.baseUrl,
-          model: session.model || runtimeConfig.model,
+          apiKey: effectiveApiKey,
+          baseURL: effectiveBaseURL,
+          model: effectiveModel,
           thinkingLevel: session.intelligence?.thinkingLevel,
           permissionMode: session.permissionModeOverride ?? session.permissionMode ?? 'default',
           systemPromptAppend,
@@ -500,7 +516,7 @@ export class CodeBuddyEngineRunner {
           totalMs: Date.now() - turnStartedAt,
           measuredAt: Date.now(),
           configSetId: session.intelligence?.configSetId,
-          model: session.model || runtimeConfig.model,
+          model: effectiveModel,
         },
       };
       log('[EngineRunner] turn options', { sessionId: session.id, cwd: session.cwd ?? '(undefined)' });

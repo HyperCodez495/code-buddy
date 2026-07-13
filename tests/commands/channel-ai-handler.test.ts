@@ -31,6 +31,8 @@ const hoisted = vi.hoisted(() => {
     constructorCalls: [] as any[][],
     setModelCalls: [] as string[],
     managerSend: vi.fn(),
+    resolveProviderFromEnv: vi.fn(),
+    resolveCompanionModelRoute: vi.fn(),
   };
 });
 
@@ -74,6 +76,14 @@ vi.mock('../../src/agent/codebuddy-agent.js', () => {
   }
   return { CodeBuddyAgent };
 });
+
+vi.mock('../../src/fleet/peer-chat-client-factory.js', () => ({
+  resolveProviderFromEnv: hoisted.resolveProviderFromEnv,
+}));
+
+vi.mock('../../src/conversation/companion-model-routing.js', () => ({
+  resolveCompanionModelRoute: hoisted.resolveCompanionModelRoute,
+}));
 
 import {
   registerAIMessageHandler,
@@ -141,6 +151,12 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       { type: 'assistant', content: 'Here is your answer.', timestamp: new Date('2026-01-01T00:00:01.000Z') },
     ]);
     hoisted.managerSend.mockResolvedValue({ success: true, timestamp: new Date() });
+    hoisted.resolveProviderFromEnv.mockReturnValue({
+      apiKey: 'test-key',
+      baseUrl: 'https://api.x.ai/v1',
+      model: 'grok-default',
+    });
+    hoisted.resolveCompanionModelRoute.mockResolvedValue(null);
   });
 
   it('runs message → pairing → route → agent → reply and delivers the response', async () => {
@@ -462,6 +478,90 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       expect(append).toContain('ROUTE-RULES');
       expect(append.indexOf('PERSONA-IDENTITY')).toBeLessThan(append.indexOf('ROUTE-RULES'));
       expect(args[8]).toBeUndefined();
+    });
+
+    it('uses a reviewed Lisa route on Telegram even with no global provider', async () => {
+      registerChannelBotPersona('lisa-bot', { name: 'Lisa' });
+      hoisted.resolveProviderFromEnv.mockReturnValue(null);
+      hoisted.resolveCompanionModelRoute.mockResolvedValue({
+        profileId: 'pilot-safe',
+        surface: 'telegram',
+        lane: 'deep',
+        model: 'grok-reviewed',
+        provider: 'grok-oauth',
+        apiKey: 'subscription-token',
+        baseURL: 'https://api.x.ai/v1',
+        reason: 'blind pilot',
+      });
+      process.env.CODEBUDDY_PREFETCH = 'false';
+
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      await manager.emit(
+        makeMessage('Pourquoi la conscience est-elle difficile à définir ?', 'sess-lisa', 'lisa-bot'),
+        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+      );
+
+      expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
+        surface: 'telegram',
+        text: 'Pourquoi la conscience est-elle difficile à définir ?',
+        env: process.env,
+      });
+      expect(hoisted.constructorCalls[0]?.slice(0, 3)).toEqual([
+        'subscription-token',
+        'https://api.x.ai/v1',
+        'grok-reviewed',
+      ]);
+      expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a Lisa persona model pin above the reviewed profile', async () => {
+      registerChannelBotPersona('lisa-bot', { name: 'Lisa', model: 'manual-model' });
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      await manager.emit(
+        makeMessage('Pourquoi cette idée compte-t-elle ?', 'sess-lisa-pin', 'lisa-bot'),
+        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+      );
+
+      expect(hoisted.resolveCompanionModelRoute).not.toHaveBeenCalled();
+      expect(hoisted.constructorCalls[0]?.[2]).toBe('manual-model');
+    });
+
+    it('reuses an agent for a pilot model-only change but rebuilds on auth endpoint change', async () => {
+      registerChannelBotPersona('lisa-bot', { name: 'Lisa' });
+      const route = (model: string, apiKey: string, baseURL: string) => ({
+        profileId: `pilot-${model}`,
+        surface: 'telegram',
+        lane: 'deep',
+        model,
+        provider: 'grok-oauth',
+        apiKey,
+        baseURL,
+        reason: 'blind pilot',
+      });
+      hoisted.resolveCompanionModelRoute
+        .mockResolvedValueOnce(route('pilot-a', 'same-key', 'https://same.example/v1'))
+        .mockResolvedValueOnce(route('pilot-b', 'same-key', 'https://same.example/v1'))
+        .mockResolvedValueOnce(route('pilot-c', 'renewed-key', 'https://new.example/v1'));
+      process.env.CODEBUDDY_PREFETCH = 'false';
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const channel = { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) };
+
+      await manager.emit(makeMessage('Pourquoi A ?', 'sess-lisa-swap', 'lisa-bot'), channel);
+      await manager.emit(makeMessage('Pourquoi B ?', 'sess-lisa-swap', 'lisa-bot'), channel);
+      expect(hoisted.constructorCalls).toHaveLength(1);
+      expect(hoisted.setModelCalls).toContain('pilot-b');
+
+      await manager.emit(makeMessage('Pourquoi C ?', 'sess-lisa-swap', 'lisa-bot'), channel);
+      expect(hoisted.constructorCalls).toHaveLength(2);
+      expect(hoisted.constructorCalls[1]?.slice(0, 3)).toEqual([
+        'renewed-key',
+        'https://new.example/v1',
+        'pilot-c',
+      ]);
+      expect(hoisted.setChatHistory).toHaveBeenCalled();
     });
   });
 });

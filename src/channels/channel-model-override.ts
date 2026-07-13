@@ -9,14 +9,22 @@
  *   2. `route`         — an EXPLICITLY matched PeerRoute (peer > channel-id >
  *                        channel-type > account specificity, resolved upstream)
  *   3. `persona`       — the per-bot persona from channels.json `options.model`
- *   4. `route-default` — the merged RouteAgentConfig model, which includes the
+ *   4. `companion-profile` — evidence-backed Lisa pilot winner for substantive
+ *                        companion turns (never overrides an explicit pin)
+ *   5. `route-default` — the merged RouteAgentConfig model, which includes the
  *                        router-wide `defaultAgent` fallback. Kept BELOW the
  *                        persona so a router default never clobbers a bot
  *                        persona in multi-bot setups.
- *   5. `global`        — the provider default from the environment.
+ *   6. `global`        — the provider default from the environment.
  */
 
-export type ModelTierSource = 'session' | 'route' | 'persona' | 'route-default' | 'global';
+export type ModelTierSource =
+  | 'session'
+  | 'route'
+  | 'persona'
+  | 'companion-profile'
+  | 'route-default'
+  | 'global';
 
 export interface ChannelModelTiers {
   /** `/model` override for this sessionKey. */
@@ -25,6 +33,8 @@ export interface ChannelModelTiers {
   routeModel?: string | undefined;
   /** Per-bot persona model (channels.json `options.model`). */
   personaModel?: string | undefined;
+  /** Human-reviewed blind-pilot winner for a substantive companion turn. */
+  companionModel?: string | undefined;
   /** Merged RouteAgentConfig model (includes the router `defaultAgent` fallback). */
   routeDefaultModel?: string | undefined;
   /** Provider default from the environment. */
@@ -44,6 +54,7 @@ export function resolveChannelModel(tiers: ChannelModelTiers): { model: string; 
     [clean(tiers.sessionOverride), 'session'],
     [clean(tiers.routeModel), 'route'],
     [clean(tiers.personaModel), 'persona'],
+    [clean(tiers.companionModel), 'companion-profile'],
     [clean(tiers.routeDefaultModel), 'route-default'],
   ];
   for (const [model, source] of ordered) {

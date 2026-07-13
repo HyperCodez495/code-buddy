@@ -46,6 +46,27 @@ function validateCliValue(setting: AssistantSetting, value: string): boolean {
   return true;
 }
 
+function parseBoundedNumber(
+  value: string,
+  label: string,
+  minimum: number,
+  maximum: number,
+  integer = false
+): number {
+  const parsed = Number(value);
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < minimum ||
+    parsed > maximum ||
+    (integer && !Number.isInteger(parsed))
+  ) {
+    throw new Error(
+      `${label} must be ${integer ? 'an integer' : 'a number'} between ${minimum} and ${maximum}`
+    );
+  }
+  return parsed;
+}
+
 function printWriteResult(result: { vision: string[]; lisa: string[] }): void {
   const files: string[] = [];
   if (result.vision.length > 0) files.push(`vision (${envFilePath('vision')})`);
@@ -815,7 +836,14 @@ export function registerAssistantCommand(program: Command): void {
                 ? opts.packet.replace(/\.review\.json$/, '.preferences.json')
                 : `${opts.packet}.preferences.json`);
             writeBlindPreferenceReport(report, output);
-            if (!opts.json) console.log(`\nPréférences sans contenu brut : ${output}`);
+            if (!opts.json) {
+              const aggregate = opts.packet.endsWith('.review.json')
+                ? opts.packet.replace(/\.review\.json$/, '.aggregate.json')
+                : '<fichier.aggregate.json>';
+              console.log(
+                `\nPréférences sans contenu brut : ${output}\n\nAprès vérification, active le gagnant sur les conversations substantielles :\nbuddy assistant route-apply --preferences "${output}" --aggregate "${aggregate}"`
+              );
+            }
           }
         } catch (error) {
           console.error(error instanceof Error ? error.message : String(error));
@@ -823,6 +851,165 @@ export function registerAssistantCommand(program: Command): void {
         }
       }
     );
+
+  assistant
+    .command('route-apply')
+    .description('Activate a safe, human-reviewed blind-pilot winner across Lisa surfaces')
+    .requiredOption('--preferences <file>', 'Revealed .preferences.json report')
+    .requiredOption('--aggregate <file>', 'Matching raw-free .aggregate.json report')
+    .option('--min-coverage <ratio>', 'Minimum judged-trial ratio (0.1-1)', '0.5')
+    .option('--ttl-days <n>', 'Profile lifetime before automatic fallback', '30')
+    .option('--force-coverage', 'Allow sparse human review; never bypasses the safety gate')
+    .action(
+      async (opts: {
+        preferences: string;
+        aggregate: string;
+        minCoverage: string;
+        ttlDays: string;
+        forceCoverage?: boolean;
+      }) => {
+        const {
+          activateCompanionRoutingFromFiles,
+          configuredCompanionRoutingPaths,
+          resetCompanionModelRoutingCache,
+        } = await import('../conversation/companion-model-routing.js');
+        try {
+          const minimumCoverage = parseBoundedNumber(
+            opts.minCoverage,
+            '--min-coverage',
+            0.1,
+            1
+          );
+          const ttlDays = parseBoundedNumber(opts.ttlDays, '--ttl-days', 1, 365, true);
+          const profile = activateCompanionRoutingFromFiles(
+            opts.preferences,
+            opts.aggregate,
+            {
+              minimumCoverage,
+              ttlDays,
+              forceCoverage: opts.forceCoverage,
+            }
+          );
+          resetCompanionModelRoutingCache();
+          const { resetVoiceModelCache } = await import('../sensory/voice-loop.js');
+          resetVoiceModelCache();
+          console.log(
+            `Profil compagnon activé : ${profile.profileId}\nModèle : ${profile.winner.model} (${profile.winner.provider})\nSurfaces : ${profile.policy.surfaces.join(', ')} · voies : ${profile.policy.lanes.join(', ')}\nExpiration/repli automatique : ${profile.expiresAt}\nFichier privé : ${configuredCompanionRoutingPaths().profile}`
+          );
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 1;
+        }
+      }
+    );
+
+  assistant
+    .command('route-status')
+    .description('Show the active evidence-backed Lisa route and raw-free outcomes')
+    .option('--json', 'Print machine-readable local status')
+    .option('--limit <n>', 'Recent routing outcomes', '40')
+    .action(async (opts: { json?: boolean; limit: string }) => {
+      const {
+        configuredCompanionRoutingPaths,
+        readCompanionRoutingProfile,
+        readRecentCompanionRoutingEvents,
+      } = await import('../conversation/companion-model-routing.js');
+      try {
+        const limit = parseBoundedNumber(opts.limit, '--limit', 1, 500, true);
+        const profile = readCompanionRoutingProfile();
+        const profileEvents = profile
+          ? readRecentCompanionRoutingEvents(
+              limit,
+              configuredCompanionRoutingPaths().events,
+              profile.profileId
+            )
+          : [];
+        const outcomes = profileEvents.reduce<Record<string, number>>((counts, event) => {
+          const key = `${event.surface}:${event.outcome}`;
+          counts[key] = (counts[key] ?? 0) + 1;
+          return counts;
+        }, {});
+        const expired = profile ? Date.parse(profile.expiresAt) <= Date.now() : false;
+        const globallyDisabled = process.env.CODEBUDDY_COMPANION_ROUTING === 'false';
+        const effectiveEnabled = Boolean(profile?.enabled && !expired && !globallyDisabled);
+        const status = {
+          profile,
+          expired,
+          globallyDisabled,
+          effectiveEnabled,
+          recentOutcomeCount: profileEvents.length,
+          outcomes,
+          paths: configuredCompanionRoutingPaths(),
+        };
+        if (opts.json) {
+          console.log(JSON.stringify(status, null, 2));
+        } else if (!profile) {
+          console.log('Aucun profil de routage compagnon actif.');
+        } else {
+          const state = !profile.enabled
+            ? 'désactivé'
+            : expired
+              ? 'expiré — repli normal'
+              : globallyDisabled
+                ? 'arrêt global — repli normal'
+                : 'actif';
+          console.log(
+            `Profil : ${profile.profileId} — ${state}\nModèle pilote : ${profile.winner.model} (${profile.winner.provider})\nPreuves : ${profile.source.judgedTrials}/${profile.source.totalTrials} jugements, qualité ${Math.round(profile.winner.automatedScore * 100)}%, sécurité ${Math.round(profile.winner.safetyPassRate * 100)}%${profile.source.coverageOverride ? ' · couverture forcée' : ''}\nDécisions récentes de ce profil : ${profileEvents.length}${Object.keys(outcomes).length ? ` — ${Object.entries(outcomes).map(([key, count]) => `${key}=${count}`).join(', ')}` : ''}`
+          );
+        }
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
+    .command('route-rollback')
+    .description('Restore the previous Lisa routing profile, or disable the current one')
+    .action(async () => {
+      const {
+        resetCompanionModelRoutingCache,
+        rollbackCompanionRoutingProfile,
+      } = await import('../conversation/companion-model-routing.js');
+      try {
+        const profile = rollbackCompanionRoutingProfile();
+        resetCompanionModelRoutingCache();
+        const { resetVoiceModelCache } = await import('../sensory/voice-loop.js');
+        resetVoiceModelCache();
+        console.log(
+          profile
+            ? `Routage restauré : ${profile.profileId} — ${profile.enabled ? profile.winner.model : 'désactivé'}`
+            : 'Aucun profil de routage à restaurer.'
+        );
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
+    .command('route-disable')
+    .description('Immediately disable Lisa pilot routing without restoring another profile')
+    .action(async () => {
+      const {
+        disableCompanionRoutingProfile,
+        resetCompanionModelRoutingCache,
+      } = await import('../conversation/companion-model-routing.js');
+      try {
+        const profile = disableCompanionRoutingProfile();
+        resetCompanionModelRoutingCache();
+        const { resetVoiceModelCache } = await import('../sensory/voice-loop.js');
+        resetVoiceModelCache();
+        console.log(
+          profile
+            ? `Routage compagnon désactivé immédiatement : ${profile.profileId}`
+            : 'Aucun profil de routage compagnon à désactiver.'
+        );
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
 }
 
 export default registerAssistantCommand;

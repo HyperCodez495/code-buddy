@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   makeVoiceReply,
   describeVoiceReadiness,
@@ -244,6 +244,64 @@ describe('voice loop — model resolution (env authoritative)', () => {
     expect(fresh.model).toBe('warm-v2');
     expect(calls).toBe(2);
   });
+
+  it('uses the reviewed companion winner for a substantive spoken turn', async () => {
+    const selectFastestModel = vi.fn(async () => {
+      throw new Error('latency router must not run');
+    });
+    const resolveCompanionRoute = vi.fn(async () => ({
+      model: 'grok-reviewed',
+      apiKey: 'subscription-token',
+      baseURL: 'https://api.x.ai/v1',
+      reason: 'blind pilot reviewed',
+    }));
+
+    const route = await resolveVoiceModel('Pourquoi la conscience nous échappe-t-elle ?', {
+      env: { CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY: 'true' },
+      resolveCompanionRoute,
+      selectFastestModel,
+    });
+
+    expect(route).toMatchObject({
+      model: 'grok-reviewed',
+      apiKey: 'subscription-token',
+      baseURL: 'https://api.x.ai/v1',
+    });
+    expect(resolveCompanionRoute).toHaveBeenCalledWith({
+      surface: 'voice',
+      text: 'Pourquoi la conscience nous échappe-t-elle ?',
+      requireLocal: true,
+      env: { CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY: 'true' },
+    });
+    expect(selectFastestModel).not.toHaveBeenCalled();
+  });
+
+  it('keeps manual pins and forced fast utility turns above the companion pilot', async () => {
+    const resolveCompanionRoute = vi.fn(async () => ({
+      model: 'pilot',
+      apiKey: 'pilot-key',
+      baseURL: 'https://pilot.example/v1',
+      reason: 'pilot',
+    }));
+    const pinned = await resolveVoiceModel('Pourquoi ?', {
+      env: { CODEBUDDY_SENSORY_SPEAK_MODEL: 'manual-model' },
+      resolveCompanionRoute,
+    });
+    const fast = await resolveVoiceModel('Pourquoi ?', {
+      env: {},
+      forceFastLane: true,
+      resolveCompanionRoute,
+      selectFastestModel: async () => ({
+        model: 'fast-model',
+        apiKey: 'fast-key',
+        baseURL: 'http://127.0.0.1:11434/v1',
+        reason: 'fast lane',
+      }),
+    });
+    expect(pinned.model).toBe('manual-model');
+    expect(fast.model).toBe('fast-model');
+    expect(resolveCompanionRoute).not.toHaveBeenCalled();
+  });
 });
 
 describe('voice loop — runtime prewarming', () => {
@@ -293,6 +351,7 @@ describe('voice loop — runtime prewarming', () => {
 
   it('warms route, model, and a bounded TTS corpus', async () => {
     let ttsLimit = -1;
+    let routedHeard = '';
     const route = {
       model: 'local-fast',
       apiKey: 'ollama',
@@ -301,7 +360,10 @@ describe('voice loop — runtime prewarming', () => {
     };
     const result = await prewarmVoiceRuntime({
       env: { CODEBUDDY_TTS_PREWARM_LIMIT: '999' },
-      resolveRoute: async () => route,
+      resolveRoute: async (heard) => {
+        routedHeard = heard;
+        return route;
+      },
       warmModel: async (selected) => ({
         attempted: true,
         warmed: selected === route,
@@ -315,6 +377,7 @@ describe('voice loop — runtime prewarming', () => {
     });
 
     expect(ttsLimit).toBe(64);
+    expect(routedHeard).toContain('Pourquoi');
     expect(result.route.model).toBe('local-fast');
     expect(result.model.warmed).toBe(true);
     expect(result.tts).toMatchObject({ attempted: 64, cached: 64 });

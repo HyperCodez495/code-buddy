@@ -10,6 +10,7 @@ import path from 'path';
 import { createHash } from 'node:crypto';
 import type { ChatEntry } from '../../agent/types.js';
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
+import type { CompanionRuntimeRoute } from '../../conversation/companion-model-routing.js';
 import {
   MODEL_NAME_PATTERN,
   clearSessionModelOverride,
@@ -483,6 +484,8 @@ export function __resetChannelAIHandlerForTests(): void {
 interface CachedChannelAgent {
   agent: import('../../agent/codebuddy-agent.js').CodeBuddyAgent;
   lastUsed: number;
+  /** Provider credential/endpoint identity; model-only switches can reuse the agent. */
+  runtimeIdentity: string;
 }
 const channelAgentCache = new Map<string, CachedChannelAgent>();
 const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
@@ -568,6 +571,7 @@ async function getOrCreateChannelAgent(
   agentConfig: { model?: string; systemPrompt?: string; maxToolRounds?: number },
   botId?: string,
   routeModel?: string,
+  companionRoute?: CompanionRuntimeRoute,
 ): Promise<import('../../agent/codebuddy-agent.js').CodeBuddyAgent> {
   const now = Date.now();
   // Evict idle agents first.
@@ -579,21 +583,37 @@ async function getOrCreateChannelAgent(
   // Hermes-style tiers, finest scope first: /model session override > matched
   // route > bot persona > merged route default (includes the router-wide
   // defaultAgent fallback — kept below persona) > provider default.
-  const { model } = resolveChannelModel({
+  const { model, source } = resolveChannelModel({
     sessionOverride: getSessionModelOverride(sessionKey),
     routeModel,
     personaModel: persona?.model,
+    companionModel: companionRoute?.model,
     routeDefaultModel: agentConfig.model,
     globalModel: resolved.model,
   });
+  const runtimeResolved =
+    source === 'companion-profile' && companionRoute
+      ? {
+          apiKey: companionRoute.apiKey,
+          baseUrl: companionRoute.baseURL,
+          model: companionRoute.model,
+        }
+      : resolved;
+  const runtimeIdentity = createHash('sha256')
+    .update(`${runtimeResolved.apiKey}:${runtimeResolved.baseUrl}`)
+    .digest('hex')
+    .slice(0, 16);
   const hit = channelAgentCache.get(sessionKey);
-  if (hit) {
+  if (hit && hit.runtimeIdentity === runtimeIdentity) {
     hit.lastUsed = now;
     // Reconcile a changed override on the cached agent (no eviction — the
     // in-memory conversation history is what makes the chat feel continuous).
     if (hit.agent.getCurrentModel() !== model) hit.agent.setModel(model);
     return hit.agent;
   }
+  // A provider/endpoint change cannot be applied through setModel(). Recreate
+  // the agent, then restore its persisted transcript below.
+  if (hit) channelAgentCache.delete(sessionKey);
   // Opt-in Code Explorer nudge (set CODE_EXPLORER_BIN): some models won't reach
   // for the code-graph MCP tools on their own and just say "I can't" — tell them
   // plainly that they can, and give the CLI fallback. No-op when the env is unset.
@@ -617,8 +637,8 @@ async function getOrCreateChannelAgent(
     undefined;
   const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
   const agent = new CodeBuddyAgent(
-    resolved.apiKey || 'local',
-    resolved.baseUrl,
+    runtimeResolved.apiKey || 'local',
+    runtimeResolved.baseUrl,
     model,
     agentConfig.maxToolRounds ?? 6, // bounded (vs the 50-round default)
     true, // useRAGToolSelection — relevant tools on demand, not all ~194
@@ -643,7 +663,7 @@ async function getOrCreateChannelAgent(
     }
     if (lruKey) channelAgentCache.delete(lruKey);
   }
-  channelAgentCache.set(sessionKey, { agent, lastUsed: now });
+  channelAgentCache.set(sessionKey, { agent, lastUsed: now, runtimeIdentity });
   return agent;
 }
 
@@ -787,16 +807,6 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           ? process.env.CODEBUDDY_PROVIDER
           : 'auto';
       const resolved = resolveProviderFromEnv(preferredProvider as never);
-      if (!resolved) {
-        logger.warn('No LLM provider for channel chat — set CODEBUDDY_PROVIDER + a provider key/env');
-        const { conversationFailureReply } = await import('../../conversation/conversation-orchestrator.js');
-        await channel.send({
-          channelId: message.channel.id,
-          content: conversationFailureReply(message.content),
-          replyTo: message.id,
-        });
-        return;
-      }
 
       const { getRouteAgentConfig, resolveRoute } = await import('../../channels/core.js');
       const agentConfig = getRouteAgentConfig(message);
@@ -822,7 +832,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
             routeModel,
             personaModel: personaForShow?.model,
             routeDefaultModel: agentConfig.model,
-            globalModel: resolved.model,
+            globalModel: resolved?.model || 'indisponible',
           });
           return `${model} (source : ${source})`;
         };
@@ -873,12 +883,72 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           externalId: message.id,
         });
       }
-      const agent = await getOrCreateChannelAgent(sessionKey, resolved, agentConfig, botId, routeModel);
-
       const channelPersona = botId ? channelBotPersonas.get(botId) : undefined;
+      const companionPersona = /\b(lisa|compagne|compagnon|companion)\b/i.test(
+        `${channelPersona?.name ?? ''} ${channelPersona?.systemPrompt ?? ''}`
+      );
       const companionConversation =
-        (Boolean(channelPersona?.systemPrompt) || continuesVoiceConversation) &&
+        (companionPersona || Boolean(channelPersona?.systemPrompt) || continuesVoiceConversation) &&
         process.env.CODEBUDDY_CHANNEL_CONVERSATION !== 'false';
+      let companionRoute: CompanionRuntimeRoute | undefined;
+      const hasExplicitModel = Boolean(
+        getSessionModelOverride(sessionKey) || routeModel || channelPersona?.model
+      );
+      if (
+        (companionPersona || continuesVoiceConversation) &&
+        companionConversation &&
+        channel.type === 'telegram' &&
+        !hasExplicitModel
+      ) {
+        try {
+          const { resolveCompanionModelRoute } = await import(
+            '../../conversation/companion-model-routing.js'
+          );
+          companionRoute =
+            (await resolveCompanionModelRoute({
+              surface: 'telegram',
+              text: message.content,
+              env: process.env,
+            })) ?? undefined;
+        } catch (error) {
+          logger.debug('Companion pilot routing unavailable on channel', {
+            channelType: channel.type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      const runtimeResolved =
+        resolved ??
+        (companionRoute
+          ? {
+              apiKey: companionRoute.apiKey,
+              baseUrl: companionRoute.baseURL,
+              model: companionRoute.model,
+            }
+          : null);
+      if (!runtimeResolved) {
+        logger.warn(
+          'No LLM provider for channel chat — set CODEBUDDY_PROVIDER or activate an available companion route'
+        );
+        const { conversationFailureReply } = await import(
+          '../../conversation/conversation-orchestrator.js'
+        );
+        await channel.send({
+          channelId: message.channel.id,
+          content: conversationFailureReply(message.content),
+          replyTo: message.id,
+        });
+        return;
+      }
+      const agent = await getOrCreateChannelAgent(
+        sessionKey,
+        runtimeResolved,
+        agentConfig,
+        botId,
+        routeModel,
+        companionRoute
+      );
+
       let agentInput = message.content;
       if (companionConversation) {
         const [conversation, prefetchedContext, prefetchEngine] = await Promise.all([

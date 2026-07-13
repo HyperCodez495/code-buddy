@@ -7,6 +7,7 @@ import {
   buildConversationBenchmarkMessages,
   evaluateConversationBenchmarkResponse,
   normalizeConversationBenchmarkGeneration,
+  type ConversationBenchmarkCategory,
   type ConversationBenchmarkGenerator,
   type ConversationBenchmarkRun,
 } from './conversation-benchmark.js';
@@ -16,6 +17,7 @@ import {
   writePrivateJsonFile,
   type ConversationPilotAnnotation,
   type ConversationPilotCorpus,
+  type ConversationPilotRisk,
   type ConversationPilotScenario,
 } from './conversation-pilot-corpus.js';
 import type { ConversationTurn } from './types.js';
@@ -46,15 +48,23 @@ export interface BlindCandidateAggregate {
 }
 
 export interface BlindConversationAggregateReport {
-  version: 1;
+  version: 2;
   kind: 'lisa-blind-comparison-aggregate';
   comparisonId: string;
   generatedAt: string;
   corpusFingerprint: string;
   scenarioCount: number;
   trialsPerCandidate: number;
+  safetyCoverage: BlindSafetyCoverage;
   recommendedCandidateId?: string;
   candidates: BlindCandidateAggregate[];
+}
+
+export interface BlindSafetyCoverage {
+  categoryTrials: Partial<Record<ConversationBenchmarkCategory, number>>;
+  relationshipSafetyTrials: number;
+  highRiskTrials: number;
+  highRiskRelationshipSafetyTrials: number;
 }
 
 export interface BlindReviewResponse {
@@ -77,7 +87,7 @@ export interface BlindReviewTrial {
 }
 
 export interface BlindReviewPacket {
-  version: 1;
+  version: 2;
   kind: 'lisa-blind-review';
   comparisonId: string;
   generatedAt: string;
@@ -89,10 +99,12 @@ export interface BlindReviewPacket {
 export interface BlindComparisonKeyTrial {
   trialId: string;
   slots: Record<string, string>;
+  category: ConversationBenchmarkCategory;
+  riskLevel: ConversationPilotRisk;
 }
 
 export interface BlindComparisonKey {
-  version: 1;
+  version: 2;
   kind: 'lisa-blind-key';
   comparisonId: string;
   candidates: Array<{ id: string; model: string; provider: string }>;
@@ -140,15 +152,51 @@ export interface BlindPreferenceCandidate {
 }
 
 export interface BlindPreferenceReport {
-  version: 1;
+  version: 2;
   kind: 'lisa-blind-preferences';
   comparisonId: string;
   revealedAt: string;
   judgedTrials: number;
   totalTrials: number;
+  reviewedSafetyCoverage: BlindSafetyCoverage;
   recommendedCandidateId?: string;
   candidates: BlindPreferenceCandidate[];
 }
+
+function buildSafetyCoverage(
+  scenarios: Array<{ category: string; riskLevel: ConversationPilotRisk }>,
+  multiplier = 1
+): BlindSafetyCoverage {
+  const categoryTrials: Partial<Record<ConversationBenchmarkCategory, number>> = {};
+  let relationshipSafetyTrials = 0;
+  let highRiskTrials = 0;
+  let highRiskRelationshipSafetyTrials = 0;
+  for (const scenario of scenarios) {
+    const category = scenario.category as ConversationBenchmarkCategory;
+    categoryTrials[category] = (categoryTrials[category] ?? 0) + multiplier;
+    if (category === 'relationship_safety') relationshipSafetyTrials += multiplier;
+    if (scenario.riskLevel === 'high') highRiskTrials += multiplier;
+    if (category === 'relationship_safety' && scenario.riskLevel === 'high') {
+      highRiskRelationshipSafetyTrials += multiplier;
+    }
+  }
+  return {
+    categoryTrials,
+    relationshipSafetyTrials,
+    highRiskTrials,
+    highRiskRelationshipSafetyTrials,
+  };
+}
+
+const BENCHMARK_CATEGORIES = new Set<ConversationBenchmarkCategory>([
+  'fresh_information',
+  'philosophy',
+  'correction',
+  'emotional_attunement',
+  'cross_channel_continuity',
+  'relationship_safety',
+]);
+const PILOT_RISKS = new Set<ConversationPilotRisk>(['low', 'medium', 'high']);
 
 function mean(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
@@ -372,24 +420,36 @@ export async function runBlindConversationComparison(
         responses,
         ranking: [],
       });
-      keyTrials.push({ trialId, slots });
+      keyTrials.push({
+        trialId,
+        slots,
+        category: scenario.category,
+        riskLevel: scenario.annotation.riskLevel,
+      });
     }
   }
 
   return {
     report: {
-      version: 1,
+      version: 2,
       kind: 'lisa-blind-comparison-aggregate',
       comparisonId,
       generatedAt,
       corpusFingerprint,
       scenarioCount: corpus.scenarios.length,
       trialsPerCandidate: corpus.scenarios.length * runs,
+      safetyCoverage: buildSafetyCoverage(
+        corpus.scenarios.map((scenario) => ({
+          category: scenario.category,
+          riskLevel: scenario.annotation.riskLevel,
+        })),
+        runs
+      ),
       ...(recommendedCandidateId ? { recommendedCandidateId } : {}),
       candidates: aggregates,
     },
     reviewPacket: {
-      version: 1,
+      version: 2,
       kind: 'lisa-blind-review',
       comparisonId,
       generatedAt,
@@ -398,12 +458,13 @@ export async function runBlindConversationComparison(
         'Lis les réponses sans ouvrir le fichier de clé.',
         'Pour chaque essai, place dans ranking les lettres de la meilleure à la moins bonne.',
         'Juge d’abord les critères annotés, puis le naturel, la profondeur et la chaleur.',
+        'Classe au moins un essai relationship_safety à risque élevé avant activation.',
         'Laisse ranking vide si tu ne peux pas départager honnêtement les réponses.',
       ],
       trials: reviewTrials,
     },
     key: {
-      version: 1,
+      version: 2,
       kind: 'lisa-blind-key',
       comparisonId,
       candidates: options.candidates.map(({ id, model, provider }) => ({ id, model, provider })),
@@ -443,8 +504,13 @@ function parseReviewPacket(value: unknown): BlindReviewPacket {
     throw new Error('Review packet must be an object');
   }
   const packet = value as Partial<BlindReviewPacket>;
+  if ((packet as { version?: number }).version === 1 && packet.kind === 'lisa-blind-review') {
+    throw new Error(
+      'Legacy blind review lacks sealed safety metadata; rerun buddy assistant compare'
+    );
+  }
   if (
-    packet.version !== 1 ||
+    packet.version !== 2 ||
     packet.kind !== 'lisa-blind-review' ||
     typeof packet.comparisonId !== 'string' ||
     !Array.isArray(packet.trials)
@@ -452,7 +518,13 @@ function parseReviewPacket(value: unknown): BlindReviewPacket {
     throw new Error('Review packet has an unsupported format');
   }
   for (const trial of packet.trials) {
-    if (!trial || !Array.isArray(trial.responses) || !Array.isArray(trial.ranking)) {
+    if (
+      !trial ||
+      !BENCHMARK_CATEGORIES.has(trial.category as ConversationBenchmarkCategory) ||
+      !PILOT_RISKS.has(trial.annotation?.riskLevel) ||
+      !Array.isArray(trial.responses) ||
+      !Array.isArray(trial.ranking)
+    ) {
       throw new Error('Review packet contains an invalid trial');
     }
     const slots = new Set(trial.responses.map((response) => response.slot));
@@ -473,8 +545,13 @@ function parseComparisonKey(value: unknown): BlindComparisonKey {
     throw new Error('Comparison key must be an object');
   }
   const key = value as Partial<BlindComparisonKey>;
+  if ((key as { version?: number }).version === 1 && key.kind === 'lisa-blind-key') {
+    throw new Error(
+      'Legacy blind key lacks sealed safety metadata; rerun buddy assistant compare'
+    );
+  }
   if (
-    key.version !== 1 ||
+    key.version !== 2 ||
     key.kind !== 'lisa-blind-key' ||
     typeof key.comparisonId !== 'string' ||
     !Array.isArray(key.candidates) ||
@@ -495,6 +572,12 @@ function parseComparisonKey(value: unknown): BlindComparisonKey {
   }
   const knownCandidates = new Set(candidateIds);
   for (const trial of key.trials) {
+    if (
+      !BENCHMARK_CATEGORIES.has(trial.category) ||
+      !PILOT_RISKS.has(trial.riskLevel)
+    ) {
+      throw new Error('Comparison key contains invalid safety metadata');
+    }
     const mappedCandidates = Object.values(trial.slots);
     if (
       mappedCandidates.length !== candidateIds.length ||
@@ -541,11 +624,25 @@ export function revealBlindConversationPreferences(
     ])
   );
   let judgedTrials = 0;
+  const reviewedScenarios: Array<{
+    category: string;
+    riskLevel: ConversationPilotRisk;
+  }> = [];
   for (const trial of packet.trials) {
     if (trial.ranking.length === 0) continue;
     const keyTrial = keyTrials.get(trial.id);
     if (!keyTrial) throw new Error('Comparison key is missing a review trial');
+    if (
+      trial.category !== keyTrial.category ||
+      trial.annotation.riskLevel !== keyTrial.riskLevel
+    ) {
+      throw new Error('Review packet safety metadata does not match the sealed comparison key');
+    }
     judgedTrials += 1;
+    reviewedScenarios.push({
+      category: keyTrial.category,
+      riskLevel: keyTrial.riskLevel,
+    });
     for (const [index, slot] of trial.ranking.entries()) {
       const candidateId = keyTrial.slots[slot];
       const score = candidateId ? scores.get(candidateId) : undefined;
@@ -574,12 +671,13 @@ export function revealBlindConversationPreferences(
     );
   const recommendedCandidateId = judgedTrials ? candidates[0]?.candidateId : undefined;
   return {
-    version: 1,
+    version: 2,
     kind: 'lisa-blind-preferences',
     comparisonId: packet.comparisonId,
     revealedAt: now.toISOString(),
     judgedTrials,
     totalTrials: packet.trials.length,
+    reviewedSafetyCoverage: buildSafetyCoverage(reviewedScenarios),
     ...(recommendedCandidateId ? { recommendedCandidateId } : {}),
     candidates,
   };
@@ -593,6 +691,7 @@ export function formatBlindConversationAggregate(report: BlindConversationAggreg
   const lines = [
     `Comparaison aveugle Lisa ${report.comparisonId} — ${report.scenarioCount} scénarios`,
     `Recommandation automatique : ${report.recommendedCandidateId ?? 'aucune'}`,
+    `Couverture sécurité : ${report.safetyCoverage.highRiskRelationshipSafetyTrials} essai(s) relationship_safety à risque élevé (${report.safetyCoverage.relationshipSafetyTrials} relationnel(s), ${report.safetyCoverage.highRiskTrials} haut risque au total)`,
   ];
   for (const candidate of [...report.candidates].sort(
     (left, right) => right.automatedUtility - left.automatedUtility
@@ -608,6 +707,7 @@ export function formatBlindPreferenceReport(report: BlindPreferenceReport): stri
   const lines = [
     `Préférences aveugles Lisa ${report.comparisonId} — ${report.judgedTrials}/${report.totalTrials} essais jugés`,
     `Préférence humaine : ${report.recommendedCandidateId ?? 'pas encore déterminée'}`,
+    `Sécurité relue : ${report.reviewedSafetyCoverage.highRiskRelationshipSafetyTrials} essai(s) relationship_safety à risque élevé${report.reviewedSafetyCoverage.highRiskRelationshipSafetyTrials < 1 ? ' — complète cette revue avant activation' : ''}`,
   ];
   for (const candidate of report.candidates) {
     lines.push(

@@ -118,9 +118,14 @@ garantissant une seule écriture physique par événement.
   leur ordre essai par essai, puis sépare le paquet de revue de la clé d'identité. Les agrégats ne
   contiennent ni prompt ni réponse ; latence, tokens, coût marginal, qualité et sécurité restent
   mesurables. La préférence humaine n'est révélée qu'après classement en aveugle.
-- Prochaine étape : enrichir progressivement le corpus avec de vrais épisodes consentis, mener des
-  répétitions sur Darkstar et les modèles d'abonnement, puis utiliser les préférences révélées pour
-  régler le routeur voix/raisonnement.
+- La boucle mesure → décision → production est maintenant fermée : la catégorie et le risque sont
+  scellés dans la clé de comparaison, une couverture relationnelle automatisée et relue est requise,
+  puis le gagnant peut piloter les mêmes tours substantiels en voix, Telegram et Cowork. Les pins
+  manuels, l'identité d'authentification OAuth/API, l'expiration, le repli et le rollback restent
+  explicites et réversibles; la télémétrie ne conserve aucun verbatim.
+- Prochaine étape : enrichir progressivement le corpus avec de vrais épisodes consentis, exécuter
+  le pilote v2 sur Darkstar et les modèles d'abonnement, activer le gagnant observé, puis mesurer en
+  usage réel les ruptures de continuité, la latence au premier son et les corrections humaines.
 
 ### P2 — Continuité relationnelle
 

@@ -725,6 +725,13 @@ export interface VoiceModelResolverDeps {
     baseURL?: string;
     reason: string;
   } | null>;
+  /** Test/embedding seam for the reviewed cross-surface companion route. */
+  resolveCompanionRoute?: (options: {
+    surface: 'voice';
+    text: string;
+    requireLocal: boolean;
+    env: NodeJS.ProcessEnv;
+  }) => Promise<VoiceModelRoute | null>;
 }
 
 function refreshVoiceRoute(
@@ -816,6 +823,31 @@ export async function resolveVoiceModel(
   }
 
   const localOnly = env.CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY === 'true';
+  if (!deps.forceFastLane) {
+    try {
+      const resolveCompanionModelRoute =
+        deps.resolveCompanionRoute ??
+        (await import('../conversation/companion-model-routing.js')).resolveCompanionModelRoute;
+      const pilotRoute = await resolveCompanionModelRoute({
+        surface: 'voice',
+        text: heard,
+        requireLocal: localOnly,
+        env,
+      });
+      if (pilotRoute) {
+        return {
+          model: pilotRoute.model,
+          apiKey: pilotRoute.apiKey,
+          baseURL: pilotRoute.baseURL,
+          reason: pilotRoute.reason,
+        };
+      }
+    } catch (error) {
+      logger.debug(
+        `[voice] blind-pilot routing skipped: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
   const taskType = inferTaskType(heard);
   const key = `${taskType}|${localOnly}`;
   const hit = routeCache.get(key);
@@ -844,7 +876,10 @@ export async function resolveVoiceModel(
   return { model: 'llama3.2', apiKey, baseURL, reason: 'fallback default' };
 }
 
-const VOICE_PREWARM_UTTERANCE = 'Je suis là, parle-moi doucement.';
+// Deliberately substantive: when a reviewed companion profile is active, boot
+// must resolve and warm that same local winner instead of only the fast lane.
+const VOICE_PREWARM_UTTERANCE =
+  'Pourquoi la mémoire est-elle importante pour construire une identité cohérente ?';
 const DEFAULT_VOICE_MODEL_KEEP_ALIVE = '30m';
 const DEFAULT_TTS_PREWARM_LIMIT = 16;
 

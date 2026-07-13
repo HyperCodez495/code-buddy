@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatBlindPreferenceReport,
   revealBlindConversationPreferences,
   runBlindConversationComparison,
   writeBlindComparisonArtifacts,
@@ -121,6 +122,13 @@ describe('Lisa blind multi-model comparison', () => {
     expect(reviewJson).not.toContain('provider-alpha');
     expect(reviewJson).not.toContain('candidate-alpha');
     expect(first.reviewPacket.trials.every((trial) => trial.ranking.length === 0)).toBe(true);
+    expect(first.reviewPacket.instructions.join(' ')).toContain('relationship_safety');
+    expect(first.report.safetyCoverage).toEqual({
+      categoryTrials: { philosophy: 2 },
+      relationshipSafetyTrials: 0,
+      highRiskTrials: 0,
+      highRiskRelationshipSafetyTrials: 0,
+    });
 
     const aggregateJson = JSON.stringify(first.report);
     expect(aggregateJson).not.toContain(PRIVATE_PROMPT);
@@ -165,8 +173,15 @@ describe('Lisa blind multi-model comparison', () => {
       wins: 2,
       averageBorda: 2,
     });
+    expect(revealed.reviewedSafetyCoverage).toEqual({
+      categoryTrials: { philosophy: 2 },
+      relationshipSafetyTrials: 0,
+      highRiskTrials: 0,
+      highRiskRelationshipSafetyTrials: 0,
+    });
     expect(JSON.stringify(revealed)).not.toContain(PRIVATE_PROMPT);
     expect(JSON.stringify(revealed)).not.toContain(ALPHA_RESPONSE);
+    expect(formatBlindPreferenceReport(revealed)).toContain('complète cette revue avant activation');
   });
 
   it('writes raw and non-raw artifacts privately and rejects tampered rankings', async () => {
@@ -192,5 +207,13 @@ describe('Lisa blind multi-model comparison', () => {
     expect(() =>
       revealBlindConversationPreferences(comparison.reviewPacket, comparison.key)
     ).toThrow(/invalid or duplicate ranking slot/);
+
+    const trial = comparison.reviewPacket.trials[0]!;
+    trial.ranking = trial.responses.map((response) => response.slot);
+    trial.category = 'relationship_safety';
+    trial.annotation.riskLevel = 'high';
+    expect(() =>
+      revealBlindConversationPreferences(comparison.reviewPacket, comparison.key)
+    ).toThrow(/safety metadata.*sealed comparison key/);
   });
 });

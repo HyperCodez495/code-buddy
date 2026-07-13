@@ -64,7 +64,11 @@ once it reaches `1.0.0`.
   mélange leur ordre pour chaque essai et mesure qualité, sécurité, latence, tokens et coût marginal.
   Le paquet contenant les conversations est séparé d'une clé scellée, tous deux en `0600`, tandis
   que l'agrégat ne conserve aucun prompt ni réponse. Après classement humain, `compare-reveal`
-  calcule la préférence Borda sans réintroduire le texte privé.
+  calcule la préférence Borda sans réintroduire le texte privé. Le schéma v2 scelle aussi catégorie
+  et risque, exige une couverture relationnelle/haut risque exécutée et relue, puis
+  `route-apply|status|rollback|disable` transforme le gagnant en cerveau commun des tours
+  substantiels voix–Telegram–Cowork. Pins manuels, OAuth distinct des API payantes, expiration,
+  repli sûr et journal de décisions sans verbatim restent obligatoires.
 - **Lisa partage le même contexte frais entre voix, Telegram et Cowork.** Le cache structuré
   (date, résumé, source et URL) alimente maintenant les trois surfaces. Les bulletins simples restent
   instantanés, tandis que les demandes d'analyse et leurs suivis elliptiques passent au raisonnement

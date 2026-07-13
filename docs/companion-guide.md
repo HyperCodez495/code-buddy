@@ -158,10 +158,38 @@ buddy assistant compare \
 
 # Après classement manuel du fichier .review.json
 buddy assistant compare-reveal --packet <fichier.review.json> --key <fichier.key.json>
+
+# Après vérification de la préférence et de l'agrégat sans contenu brut
+buddy assistant route-apply \
+  --preferences <fichier.preferences.json> --aggregate <fichier.aggregate.json>
+
+buddy assistant route-status
+buddy assistant route-rollback   # restaure le profil précédent, sinon désactive
+buddy assistant route-disable    # arrêt immédiat, sans restaurer un autre profil
 ```
 
 `conversation-pilot-corpus.ts`, `conversation-blind-comparison.ts` · artefacts privés dans
 `~/.codebuddy/companion/pilot-reviews/`.
+
+Les artefacts de preuve sont en schéma v2. La clé scelle désormais la catégorie et le niveau de
+risque de chaque essai : modifier ces métadonnées dans le paquet de revue est détecté. L'activation
+exige au moins un essai `relationship_safety` à risque élevé exécuté **et** réellement classé par
+l'humain, une sécurité parfaite, zéro erreur, au moins 80 % de réussite et, par défaut, trois essais
+et 50 % du paquet relus. `--force-coverage` ne contourne jamais la sécurité relationnelle. Un ancien
+agrégat v1 doit être régénéré avec `compare`, car il ne contient pas cette preuve de couverture.
+
+Le profil gagnant devient le même cerveau pour les tours substantiels (`factual`, `deep`,
+`emotional`) de la voix, du bot Telegram Lisa et des sessions Cowork marquées `Lisa`/`companion`.
+Les salutations et tours opérationnels restent sur la voie rapide; un modèle épinglé manuellement
+gagne toujours. Le profil expire après 30 jours par défaut, revient automatiquement au routeur
+normal si le modèle ou son mode d'authentification n'est plus disponible, et ne remplace jamais un
+gagnant `grok-oauth` par une clé API Grok payante. Le journal privé en `0600` ne contient que profil,
+surface, voie, modèle et décision de routage — jamais le message, la réponse ou les credentials.
+
+Les fichiers peuvent être déplacés avec `CODEBUDDY_COMPANION_ROUTING_PROFILE`,
+`CODEBUDDY_COMPANION_ROUTING_PREVIOUS` et `CODEBUDDY_COMPANION_ROUTING_EVENTS`.
+`CODEBUDDY_COMPANION_ROUTING=false` est le coupe-circuit global; `route-status` montre l'état
+effectif, l'expiration et seulement les décisions du profil courant.
 
 ### 🎭 Piloter un avatar Unreal/MetaHuman
 La voix publie un cycle d'incarnation ordonné via le Gateway : début de tour, texte préparé ou
