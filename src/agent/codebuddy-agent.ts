@@ -1136,7 +1136,10 @@ Look at the screenshot and find the element matching the user's intent. Output o
     }
   }
 
-  async processUserMessage(message: string): Promise<ChatEntry[]> {
+  async processUserMessage(
+    message: string,
+    options: { transientContext?: string; relationshipSafety?: boolean } = {},
+  ): Promise<ChatEntry[]> {
     const turnStartedAt = Date.now();
     // See processUserMessageStream — the system prompt builds async and a
     // first turn must not race it (embedded hosts don't await it themselves).
@@ -1167,7 +1170,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
       message,
       this.chatHistory,
       this.messages,
-      turnStartedAt
+      turnStartedAt,
+      options.transientContext,
+      options.relationshipSafety === true,
     );
 
     // Fire-and-forget Hermes-style post-session learning review (interactive only).
@@ -1176,8 +1181,37 @@ Look at the screenshot and find the element matching the user's intent. Output o
     return [userEntry, ...newEntries];
   }
 
+  /**
+   * Replace the latest persisted assistant text after a last-mile policy gate.
+   * Both projections must change together so a blocked phrase cannot survive
+   * in the visible transcript or re-enter a later model turn.
+   */
+  replaceLastAssistantResponse(expected: string, replacement: string): boolean {
+    let chatIndex = -1;
+    for (let index = this.chatHistory.length - 1; index >= 0; index -= 1) {
+      const entry = this.chatHistory[index];
+      if (entry?.type === 'assistant' && entry.content === expected) {
+        chatIndex = index;
+        break;
+      }
+    }
+    let messageIndex = -1;
+    for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+      const message = this.messages[index];
+      if (message?.role === 'assistant' && message.content === expected) {
+        messageIndex = index;
+        break;
+      }
+    }
+    if (chatIndex < 0 || messageIndex < 0) return false;
+    this.chatHistory[chatIndex] = { ...this.chatHistory[chatIndex]!, content: replacement };
+    this.messages[messageIndex] = { ...this.messages[messageIndex]!, content: replacement };
+    return true;
+  }
+
   async *processUserMessageStream(
-    message: string
+    message: string,
+    options: { transientContext?: string; relationshipSafety?: boolean } = {},
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     const turnStartedAt = Date.now();
     // The system prompt is built ASYNC at construction. The CLI awaits
@@ -1270,7 +1304,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
         this.chatHistory,
         this.messages,
         this.abortController,
-        turnStartedAt
+        turnStartedAt,
+        options.transientContext,
+        options.relationshipSafety === true,
       );
     } finally {
       // Restore original model if it was changed by routing.

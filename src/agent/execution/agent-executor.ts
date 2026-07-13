@@ -67,6 +67,10 @@ import { classifyQuery } from "./query-classifier.js";
 import { getModelToolConfig } from "../../config/model-tools.js";
 import { getLatencyOptimizer, getStreamingOptimizer } from "../../optimization/latency-optimizer.js";
 import { buildTextEmotionalPresenceContext } from "../../companion/reply-augment.js";
+import {
+  guardRelationshipReply,
+  SAFE_RELATIONSHIP_REPAIR,
+} from "../../conversation/relationship-safety.js";
 
 /**
  * Tools whose (verbose, prose/HTML) output TokenJuice may losslessly compress before it
@@ -76,6 +80,209 @@ import { buildTextEmotionalPresenceContext } from "../../companion/reply-augment
 const JUICE_WEB_TOOLS = new Set(['web_fetch', 'web_search', 'fetch', 'browser_fetch']);
 
 const CONTEXT_MENTION_PATTERN = /@(?:file:|url:|image:|git(?::|\s)|symbol:|search:|web\s|terminal\b)/i;
+
+const RELATIONSHIP_OUTBOUND_TOOLS = new Set([
+  'send_message',
+  'reply',
+  'broadcast',
+  'slack_send',
+  'discord_send',
+  'telegram_send',
+  'email_send',
+  'notification',
+  'notify',
+  'send_notification',
+  'yb_send_dm',
+  'feishu_drive_reply_comment',
+  'feishu_drive_add_comment',
+  'sessions_send',
+]);
+
+const RELATIONSHIP_INTERACTIVE_TOOLS = new Set(['ask_human', 'ask_user_question']);
+const RELATIONSHIP_BLOCK_MARKER = '__codebuddyRelationshipSafetyBlocked';
+const SAFE_INTERACTIVE_QUESTION = 'Peux-tu préciser ce que tu souhaites faire ensuite ?';
+const SAFE_TOOL_RESULT = 'Résultat traité en interne par Lisa.';
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function guardInteractiveText(
+  value: unknown,
+  fallback: string,
+): { value: string; intervened: boolean } {
+  if (typeof value !== 'string' || !value.trim()) return { value: fallback, intervened: true };
+  const guarded = guardRelationshipReply(value);
+  return {
+    value: guarded.intervened || !guarded.response.trim() ? fallback : guarded.response,
+    intervened: guarded.intervened,
+  };
+}
+
+function blockedRelationshipInteractiveToolCall(toolCall: CodeBuddyToolCall): CodeBuddyToolCall {
+  return {
+    ...toolCall,
+    function: {
+      ...toolCall.function,
+      arguments: JSON.stringify({ [RELATIONSHIP_BLOCK_MARKER]: true }),
+    },
+  };
+}
+
+/**
+ * Guard every string an interactive tool can render before the tool gets a
+ * chance to touch readline, Ink, Cowork, or another UI provider. Malformed
+ * calls fail closed instead of being handed to a side-effecting renderer.
+ */
+function prepareRelationshipSafeInteractiveToolCall(
+  toolCall: CodeBuddyToolCall,
+): CodeBuddyToolCall {
+  const name = toolCall.function.name.trim().toLowerCase();
+  if (!RELATIONSHIP_INTERACTIVE_TOOLS.has(name)) return toolCall;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolCall.function.arguments || '{}');
+  } catch {
+    return blockedRelationshipInteractiveToolCall(toolCall);
+  }
+  if (!isUnknownRecord(parsed)) return blockedRelationshipInteractiveToolCall(toolCall);
+
+  if (name === 'ask_human') {
+    if (typeof parsed.question !== 'string') return blockedRelationshipInteractiveToolCall(toolCall);
+    const question = guardInteractiveText(parsed.question, SAFE_INTERACTIVE_QUESTION);
+    const prepared: Record<string, unknown> = { ...parsed, question: question.value };
+    if (Array.isArray(parsed.options)) {
+      prepared.options = parsed.options.map((option, index) =>
+        guardInteractiveText(option, `Option ${index + 1}`).value,
+      );
+    }
+    if (typeof parsed.default === 'string') {
+      prepared.default = guardInteractiveText(
+        parsed.default,
+        'No answer provided – use your best judgement and continue.',
+      ).value;
+    }
+    return {
+      ...toolCall,
+      function: { ...toolCall.function, arguments: JSON.stringify(prepared) },
+    };
+  }
+
+  if (!Array.isArray(parsed.questions)) return blockedRelationshipInteractiveToolCall(toolCall);
+  const questions: Record<string, unknown>[] = [];
+  for (let questionIndex = 0; questionIndex < parsed.questions.length; questionIndex += 1) {
+    const rawQuestion = parsed.questions[questionIndex];
+    if (!isUnknownRecord(rawQuestion) || !Array.isArray(rawQuestion.options)) {
+      return blockedRelationshipInteractiveToolCall(toolCall);
+    }
+    const question = guardInteractiveText(rawQuestion.question, SAFE_INTERACTIVE_QUESTION);
+    const header = guardInteractiveText(rawQuestion.header, `Question ${questionIndex + 1}`);
+    const options: Record<string, unknown>[] = [];
+    for (let optionIndex = 0; optionIndex < rawQuestion.options.length; optionIndex += 1) {
+      const rawOption = rawQuestion.options[optionIndex];
+      if (!isUnknownRecord(rawOption)) return blockedRelationshipInteractiveToolCall(toolCall);
+      const label = guardInteractiveText(rawOption.label, `Option ${optionIndex + 1}`);
+      const description = guardInteractiveText(
+        rawOption.description,
+        'Choix proposé sans pression relationnelle.',
+      );
+      const preview = typeof rawOption.preview === 'string'
+        ? guardInteractiveText(
+            rawOption.preview,
+            'Aperçu masqué par la sécurité relationnelle.',
+          )
+        : null;
+      const optionIntervened = label.intervened || description.intervened || preview?.intervened;
+      const preparedOption: Record<string, unknown> = {
+        ...rawOption,
+        label: optionIntervened ? `Option ${optionIndex + 1}` : label.value,
+        description: optionIntervened
+          ? 'Choix proposé sans pression relationnelle.'
+          : description.value,
+      };
+      if (preview) {
+        preparedOption.preview = optionIntervened
+          ? 'Aperçu masqué par la sécurité relationnelle.'
+          : preview.value;
+      }
+      options.push(preparedOption);
+    }
+    questions.push({
+      ...rawQuestion,
+      question: question.value,
+      header: question.intervened || header.intervened
+        ? `Question ${questionIndex + 1}`
+        : header.value,
+      options,
+    });
+  }
+
+  return {
+    ...toolCall,
+    function: {
+      ...toolCall.function,
+      arguments: JSON.stringify({ ...parsed, questions }),
+    },
+  };
+}
+
+function isBlockedRelationshipInteractiveToolCall(toolCall: CodeBuddyToolCall): boolean {
+  const name = toolCall.function.name.trim().toLowerCase();
+  if (!RELATIONSHIP_INTERACTIVE_TOOLS.has(name)) return false;
+  try {
+    const parsed = JSON.parse(toolCall.function.arguments || '{}') as Record<string, unknown>;
+    return parsed[RELATIONSHIP_BLOCK_MARKER] === true;
+  } catch {
+    return true;
+  }
+}
+
+function relationshipSafeToolResultForDisplay(result: ToolResult): ToolResult {
+  return result.success
+    ? { success: true, output: SAFE_TOOL_RESULT }
+    : { success: false, error: "L'outil a échoué ; aucun contenu brut n'est affiché." };
+}
+
+function relationshipSafeToolCallsForDisplay(
+  toolCalls: readonly CodeBuddyToolCall[],
+): CodeBuddyToolCall[] {
+  return toolCalls.map((toolCall) => ({
+    ...toolCall,
+    function: {
+      ...toolCall.function,
+      arguments: JSON.stringify({ redacted: 'companion-safety' }),
+    },
+  }));
+}
+
+function unsafeRelationshipOutboundToolCall(toolCall: CodeBuddyToolCall): boolean {
+  const name = toolCall.function.name.trim().toLowerCase();
+  if (!RELATIONSHIP_OUTBOUND_TOOLS.has(name)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolCall.function.arguments || '{}');
+  } catch {
+    // Malformed outbound arguments are not safe to reinterpret or deliver.
+    return true;
+  }
+  const strings: string[] = [];
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      strings.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) visit(item);
+    }
+  };
+  visit(parsed);
+  return strings.some((value) => guardRelationshipReply(value).intervened);
+}
 
 function isIgnorableControlToolCall(toolCall: CodeBuddyToolCall): boolean {
   const name = toolCall.function?.name?.trim();
@@ -553,10 +760,20 @@ export class AgentExecutor {
     message: string,
     history: ChatEntry[],
     messages: CodeBuddyMessage[],
-    turnStartedAt: number = Date.now()
+    turnStartedAt: number = Date.now(),
+    transientContext?: string,
+    relationshipSafety = false,
   ): Promise<ChatEntry[]> {
     const initialHistoryLength = history.length;
-    for await (const _event of this.runMeasuredTurn(message, history, messages, null, turnStartedAt)) {
+    for await (const _event of this.runMeasuredTurn(
+      message,
+      history,
+      messages,
+      null,
+      turnStartedAt,
+      transientContext,
+      relationshipSafety,
+    )) {
       // Events dropped. runTurnLoop pushes ChatEntries to history directly.
     }
     return history.slice(initialHistoryLength);
@@ -621,9 +838,19 @@ export class AgentExecutor {
     history: ChatEntry[],
     messages: CodeBuddyMessage[],
     abortController: AbortController | null,
-    turnStartedAt: number = Date.now()
+    turnStartedAt: number = Date.now(),
+    transientContext?: string,
+    relationshipSafety = false,
   ): AsyncGenerator<StreamingChunk, void, unknown> {
-    yield* this.runMeasuredTurn(message, history, messages, abortController, turnStartedAt);
+    yield* this.runMeasuredTurn(
+      message,
+      history,
+      messages,
+      abortController,
+      turnStartedAt,
+      transientContext,
+      relationshipSafety,
+    );
   }
 
   /** Measure end-to-end perceived latency around the single authoritative loop. */
@@ -632,13 +859,22 @@ export class AgentExecutor {
     history: ChatEntry[],
     messages: CodeBuddyMessage[],
     abortController: AbortController | null,
-    startedAt: number
+    startedAt: number,
+    transientContext?: string,
+    relationshipSafety = false,
   ): AsyncGenerator<ExecutorEvent, void, unknown> {
     const operationId = getLatencyOptimizer().startOperation('assistant_turn', startedAt);
     let recordedFirstVisibleResponse = false;
 
     try {
-      for await (const event of this.runTurnLoop(message, history, messages, abortController)) {
+      for await (const event of this.runTurnLoop(
+        message,
+        history,
+        messages,
+        abortController,
+        transientContext,
+        relationshipSafety,
+      )) {
         if (
           !recordedFirstVisibleResponse &&
           (event.type === 'content' || event.type === 'reasoning' || event.type === 'tool_calls')
@@ -670,7 +906,9 @@ export class AgentExecutor {
     message: string,
     history: ChatEntry[],
     messages: CodeBuddyMessage[],
-    abortController: AbortController | null
+    abortController: AbortController | null,
+    transientContext?: string,
+    relationshipSafety = false,
   ): AsyncGenerator<ExecutorEvent, void, unknown> {
     // Shared pre-processing with the sequential path (@mentions, persona
     // auto-select, knowledge graph extraction). Single source of truth in
@@ -689,6 +927,7 @@ export class AgentExecutor {
           : []
       )
     );
+    const currentTurnContext = transientContext?.trim();
 
     const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(message);
     logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
@@ -862,6 +1101,12 @@ export class AgentExecutor {
             content: `<interaction_context ephemeral="true">\n${emotionalPresenceContext}\n</interaction_context>`,
           });
         }
+        if (currentTurnContext) {
+          preparedMessages.push({
+            role: 'system',
+            content: `<companion_current_turn_context ephemeral="true">\n${currentTurnContext}\n</companion_current_turn_context>`,
+          });
+        }
 
         // Context warning — always check regardless of pipeline state
         {
@@ -917,15 +1162,20 @@ export class AgentExecutor {
 
           const result = this.deps.streamingHandler.accumulateChunk(chunk as RawStreamingChunk);
 
-          if (result.reasoningContent) {
+          if (result.reasoningContent && !relationshipSafety) {
             yield { type: "reasoning", reasoning: result.reasoningContent };
           }
 
           if (result.hasNewToolCalls && result.toolCalls) {
-            yield { type: "tool_calls", toolCalls: result.toolCalls };
+            yield {
+              type: "tool_calls",
+              toolCalls: relationshipSafety
+                ? relationshipSafeToolCallsForDisplay(result.toolCalls)
+                : result.toolCalls,
+            };
           }
 
-          if (result.displayContent) {
+          if (result.displayContent && !relationshipSafety) {
             yield { type: "content", content: result.displayContent };
           }
 
@@ -937,7 +1187,12 @@ export class AgentExecutor {
         if (tools.length > 0 && !this.deps.streamingHandler.hasYieldedToolCalls()) {
           const extracted = this.deps.streamingHandler.extractToolCalls();
           if (extracted.toolCalls.length > 0) {
-            yield { type: "tool_calls", toolCalls: extracted.toolCalls };
+            yield {
+              type: "tool_calls",
+              toolCalls: relationshipSafety
+                ? relationshipSafeToolCallsForDisplay(extracted.toolCalls)
+                : extracted.toolCalls,
+            };
           }
         }
 
@@ -954,6 +1209,9 @@ export class AgentExecutor {
           }
           toolCalls = filteredToolCalls.length > 0 ? filteredToolCalls : undefined;
         }
+        if (relationshipSafety && Array.isArray(toolCalls)) {
+          toolCalls = toolCalls.map(prepareRelationshipSafeInteractiveToolCall);
+        }
         const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
         // Pre-fallback raw content — used by in-loop recovery to tell a real
         // partial answer (retry-able) from a truly empty turn (give up).
@@ -965,10 +1223,30 @@ export class AgentExecutor {
             `Blocked: ${forcedChatOnlyToolRunModel} is configured as a chat-only local model and ` +
             'returned no structured tool call even with GROK_FORCE_TOOLS=true. ' +
             'Use a tool-capable model such as qwen3.5-ctx32k or gpt-5.6-sol for goals that need shell/tools.';
-          yield { type: "content", content: `${rawStreamedContent}\n` };
+          if (!relationshipSafety) yield { type: "content", content: `${rawStreamedContent}\n` };
         }
+        const synthesizedToolFallback = !rawStreamedContent;
         if (!rawStreamedContent) rawStreamedContent = "Using tools to help you...";
-        const content = sanitizeAssistantOutput(rawStreamedContent);
+        const sanitizedContent = sanitizeAssistantOutput(rawStreamedContent);
+        const guardedContent = relationshipSafety
+          ? guardRelationshipReply(sanitizedContent)
+          : null;
+        const content = guardedContent?.response ?? sanitizedContent;
+        if (guardedContent?.intervened) {
+          logger.warn('[agent-executor] relationship safety gate rewrote persisted output', {
+            issues: guardedContent.issues,
+          });
+        }
+        if (
+          relationshipSafety &&
+          content &&
+          !(synthesizedToolFallback && hasToolCalls)
+        ) {
+          // The outer last-mile gate buffers the complete agent turn. Explicit
+          // spacing keeps a genuine pre-tool preamble and the final answer from
+          // being concatenated into one word after per-round trimming.
+          yield { type: 'content', content: `${content}\n\n` };
+        }
 
         const assistantEntry: ChatEntry = {
           type: "assistant",
@@ -1030,7 +1308,12 @@ export class AgentExecutor {
           }
 
           if (!this.deps.streamingHandler.hasYieldedToolCalls()) {
-            yield { type: "tool_calls", toolCalls: streamToolCallsToExecute };
+            yield {
+              type: "tool_calls",
+              toolCalls: relationshipSafety
+                ? relationshipSafeToolCallsForDisplay(streamToolCallsToExecute)
+                : streamToolCallsToExecute,
+            };
           }
 
           // Buffer for streaming adapter chunks (cannot yield from inside a callback)
@@ -1041,6 +1324,24 @@ export class AgentExecutor {
               yield { type: "content", content: "\n\n[Operation cancelled by user]" };
               yield { type: "done" };
               return;
+            }
+
+            if (
+              relationshipSafety &&
+              (isBlockedRelationshipInteractiveToolCall(toolCall) ||
+                unsafeRelationshipOutboundToolCall(toolCall))
+            ) {
+              const blockedContent =
+                'Relationship safety policy blocked manipulative outbound content.';
+              logger.warn('[agent-executor] relationship safety blocked outbound tool call', {
+                toolName: toolCall.function.name,
+              });
+              pushBlockedToolMessage(messages, toolCall, blockedContent);
+              yield {
+                type: 'content',
+                content: `\n${SAFE_RELATIONSHIP_REPAIR}\n`,
+              };
+              continue;
             }
 
             // --- Proactive context compaction (streaming path) ---
@@ -1097,14 +1398,16 @@ export class AgentExecutor {
                   yield { type: "done" };
                   return;
                 }
-                yield {
-                  type: "tool_stream",
-                  toolStreamData: {
-                    toolCallId: toolCall.id,
-                    toolName: toolCall.function.name,
-                    delta: genResult.value,
-                  },
-                };
+                if (!relationshipSafety) {
+                  yield {
+                    type: "tool_stream",
+                    toolStreamData: {
+                      toolCallId: toolCall.id,
+                      toolName: toolCall.function.name,
+                      delta: genResult.value,
+                    },
+                  };
+                }
                 genResult = await gen.next();
               }
               result = genResult.value ?? { success: false, error: 'Tool returned no result' };
@@ -1120,14 +1423,16 @@ export class AgentExecutor {
                   (chunk: string) => {
                     // We cannot yield from inside a callback, so we accumulate
                     // chunks and emit them after. Instead, use a buffer approach.
-                    streamChunkBuffer.push({
-                      type: "tool_stream" as const,
-                      toolStreamData: {
-                        toolCallId: tc.id,
-                        toolName: tc.function.name,
-                        delta: chunk,
-                      },
-                    });
+                    if (!relationshipSafety) {
+                      streamChunkBuffer.push({
+                        type: "tool_stream" as const,
+                        toolStreamData: {
+                          toolCallId: tc.id,
+                          toolName: tc.function.name,
+                          delta: chunk,
+                        },
+                      });
+                    }
                   },
                 );
                 // Flush buffered streaming chunks
@@ -1343,15 +1648,20 @@ export class AgentExecutor {
               sanitizeToolResult(modelStreamContent),
             );
 
+            const visibleToolResult = relationshipSafety
+              ? relationshipSafeToolResultForDisplay(result)
+              : result;
             const toolResultEntry: ChatEntry = {
               type: "tool_result",
-              content: result?.success ? result.output || "Success" : result?.error || "Error occurred",
+              content: visibleToolResult.success
+                ? visibleToolResult.output || "Success"
+                : visibleToolResult.error || "Error occurred",
               timestamp: new Date(),
               toolCall: toolCall,
-              toolResult: result,
+              toolResult: visibleToolResult,
             };
             history.push(toolResultEntry);
-            yield { type: "tool_result", toolCall, toolResult: result };
+            yield { type: "tool_result", toolCall, toolResult: visibleToolResult };
 
             // Note: 'name' is required for Gemini API to match functionResponse with functionCall
             messages.push({

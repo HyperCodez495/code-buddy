@@ -11,6 +11,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const { pathToFileURL } = require('url');
 
 // ANSI color codes
 const GREEN = '\x1b[32m';
@@ -20,8 +22,8 @@ const RESET = '\x1b[0m';
 
 /**
  * @typedef {'fatal' | 'warn'} Severity
- * @typedef {{ label: string; relPath: string; type: 'file' | 'dir'; severity: Severity }} CheckSpec
- * @typedef {{ label: string; relPath: string; passed: boolean; severity: Severity }} CheckResult
+ * @typedef {{ label: string; relPath: string; type: 'file' | 'dir' | 'esm-import'; severity: Severity }} CheckSpec
+ * @typedef {{ label: string; relPath: string; passed: boolean; severity: Severity; detail?: string }} CheckResult
  */
 
 /**
@@ -75,12 +77,54 @@ function buildCheckList(platform, arch) {
       severity: 'fatal',
     },
     {
-      // Required by cowork/electron-builder.yml extraResources `../dist/desktop`.
-      // Without this file shipped, the packaged Cowork binary silently
-      // falls back to pi-coding-agent in production (see commit fc90573).
-      // Fix: run `npm run build` at the repo root (../) before this build.
-      label: 'Code Buddy core engine adapter (run `npm run build` at repo root)',
-      relPath: '../dist/desktop/codebuddy-engine-adapter.js',
+      // This is an execution probe, not only an existence check. Importing the
+      // staged adapter from a child Node process proves that its first bare ESM
+      // dependency (logger -> chalk) resolves from the sibling runtime
+      // node_modules exactly as it will under `<resources>/dist`.
+      label: 'Self-contained Code Buddy core adapter + bare ESM dependencies',
+      relPath: '.bundle-resources/core-runtime/dist/desktop/codebuddy-engine-adapter.js',
+      type: 'esm-import',
+      severity: 'fatal',
+    },
+    {
+      // Companion sessions fail closed when this module cannot be loaded from
+      // the packaged core runtime. Keep it as a first-class packaging gate.
+      label: 'Code Buddy companion relationship safety gate',
+      relPath: '.bundle-resources/core-runtime/dist/conversation/relationship-safety.js',
+      type: 'file',
+      severity: 'fatal',
+    },
+    {
+      // The adapter imports CodeBuddyAgent lazily on the first prompt. Probe it
+      // independently so a package can never pass startup and then fail only
+      // when the user sends the first message.
+      label: 'Code Buddy agent lazy-import dependency closure',
+      relPath: '.bundle-resources/core-runtime/dist/agent/codebuddy-agent.js',
+      type: 'esm-import',
+      severity: 'fatal',
+    },
+    {
+      label: 'Code Buddy staged ESM package boundary',
+      relPath: '.bundle-resources/core-runtime/dist/package.json',
+      type: 'file',
+      severity: 'fatal',
+    },
+    {
+      label: 'Code Buddy staged bare dependency (chalk)',
+      relPath: '.bundle-resources/core-runtime/node_modules/chalk/package.json',
+      type: 'file',
+      severity: 'fatal',
+    },
+    {
+      label: 'Code Buddy staged Electron-native SQLite binding',
+      relPath:
+        '.bundle-resources/core-runtime/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+      type: 'file',
+      severity: 'fatal',
+    },
+    {
+      label: 'Code Buddy runtime manifest',
+      relPath: '.bundle-resources/core-runtime/codebuddy-runtime.json',
       type: 'file',
       severity: 'fatal',
     },
@@ -162,10 +206,33 @@ function runChecks(rootDir, platform, arch) {
   for (const check of checks) {
     const absolutePath = path.join(rootDir, check.relPath);
     let exists = false;
+    let detail;
 
     try {
       const stat = fs.statSync(absolutePath);
       exists = check.type === 'dir' ? stat.isDirectory() : stat.isFile();
+      if (exists && check.type === 'esm-import') {
+        const probe = spawnSync(
+          process.execPath,
+          [
+            '--input-type=module',
+            '--eval',
+            `await import(${JSON.stringify(pathToFileURL(absolutePath).href)})`,
+          ],
+          {
+            cwd: rootDir,
+            encoding: 'utf8',
+            timeout: 30_000,
+            env: { ...process.env, NODE_PATH: '', NODE_OPTIONS: '', NODE_ENV: 'test' },
+          },
+        );
+        exists = probe.status === 0 && !probe.error;
+        if (!exists) {
+          detail = (probe.error?.message || probe.stderr || probe.stdout || 'ESM import failed')
+            .trim()
+            .slice(0, 2_000);
+        }
+      }
     } catch {
       exists = false;
     }
@@ -178,10 +245,12 @@ function runChecks(rootDir, platform, arch) {
       warnings += 1;
       console.log(`${YELLOW}[warn]${RESET} ${check.label}`);
       console.log(`       ${check.relPath}`);
+      if (detail) console.log(`       ${detail}`);
     } else {
       failed += 1;
       console.log(`${RED}[fail]${RESET} ${check.label}`);
       console.log(`       ${check.relPath}`);
+      if (detail) console.log(`       ${detail}`);
     }
 
     results.push({
@@ -189,6 +258,7 @@ function runChecks(rootDir, platform, arch) {
       relPath: check.relPath,
       passed: exists,
       severity: check.severity,
+      ...(detail ? { detail } : {}),
     });
   }
 

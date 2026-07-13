@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -42,6 +42,10 @@ describe('relationship-state pure helpers', () => {
       expect(loadRelationshipState(p)).toEqual({ celebratedMilestones: [] }); // missing → default
       saveRelationshipState({ firstSeenAt: 111, lastPresentAt: 222, celebratedMilestones: [7] }, p);
       expect(loadRelationshipState(p)).toEqual({ firstSeenAt: 111, lastPresentAt: 222, celebratedMilestones: [7] });
+      if (process.platform !== 'win32') {
+        expect(statSync(p).mode & 0o777).toBe(0o600);
+        expect(statSync(dir).mode & 0o077).toBe(0);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

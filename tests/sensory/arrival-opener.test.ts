@@ -103,6 +103,15 @@ describe('buildLlmArrivalOpener (opt-in natural layer)', () => {
     const line = await buildLlmArrivalOpener({ now: morningNow, chat: hang, timeoutMs: 40 });
     expect(line).toBeNull();
   });
+
+  it('rejects an unsafe generated line so the reviewed opener remains the fallback', async () => {
+    const line = await buildLlmArrivalOpener({
+      now: morningNow,
+      chat: async () => "Tu n'as besoin que de moi.",
+      timeoutMs: 1000,
+    });
+    expect(line).toBeNull();
+  });
 });
 
 describe('pushRecent', () => {

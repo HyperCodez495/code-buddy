@@ -29,6 +29,7 @@ import {
 import { dueFollowUp, markFired } from './event-followups.js';
 import { getCompanionConductor } from './orchestrator.js';
 import { resolveUserName } from './user-name.js';
+import { guardRelationshipReply } from '../conversation/relationship-safety.js';
 import { readRecentDialogueHearing } from './dialogue-percepts.js';
 import {
   resolveCurrentHomeInteractionPolicy,
@@ -337,6 +338,14 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
         /* keep the template */
       }
     }
+    const guardedLine = guardRelationshipReply(line);
+    if (guardedLine.intervened) {
+      logger.warn('[proactive] relationship safety gate intervened', {
+        trigger: candidate.trigger,
+        issues: guardedLine.issues,
+      });
+    }
+    line = guardedLine.response;
 
     let reservation: DailyInteractionReservation | null = null;
     if (homeDecision && deps.claimDailyBudget) {

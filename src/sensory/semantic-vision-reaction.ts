@@ -168,20 +168,24 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
             }
           }
 
+          const { guardRelationshipReply } = await import(
+            '../conversation/relationship-safety.js'
+          );
+          const safeGreeting = guardRelationshipReply(greeting).response;
           const greet =
             options.greet ??
             (async (text: string) => {
               const { sayNow } = await import('./voice-loop.js');
               await sayNow(text);
             });
-          await greet(greeting);
+          await greet(safeGreeting);
           saveArrivalState({
             lastSeenAt: t,
             recent: pushRecent(state.recent, opener.template),
-            recentSpoken: pushRecent(state.recentSpoken ?? [], greeting),
+            recentSpoken: pushRecent(state.recentSpoken ?? [], safeGreeting),
           });
           options.onEngage?.(); // open the conversation window — follow-ups are now treated as addressed
-          logger.info(`[vision] greeted arrival (${opener.trigger}) → ${greeting}`);
+          logger.info(`[vision] greeted arrival (${opener.trigger}) → ${safeGreeting}`);
         } catch (err) {
           logger.warn(`[vision] arrival greeting failed: ${err instanceof Error ? err.message : String(err)}`);
         }

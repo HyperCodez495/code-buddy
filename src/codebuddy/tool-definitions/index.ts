@@ -24,6 +24,12 @@ export {
   isMorphEnabled,
 } from './core-tools.js';
 
+// Read-only operational self-model
+export {
+  SELF_DESCRIBE_TOOL,
+  SELF_DESCRIBE_TOOLS,
+} from './self-describe-tools.js';
+
 // Search tools
 export {
   SEARCH_TOOL,

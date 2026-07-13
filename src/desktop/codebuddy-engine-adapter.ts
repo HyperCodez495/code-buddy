@@ -21,6 +21,7 @@ import type { EnginePermissionResponse } from '../shared/engine-types.js';
 import type { StreamingChunk } from '../agent/types.js';
 import type { CodeBuddyClient } from '../codebuddy/client.js';
 import { parseContextOptimizationMetadata } from '../shared/context-optimization-metadata.js';
+import { RelationshipSafetyStreamGuard } from '../conversation/relationship-safety.js';
 import type {
   EngineMessage,
   EngineSessionConfig,
@@ -32,8 +33,68 @@ import type {
 const COWORK_GOAL_SESSION_PREFIX = 'cowork:';
 const GOAL_LOOP_HARD_BACKSTOP = 100;
 
+function engineMessageFingerprint(message: EngineMessage): string {
+  return createHash('sha256')
+    .update(message.role)
+    .update('\u0000')
+    .update(message.content)
+    .update('\u0000')
+    .update(message.contextId ?? '')
+    .digest('hex');
+}
+
+function countEngineMessages(messages: readonly EngineMessage[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    const fingerprint = engineMessageFingerprint(message);
+    counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Return only host-history entries that were not present in the previous
+ * host-visible transcript. Counts are occurrence-aware: a repeated message is
+ * injected only when the new transcript contains one more occurrence than the
+ * previous snapshot.
+ *
+ * Cowork prepends voice / channel continuity to its local transcript on every
+ * turn. A warm CodeBuddyAgent already owns the local conversation (and any
+ * continuity loaded on its first turn), so replaying the whole array would
+ * duplicate history. Conversely, ignoring the array makes newly-arrived voice
+ * or Telegram turns invisible. Stable context IDs distinguish separate shared
+ * events even when a bounded host window replaces one with identical text.
+ * This multiset delta provides the narrow bridge between those behaviours
+ * without persisting origin metadata in the core agent.
+ */
+function findNewHostHistoryMessages(
+  previousCounts: ReadonlyMap<string, number>,
+  currentHistory: readonly EngineMessage[],
+): EngineMessage[] {
+  const remainingPrevious = new Map(previousCounts);
+
+  const added: EngineMessage[] = [];
+  for (const message of currentHistory) {
+    const fingerprint = engineMessageFingerprint(message);
+    const remaining = remainingPrevious.get(fingerprint) ?? 0;
+    if (remaining > 0) {
+      if (remaining === 1) {
+        remainingPrevious.delete(fingerprint);
+      } else {
+        remainingPrevious.set(fingerprint, remaining - 1);
+      }
+      continue;
+    }
+    added.push({ role: message.role, content: message.content });
+  }
+  return added;
+}
+
 interface GoalStreamingAgent {
-  processUserMessageStream(prompt: string): AsyncIterable<StreamingChunk>;
+  processUserMessageStream(
+    prompt: string,
+    options?: { transientContext?: string; relationshipSafety?: boolean },
+  ): AsyncIterable<StreamingChunk>;
   getClient?: () => CodeBuddyClient;
 }
 
@@ -68,6 +129,14 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
    * effect on the next turn (Phase 8).
    */
   private agentIdentities: Map<string, string> = new Map();
+
+  /**
+   * Occurrence counts for the last host-visible transcript per warm session.
+   * Only content/context fingerprints are retained here: the core agent already
+   * owns the actual conversation, and this projection exists solely to detect
+   * newly prepended cross-channel messages on the next Cowork turn.
+   */
+  private hostTranscriptFingerprints: Map<string, Map<string, number>> = new Map();
 
   /**
    * Configured reasoning/thinking level (`off | minimal | … | xhigh`), set via
@@ -139,11 +208,15 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           logger.warn('[CodeBuddyEngineAdapter] dispose failed during hot-swap', { err });
         }
         this.agents.delete(sessionId);
+        this.hostTranscriptFingerprints.delete(sessionId);
         agent = undefined;
       }
 
       // Get or create agent for this session
+      let agentWasCreated = false;
       if (!agent) {
+        agentWasCreated = true;
+        this.hostTranscriptFingerprints.delete(sessionId);
         agent = new CodeBuddyAgent(
           config.apiKey,
           config.baseURL,
@@ -190,6 +263,14 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
             }
           }
         }
+
+        // Establish a baseline immediately, before streaming starts. This also
+        // protects command/error paths that return before the normal completed-
+        // turn snapshot: history already seeded above must never be replayed.
+        this.hostTranscriptFingerprints.set(
+          sessionId,
+          countEngineMessages(messages.slice(0, -1)),
+        );
       } else {
         // Phase 9 — touch the LRU position by re-inserting at the
         // tail. `Map.set` on an existing key is a no-op for value but
@@ -218,6 +299,32 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       const lastMessage = messages[messages.length - 1];
       if (!lastMessage || lastMessage.role !== 'user') {
         throw new Error('Last message must be a user message');
+      }
+
+      // A cached agent already contains the local conversation and the shared
+      // context loaded on its first turn. Reconcile only additions in the
+      // host-provided history so voice / Telegram turns that arrived while the
+      // Cowork session stayed warm reach the model exactly once.
+      if (!agentWasCreated) {
+        const previousFingerprints =
+          this.hostTranscriptFingerprints.get(sessionId) ?? new Map<string, number>();
+        const additions = findNewHostHistoryMessages(
+          previousFingerprints,
+          messages.slice(0, -1),
+        );
+        for (const message of additions) {
+          agent.addToHistory({
+            role: message.role,
+            content: message.content,
+          });
+        }
+        if (additions.length > 0) {
+          logger.debug('[CodeBuddyEngineAdapter] synchronized warm-session context', {
+            sessionId,
+            count: additions.length,
+            roles: additions.map((message) => message.role),
+          });
+        }
       }
 
       // Create abort controller for this session
@@ -261,15 +368,32 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       const turnPermissionMode = config.permissionMode ?? permissionManager.getMode();
 
       const runPromptTurn = async (
-        prompt: string
+        prompt: string,
+        transientContext?: string,
       ): Promise<{ interrupted: boolean; judgeResponse: string }> => {
         let turnContent = '';
+        const relationshipGuard = config.relationshipSafety
+          ? new RelationshipSafetyStreamGuard()
+          : null;
+        let doneSeen = false;
+        const emitContent = (content: string): void => {
+          if (!content) return;
+          turnContent += content;
+          fullContent += content;
+          onEvent({ type: 'content', content });
+        };
         const toolEvidence: string[] = [];
         // Tracks FAILED tool actions this turn so the goal judge can't be fooled
         // into a premature "done" by an assistant that narrates success after a
         // write/patch/command actually failed (Hermes-style mutation verifier).
         const toolFailures: string[] = [];
-        const stream = streamingAgent.processUserMessageStream(prompt);
+        const streamOptions = transientContext || config.relationshipSafety
+          ? {
+              ...(transientContext ? { transientContext } : {}),
+              ...(config.relationshipSafety ? { relationshipSafety: true } : {}),
+            }
+          : undefined;
+        const stream = streamingAgent.processUserMessageStream(prompt, streamOptions);
 
         for await (const chunk of stream) {
           // Check for abort
@@ -280,9 +404,10 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           switch (chunk.type) {
             case 'content':
               if (chunk.content) {
-                turnContent += chunk.content;
-                fullContent += chunk.content;
-                onEvent({ type: 'content', content: chunk.content });
+                const safeChunks = relationshipGuard
+                  ? relationshipGuard.push(chunk.content)
+                  : [chunk.content];
+                for (const safeChunk of safeChunks) emitContent(safeChunk);
               }
               break;
 
@@ -332,7 +457,9 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
                   tool: {
                     id: chunk.toolCall.id,
                     name: chunk.toolCall.function.name,
-                    input: chunk.toolCall.function.arguments,
+                    input: config.relationshipSafety
+                      ? JSON.stringify({ redacted: 'companion-safety' })
+                      : chunk.toolCall.function.arguments,
                     output: finalOutput,
                     isError: !chunk.toolResult.success,
                     data: chunk.toolResult.data,
@@ -387,20 +514,32 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
               break;
 
             case 'done':
-              onEvent({ type: 'done' });
+              doneSeen = true;
               break;
           }
         }
 
+        if (relationshipGuard) {
+          for (const safeChunk of relationshipGuard.finish()) emitContent(safeChunk);
+          const assessment = relationshipGuard.assessment();
+          if (assessment.intervened) {
+            logger.warn('[CodeBuddyEngineAdapter] relationship safety gate intervened', {
+              sessionId,
+              issues: assessment.issues,
+            });
+          }
+        }
+        if (doneSeen) onEvent({ type: 'done' });
+
         return { interrupted: false, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence, toolFailures) };
       };
 
-      const runScopedPromptTurn = (prompt: string) =>
+      const runScopedPromptTurn = (prompt: string, transientContext?: string) =>
         confirmationService.withApprovalContextAsync(sessionId, () =>
           permissionManager.withModeAsync(turnPermissionMode, () =>
             operatingModeManager.withModeAsync(
               turnPermissionMode === 'plan' ? 'plan' : 'balanced',
-              () => runPromptTurn(prompt),
+              () => runPromptTurn(prompt, transientContext),
             ),
           ),
         );
@@ -435,7 +574,8 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // Emit once up-front so the banner appears the instant a goal turn starts
       // (before the first judge verdict), then again after each judged turn.
       emitGoalSnapshot();
-      let turn = await runScopedPromptTurn(lastMessage.content);
+      const currentTurnContext = config.currentTurnContext?.trim();
+      let turn = await runScopedPromptTurn(lastMessage.content, currentTurnContext);
       for (let i = 0; i < GOAL_LOOP_HARD_BACKSTOP; i++) {
         const outcome = await maybeContinueGoalAfterTurn({
           client: streamingAgent.getClient?.() ?? null,
@@ -456,12 +596,29 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         turn = await runScopedPromptTurn(outcome.continuationPrompt);
       }
 
+      this.rememberHostTranscript(sessionId, messages, fullContent);
+
       return {
         content: fullContent,
         tokenCount: totalTokens,
         toolCallCount,
       };
     } catch (error) {
+      // The core agent mutates its own history before provider streaming. Once
+      // a turn throws, the host transcript and warm agent may disagree about
+      // what committed; evicting is safer than replaying a user turn twice.
+      const failedAgent = this.agents.get(sessionId) as { dispose?: () => void } | undefined;
+      try {
+        failedAgent?.dispose?.();
+      } catch (disposeError) {
+        logger.warn('[CodeBuddyEngineAdapter] dispose failed after turn error', {
+          sessionId,
+          error: disposeError,
+        });
+      }
+      this.agents.delete(sessionId);
+      this.agentIdentities.delete(sessionId);
+      this.hostTranscriptFingerprints.delete(sessionId);
       const errorMsg = error instanceof Error ? error.message : String(error);
       onEvent({ type: 'error', error: errorMsg });
       return {
@@ -505,7 +662,30 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
     this.agents.delete(sessionId);
     this.abortControllers.delete(sessionId);
     this.agentIdentities.delete(sessionId);
+    this.hostTranscriptFingerprints.delete(sessionId);
     logger.debug('[CodeBuddyEngineAdapter] cleared session', { sessionId });
+  }
+
+  /**
+   * Remember exactly what Cowork will normally send back on the next turn:
+   * the input transcript plus the assembled assistant response. Only hashes
+   * and occurrence counts are retained; raw content already belongs to the
+   * agent and is not duplicated in adapter bookkeeping.
+   */
+  private rememberHostTranscript(
+    sessionId: string,
+    messages: readonly EngineMessage[],
+    assistantContent: string,
+  ): void {
+    const snapshot = countEngineMessages(messages);
+    if (assistantContent) {
+      const fingerprint = engineMessageFingerprint({
+        role: 'assistant',
+        content: assistantContent,
+      });
+      snapshot.set(fingerprint, (snapshot.get(fingerprint) ?? 0) + 1);
+    }
+    this.hostTranscriptFingerprints.set(sessionId, snapshot);
   }
 
   /**
@@ -521,6 +701,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       const evicted = this.agents.get(oldestKey);
       this.agents.delete(oldestKey);
       this.agentIdentities.delete(oldestKey);
+      this.hostTranscriptFingerprints.delete(oldestKey);
       if (evicted && typeof (evicted as { dispose?: () => void }).dispose === 'function') {
         try {
           (evicted as { dispose: () => void }).dispose();
@@ -758,6 +939,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       }
       logger.debug('[CodeBuddyEngineAdapter] disposed agent', { sessionId });
     }
+    this.hostTranscriptFingerprints.clear();
 
     this.agents.clear();
     this.abortControllers.clear();

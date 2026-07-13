@@ -115,6 +115,8 @@ describe('Cowork cross-channel continuity adapter', () => {
     class FakeBridge {
       isActive = () => true;
       snapshot = snapshot;
+      renderRelationshipContext = () =>
+        '<shared_relationship_context>Soutien encore ouvert : oui.</shared_relationship_context>';
       recordCoworkTurn = recordCoworkTurn;
     }
     const loader = vi.fn(async (path: string) => {
@@ -151,12 +153,19 @@ describe('Cowork cross-channel continuity adapter', () => {
 
     expect(prepared.active).toBe(true);
     expect(prepared.messages).toEqual([
-      { role: 'user', content: 'Sujet commencé à la voix.' },
-      { role: 'assistant', content: 'Une position argumentée.' },
-      { role: 'user', content: 'Ajouté depuis une autre session reliée.' },
+      { role: 'user', content: 'Sujet commencé à la voix.', contextId: 'voice-1' },
+      { role: 'assistant', content: 'Une position argumentée.', contextId: 'channel-1' },
+      {
+        role: 'user',
+        content: 'Ajouté depuis une autre session reliée.',
+        contextId: 'other-cowork',
+      },
     ]);
     expect(prepared.systemPrompt).toContain('Identité stable de Lisa.');
     expect(prepared.systemPrompt).toContain('voix, de Telegram');
+    expect(prepared.systemPrompt).not.toContain('Soutien encore ouvert');
+    expect(prepared.turnContext).toContain('<shared_relationship_context>');
+    expect(prepared.turnContext).toContain('Soutien encore ouvert : oui.');
     expect(recordCoworkTurn).toHaveBeenCalledWith(
       { role: 'user', content: 'Je poursuis dans Cowork.' },
       { sessionId: 'cowork-lisa-session', messageId: 'user-message' },
@@ -198,9 +207,59 @@ describe('Cowork cross-channel continuity adapter', () => {
 
     expect(prepared.active).toBe(false);
     expect(prepared.messages).toEqual([]);
-    expect(prepared.systemPrompt).toContain('<fresh_context>');
-    expect(prepared.systemPrompt).toContain('https://example.test/news');
+    expect(prepared.systemPrompt).toBeUndefined();
+    expect(prepared.turnContext).toContain('<fresh_context>');
+    expect(prepared.turnContext).toContain('https://example.test/news');
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('caps even a single newest shared event at the total prompt budget', async () => {
+    const hugeContent = 'x'.repeat(100_000);
+    class FakeBridge {
+      isActive = () => true;
+      snapshot = () => [{
+        id: 'huge-voice-event',
+        role: 'user' as const,
+        content: hugeContent,
+        origin: 'voice' as const,
+        timestamp: '2026-07-13T10:00:00.000Z',
+      }];
+      recordCoworkTurn = vi.fn(async () => true);
+    }
+    const loader = vi.fn(async (modulePath: string) => {
+      if (modulePath === 'conversation/cross-channel-bridge.js') {
+        return {
+          CrossChannelConversationBridge: FakeBridge,
+          resolveCrossChannelBridgeConfig: () => ({
+            enabled: true,
+            companionName: 'Lisa',
+            conversationId: 'lisa',
+            coworkEnabled: true,
+            coworkHistoryTurns: 24,
+            historyPath: '/tmp/lisa.jsonl',
+            target: { channel: 'telegram', channelId: '42' },
+          }),
+        };
+      }
+      if (modulePath === 'companion/assistant-config.js') {
+        return { readAssistantConfig: () => ({ CODEBUDDY_CONVERSATION_COWORK: 'true' }) };
+      }
+      if (modulePath === 'identity/companion-identity.js') {
+        return { LISA_COMPANION_SYSTEM_PROMPT: 'Identité stable de Lisa.' };
+      }
+      return null;
+    });
+
+    const prepared = await new CoworkCrossChannelContinuity(loader as never).prepare(
+      session(['companion']),
+      [],
+      'Tour actuel.',
+      'current-message',
+    );
+
+    expect(prepared.messages).toHaveLength(1);
+    expect(prepared.messages[0]?.content).toHaveLength(12_000);
+    expect(prepared.messages[0]?.contextId).toBe('huge-voice-event');
   });
 
   it('never opens the private journal for an ordinary Cowork session', async () => {

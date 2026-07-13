@@ -476,6 +476,9 @@ buddy assistant voice <pocket-name-or-sample>
 buddy assistant voices
 buddy assistant voicebox [--json] [--benchmark [text]] [--runs <1-5>]
 buddy assistant latency [--json] [--query <text>] [--engine active|pocket|voicebox|both] [--runs <1-5>] [--segment-chars <32-240>]
+buddy assistant quality [--apply] [--limit <n>]
+buddy assistant benchmark [--model <name>] [--base-url <url>] [--runs <n>]
+buddy assistant relational-benchmark [--json]
 buddy assistant apply
 buddy companion setup [--force] [--no-voice] [--no-set-model]
 buddy companion status
@@ -495,6 +498,10 @@ buddy companion camera snapshot [--output <path>] [--device <device>] [--timeout
 buddy companion percepts recent [--limit <n>] [--modality <name>]
 buddy companion percepts stats
 ```
+
+`buddy assistant relational-benchmark` est un auto-test déterministe des fixtures du
+détecteur relationnel. Il n'appelle ni modèle ni surface réelle ; utilisez `assistant benchmark`
+ou `assistant compare` pour évaluer les réponses d'un modèle.
 
 `buddy identity awaken` installs the Buddy companion identity into the current project's
 `.codebuddy/SOUL.md` without overwriting an existing file unless `--force` is passed.

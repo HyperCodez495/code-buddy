@@ -17,6 +17,12 @@ export interface PreparedConversationTurn {
 export interface PrepareConversationTurnOptions {
   /** Bounded, already-sanitized evidence shared by all companion surfaces. */
   freshContext?: string;
+  /**
+   * Raw-free relational observations derived from the shared multimodal thread.
+   * This is deliberately separate from fresh evidence so callers can keep both
+   * provenance and privacy boundaries visible in the prompt.
+   */
+  relationshipContext?: string;
 }
 
 /**
@@ -33,10 +39,19 @@ export function prepareConversationTurn(
   const plan = planConversationResponse(heard, history);
   const suppressHistoricalContext =
     plan.deliberation.topicShifted || plan.act === 'action' || plan.act === 'closing';
-  const commonGround = state.renderForPrompt(plan.deliberation, {
+  // Common ground describes prior shared context only. `plan.deliberation`
+  // already includes the current user turn for classification and phase
+  // selection; rendering that snapshot here would copy the current message
+  // into both the context block and the explicit user-message envelope.
+  const commonGround = state.renderForPrompt(undefined, {
     suppressHistoricalContext,
   });
-  const systemGuidance = [plan.guidance, commonGround, options.freshContext]
+  const systemGuidance = [
+    plan.guidance,
+    commonGround,
+    options.relationshipContext,
+    options.freshContext,
+  ]
     .filter(Boolean)
     .join('\n\n');
   const envelopedPrompt = [

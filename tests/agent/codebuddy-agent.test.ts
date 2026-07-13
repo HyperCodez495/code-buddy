@@ -806,6 +806,8 @@ describe('CodeBuddyAgent', () => {
         expect.any(Array),
         expect.any(Array),
         expect.any(Number),
+        undefined,
+        false,
       );
       expect(entries).toEqual([
         expect.objectContaining({ type: 'user', content: 'Test message' }),

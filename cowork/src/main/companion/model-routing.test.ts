@@ -269,6 +269,7 @@ describe('CoworkCompanionModelRouting', () => {
       { sendToRenderer: vi.fn(), saveMessage: (message) => saved.push(message) },
       continuity,
       companionRouting,
+      async () => import('../../../../src/conversation/relationship-safety.js'),
     );
 
     const priorMessages: Message[] = [

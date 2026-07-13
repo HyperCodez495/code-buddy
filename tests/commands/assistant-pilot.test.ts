@@ -39,6 +39,29 @@ describe('buddy assistant pilot commands', () => {
     if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 
+  it('runs the raw-free relational contract from the CLI', async () => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await runAssistant(['relational-benchmark', '--json']);
+
+    const serialized = String(output.mock.calls[0]?.[0] ?? '');
+    const report = JSON.parse(serialized) as {
+      kind: string;
+      passes: boolean;
+      detectionRate: number;
+      results: unknown[];
+    };
+    expect(report).toMatchObject({
+      kind: 'detector-contract-self-test',
+      passes: true,
+      detectionRate: 100,
+    });
+    expect(report.results.length).toBeGreaterThanOrEqual(6);
+    expect(serialized).not.toContain('turns');
+    expect(serialized).not.toContain('content');
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('fails before provider resolution when the requested corpus is absent', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'assistant-pilot-cli-'));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);

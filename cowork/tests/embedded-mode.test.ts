@@ -311,6 +311,29 @@ describe('pre-build-check engine adapter entry', () => {
       );
       expect(entry).toBeDefined();
       expect(entry?.severity).toBe('fatal');
+      expect(entry?.relPath).toContain('.bundle-resources/core-runtime');
+    },
+  );
+
+  it.each(['darwin', 'win32', 'linux'])(
+    'lists the companion relationship gate as a fatal check on %s',
+    (platform) => {
+      const checks = buildCheckList(platform, 'x64');
+      const entry = checks.find((c) =>
+        c.relPath.includes('dist/conversation/relationship-safety'),
+      );
+      expect(entry).toBeDefined();
+      expect(entry?.severity).toBe('fatal');
+    },
+  );
+
+  it.each(['darwin', 'win32', 'linux'])(
+    'requires a staged bare core dependency on %s',
+    (platform) => {
+      const checks = buildCheckList(platform, 'x64');
+      const entry = checks.find((c) => c.relPath.endsWith('node_modules/chalk/package.json'));
+      expect(entry).toBeDefined();
+      expect(entry?.severity).toBe('fatal');
     },
   );
 });

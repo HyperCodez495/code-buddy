@@ -1,6 +1,16 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { appendFile, mkdir } from 'node:fs/promises';
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -12,6 +22,11 @@ import {
   resolvePrefetchedTurnContextForConversation,
   type PrefetchedTurnContext,
 } from './prefetched-turn-context.js';
+import {
+  reduceSharedRelationshipState,
+  renderSharedRelationshipContext,
+  type SharedRelationshipSnapshot,
+} from './shared-relationship-state.js';
 import type { ConversationTurn } from './types.js';
 
 export type ConversationOrigin = 'voice' | 'channel' | 'cowork';
@@ -45,6 +60,8 @@ export interface CrossChannelBridgeConfig {
   persist: boolean;
   historyPath: string;
   maxEvents: number;
+  /** On-disk privacy bound; compaction keeps at most `maxEvents` valid events. */
+  maxHistoryBytes?: number;
 }
 
 export interface CrossChannelBridgeDependencies {
@@ -131,6 +148,13 @@ export function resolveCrossChannelBridgeConfig(
   const maxEvents = Number.isFinite(configuredMax)
     ? Math.max(20, Math.min(2_000, Math.floor(configuredMax)))
     : 200;
+  const defaultMaxHistoryBytes = Math.max(256 * 1_024, maxEvents * 4_096);
+  const configuredHistoryBytes = Number(
+    env.CODEBUDDY_CONVERSATION_MAX_HISTORY_BYTES ?? defaultMaxHistoryBytes
+  );
+  const maxHistoryBytes = Number.isFinite(configuredHistoryBytes)
+    ? Math.max(32 * 1_024, Math.min(64 * 1_024 * 1_024, Math.floor(configuredHistoryBytes)))
+    : defaultMaxHistoryBytes;
   const configuredCoworkHistory = Number(env.CODEBUDDY_CONVERSATION_COWORK_HISTORY ?? 24);
   const coworkHistoryTurns = Number.isFinite(configuredCoworkHistory)
     ? Math.max(4, Math.min(80, Math.floor(configuredCoworkHistory)))
@@ -150,7 +174,91 @@ export function resolveCrossChannelBridgeConfig(
       env.CODEBUDDY_CONVERSATION_HISTORY_PATH?.trim() ||
       join(home, '.codebuddy', 'conversations', `${safeFileName(conversationId)}.jsonl`),
     maxEvents,
+    maxHistoryBytes,
   };
+}
+
+const JOURNAL_LOCK_STALE_MS = 30_000;
+const JOURNAL_LOCK_WAIT_MS = JOURNAL_LOCK_STALE_MS;
+const JOURNAL_LOCK_RETRY_MS = 25;
+const MIN_JOURNAL_BYTES = 32 * 1_024;
+const MAX_PERSISTED_EVENT_CONTENT_CHARS = 16_384;
+const MAX_PERSISTED_METADATA_CHARS = 512;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function journalByteLimit(config: CrossChannelBridgeConfig): number {
+  const requested = config.maxHistoryBytes
+    ?? Math.max(256 * 1_024, config.maxEvents * 4_096);
+  return Math.max(MIN_JOURNAL_BYTES, Math.min(64 * 1_024 * 1_024, requested));
+}
+
+function boundedPersistedMetadata(value: string): string {
+  if (value.length <= MAX_PERSISTED_METADATA_CHARS) return value;
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 32);
+  const prefixLength = MAX_PERSISTED_METADATA_CHARS - digest.length - 1;
+  return `${value.slice(0, prefixLength)}~${digest}`;
+}
+
+function externalDedupKey(origin: ConversationOrigin, externalId: string): string {
+  return `${origin}:${boundedPersistedMetadata(externalId)}`;
+}
+
+function serializedEventBytes(event: CrossChannelConversationEvent): number {
+  return Buffer.byteLength(`${JSON.stringify(event)}\n`, 'utf8');
+}
+
+function persistedEventWithin(
+  event: CrossChannelConversationEvent,
+  maxBytes: number,
+): CrossChannelConversationEvent {
+  // At the minimum journal size, maxBytes/8 leaves room for four-byte UTF-8,
+  // JSON metadata and at least one additional recent turn.
+  const contentLimit = Math.min(
+    MAX_PERSISTED_EVENT_CONTENT_CHARS,
+    Math.max(256, Math.floor(maxBytes / 8)),
+  );
+  const bounded: CrossChannelConversationEvent = {
+    ...event,
+    id: boundedPersistedMetadata(event.id),
+    conversationId: boundedPersistedMetadata(event.conversationId),
+    content: event.content.slice(0, contentLimit),
+    timestamp: boundedPersistedMetadata(event.timestamp),
+    ...(event.externalId
+      ? { externalId: boundedPersistedMetadata(event.externalId) }
+      : {}),
+    ...(event.channelId
+      ? { channelId: boundedPersistedMetadata(event.channelId) }
+      : {}),
+    ...(event.threadId
+      ? { threadId: boundedPersistedMetadata(event.threadId) }
+      : {}),
+  };
+  if (serializedEventBytes(bounded) <= maxBytes) return bounded;
+
+  // JSON escaping can expand quotes, control characters, and backslashes far
+  // beyond their UTF-8 input size. Find the longest content prefix whose full
+  // serialized event (including its newline) fits the journal byte ceiling.
+  let lower = 0;
+  let upper = bounded.content.length;
+  while (lower < upper) {
+    const midpoint = Math.ceil((lower + upper) / 2);
+    const candidate = { ...bounded, content: bounded.content.slice(0, midpoint) };
+    if (serializedEventBytes(candidate) <= maxBytes) lower = midpoint;
+    else upper = midpoint - 1;
+  }
+  let content = bounded.content.slice(0, lower);
+  let result = { ...bounded, content };
+  // A slice can split a surrogate pair, whose escaped JSON form is slightly
+  // larger than the intact character. Keep the final invariant exact even at
+  // that boundary.
+  while (content && serializedEventBytes(result) > maxBytes) {
+    content = content.slice(0, -1);
+    result = { ...bounded, content };
+  }
+  return result;
 }
 
 function eventIsValid(value: unknown): value is CrossChannelConversationEvent {
@@ -162,8 +270,52 @@ function eventIsValid(value: unknown): value is CrossChannelConversationEvent {
     (event.role === 'user' || event.role === 'assistant') &&
     typeof event.content === 'string' &&
     (event.origin === 'voice' || event.origin === 'channel' || event.origin === 'cowork') &&
-    typeof event.timestamp === 'string'
+    typeof event.timestamp === 'string' &&
+    (event.externalId === undefined || typeof event.externalId === 'string') &&
+    (event.channel === undefined || CHANNEL_TYPES.has(event.channel)) &&
+    (event.channelId === undefined || typeof event.channelId === 'string') &&
+    (event.threadId === undefined || typeof event.threadId === 'string')
   );
+}
+
+async function journalContainsDuplicate(
+  historyPath: string,
+  candidate: CrossChannelConversationEvent,
+): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(historyPath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  const candidateConversationId = boundedPersistedMetadata(candidate.conversationId);
+  const candidateId = boundedPersistedMetadata(candidate.id);
+  const candidateExternalId = candidate.externalId
+    ? externalDedupKey(candidate.origin, candidate.externalId)
+    : undefined;
+  return raw
+    .split(/\r?\n/)
+    .some((line) => {
+      if (!line.trim()) return false;
+      try {
+        const persisted = JSON.parse(line) as unknown;
+        if (!eventIsValid(persisted)) return false;
+        if (
+          boundedPersistedMetadata(persisted.conversationId) !== candidateConversationId
+        ) {
+          return false;
+        }
+        if (boundedPersistedMetadata(persisted.id) === candidateId) return true;
+        return Boolean(
+          candidateExternalId &&
+          persisted.externalId &&
+          externalDedupKey(persisted.origin, persisted.externalId) === candidateExternalId
+        );
+      } catch {
+        return false;
+      }
+    });
 }
 
 function mirroredLabel(event: CrossChannelConversationEvent, companionName: string): string {
@@ -255,8 +407,9 @@ async function defaultDeliver(
 
 /**
  * One logical Lisa thread shared by the resident microphone and a configured
- * messaging channel. Appends happen synchronously in memory; delivery and the
- * private local JSONL journal are best-effort and never block conversation.
+ * messaging channel. Appends are projected synchronously in memory. Mirrored
+ * delivery waits for the private journal's durable idempotency claim so two
+ * processes can never send the same logical turn twice.
  */
 export class CrossChannelConversationBridge {
   private readonly events: CrossChannelConversationEvent[] = [];
@@ -269,6 +422,7 @@ export class CrossChannelConversationBridge {
     CrossChannelBridgeDependencies['voiceMirrorContent']
   >;
   private lastHistoryMtimeMs = -1;
+  private lastHistorySize = -1;
   private persistenceQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -304,6 +458,20 @@ export class CrossChannelConversationBridge {
     return this.events.map((event) => ({ ...event }));
   }
 
+  /**
+   * Return an allowlisted view of relational continuity. Raw dialogue remains
+   * exclusively in the private event journal and is never present in this value.
+   */
+  relationshipSnapshot(): SharedRelationshipSnapshot {
+    this.loadPersistedHistory();
+    return reduceSharedRelationshipState(this.events, { now: this.now() });
+  }
+
+  /** Fixed-label prompt context shared by voice, channels, and Cowork. */
+  renderRelationshipContext(): string {
+    return renderSharedRelationshipContext(this.relationshipSnapshot());
+  }
+
   /** Wait for this process' queued journal appends (tests and graceful shutdown). */
   async flush(): Promise<void> {
     await this.persistenceQueue;
@@ -312,7 +480,7 @@ export class CrossChannelConversationBridge {
   async recordVoiceTurn(turn: ConversationTurn, externalId?: string): Promise<boolean> {
     if (!this.isActive()) return false;
     const target = this.config.target;
-    const event = this.append({
+    const appended = this.append({
       ...turn,
       origin: 'voice',
       ...(externalId ? { externalId } : {}),
@@ -324,7 +492,9 @@ export class CrossChannelConversationBridge {
           }
         : {}),
     });
-    if (!event) return false;
+    if (!appended) return false;
+    const { event } = appended;
+    if (!(await appended.committed)) return false;
     if (!this.config.mirrorVoice || !this.config.target) return true;
     try {
       const deliveryContent = this.voiceMirrorContent(event, this.events);
@@ -374,7 +544,7 @@ export class CrossChannelConversationBridge {
   ): Promise<boolean> {
     if (!this.isActive() || !this.config.coworkEnabled) return false;
     const target = this.config.target;
-    const event = this.append({
+    const appended = this.append({
       ...turn,
       origin: 'cowork',
       externalId: `${input.sessionId}:${input.messageId}`,
@@ -386,7 +556,9 @@ export class CrossChannelConversationBridge {
           }
         : {}),
     });
-    if (!event) return false;
+    if (!appended) return false;
+    const { event } = appended;
+    if (!(await appended.committed)) return false;
     if (!this.config.mirrorCowork || !target) return true;
     try {
       return await this.deliver(target, mirroredLabel(event, this.config.companionName), 'text');
@@ -406,10 +578,12 @@ export class CrossChannelConversationBridge {
       channelId?: string;
       threadId?: string;
     }
-  ): CrossChannelConversationEvent | null {
+  ): { event: CrossChannelConversationEvent; committed: Promise<boolean> } | null {
     const content = input.content.replace(/\s+/g, ' ').trim();
     if (!content) return null;
-    if (input.externalId && this.externalIds.has(`${input.origin}:${input.externalId}`)) return null;
+    if (input.externalId && this.externalIds.has(externalDedupKey(input.origin, input.externalId))) {
+      return null;
+    }
 
     const latest = this.events.at(-1);
     const now = this.now();
@@ -435,21 +609,46 @@ export class CrossChannelConversationBridge {
       ...(input.threadId ? { threadId: input.threadId } : {}),
     };
     this.events.push(event);
-    this.eventIds.add(event.id);
-    if (input.externalId) this.externalIds.add(`${input.origin}:${input.externalId}`);
-    while (this.events.length > this.config.maxEvents) this.events.shift();
+    this.eventIds.add(boundedPersistedMetadata(event.id));
+    if (input.externalId) this.externalIds.add(externalDedupKey(input.origin, input.externalId));
+    this.trimEventWindow();
+    const committed = this.config.persist
+      ? this.persistenceQueue.then(() => this.persist(event))
+      : Promise.resolve(true);
     if (this.config.persist) {
-      this.persistenceQueue = this.persistenceQueue.then(() => this.persist(event));
+      // Keep the queue alive after a failed append; callers still receive the
+      // precise claim result through `committed`.
+      this.persistenceQueue = committed.then(
+        () => undefined,
+        () => undefined,
+      );
     }
-    return event;
+    return { event, committed };
   }
 
   private loadPersistedHistory(): void {
     if (!this.config.persist || !existsSync(this.config.historyPath)) return;
     try {
-      const mtimeMs = statSync(this.config.historyPath).mtimeMs;
-      if (mtimeMs === this.lastHistoryMtimeMs) return;
+      const lockPath = `${this.config.historyPath}.lock`;
+      if (existsSync(lockPath)) {
+        try {
+          const lockAge = Date.now() - statSync(lockPath).mtimeMs;
+          // A Windows replacement fallback rewrites the destination under this
+          // lock. Keep the last complete in-memory view until that short
+          // critical section ends instead of parsing a transient partial file.
+          if (lockAge <= JOURNAL_LOCK_STALE_MS) return;
+        } catch {
+          return;
+        }
+      }
+      const historyStat = statSync(this.config.historyPath);
+      const mtimeMs = historyStat.mtimeMs;
+      const size = historyStat.size;
+      // Some filesystems expose a coarse modification timestamp. Size makes an
+      // append visible even when two processes write inside the same tick.
+      if (mtimeMs === this.lastHistoryMtimeMs && size === this.lastHistorySize) return;
       this.lastHistoryMtimeMs = mtimeMs;
+      this.lastHistorySize = size;
       const loaded = readFileSync(this.config.historyPath, 'utf8')
         .split(/\r?\n/)
         .map((line) => line.trim())
@@ -457,7 +656,8 @@ export class CrossChannelConversationBridge {
         .flatMap((line) => {
           try {
             const event = JSON.parse(line) as unknown;
-            return eventIsValid(event) && event.conversationId === this.config.conversationId
+            return eventIsValid(event) &&
+              event.conversationId === boundedPersistedMetadata(this.config.conversationId)
               ? [event]
               : [];
           } catch {
@@ -466,14 +666,15 @@ export class CrossChannelConversationBridge {
         })
         .slice(-this.config.maxEvents * 2);
       for (const event of loaded) {
-        if (!this.eventIds.has(event.id)) {
+        const eventId = boundedPersistedMetadata(event.id);
+        if (!this.eventIds.has(eventId)) {
           this.events.push(event);
-          this.eventIds.add(event.id);
+          this.eventIds.add(eventId);
         }
-        if (event.externalId) this.externalIds.add(`${event.origin}:${event.externalId}`);
+        if (event.externalId) this.externalIds.add(externalDedupKey(event.origin, event.externalId));
       }
       this.events.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-      while (this.events.length > this.config.maxEvents) this.events.shift();
+      this.trimEventWindow();
       // Voice, Cowork, and Telegram commonly run in separate processes. A
       // bridged event carries its configured destination so another process
       // can discover the same thread without duplicating the chat ID in every env file.
@@ -496,17 +697,152 @@ export class CrossChannelConversationBridge {
     }
   }
 
-  private async persist(event: CrossChannelConversationEvent): Promise<void> {
+  private trimEventWindow(): void {
+    while (this.events.length > this.config.maxEvents) this.events.shift();
+    // Dedup bookkeeping follows the same bounded privacy window instead of
+    // retaining every historical identifier for the lifetime of a daemon.
+    this.eventIds.clear();
+    this.externalIds.clear();
+    for (const event of this.events) {
+      this.eventIds.add(boundedPersistedMetadata(event.id));
+      if (event.externalId) this.externalIds.add(externalDedupKey(event.origin, event.externalId));
+    }
+  }
+
+  private async persist(event: CrossChannelConversationEvent): Promise<boolean> {
+    const lockPath = `${this.config.historyPath}.lock`;
+    let lock: Awaited<ReturnType<typeof open>> | undefined;
+    let claimed = false;
     try {
-      await mkdir(dirname(this.config.historyPath), { recursive: true, mode: 0o700 });
-      await appendFile(this.config.historyPath, `${JSON.stringify(event)}\n`, {
+      const historyDirectory = dirname(this.config.historyPath);
+      await mkdir(historyDirectory, { recursive: true, mode: 0o700 });
+      const lockDeadline = Date.now() + JOURNAL_LOCK_WAIT_MS;
+      while (!lock && Date.now() <= lockDeadline) {
+        try {
+          lock = await open(lockPath, 'wx', 0o600);
+          break;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'EEXIST') throw error;
+          try {
+            const lockStat = await stat(lockPath);
+            if (Date.now() - lockStat.mtimeMs >= JOURNAL_LOCK_STALE_MS) {
+              await unlink(lockPath);
+              continue;
+            }
+          } catch {
+            continue;
+          }
+          const remainingMs = lockDeadline - Date.now();
+          if (remainingMs <= 0) break;
+          await delay(Math.min(JOURNAL_LOCK_RETRY_MS, remainingMs));
+        }
+      }
+      if (!lock) throw new Error('conversation journal lock timed out');
+
+      const maxBytes = journalByteLimit(this.config);
+      const persistedEvent = persistedEventWithin(event, maxBytes);
+      // The optimistic in-memory check cannot see another process between its
+      // load and append. Recheck both idempotency keys under the journal lock.
+      if (await journalContainsDuplicate(this.config.historyPath, persistedEvent)) {
+        // This process lost an inter-process idempotency race. Roll back its
+        // optimistic projection so a subsequent reload cannot contain both
+        // the local phantom event and the winner's persisted event.
+        const localIndex = this.events.findIndex((candidate) => candidate === event);
+        if (localIndex >= 0) this.events.splice(localIndex, 1);
+        this.trimEventWindow();
+        return false;
+      }
+      await appendFile(this.config.historyPath, `${JSON.stringify(persistedEvent)}\n`, {
         encoding: 'utf8',
         mode: 0o600,
       });
+      claimed = true;
+      try {
+        await chmod(this.config.historyPath, 0o600);
+      } catch {
+        /* advisory on Windows */
+      }
+
+      const historyStat = await stat(this.config.historyPath);
+      if (historyStat.size > maxBytes) await this.compactPersistedHistory();
+      return true;
     } catch (error) {
       logger.warn(
         `[conversation-bridge] history append failed: ${error instanceof Error ? error.message : String(error)}`
       );
+      // Once appendFile succeeds the claim is durable even if a later stat or
+      // compaction step fails. Delivery may proceed exactly once.
+      return claimed;
+    } finally {
+      try {
+        await lock?.close();
+      } catch {
+        /* best effort */
+      }
+      if (lock) {
+        try {
+          await unlink(lockPath);
+        } catch {
+          /* another recovery path may already have removed it */
+        }
+      }
+    }
+  }
+
+  /** Called only while holding the cross-process journal lock. */
+  private async compactPersistedHistory(): Promise<void> {
+    const raw = await readFile(this.config.historyPath, 'utf8');
+    const candidates = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          const parsed = JSON.parse(line) as unknown;
+          return eventIsValid(parsed) &&
+            parsed.conversationId === boundedPersistedMetadata(this.config.conversationId)
+            ? [parsed]
+            : [];
+        } catch {
+          return [];
+        }
+      })
+      .slice(-this.config.maxEvents);
+    const maxBytes = journalByteLimit(this.config);
+    const retained: CrossChannelConversationEvent[] = [];
+    let retainedBytes = 0;
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const candidate = persistedEventWithin(candidates[index]!, maxBytes);
+      const candidateBytes = Buffer.byteLength(`${JSON.stringify(candidate)}\n`, 'utf8');
+      if (retained.length > 0 && retainedBytes + candidateBytes > maxBytes) break;
+      retained.unshift(candidate);
+      retainedBytes += candidateBytes;
+    }
+    const serialized = retained.length > 0
+      ? `${retained.map((item) => JSON.stringify(item)).join('\n')}\n`
+      : '';
+    const temporaryPath = `${this.config.historyPath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      await writeFile(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
+      try {
+        await rename(temporaryPath, this.config.historyPath);
+      } catch {
+        // Windows may reject replacement rename. The lock still prevents another
+        // Code Buddy process from observing a partially interleaved append.
+        await writeFile(this.config.historyPath, serialized, { encoding: 'utf8', mode: 0o600 });
+      }
+      try {
+        await chmod(this.config.historyPath, 0o600);
+      } catch {
+        /* advisory on Windows */
+      }
+    } finally {
+      try {
+        await unlink(temporaryPath);
+      } catch {
+        /* already moved, absent, or best-effort cleanup failed */
+      }
     }
   }
 }

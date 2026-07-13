@@ -36,6 +36,10 @@ import {
   conversationFailureReply,
   prepareConversationTurn,
 } from '../conversation/conversation-orchestrator.js';
+import {
+  guardRelationshipReply,
+  RelationshipSafetyStreamGuard,
+} from '../conversation/relationship-safety.js';
 import { conversationTokenBudget } from '../conversation/discourse-planner.js';
 import { commandExists } from '../utils/command-exists.js';
 import { inferTaskType } from '../fleet/model-capability-heuristics.js';
@@ -62,6 +66,12 @@ import {
   IMMEDIATE_EMOTION_ACKNOWLEDGEMENTS,
   pushOpener,
 } from '../companion/reply-augment.js';
+import {
+  groundExplicitVisualRequest,
+  isAmbiguousVisualGroundingRequest,
+  isExplicitVisualGroundingRequest,
+  type VisualGroundingFn,
+} from '../companion/visual-grounding.js';
 
 /**
  * Cancellation handle threaded into the two interruptible steps of a spoken turn: the
@@ -154,6 +164,12 @@ export interface VoiceReplyOptions {
   avatarEnabled?: boolean;
   /** Observability hook fired once per turn, including silence/failure/interruption. */
   onTiming?: (timing: VoiceReplyTiming) => void;
+  /**
+   * Explicit one-shot visual grounding. It runs before streaming, phatic
+   * shortcuts, and ACT routing, so camera questions work in every voice mode.
+   * Injectable for tests or an alternate local camera bridge.
+   */
+  visualGrounding?: VisualGroundingFn;
 }
 
 export interface VoiceReadiness {
@@ -1097,7 +1113,23 @@ export async function buildSpokenPromptAugmentation(
     }
   }
 
-  return [relational, guidance].filter(Boolean).join('\n\n');
+  // The shared snapshot contains only bounded symbolic observations (surface,
+  // affect band, support/deliberation state and counters), never transcript
+  // text. Unlike the richer facts/episode block above, it is part of the
+  // explicitly linked voice ↔ channel thread and may therefore remain active
+  // without enabling long-term relational memory.
+  let sharedRelationship = '';
+  try {
+    const { getCrossChannelConversationBridge } = await import(
+      '../conversation/cross-channel-bridge.js'
+    );
+    const bridge = getCrossChannelConversationBridge();
+    if (bridge.isActive()) sharedRelationship = bridge.renderRelationshipContext();
+  } catch {
+    /* continuity is best-effort and must never delay or break speech */
+  }
+
+  return [relational, sharedRelationship, guidance].filter(Boolean).join('\n\n');
 }
 
 async function prepareSpokenTurn(
@@ -1743,6 +1775,12 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   const nativeStreamSpeak = options.streamSpeak ?? (
     !options.synth && !options.play ? makeDefaultStreamSpeak() : undefined
   );
+  const visualGrounding: VisualGroundingFn = options.visualGrounding ?? (
+    (utterance, groundingOptions) => groundExplicitVisualRequest(utterance, {
+      cwd: groundingOptions?.cwd ?? options.rootDir ?? process.cwd(),
+      ...(groundingOptions?.signal ? { signal: groundingOptions.signal } : {}),
+    })
+  );
 
   // Resolve any persona-specific fallback voice per reply. Shared by the streaming and
   // blocking paths so synthesis selection has one source of truth.
@@ -1965,17 +2003,68 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
           }
       : undefined;
     try {
+      // ---- VISUAL GROUNDING: explicit one-shot camera request ----
+      // This must precede both the stream and blocking reply functions. In
+      // production those functions are the hybrid brain, whose first branch is
+      // the phatic/prefetch shortcut and whose grounded branch depends on
+      // SPEAK_ACT. Seeing is a perception capability, not an action-mode perk.
+      let visualReply: string | undefined;
+      if (isAmbiguousVisualGroundingRequest(heard)) {
+        visualReply =
+          "Je peux regarder, mais je n'ouvre pas la caméra sur une phrase ambiguë. " +
+          "Dis « ouvre la caméra une fois » et je prendrai une seule image.";
+      } else if (isExplicitVisualGroundingRequest(heard)) {
+        const visualStartedAt = Date.now();
+        try {
+          const result = await visualGrounding(heard, {
+            cwd: options.rootDir ?? process.cwd(),
+            signal,
+          });
+          replyMs = Date.now() - visualStartedAt;
+          if (signal.aborted || result?.status === 'aborted') return;
+          visualReply = result?.response ||
+            "Je n'ai pas réussi à obtenir une observation visuelle fiable cette fois-ci.";
+          logger.info(
+            `[voice] explicit visual grounding status=${result?.status ?? 'unavailable'} ` +
+              `evidenceChars=${result?.evidence?.summary.length ?? 0}`,
+          );
+        } catch (error) {
+          replyMs = Date.now() - visualStartedAt;
+          logger.warn(
+            `[voice] explicit visual grounding failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          visualReply =
+            "Je n'ai pas réussi à obtenir une observation visuelle fiable cette fois-ci.";
+        }
+      }
+
       // ---- FAST PATH: streaming pipeline — speak from the first sentence ----
       // Never lets a streaming failure crash the turn; on nothing-spoken it falls through to
       // the blocking path below (which is the original, unchanged tour-par-tour behavior).
-      if (streamFn) {
+      if (streamFn && visualReply === undefined) {
         try {
+          const relationshipSafety = new RelationshipSafetyStreamGuard();
           const timedReplyStream = (async function* (): AsyncGenerator<string> {
             for await (const delta of streamFn(heard, { signal })) {
+              // Provider first-token latency is measured on the raw delta. The
+              // safety gate intentionally waits for a sentence boundary before
+              // release, which is a separate (and potentially much longer)
+              // first-safe-sentence latency.
               if (firstTextMs === undefined && delta.length > 0) {
                 firstTextMs = Date.now() - startedAt;
               }
-              yield delta;
+              for (const safeDelta of relationshipSafety.push(delta)) {
+                yield safeDelta;
+              }
+            }
+            for (const safeDelta of relationshipSafety.finish()) {
+              yield safeDelta;
+            }
+            const safety = relationshipSafety.assessment();
+            if (safety.intervened) {
+              logger.warn(
+                `[voice] relationship safety gate intervened: ${safety.issues.join(',')}`
+              );
             }
           })();
           // Resolve the regular synthesizer in parallel with the LLM stream. Native Pocket
@@ -2034,15 +2123,27 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       }
 
       // ---- BLOCKING FALLBACK: the original tour-par-tour behavior, unchanged ----
-      const replyStart = Date.now();
-      const rawReply = await replyFn(heard, { signal });
-      replyMs = Date.now() - replyStart;
+      let rawReply: string;
+      if (visualReply !== undefined) {
+        rawReply = visualReply;
+      } else {
+        const replyStart = Date.now();
+        rawReply = await replyFn(heard, { signal });
+        replyMs = Date.now() - replyStart;
+      }
       // Interrupted during the think step → abandon silently (never speak a stale reply).
       if (signal.aborted) return;
       // Sanity gate before synth: strip leaked control tokens + foreign-script contamination
       // (observed: a French reply degrading into CJK the voice can't pronounce), stay silent
       // if nothing meaningful survives. `reply` is what we synth, log, and hand to onSpoke.
-      const reply = prepareSpeech(rawReply);
+      const preparedReply = prepareSpeech(rawReply);
+      const relationshipGuard = guardRelationshipReply(preparedReply ?? '');
+      const reply = relationshipGuard.response;
+      if (relationshipGuard.intervened) {
+        logger.warn(
+          `[voice] relationship safety gate intervened: ${relationshipGuard.issues.join(',')}`
+        );
+      }
       if (!reply) {
         if ((rawReply ?? '').trim()) {
           logger.info(

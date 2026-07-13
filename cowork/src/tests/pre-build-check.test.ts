@@ -16,9 +16,9 @@ function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'pre-build-check-test-'));
 }
 
-function makeFile(filePath: string): void {
+function makeFile(filePath: string, content: string = '// placeholder'): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, '// placeholder');
+  fs.writeFileSync(filePath, content);
 }
 
 function makeDir(dirPath: string): void {
@@ -26,16 +26,50 @@ function makeDir(dirPath: string): void {
 }
 
 /**
- * Code Buddy core engine adapter (sibling of the cowork dir, at
- * `../dist/desktop/...`). Required FATAL on every platform — without
- * it the packaged Cowork binary silently regresses to pi-coding-agent.
- *
- * `root` is the cowork-dir-equivalent under tmpDir (the path passed to
- * `runChecks`). The adapter file is created at `<tmpDir>/dist/desktop/`
- * which is `<root>/../dist/desktop/`.
+ * Self-contained staged Code Buddy runtime. The adapter deliberately imports a
+ * fake `chalk` package from the sibling node_modules so runChecks exercises the
+ * same bare-ESM lookup used in packaged resources, not just file existence.
  */
 function populateEngineAdapter(root: string): void {
-  makeFile(path.join(root, '..', 'dist', 'desktop', 'codebuddy-engine-adapter.js'));
+  const runtime = path.join(root, '.bundle-resources', 'core-runtime');
+  makeFile(
+    path.join(runtime, 'dist', 'package.json'),
+    JSON.stringify({ private: true, type: 'module' }),
+  );
+  makeFile(
+    path.join(runtime, 'dist', 'desktop', 'codebuddy-engine-adapter.js'),
+    "import chalk from 'chalk'; if (chalk.blue('ok') !== 'ok') throw new Error('bad chalk'); export class CodeBuddyEngineAdapter {}",
+  );
+  makeFile(
+    path.join(runtime, 'dist', 'conversation', 'relationship-safety.js'),
+    'export class RelationshipSafetyStreamGuard {}',
+  );
+  makeFile(
+    path.join(runtime, 'dist', 'agent', 'codebuddy-agent.js'),
+    "import chalk from 'chalk'; export class CodeBuddyAgent { color = chalk.blue('ok'); }",
+  );
+  makeFile(
+    path.join(runtime, 'node_modules', 'chalk', 'package.json'),
+    JSON.stringify({ type: 'module', exports: './index.js' }),
+  );
+  makeFile(
+    path.join(runtime, 'node_modules', 'chalk', 'index.js'),
+    "export default { blue(value) { return value; } };",
+  );
+  makeFile(
+    path.join(
+      runtime,
+      'node_modules',
+      'better-sqlite3',
+      'build',
+      'Release',
+      'better_sqlite3.node',
+    ),
+  );
+  makeFile(
+    path.join(runtime, 'codebuddy-runtime.json'),
+    JSON.stringify({ schemaVersion: 1, packageCount: 2 }),
+  );
 }
 
 function populateSqliteBinding(root: string): void {
@@ -86,9 +120,8 @@ describe('pre-build-check: runChecks', () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    // We create a `cowork`-shaped sub-dir under a real tmp dir so that
-    // checks with relPath `../dist/...` resolve INSIDE the parent
-    // (which afterEach nukes), instead of leaking files into /tmp.
+    // Keep the fixture shaped like the real cowork project so all relative
+    // resource paths are exercised without leaking files into /tmp.
     parentDir = makeTempDir();
     tmpDir = path.join(parentDir, 'cowork');
     fs.mkdirSync(tmpDir);
@@ -177,6 +210,44 @@ describe('pre-build-check: runChecks', () => {
     const result = runChecks(tmpDir, 'darwin', 'arm64');
 
     expect(result.failed).toBeGreaterThan(0);
+    expect(result.hasFatal).toBe(true);
+  });
+
+  it('blocks packaging when the companion relationship gate is missing', () => {
+    populateWin32Artifacts(tmpDir);
+    fs.rmSync(
+      path.join(
+        tmpDir,
+        '.bundle-resources',
+        'core-runtime',
+        'dist',
+        'conversation',
+        'relationship-safety.js',
+      ),
+    );
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const safety = result.results.find((entry: { relPath: string }) =>
+      entry.relPath.includes('conversation/relationship-safety.js')
+    );
+    expect(safety).toMatchObject({ passed: false, severity: 'fatal' });
+    expect(result.hasFatal).toBe(true);
+  });
+
+  it('blocks packaging when the staged adapter cannot resolve a bare ESM dependency', () => {
+    populateWin32Artifacts(tmpDir);
+    fs.rmSync(
+      path.join(tmpDir, '.bundle-resources', 'core-runtime', 'node_modules', 'chalk'),
+      { recursive: true },
+    );
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const adapter = result.results.find((entry: { relPath: string }) =>
+      entry.relPath.endsWith('desktop/codebuddy-engine-adapter.js')
+    );
+
+    expect(adapter).toMatchObject({ passed: false, severity: 'fatal' });
+    expect((adapter as { detail?: string }).detail).toContain('chalk');
     expect(result.hasFatal).toBe(true);
   });
 

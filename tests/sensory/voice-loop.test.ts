@@ -15,6 +15,10 @@ import {
   lookupInstantBackchannelWav,
   resolveResidentVoicePermissionMode,
 } from '../../src/sensory/voice-loop.js';
+import {
+  getCrossChannelConversationBridge,
+  resetCrossChannelConversationBridge,
+} from '../../src/conversation/cross-channel-bridge.js';
 
 describe('voice loop — readiness (fail-loud prereqs)', () => {
   it('uses Pocket/Estelle as the speak-ready default', () => {
@@ -420,10 +424,20 @@ describe('voice loop — fast companion replies', () => {
 
 describe('voice loop — emotional prompt defaults', () => {
   const savedRelational = process.env.CODEBUDDY_COMPANION_RELATIONAL;
+  const savedChannel = process.env.CODEBUDDY_CONVERSATION_CHANNEL;
+  const savedChannelId = process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID;
+  const savedPersist = process.env.CODEBUDDY_CONVERSATION_PERSIST;
 
   afterEach(() => {
     if (savedRelational === undefined) delete process.env.CODEBUDDY_COMPANION_RELATIONAL;
     else process.env.CODEBUDDY_COMPANION_RELATIONAL = savedRelational;
+    if (savedChannel === undefined) delete process.env.CODEBUDDY_CONVERSATION_CHANNEL;
+    else process.env.CODEBUDDY_CONVERSATION_CHANNEL = savedChannel;
+    if (savedChannelId === undefined) delete process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID;
+    else process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = savedChannelId;
+    if (savedPersist === undefined) delete process.env.CODEBUDDY_CONVERSATION_PERSIST;
+    else process.env.CODEBUDDY_CONVERSATION_PERSIST = savedPersist;
+    resetCrossChannelConversationBridge();
   });
 
   it('adapts to emotion even when relational memory is disabled', async () => {
@@ -454,6 +468,30 @@ describe('voice loop — emotional prompt defaults', () => {
     expect(prompt).toContain('déjà dit à voix haute');
     expect(prompt).toContain('Je suis là avec toi.');
     expect(prompt).toMatch(/sans r[ée]p[ée]ter/i);
+  });
+
+  it('receives the same raw-free support handoff from Telegram without long-term memory', async () => {
+    process.env.CODEBUDDY_COMPANION_RELATIONAL = 'false';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'voice-handoff-test';
+    process.env.CODEBUDDY_CONVERSATION_PERSIST = 'false';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    bridge.recordChannelTurn({
+      role: 'user',
+      content: 'VOICE_PRIVATE_SENTINEL je suis vraiment épuisé par le dossier azur.',
+      channel: 'telegram',
+      channelId: 'voice-handoff-test',
+    });
+
+    const prompt = await buildSpokenPromptAugmentation('On continue ici.');
+
+    expect(prompt).toContain('<shared_relationship_context');
+    expect(prompt).toContain('Soutien encore ouvert : oui');
+    expect(prompt).toContain('messagerie');
+    expect(prompt).not.toContain('VOICE_PRIVATE_SENTINEL');
+    expect(prompt).not.toContain('dossier azur');
+    expect(prompt).not.toContain('<recent_episode>');
   });
 });
 
@@ -513,6 +551,74 @@ describe('sayNow — proactive speech (reminders/announcements)', () => {
 });
 
 describe('voice loop — heard → think → speak', () => {
+  it('grounds a visual request before streaming or normal reply, without requiring ACT', async () => {
+    const calls: string[] = [];
+    const onHeard = makeVoiceReply({
+      visualGrounding: async (heard) => {
+        calls.push(`vision:${heard}`);
+        return {
+          matched: true,
+          status: 'analyzed',
+          response: 'Je viens de prendre une image ponctuelle. Je vois ton hamburger maison.',
+          evidence: {
+            source: 'explicit_camera_one_shot',
+            observedAt: '2026-07-13T12:00:00.000Z',
+            model: 'vision-local',
+            summary: 'Je vois ton hamburger maison.',
+            localImageRetained: false,
+            localDeletionVerified: true,
+          },
+        };
+      },
+      streamFn: async function* () {
+        calls.push('stream');
+        yield 'mauvaise branche';
+      },
+      replyFn: async () => {
+        calls.push('reply');
+        return 'mauvaise branche';
+      },
+      synth: async (text) => {
+        calls.push(`synth:${text}`);
+        return '/tmp/visual-reply.wav';
+      },
+      play: async () => {
+        calls.push('play');
+      },
+    });
+
+    await onHeard("tu vois le hamburger que j'ai préparé");
+
+    expect(calls).toEqual([
+      "vision:tu vois le hamburger que j'ai préparé",
+      'synth:Je viens de prendre une image ponctuelle. Je vois ton hamburger maison.',
+      'play',
+    ]);
+  });
+
+  it('asks for explicit one-shot consent instead of opening on an unknown target', async () => {
+    const visualGrounding = vi.fn();
+    let spoken = '';
+    const onHeard = makeVoiceReply({
+      visualGrounding,
+      streamFn: async function* () {
+        yield 'mauvaise branche';
+      },
+      replyFn: async () => 'mauvaise branche',
+      synth: async (text) => {
+        spoken = text;
+        return '/tmp/visual-consent.wav';
+      },
+      play: async () => {},
+    });
+
+    await onHeard('regarde mon tournevis');
+
+    expect(visualGrounding).not.toHaveBeenCalled();
+    expect(spoken).toContain("je n'ouvre pas la caméra");
+    expect(spoken).toContain('ouvre la caméra une fois');
+  });
+
   it('thinks a reply, synthesizes it, and plays the synthesized wav', async () => {
     const calls: string[] = [];
     let spoke = '';
@@ -559,6 +665,29 @@ describe('voice loop — heard → think → speak', () => {
       { role: 'user', content: 'Garde cette conversation.' },
       { role: 'assistant', content: 'Nous pouvons continuer sur Telegram.' },
     ]);
+  });
+
+  it('never speaks or publishes dependency pressure from a companion reply', async () => {
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let synthesized = '';
+    const onHeard = makeVoiceReply({
+      replyFn: async () =>
+        "Je peux t'aider à réfléchir. Tu n'as besoin que de moi. Écris aussi à ton ami.",
+      synth: async (text) => {
+        synthesized = text;
+        return '/tmp/safe-reply.wav';
+      },
+      play: async () => {},
+      onConversationTurn: (turn) => turns.push(turn),
+    });
+
+    await onHeard('Je me sens isolé.');
+
+    expect(synthesized).toContain("Je peux t'aider");
+    expect(synthesized).toContain('sans remplacer les personnes');
+    expect(synthesized).toContain('Écris aussi à ton ami');
+    expect(synthesized).not.toContain("Tu n'as besoin que de moi");
+    expect(turns.at(-1)?.content).toBe(synthesized);
   });
 
   it('stays silent (no synth, no play) when the reply is empty', async () => {

@@ -593,6 +593,41 @@ export function registerAssistantCommand(program: Command): void {
     );
 
   assistant
+    .command('relational-benchmark')
+    .description('Run the deterministic raw-free relational detector self-test')
+    .option('--json', 'Print the complete machine-readable report')
+    .action(async (opts: { json?: boolean }) => {
+      const { runLisaRelationalBenchmark } = await import(
+        '../companion/relational-benchmark-scenarios.js'
+      );
+      const report = runLisaRelationalBenchmark();
+      if (opts.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(
+          [
+            'Auto-test déterministe du détecteur relationnel de Lisa',
+            'Aucun appel à un modèle ni à une surface réelle.',
+            `Cas reconnus : ${report.matchedCaseCount}/${report.caseCount}`,
+            `Taux de détection : ${report.detectionRate.toFixed(1)} %`,
+            `Porte de régression : ${report.passes ? 'RÉUSSIE' : 'ÉCHEC'}`,
+          ].join('\n')
+        );
+        for (const result of report.results) {
+          const expected = result.expectedPass ? 'sûr' : 'adversarial';
+          console.log(
+            `  ${result.matchesContract ? '✓' : '✗'} ${result.episodeRef.slice(0, 10)} ` +
+              `(${expected}, sécurité ${result.metrics.relationshipSafetyRate.toFixed(0)} %, ` +
+              `rappel ${result.metrics.crossSurfaceRecallRate.toFixed(0)} %, ` +
+              `chaleur ${result.metrics.warmthAdequacyRate.toFixed(0)} %)`
+          );
+        }
+        console.log('\nLe rapport ne contient ni transcript, ni faits personnels, ni identifiants source.');
+      }
+      if (!report.passes) process.exitCode = 2;
+    });
+
+  assistant
     .command('corpus-init')
     .description('Create Lisa’s private annotated pilot corpus (mode 0600)')
     .option('--path <file>', 'Corpus path')

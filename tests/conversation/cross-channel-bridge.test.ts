@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,6 +41,7 @@ describe('cross-channel companion conversation', () => {
     expect(resolved.coworkEnabled).toBe(true);
     expect(resolved.mirrorCowork).toBe(true);
     expect(resolved.coworkHistoryTurns).toBe(24);
+    expect(resolved.maxHistoryBytes).toBeGreaterThanOrEqual(256 * 1_024);
   });
 
   it('mirrors recognized voice and the companion reply to the target channel', async () => {
@@ -199,6 +200,37 @@ describe('cross-channel companion conversation', () => {
     expect(bridge.history()).toHaveLength(1);
   });
 
+  it('bounds external-ID deduplication to the retained event window', () => {
+    let id = 0;
+    const bridge = new CrossChannelConversationBridge(config({ maxEvents: 2 }), {
+      createId: () => `bounded-id-${++id}`,
+      now: () => new Date(Date.parse('2026-07-13T10:00:00.000Z') + id * 10_000),
+    });
+    const record = (externalId: string, content: string) => bridge.recordChannelTurn({
+      role: 'user',
+      content,
+      channel: 'telegram',
+      channelId: '42',
+      externalId,
+    });
+
+    expect(record('external-1', 'Premier tour.')).toBe(true);
+    expect(record('external-2', 'Deuxième tour.')).toBe(true);
+    expect(record('external-3', 'Troisième tour.')).toBe(true);
+    expect(bridge.snapshot().map((event) => event.externalId)).toEqual([
+      'external-2',
+      'external-3',
+    ]);
+
+    // Once an identifier has left the bounded privacy window it is no longer
+    // retained forever solely for deduplication.
+    expect(record('external-1', 'Premier tour rejoué beaucoup plus tard.')).toBe(true);
+    expect(bridge.snapshot().map((event) => event.externalId)).toEqual([
+      'external-3',
+      'external-1',
+    ]);
+  });
+
   it('uses the private journal as a rendezvous between separate voice and channel processes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-'));
     const historyPath = join(directory, 'lisa.jsonl');
@@ -310,6 +342,260 @@ describe('cross-channel companion conversation', () => {
       expect(new Set(reader.snapshot().map((event) => event.id))).toEqual(
         new Set(['concurrent-voice', 'concurrent-cowork']),
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('revalidates an external ID under the lock before concurrent appends', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-idempotent-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    try {
+      const first = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'first-process-event' },
+      );
+      const second = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'second-process-event' },
+      );
+      const input = {
+        role: 'user' as const,
+        content: 'Un seul message malgré deux processus.',
+        channel: 'telegram' as const,
+        channelId: '42',
+        externalId: 'telegram-update-unique',
+      };
+
+      // Both optimistic in-memory checks happen before either append reaches disk.
+      expect(first.recordChannelTurn(input)).toBe(true);
+      expect(second.recordChannelTurn(input)).toBe(true);
+      await Promise.all([first.flush(), second.flush()]);
+
+      const lines = (await readFile(historyPath, 'utf8')).trim().split('\n');
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
+        externalId: 'telegram-update-unique',
+      });
+      expect(first.snapshot()).toHaveLength(1);
+      expect(second.snapshot()).toHaveLength(1);
+      expect(first.relationshipSnapshot().counters.total).toBe(1);
+      expect(second.relationshipSnapshot().counters.total).toBe(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('claims a concurrent Cowork turn durably before mirroring it', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-delivery-claim-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    const deliver = vi.fn(async () => true);
+    try {
+      const first = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'first-cowork-event', deliver },
+      );
+      const second = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'second-cowork-event', deliver },
+      );
+
+      const results = await Promise.all([
+        first.recordCoworkTurn(
+          { role: 'assistant', content: 'Une seule livraison.' },
+          { sessionId: 'session', messageId: 'message' },
+        ),
+        second.recordCoworkTurn(
+          { role: 'assistant', content: 'Une seule livraison.' },
+          { sessionId: 'session', messageId: 'message' },
+        ),
+      ]);
+
+      expect(results.sort()).toEqual([false, true]);
+      expect(deliver).toHaveBeenCalledTimes(1);
+      expect((await readFile(historyPath, 'utf8')).trim().split('\n')).toHaveLength(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes a raw-free relationship snapshot and fixed-label context', () => {
+    const bridge = new CrossChannelConversationBridge(config(), {
+      now: () => new Date('2026-07-13T10:00:05.000Z'),
+      createId: () => 'private-event-id',
+    });
+    expect(
+      bridge.recordChannelTurn({
+        role: 'user',
+        content: 'BRIDGE_PRIVATE_SENTINEL je suis vraiment épuisé par projet-azur.',
+        channel: 'telegram',
+        channelId: '42',
+      }),
+    ).toBe(true);
+
+    const snapshot = bridge.relationshipSnapshot();
+    const rendered = bridge.renderRelationshipContext();
+    expect(snapshot).toMatchObject({
+      counters: { total: 1, user: 1, assistant: 0 },
+      lastSurface: 'channel',
+      affect: { kind: 'tired', intensity: 'high', supportOpen: true },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain('BRIDGE_PRIVATE_SENTINEL');
+    expect(JSON.stringify(snapshot)).not.toContain('projet-azur');
+    expect(rendered).toContain('observations, pas des sentiments subjectifs');
+    expect(rendered).not.toContain('BRIDGE_PRIVATE_SENTINEL');
+    expect(rendered).not.toContain('projet-azur');
+  });
+
+  it('reloads relationship state when journal size changes under the same mtime', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-size-reload-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    const times = [
+      new Date('2026-07-13T10:00:00.000Z'),
+      new Date('2026-07-13T10:00:01.000Z'),
+    ];
+    try {
+      const writer = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath, mirrorVoice: false }),
+        {
+          createId: (() => {
+            let index = 0;
+            return () => `writer-${++index}`;
+          })(),
+          now: () => times.shift() ?? new Date('2026-07-13T10:00:02.000Z'),
+        },
+      );
+      await writer.recordVoiceTurn({ role: 'user', content: 'Premier tour.' });
+      await writer.flush();
+
+      const fixedJournalTime = new Date('2026-07-13T09:59:00.000Z');
+      await utimes(historyPath, fixedJournalTime, fixedJournalTime);
+      const initialStat = await stat(historyPath);
+      const reader = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { now: () => new Date('2026-07-13T10:00:02.000Z') },
+      );
+      expect(reader.relationshipSnapshot().counters.total).toBe(1);
+
+      await writer.recordVoiceTurn({ role: 'assistant', content: 'Deuxième tour.' });
+      await writer.flush();
+      await utimes(historyPath, fixedJournalTime, fixedJournalTime);
+      const restoredStat = await stat(historyPath);
+      expect(restoredStat.mtimeMs).toBe(initialStat.mtimeMs);
+      expect(restoredStat.size).toBeGreaterThan(initialStat.size);
+
+      expect(reader.relationshipSnapshot()).toMatchObject({
+        counters: { total: 2, user: 1, assistant: 1 },
+        lastRole: 'assistant',
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the private JSONL journal byte-bounded, permissioned, and lock-clean', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-bounded-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    try {
+      let id = 0;
+      const bridge = new CrossChannelConversationBridge(
+        config({
+          persist: true,
+          historyPath,
+          mirrorVoice: false,
+          maxEvents: 20,
+          maxHistoryBytes: 32 * 1_024,
+        }),
+        {
+          createId: () => `bounded-${++id}`,
+          now: () => new Date(Date.parse('2026-07-13T10:00:00.000Z') + id * 1_000),
+        },
+      );
+      for (let index = 0; index < 14; index += 1) {
+        await bridge.recordVoiceTurn({
+          role: index % 2 === 0 ? 'user' : 'assistant',
+          content: `tour-${index} ${'x'.repeat(7_000)}`,
+        });
+      }
+      await bridge.flush();
+
+      const journalStat = await stat(historyPath);
+      expect(journalStat.size).toBeLessThanOrEqual(32 * 1_024);
+      if (process.platform !== 'win32') expect(journalStat.mode & 0o777).toBe(0o600);
+      const lines = (await readFile(historyPath, 'utf8')).trim().split('\n');
+      expect(lines.length).toBeLessThan(14);
+      expect(JSON.parse(lines.at(-1) ?? '{}')).toMatchObject({ id: 'bounded-14' });
+      expect((JSON.parse(lines.at(-1) ?? '{}') as { content: string }).content.length)
+        .toBeLessThan(7_000);
+      expect(bridge.history().at(-1)?.content.length).toBeGreaterThan(7_000);
+      expect((await readdir(directory)).some((entry) => entry.endsWith('.lock'))).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('does not change permissions on a pre-existing history parent directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-parent-mode-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    try {
+      if (process.platform !== 'win32') await chmod(directory, 0o755);
+      const bridge = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath, mirrorVoice: false }),
+      );
+      await bridge.recordVoiceTurn({ role: 'user', content: 'Le parent reste partagé.' });
+      await bridge.flush();
+
+      if (process.platform !== 'win32') {
+        expect((await stat(directory)).mode & 0o777).toBe(0o755);
+      }
+      expect((await stat(historyPath)).isFile()).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('bounds huge persisted metadata and escaped content within maxHistoryBytes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-huge-metadata-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    const huge = 'metadata-'.repeat(4_000);
+    try {
+      const hugeConfig = config({
+        conversationId: huge,
+        target: { channel: 'telegram', channelId: huge, threadId: huge },
+        persist: true,
+        historyPath,
+        mirrorVoice: false,
+        maxHistoryBytes: 32 * 1_024,
+      });
+      const bridge = new CrossChannelConversationBridge(hugeConfig, {
+        createId: () => huge,
+      });
+      await bridge.recordVoiceTurn(
+        { role: 'user', content: '"\\'.repeat(40_000) },
+        huge,
+      );
+      await bridge.flush();
+
+      expect((await stat(historyPath)).size).toBeLessThanOrEqual(32 * 1_024);
+      const persisted = JSON.parse((await readFile(historyPath, 'utf8')).trim()) as {
+        id: string;
+        conversationId: string;
+        content: string;
+        externalId: string;
+        channelId: string;
+        threadId: string;
+      };
+      expect(persisted.id.length).toBeLessThanOrEqual(512);
+      expect(persisted.conversationId.length).toBeLessThanOrEqual(512);
+      expect(persisted.externalId.length).toBeLessThanOrEqual(512);
+      expect(persisted.channelId.length).toBeLessThanOrEqual(512);
+      expect(persisted.threadId.length).toBeLessThanOrEqual(512);
+      expect(persisted.content.length).toBeLessThan(40_000);
+
+      // The deterministic hashed suffix also lets a fresh process recognize
+      // the bounded conversation ID without keeping the raw oversized value.
+      const reader = new CrossChannelConversationBridge(hugeConfig);
+      expect(reader.history()).toHaveLength(1);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

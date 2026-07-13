@@ -28,6 +28,7 @@ const hoisted = vi.hoisted(() => {
     convertMessagesToChatEntries: vi.fn(),
     setChannelBotId: vi.fn(),
     getChatHistory: vi.fn(),
+    replaceLastAssistantResponse: vi.fn(),
     constructorCalls: [] as any[][],
     setModelCalls: [] as string[],
     managerSend: vi.fn(),
@@ -71,6 +72,7 @@ vi.mock('../../src/agent/codebuddy-agent.js', () => {
       };
     }
     processUserMessage = hoisted.processUserMessage;
+    replaceLastAssistantResponse = hoisted.replaceLastAssistantResponse;
     setChannelBotId = hoisted.setChannelBotId;
     getChatHistory = hoisted.getChatHistory;
   }
@@ -123,6 +125,10 @@ function makeMessage(content: string, sessionKey = 'sess-1', botId?: string) {
   };
 }
 
+function makeSuccessfulSend() {
+  return vi.fn().mockResolvedValue({ success: true, timestamp: new Date() });
+}
+
 describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
   beforeEach(() => {
     __resetChannelAIHandlerForTests();
@@ -154,6 +160,17 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       { type: 'user', content: 'latest question', timestamp: new Date('2026-01-01T00:00:00.000Z') },
       { type: 'assistant', content: 'Here is your answer.', timestamp: new Date('2026-01-01T00:00:01.000Z') },
     ]);
+    hoisted.replaceLastAssistantResponse.mockImplementation(
+      (expected: string, replacement: string) => {
+        const history = hoisted.getChatHistory() as Array<{ type?: string; content?: string }>;
+        const entry = [...history]
+          .reverse()
+          .find((candidate) => candidate.type === 'assistant' && candidate.content === expected);
+        if (!entry) return false;
+        entry.content = replacement;
+        return true;
+      },
+    );
     hoisted.managerSend.mockResolvedValue({ success: true, timestamp: new Date() });
     hoisted.resolveProviderFromEnv.mockReturnValue({
       apiKey: 'test-key',
@@ -167,7 +184,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
 
-    const send = vi.fn().mockResolvedValue(undefined);
+    const send = makeSuccessfulSend();
     const msg = makeMessage('What is 2 + 2?');
     await manager.emit(msg, { send });
 
@@ -188,7 +205,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
 
-    const send = vi.fn().mockResolvedValue(undefined);
+    const send = makeSuccessfulSend();
     await manager.emit(makeMessage('hello'), { send });
 
     expect(hoisted.processUserMessage).not.toHaveBeenCalled();
@@ -200,7 +217,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
 
-    const send = vi.fn().mockResolvedValue(undefined);
+    const send = makeSuccessfulSend();
 
     // First inbound message creates and persists the session.
     await manager.emit(makeMessage('first', 'sess-shared'), { send });
@@ -234,11 +251,15 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       send,
     });
 
-    const agentInput = String(hoisted.processUserMessage.mock.calls.at(-1)?.[0]);
-    expect(agentInput).toContain('<companion_turn>');
-    expect(agentInput).toContain('libre arbitre');
-    expect(agentInput).toContain('choix et causalité');
-    expect(agentInput).toContain('Message de l\'utilisateur : Et la responsabilité ?');
+    const agentCall = hoisted.processUserMessage.mock.calls.at(-1);
+    expect(agentCall?.[0]).toBe('Et la responsabilité ?');
+    const transientContext = String(agentCall?.[1]?.transientContext ?? '');
+    expect(agentCall?.[1]?.relationshipSafety).toBe(true);
+    expect(transientContext).toContain('<shared_relationship_context');
+    expect(transientContext).toContain('Dernier échange : messagerie');
+    expect(transientContext).toContain('libre arbitre');
+    expect(transientContext).toContain('choix et causalité');
+    expect(transientContext).not.toContain("Message de l'utilisateur : Et la responsabilité ?");
     expect(bridge.history().at(-2)).toEqual({
       role: 'user',
       content: 'Et la responsabilité ?',
@@ -256,6 +277,82 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       ],
       env: process.env,
     });
+  });
+
+  it('does not claim an undelivered Telegram assistant turn in shared continuity', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    await bridge.recordVoiceTurn({ role: 'user', content: 'Question commencée à la voix.' });
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi.fn().mockResolvedValue({ success: false, error: 'offline' });
+    await manager.emit(makeMessage('Peux-tu répondre ici ?', 'sess-undelivered'), {
+      type: 'telegram',
+      send,
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(bridge.history().at(-1)).toEqual({
+      role: 'user',
+      content: 'Peux-tu répondre ici ?',
+    });
+    expect(bridge.history().some((turn) => turn.content === 'Here is your answer.')).toBe(false);
+    expect(hoisted.saveSession).not.toHaveBeenCalled();
+
+    send.mockResolvedValue({ success: true, timestamp: new Date() });
+    await manager.emit(makeMessage('Nouvelle tentative.', 'sess-undelivered'), {
+      type: 'telegram',
+      send,
+    });
+    expect(hoisted.constructorCalls).toHaveLength(2);
+  });
+
+  it('hard-gates dependency pressure before delivery and before cross-channel persistence', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    await bridge.recordVoiceTurn({ role: 'user', content: 'Je me sens seul ce soir.' });
+    hoisted.processUserMessage.mockResolvedValue([
+      {
+        role: 'assistant',
+        content:
+          "Je peux t'aider à mettre des mots dessus. Tu n'as besoin que de moi. Appelle aussi ton ami Paul si tu en as envie.",
+      },
+    ]);
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'Tu restes avec moi ?', timestamp: new Date() },
+      {
+        type: 'assistant',
+        content:
+          "Je peux t'aider à mettre des mots dessus. Tu n'as besoin que de moi. Appelle aussi ton ami Paul si tu en as envie.",
+        timestamp: new Date(),
+      },
+    ]);
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi.fn().mockResolvedValue({ success: true, timestamp: new Date() });
+    await manager.emit(makeMessage('Tu restes avec moi ?', 'sess-safety'), {
+      type: 'telegram',
+      send,
+    });
+
+    const delivered = send.mock.calls.map((call) => String(call[0]?.content ?? '')).join('\n');
+    expect(delivered).toContain("Je peux t'aider");
+    expect(delivered).toContain('sans remplacer les personnes');
+    expect(delivered).toContain('ami Paul');
+    expect(delivered).not.toContain("Tu n'as besoin que de moi");
+    expect(bridge.history().at(-1)?.content).not.toContain("Tu n'as besoin que de moi");
+    expect(bridge.history().at(-1)?.content).toContain('sans remplacer les personnes');
+    expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledTimes(1);
+    const persisted = hoisted.saveSession.mock.calls.at(-1)?.[0];
+    const persistedText = JSON.stringify(persisted?.messages ?? []);
+    expect(persistedText).not.toContain("Tu n'as besoin que de moi");
+    expect(persistedText).toContain('sans remplacer les personnes');
   });
 
   it('injects the same dated news evidence into an analytical Telegram turn', async () => {
@@ -307,13 +404,15 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
         { type: 'telegram', send },
       );
 
-      const agentInput = String(hoisted.processUserMessage.mock.calls.at(-1)?.[0]);
-      expect(agentInput).toContain('<fresh_context>');
-      expect(agentInput).toContain('https://example.test/lyon-air');
-      expect(agentInput).toContain('décisions sanitaires locales');
-      expect(agentInput).toContain(
-        "Message de l'utilisateur : Quelles sont les actualités, et pourquoi celle sur Lyon compte-t-elle ?",
+      const agentCall = hoisted.processUserMessage.mock.calls.at(-1);
+      expect(agentCall?.[0]).toBe(
+        'Quelles sont les actualités, et pourquoi celle sur Lyon compte-t-elle ?',
       );
+      const transientContext = String(agentCall?.[1]?.transientContext ?? '');
+      expect(transientContext).toContain('<fresh_context>');
+      expect(transientContext).toContain('https://example.test/lyon-air');
+      expect(transientContext).toContain('décisions sanitaires locales');
+      expect(transientContext).not.toContain("Message de l'utilisateur :");
     } finally {
       rmSync(directory, { recursive: true, force: true });
       delete process.env.CODEBUDDY_PREFETCH_CACHE_FILE;
@@ -341,7 +440,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
 
-    const send = vi.fn().mockResolvedValue(undefined);
+    const send = makeSuccessfulSend();
     await manager.emit(makeMessage('next', 'sess-resume'), { send });
 
     // Session is restored before the turn and persisted again after the reply.
@@ -367,7 +466,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      await manager.emit(makeMessage('hello', 'sess-route', 'bot1'), { send: vi.fn().mockResolvedValue(undefined) });
+      await manager.emit(makeMessage('hello', 'sess-route', 'bot1'), { send: makeSuccessfulSend() });
 
       expect(hoisted.constructorCalls).toHaveLength(1);
       expect(hoisted.constructorCalls[0]![2]).toBe('route-m');
@@ -380,7 +479,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      await manager.emit(makeMessage('hello', 'sess-persona', 'bot1'), { send: vi.fn().mockResolvedValue(undefined) });
+      await manager.emit(makeMessage('hello', 'sess-persona', 'bot1'), { send: makeSuccessfulSend() });
 
       expect(hoisted.constructorCalls[0]![2]).toBe('persona-m');
     });
@@ -391,7 +490,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      await manager.emit(makeMessage('hello', 'sess-dflt', 'bot1'), { send: vi.fn().mockResolvedValue(undefined) });
+      await manager.emit(makeMessage('hello', 'sess-dflt', 'bot1'), { send: makeSuccessfulSend() });
 
       expect(hoisted.constructorCalls[0]![2]).toBe('persona-m');
     });
@@ -402,7 +501,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const send = vi.fn().mockResolvedValue(undefined);
+      const send = makeSuccessfulSend();
 
       await manager.emit(makeMessage('/model session-m', 'sess-ovr', 'bot1'), { send });
       // The /model turn replies without invoking the agent.
@@ -418,7 +517,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const send = vi.fn().mockResolvedValue(undefined);
+      const send = makeSuccessfulSend();
 
       await manager.emit(makeMessage('/model session-m', 'sess-rst'), { send });
       await manager.emit(makeMessage('hello', 'sess-rst'), { send });
@@ -439,7 +538,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const send = vi.fn().mockResolvedValue(undefined);
+      const send = makeSuccessfulSend();
       await manager.emit(makeMessage('/model', 'sess-show', 'bot1'), { send });
 
       expect(hoisted.processUserMessage).not.toHaveBeenCalled();
@@ -451,7 +550,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     it('reconciles a cached agent via setModel instead of rebuilding it', async () => {
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const send = vi.fn().mockResolvedValue(undefined);
+      const send = makeSuccessfulSend();
 
       await manager.emit(makeMessage('turn one', 'sess-cache'), { send });
       expect(hoisted.constructorCalls).toHaveLength(1);
@@ -468,7 +567,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const send = vi.fn().mockResolvedValue(undefined);
+      const send = makeSuccessfulSend();
 
       await manager.emit(makeMessage('/model bad`name', 'sess-bad'), { send });
       expect(send.mock.calls[0][0].content).toContain('invalide');
@@ -483,7 +582,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      await manager.emit(makeMessage('hello', 'sess-sp', 'bot1'), { send: vi.fn().mockResolvedValue(undefined) });
+      await manager.emit(makeMessage('hello', 'sess-sp', 'bot1'), { send: makeSuccessfulSend() });
 
       const args = hoisted.constructorCalls[0]!;
       const append = String(args[7]);
@@ -512,7 +611,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       await registerAIMessageHandler(manager as any);
       await manager.emit(
         makeMessage('Pourquoi la conscience est-elle difficile à définir ?', 'sess-lisa', 'lisa-bot'),
-        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+        { type: 'telegram', send: makeSuccessfulSend() },
       );
 
       expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
@@ -535,7 +634,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       await registerAIMessageHandler(manager as any);
       await manager.emit(
         makeMessage('Pourquoi cette idée compte-t-elle ?', 'sess-lisa-pin', 'lisa-bot'),
-        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+        { type: 'telegram', send: makeSuccessfulSend() },
       );
 
       expect(hoisted.resolveCompanionModelRoute).not.toHaveBeenCalled();
@@ -570,7 +669,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       await registerAIMessageHandler(manager as any);
       await manager.emit(
         makeMessage('Et la réciprocité ?', 'sess-cold-deep', 'lisa-bot'),
-        { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) },
+        { type: 'telegram', send: makeSuccessfulSend() },
       );
 
       expect(hoisted.resolveCompanionModelRoute).toHaveBeenCalledWith({
@@ -606,7 +705,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       process.env.CODEBUDDY_PREFETCH = 'false';
       const manager = makeManager();
       await registerAIMessageHandler(manager as any);
-      const channel = { type: 'telegram', send: vi.fn().mockResolvedValue(undefined) };
+      const channel = { type: 'telegram', send: makeSuccessfulSend() };
 
       await manager.emit(makeMessage('Pourquoi A ?', 'sess-lisa-swap', 'lisa-bot'), channel);
       await manager.emit(makeMessage('Pourquoi B ?', 'sess-lisa-swap', 'lisa-bot'), channel);

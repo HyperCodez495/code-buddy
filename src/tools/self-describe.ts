@@ -7,9 +7,9 @@
  *   - the sibling bricks in the repo: buddy-sense (Rust nervous system / ears),
  *     buddy-vision (Python eyes + live ear), buddy-memory (Rust CKG — a stub in
  *     most checkouts), each with a one-line description read from its own
- *     manifest and a runtime STATUS (present? built?);
- *   - live faculties: number of registered tools, providers with detected auth,
- *     active sensory flags.
+ *     manifest and a source/build STATUS (present? binary artifact detected?);
+ *   - configured faculties: number of registered tools, provider configuration,
+ *     and sensory feature flags. This tool does not infer runtime liveness.
  *
  * Pure + injectable (root / env / toolNames / persona) so it is unit-testable
  * without the whole registry. Never throws — an unreadable source is reported
@@ -31,7 +31,7 @@ export interface BrickInfo {
   description: string;
   /** Is the brick source present in this checkout? */
   present: boolean;
-  /** Runtime status, e.g. "compilé (release)", "présent", "stub (planifié)". */
+  /** Verified source/build status; runtime execution is never inferred. */
   status: string;
 }
 
@@ -43,8 +43,12 @@ export interface SelfDescription {
   bricks: BrickInfo[];
   faculties: {
     toolCount: number | null;
+    /** Configuration evidence only (credential/endpoint present), not a liveness probe. */
     activeProviders: string[];
+    /** Feature flags enabled in this process; hardware availability is not inferred. */
     sensory: string[];
+    /** Read-only tools that let the agent inspect its own implementation. */
+    selfInspectionTools: string[];
   };
   /** A speakable / readable rendering of everything above. */
   text: string;
@@ -94,6 +98,14 @@ function safeExists(p: string): boolean {
   }
 }
 
+function safeIsFile(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /** First non-empty markdown heading/line of a README, stripped of leading `# `. */
 function firstReadmeLine(content: string | null): string | null {
   if (!content) return null;
@@ -118,8 +130,15 @@ function describeSense(root: string): BrickInfo {
     ?? 'système nerveux multi-sensoriel (audio, vision, écran, vitalité)';
   let status = 'non présent';
   if (present) {
-    const built = safeExists(path.join(dir, 'target', 'release')) || safeExists(path.join(dir, 'target', 'debug'));
-    status = built ? 'compilé' : 'présent (non compilé)';
+    const releaseBinary = ['buddy-sense', 'buddy-sense.exe']
+      .some((name) => safeIsFile(path.join(dir, 'target', 'release', name)));
+    const debugBinary = ['buddy-sense', 'buddy-sense.exe']
+      .some((name) => safeIsFile(path.join(dir, 'target', 'debug', name)));
+    status = releaseBinary
+      ? 'binaire release présent (exécution non sondée)'
+      : debugBinary
+        ? 'binaire debug présent (exécution non sondée)'
+        : 'source présente (aucun binaire détecté)';
   }
   return { id: 'buddy-sense', role: 'les oreilles / le système nerveux (Rust)', description, present, status };
 }
@@ -127,14 +146,19 @@ function describeSense(root: string): BrickInfo {
 function describeVision(root: string): BrickInfo {
   const dir = path.join(root, 'buddy-vision');
   const readme = firstReadmeLine(safeReadFile(path.join(dir, 'README.md')));
-  const hasWatch = safeExists(path.join(dir, 'watch.py'));
-  const present = hasWatch || safeExists(path.join(dir, 'README.md'));
+  const scripts = ['watch.py', 'ear.py']
+    .filter((name) => safeIsFile(path.join(dir, name)));
+  const present = scripts.length > 0 || safeExists(path.join(dir, 'README.md'));
   return {
     id: 'buddy-vision',
     role: 'les yeux et l’oreille live (Python)',
     description: readme?.replace(/^buddy-vision\s*[—-]\s*/i, '') ?? 'caméra + micro, événements sémantiques (person_entered / drowsy)',
     present,
-    status: hasWatch ? 'présent (watch.py / ear.py)' : present ? 'présent' : 'non présent',
+    status: scripts.length > 0
+      ? `source présente (${scripts.join(', ')} ; exécution non sondée)`
+      : present
+        ? 'source présente (scripts watch.py/ear.py non détectés)'
+        : 'non présent',
   };
 }
 
@@ -151,8 +175,8 @@ function describeMemory(root: string): BrickInfo {
   };
 }
 
-/** Providers whose auth is detectable from the environment (best-effort, no network). */
-function detectActiveProviders(env: Record<string, string | undefined>): string[] {
+/** Provider configurations detectable from the environment (best-effort, no network). */
+function detectConfiguredProviders(env: Record<string, string | undefined>): string[] {
   const providers: string[] = [];
   if (env.GROK_API_KEY || env.XAI_API_KEY) providers.push('Grok/xAI');
   if (env.OPENAI_API_KEY) providers.push('OpenAI/ChatGPT');
@@ -166,8 +190,8 @@ function detectActiveProviders(env: Record<string, string | undefined>): string[
   return providers;
 }
 
-/** Active sensory faculties, from opt-in env flags. */
-function detectSensory(env: Record<string, string | undefined>): string[] {
+/** Sensory faculties enabled by configuration; this does not probe their hardware. */
+function detectConfiguredSensory(env: Record<string, string | undefined>): string[] {
   const on: string[] = [];
   if (env.CODEBUDDY_SENSORY_CAMERA === 'true') on.push('vision (caméra)');
   if (env.CODEBUDDY_SENSORY_SCREEN === 'true') on.push('écran');
@@ -176,6 +200,16 @@ function detectSensory(env: Record<string, string | undefined>): string[] {
   if (env.CODEBUDDY_REMINDERS === 'true') on.push('rappels');
   return on;
 }
+
+const SELF_INSPECTION_TOOLS = [
+  'self_describe',
+  'view_file',
+  'read_file',
+  'search',
+  'codebase_map',
+  'code_graph',
+  'git',
+] as const;
 
 export function buildSelfDescription(opts: BuildSelfDescriptionOptions = {}): SelfDescription {
   const here = (() => {
@@ -206,8 +240,11 @@ export function buildSelfDescription(opts: BuildSelfDescriptionOptions = {}): Se
   const bricks = [describeSense(root), describeVision(root), describeMemory(root)];
   const faculties = {
     toolCount: opts.toolNames ? opts.toolNames.length : null,
-    activeProviders: detectActiveProviders(env),
-    sensory: detectSensory(env),
+    activeProviders: detectConfiguredProviders(env),
+    sensory: detectConfiguredSensory(env),
+    selfInspectionTools: opts.toolNames
+      ? SELF_INSPECTION_TOOLS.filter((name) => opts.toolNames!.includes(name))
+      : [],
   };
 
   const text = renderText({ name, version, description, robotName: opts.personaRobotName, bricks, faculties });
@@ -228,8 +265,22 @@ function renderText(d: Omit<SelfDescription, 'text'>): string {
   lines.push('');
   const facultyBits: string[] = [];
   if (d.faculties.toolCount !== null) facultyBits.push(`${d.faculties.toolCount} outils`);
-  if (d.faculties.activeProviders.length) facultyBits.push(`providers actifs : ${d.faculties.activeProviders.join(', ')}`);
-  if (d.faculties.sensory.length) facultyBits.push(`capteurs actifs : ${d.faculties.sensory.join(', ')}`);
+  if (d.faculties.activeProviders.length) {
+    facultyBits.push(
+      `providers configurés (disponibilité non sondée) : ${d.faculties.activeProviders.join(', ')}`,
+    );
+  }
+  if (d.faculties.sensory.length) {
+    facultyBits.push(
+      `facultés sensorielles activées (matériel non sondé) : ${d.faculties.sensory.join(', ')}`,
+    );
+  }
   if (facultyBits.length) lines.push(`Facultés : ${facultyBits.join(' · ')}.`);
+  if (d.faculties.selfInspectionTools.length) {
+    lines.push(
+      `Auto-inspection technique : ${d.faculties.selfInspectionTools.join(', ')}. ` +
+      'Je peux examiner mon code et mon état vérifiable ; cela ne constitue pas une conscience subjective.',
+    );
+  }
   return lines.filter((l) => l !== '' || true).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }

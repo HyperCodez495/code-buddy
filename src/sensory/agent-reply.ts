@@ -71,7 +71,10 @@ export interface AgentReplyHandler extends ReplyFn {
 /** Narrow seam around CodeBuddyAgent, exported so abort propagation is testable
  * without constructing a real provider/MCP stack. */
 export interface InterruptibleVoiceAgent {
-  processUserMessageStream(message: string): AsyncIterable<unknown>;
+  processUserMessageStream(
+    message: string,
+    options?: { transientContext?: string; relationshipSafety?: boolean },
+  ): AsyncIterable<unknown>;
   getChatHistory(): Array<{ type?: string; content?: unknown }>;
   abortCurrentOperation(): void;
 }
@@ -214,7 +217,11 @@ export async function runInterruptibleVoiceAgentTurn(
   if (signal?.aborted) return '';
   signal?.addEventListener('abort', abort, { once: true });
   try {
-    for await (const _event of agent.processUserMessageStream(transcript)) {
+    const transientContext = prepareConversationTurn(transcript).systemGuidance;
+    for await (const _event of agent.processUserMessageStream(transcript, {
+      transientContext,
+      relationshipSafety: true,
+    })) {
       if (signal?.aborted) abort();
     }
     if (signal?.aborted) return '';

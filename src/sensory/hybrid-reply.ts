@@ -158,9 +158,37 @@ const GROUNDED_ACTION =
   /\b(verifie|verifier|verifies|lance|lancer|corrige|corriger|montre|montrer|cherche|chercher|trouve|trouver|ouvre|ouvrir|lis|lire|analyse|analyser|teste|tester|redemarre|redemarrer|regarde|regarder|code|ecris|ecrire|compile|compiler|deploie|deployer|installe|installer|configure|configurer|liste|lister|affiche|afficher|envoie|envoyer|cree|creer|supprime|supprimer|ajoute|ajouter|modifie|modifier)\b/;
 const CURRENT_OR_PRIVATE_DATA =
   /\b(aujourd hui|actuellement|en ce moment|dernier|derniere|dernieres|recent|recente|meteo|temperature|actualite|actualites|news|agenda|calendrier|rendez[- ]vous|email|emails|mail|mails|message|messages|prix|cours de|bourse|stock|heure est il|date sommes nous|president|premier ministre)\b/;
+// Questions about Lisa's own implementation need live tools (`self_describe`,
+// source/config readers), even when they sound conversational.  In particular,
+// a question about consciousness is routed to a verifiable operational
+// self-model; routing it here must never be read as evidence of subjective
+// consciousness.
+const TECHNICAL_SELF_INSPECTION = [
+  /\b(?:introspection technique|auto[- ]?inspection)\b/,
+  /\bintrospection\b.{0,40}\b(?:de|sur) (?:ton|votre) (?:code|fonctionnement|architecture|implementation)\b/,
+  /\b(?:etudie|etudier|examine|examiner|analyse|analyser|inspecte|inspecter)\b.{0,48}\b(?:ton|votre) (?:propre )?code\b/,
+  /\b(?:ton|votre) propre code\b/,
+  /\bcomment (?:(?:tu|vous) fonctionne(?:s|z)?|fonctionne(?:s|z)?[- ](?:tu|vous))\b/,
+  /\bquell?es? capacites (?:sont|restent|semblent) (?:actives|disponibles|operationnelles)\b/,
+  /\b(?:es[- ]tu|etes[- ]vous|est[- ]ce que tu es|est[- ]ce que vous etes) (?:reellement |vraiment )?conscient(?:e|s|es)?\b/,
+  /\bquell?e version (?:de [\w.-]+ )?(?:(?:tu|vous) utilise(?:s|z)|utilise(?:s|z)?[- ](?:tu|vous))\b/,
+  /\bquell?e est (?:ta|votre) version\b/,
+  /\bde quoi (?:es[- ]tu|etes[- ]vous) (?:fait|faite|faits|faites|compose|composee|composes|composees)\b/,
+  /\bqui (?:es[- ]tu|etes[- ]vous)\b/,
+  /\b(?:quell?e est )?(?:ton|votre) architecture\b/,
+  /\b(?:quels? (?:sont )?)?(?:tes|vos) capteurs? (?:sont |restent |semblent )?(?:actifs?|disponibles?|operationnels?)\b/,
+  /\bquels? capteurs? (?:sont|restent|semblent) (?:actifs?|disponibles?|operationnels?)\b/,
+  /\bquell?es? (?:sont )?(?:tes|vos) limit(?:e|es|ation|ations)\b/,
+] as const;
 // Social / emotional small talk — stays a fast warm reply even if phrased as a question.
 const SOCIAL =
   /\b(je t aime|je taime|tu m aimes|tu maimes|ca va|comment ca va|comment vas-tu|comment vas tu|tu vas bien|tu es la|content|contente|heureux|heureuse|fatigue|fatiguee|triste|pas le moral|stresse|anxieux|anxieuse|angoisse|je me sens|seul|seule|a bout|besoin de parler|compagnie|bonne nuit|bonjour|bonsoir|merci|coucou|salut|hello|tu me manques|je pense a toi|bisous|cherie|cheri|mon amour|je t embrasse|ma journee|ta journee)\b/;
+
+/** True when the user asks Lisa to inspect her own code, runtime, or self-model. */
+export function isTechnicalSelfInspectionRequest(raw: string): boolean {
+  const t = norm(raw);
+  return t.length > 0 && TECHNICAL_SELF_INSPECTION.some((pattern) => pattern.test(t));
+}
 
 /**
  * Heuristic intent gate: should this utterance be answered by a grounded agent turn
@@ -173,6 +201,7 @@ export function isSubstantiveQuery(raw: string): boolean {
   const t = norm(raw);
   if (!t) return false;
   const wordCount = t.split(' ').length;
+  if (isTechnicalSelfInspectionRequest(raw)) return true;
   // Pure social/emotional, with no command/tech → keep it warm and instant.
   if (SOCIAL.test(t) && !COMMAND_VERBS.test(t) && !TECH.test(t)) return false;
   if (HELP_REQUEST.test(t)) return true;
@@ -194,6 +223,7 @@ export function isSubstantiveQuery(raw: string): boolean {
 export function requiresGroundedAgentQuery(raw: string): boolean {
   const t = norm(raw);
   if (!t) return false;
+  if (isTechnicalSelfInspectionRequest(raw)) return true;
   if (SOCIAL.test(t) && !TECH.test(t) && !GROUNDED_ACTION.test(t)) return false;
   if (TECH.test(t)) return true;
   if (CURRENT_OR_PRIVATE_DATA.test(t)) return true;

@@ -58,6 +58,24 @@ once it reaches `1.0.0`.
 ## [Unreleased]
 
 ### Added
+- **Lisa peut regarder sur demande et examiner son propre fonctionnement.** Une phrase vocale
+  explicite comme « tu vois le hamburger que j'ai préparé ? » déclenche une capture webcam unique,
+  privée (`0700`/`0600`), hors historique et supprimée avant l'attente du modèle multimodal
+  configuré, avec annulation, sérialisation caméra, délai d'analyse et HTTPS distant par défaut,
+  sans repli fournisseur. Les demandes sur son code, sa version, ses capacités ou sa
+  conscience passent désormais par l'agent outillé : `self_describe` et les lecteurs de code
+  produisent un modèle opérationnel vérifiable qui sépare implémenté, configuré et réellement
+  constaté, sans transformer cette introspection technique en revendication de conscience subjective.
+- **Lisa conserve un même état relationnel provisoire sur la voix, Telegram et Cowork.** Un reducer
+  déterministe dérive récence, surfaces, besoin de soutien avec TTL et phase argumentative sans
+  exposer transcript, sujet, identifiant ni empreinte. Cowork reçoit ce contexte au tour courant et
+  synchronise aussi les nouveaux tours externes dans un agent déjà chaud, sans le recréer ni
+  dupliquer l'historique. Une barrière incrémentale bloque avant parole/affichage les pressions
+  d'isolement, le chantage, le dénigrement humain et les fausses affirmations subjectives. Le journal
+  JSONL est maintenant verrouillé entre processus, `0600` et compacté par nombre de tours et octets.
+  `buddy assistant relational-benchmark` ajoute une porte contractuelle déterministe sur ses
+  fixtures (zéro violation critique/limite/fait obsolète, sécurité 100 %, rappel inter-surface
+  ≥ 95 % et chaleur ≥ 85 %), sans appel modèle ou surface et sans conserver de verbatim.
 - **Lisa fait évoluer une pensée sur plusieurs tours au lieu de recommencer sa réponse.** Un
   `Deliberation Thread` local et borné suit sujet, positions, raison, objection, correction,
   question ouverte et phase argumentative. Les suivis elliptiques conservent la profondeur et le

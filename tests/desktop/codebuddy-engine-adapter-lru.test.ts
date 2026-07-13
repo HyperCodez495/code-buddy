@@ -16,6 +16,8 @@ class FakeCodeBuddyAgent {
     constructorCalls.push('new');
   }
   addToHistory() {}
+  setWorkingDirectory() {}
+  setSystemPromptAppend() {}
   async *processUserMessageStream() {
     yield { type: 'done' };
   }
@@ -46,11 +48,12 @@ import { CodeBuddyEngineAdapter } from '../../src/desktop/codebuddy-engine-adapt
 const cap = CodeBuddyEngineAdapter.MAX_CACHED_SESSIONS;
 
 async function runOne(adapter: CodeBuddyEngineAdapter, sessionId: string): Promise<void> {
-  await adapter.runSession(
+  const result = await adapter.runSession(
     sessionId,
     [{ role: 'user', content: 'hi' }],
     () => undefined,
   );
+  expect(result.error).toBeUndefined();
 }
 
 describe('CodeBuddyEngineAdapter — LRU eviction (Phase 9)', () => {

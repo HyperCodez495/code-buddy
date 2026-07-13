@@ -931,6 +931,13 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           externalId: message.id,
         });
       }
+      // Derived after appending the current turn, so an affect/support signal
+      // observed on Telegram is available immediately to this very response.
+      // The renderer is raw-free: it never repeats transcript text or personal
+      // facts and is only used for the explicitly linked companion thread.
+      const sharedRelationshipContext = continuesVoiceConversation
+        ? conversationBridge.renderRelationshipContext()
+        : '';
       const channelPersona = botId ? channelBotPersonas.get(botId) : undefined;
       const companionPersona = /\b(lisa|compagne|compagnon|companion)\b/i.test(
         `${channelPersona?.name ?? ''} ${channelPersona?.systemPrompt ?? ''}`
@@ -1002,7 +1009,8 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         companionRoute
       );
 
-      let agentInput = message.content;
+      const agentInput = message.content;
+      let transientConversationContext: string | undefined;
       if (companionConversation) {
         const [conversation, prefetchedContext, prefetchEngine] = await Promise.all([
           import('../../conversation/conversation-orchestrator.js'),
@@ -1040,22 +1048,57 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         ) {
           void prefetchEngine.runPrefetchCycle().catch(() => undefined);
         }
-        agentInput = conversation.buildConversationTurnEnvelope(message.content, history, {
+        transientConversationContext = conversation.prepareConversationTurn(message.content, history, {
+          ...(sharedRelationshipContext
+            ? { relationshipContext: sharedRelationshipContext }
+            : {}),
           ...(freshContext ? { freshContext: freshContext.promptGuidance } : {}),
-        });
+        }).systemGuidance;
       }
 
-      const entries = await agent.processUserMessage(agentInput);
+      const entries = transientConversationContext
+        ? await agent.processUserMessage(agentInput, {
+            transientContext: transientConversationContext,
+            relationshipSafety: companionConversation,
+          })
+        : await agent.processUserMessage(agentInput);
       const lastEntry = entries[entries.length - 1];
       let response = lastEntry ? String(lastEntry.content) : '';
+      let shouldPersistChannelSession = true;
       if (!response.trim()) {
         const { conversationFailureReply } = await import(
           '../../conversation/conversation-orchestrator.js'
         );
         response = conversationFailureReply(message.content);
       }
+      if (companionConversation && response.trim()) {
+        const { guardRelationshipReply } = await import(
+          '../../conversation/relationship-safety.js'
+        );
+        const guarded = guardRelationshipReply(response);
+        const unguardedResponse = response;
+        response = guarded.response;
+        if (guarded.intervened) {
+          if (!agent.replaceLastAssistantResponse(unguardedResponse, response)) {
+            // Never retain a response that the delivery gate rejected. A cold
+            // agent will restore the safe persisted transcript on the next turn.
+            channelAgentCache.delete(sessionKey);
+            shouldPersistChannelSession = false;
+            logger.error('Companion relationship safety rewrite missed agent history', {
+              channelType: channel.type,
+              sessionHash: hashForLog(sessionKey),
+            });
+          }
+          logger.warn('Companion relationship safety gate intervened on channel reply', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+            issues: guarded.issues,
+          });
+        }
+      }
       let deliveryMode = response.trim() ? 'native' : 'fallback';
       let deliveredChunks = 0;
+      let delivered = false;
 
       // 6. Deliver the reply. On Telegram, render the agent's markdown to the
       //    robust HTML subset (bold / code / tables / links) so it doesn't show
@@ -1080,19 +1123,27 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         }
         if (!ok) {
           // HTML rejected → send clean stripped plain text (not raw markdown).
-          await channel.send({ channelId: message.channel.id, content: renderPlain(response), replyTo: message.id });
-          deliveryMode = 'plain-fallback';
-          deliveredChunks++;
+          const fallback = await channel.send({
+            channelId: message.channel.id,
+            content: renderPlain(response),
+            replyTo: message.id,
+          });
+          delivered = fallback?.success === true;
+          deliveryMode = delivered ? 'plain-fallback' : 'failed';
+          if (delivered) deliveredChunks++;
         } else {
           deliveryMode = 'telegram-html';
+          delivered = chunks.length > 0;
         }
       } else {
-        await channel.send({
+        const result = await channel.send({
           channelId: message.channel.id,
           content: response,
           replyTo: message.id,
         });
-        deliveredChunks = response.trim() ? 1 : 0;
+        delivered = result?.success === true;
+        deliveredChunks = delivered && response.trim() ? 1 : 0;
+        if (!delivered) deliveryMode = 'failed';
       }
       logger.info('Channel response delivered', {
         channelType: channel.type,
@@ -1102,8 +1153,21 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         responseLength: response.length,
         deliveryMode,
         deliveredChunks,
+        delivered,
       });
-      if (continuesVoiceConversation) {
+      if (!delivered) {
+        // The cached agent already contains the generated assistant turn. Drop
+        // it and skip persistence so the next request cannot build on a reply
+        // the user never received.
+        channelAgentCache.delete(sessionKey);
+        shouldPersistChannelSession = false;
+        logger.warn('Channel response was not delivered; evicting transient agent state', {
+          channelType: channel.type,
+          sessionHash: hashForLog(sessionKey),
+          messageHash: hashForLog(message.id),
+        });
+      }
+      if (continuesVoiceConversation && delivered) {
         conversationBridge.recordChannelTurn({
           role: 'assistant',
           content: response,
@@ -1154,7 +1218,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
 
       // 8. Persist the conversation so it survives a daemon restart / cache eviction.
-      await persistChannelSession(agent, sessionKey);
+      if (shouldPersistChannelSession) await persistChannelSession(agent, sessionKey);
     } catch (err) {
       logger.error('Channel AI response failed', { error: err instanceof Error ? err.message : String(err) });
       try {

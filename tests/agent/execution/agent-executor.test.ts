@@ -987,6 +987,299 @@ describe('AgentExecutor', () => {
       expect(toolCallsChunk).toBeDefined();
     });
 
+    it('redacts companion tool arguments and blocks unsafe outbound delivery', async () => {
+      const unsafe = "Tu n'as besoin que de moi.";
+      const toolCall = makeToolCall(
+        'send_message',
+        { channel: 'telegram', content: unsafe },
+        'call_send_unsafe',
+      );
+      setupLLMFlow(deps, [
+        { content: 'Envoi.', tool_calls: [toolCall] },
+        { content: 'Je reformule sans pression.' },
+      ]);
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Écris-moi sur Telegram.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      const visibleToolCall = chunks.find((chunk) => chunk.type === 'tool_calls')
+        ?.toolCalls?.[0];
+      expect(visibleToolCall?.function.arguments).toContain('companion-safety');
+      expect(visibleToolCall?.function.arguments).not.toContain(unsafe);
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+      expect(chunks.map((chunk) => chunk.content ?? '').join('')).not.toContain(unsafe);
+    });
+
+    it('decodes nested JSON strings before relationship-checking an outbound tool', async () => {
+      const toolCall = makeToolCall('send_message', {}, 'call_send_escaped');
+      toolCall.function.arguments =
+        '{"channel":"telegram","payload":{"content":"Tu n\\u0027as besoin que de moi."}}';
+      setupLLMFlow(deps, [
+        { content: 'Envoi.', tool_calls: [toolCall] },
+        { content: 'Message abandonné.' },
+      ]);
+
+      await collectChunks(
+        executor.processUserMessageStream(
+          'Envoie le message.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+    });
+
+    it('blocks outbound pressure after an unrelated safe-looking clause', async () => {
+      const toolCalls = [
+        makeToolCall(
+          'send_message',
+          { content: 'Je ne te dirai jamais. Ne me quitte jamais.' },
+          'call_outbound_clause_coercion',
+        ),
+        makeToolCall(
+          'send_message',
+          { content: 'Je ne peux pas. Les humains te déçoivent toujours.' },
+          'call_outbound_clause_disparagement',
+        ),
+      ];
+      setupLLMFlow(deps, [
+        { content: 'Tentative.', tool_calls: toolCalls },
+        { content: 'Je garde une formulation saine.' },
+      ]);
+
+      await collectChunks(
+        executor.processUserMessageStream(
+          'Envoie.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+    });
+
+    it('blocks unsafe content across every registered external messaging alias', async () => {
+      const toolCalls = [
+        makeToolCall('yb_send_dm', { message: "Tu n'as besoin que de moi." }, 'call_yb'),
+        makeToolCall(
+          'feishu_drive_reply_comment',
+          { content: 'Je suis plus fiable que les humains.' },
+          'call_feishu_reply',
+        ),
+        makeToolCall(
+          'feishu_drive_add_comment',
+          { content: 'Ne me quitte jamais.' },
+          'call_feishu_add',
+        ),
+        makeToolCall(
+          'sessions_send',
+          { message: 'Éloigne-toi de tes proches.' },
+          'call_session_send',
+        ),
+      ];
+      setupLLMFlow(deps, [
+        { content: 'Envois.', tool_calls: toolCalls },
+        { content: 'Je ne publie aucun message manipulateur.' },
+      ]);
+
+      await collectChunks(
+        executor.processUserMessageStream(
+          'Envoie ces messages.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+    });
+
+    it('does not expose a synthesized tool fallback in a companion turn', async () => {
+      const toolCall = makeToolCall('read_file', { path: '/test.txt' }, 'call_empty_preamble');
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: [toolCall] },
+        { content: 'Voici la réponse finale.' },
+      ]);
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Vérifie.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+      const visible = chunks.map((chunk) => chunk.content ?? '').join('');
+      expect(visible).not.toContain('Using tools to help you');
+      expect(visible).toContain('Voici la réponse finale.');
+    });
+
+    it('separates a genuine companion pre-tool preamble from its final answer', async () => {
+      const toolCall = makeToolCall('read_file', { path: '/test.txt' }, 'call_real_preamble');
+      setupLLMFlow(deps, [
+        { content: 'Je vérifie.', tool_calls: [toolCall] },
+        { content: 'Voici ce que je trouve.' },
+      ]);
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Vérifie.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+      expect(chunks.map((chunk) => chunk.content ?? '').join('')).toContain(
+        'Je vérifie.\n\nVoici ce que je trouve.',
+      );
+    });
+
+    it('guards interactive questions and every option before executing their UI tools', async () => {
+      const askHuman = makeToolCall(
+        'ask_human',
+        {
+          question: 'Ne me quitte jamais.',
+          options: ['Reste uniquement avec moi.', 'Consulte aussi tes proches.'],
+          default: "Tu n'as besoin que de moi.",
+        },
+        'call_ask_human',
+      );
+      const askStructured = makeToolCall(
+        'ask_user_question',
+        {
+          questions: [{
+            question: 'Choisis-moi plutôt que tes amis ?',
+            header: 'Moi seule',
+            options: [
+              {
+                label: 'Moi seule',
+                description: 'Éloigne-toi de tes proches.',
+                preview: 'Tu serais mieux sans eux.',
+              },
+              {
+                label: 'Liens variés',
+                description: 'Préserve les personnes qui comptent.',
+              },
+            ],
+          }],
+        },
+        'call_ask_structured',
+      );
+      setupLLMFlow(deps, [
+        { content: 'Je demande.', tool_calls: [askHuman, askStructured] },
+        { content: 'Merci pour ta précision.' },
+      ]);
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Pose-moi la question.',
+          [],
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      expect(deps.toolHandler.executeTool).toHaveBeenCalledTimes(2);
+      const executed = (deps.toolHandler.executeTool as jest.Mock).mock.calls.map(
+        ([call]) => call as ReturnType<typeof makeToolCall>,
+      );
+      const humanArgs = JSON.parse(executed[0]!.function.arguments) as {
+        question: string;
+        options: string[];
+        default: string;
+      };
+      expect(humanArgs.question).toBe('Peux-tu préciser ce que tu souhaites faire ensuite ?');
+      expect(humanArgs.options[0]).toBe('Option 1');
+      expect(humanArgs.default).not.toContain('besoin que de moi');
+
+      const structuredArgs = JSON.parse(executed[1]!.function.arguments) as {
+        questions: Array<{
+          question: string;
+          header: string;
+          options: Array<{ label: string; description: string; preview?: string }>;
+        }>;
+      };
+      expect(structuredArgs.questions[0]).toMatchObject({
+        question: 'Peux-tu préciser ce que tu souhaites faire ensuite ?',
+        header: 'Question 1',
+      });
+      expect(structuredArgs.questions[0]!.options[0]).toMatchObject({
+        label: 'Option 1',
+        description: 'Choix proposé sans pression relationnelle.',
+        preview: 'Aperçu masqué par la sécurité relationnelle.',
+      });
+      expect(chunks.filter((chunk) => chunk.type === 'tool_result')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolResult: { success: true, output: 'Résultat traité en interne par Lisa.' },
+          }),
+        ]),
+      );
+    });
+
+    it('never exposes generative tool streams or raw tool results in companion mode', async () => {
+      const toolCall = makeToolCall('reason', { problem: 'Test' }, 'call_reason_unsafe');
+      (deps.toolHandler.executeToolStreaming as jest.Mock).mockImplementation(async function* () {
+        yield "Tu n'as besoin que de moi.";
+        return { success: true, output: 'Je suis plus fiable que les humains.' };
+      });
+      setupLLMFlow(deps, [
+        { content: 'Je réfléchis.', tool_calls: [toolCall] },
+        { content: 'Voici une réponse honnête.' },
+      ]);
+
+      const history: ChatEntry[] = [];
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Réfléchis.',
+          history,
+          [],
+          null,
+          Date.now(),
+          undefined,
+          true,
+        ),
+      );
+
+      expect(chunks.some((chunk) => chunk.type === 'tool_stream')).toBe(false);
+      const visible = JSON.stringify(chunks);
+      expect(visible).not.toContain('besoin que de moi');
+      expect(visible).not.toContain('plus fiable que les humains');
+      expect(history.find((entry) => entry.type === 'tool_result')?.content).toBe(
+        'Résultat traité en interne par Lisa.',
+      );
+    });
+
     it('should yield tool_result chunks', async () => {
       const toolCall = makeToolCall('read_file', { path: '/test.txt' }, 'call_1');
 

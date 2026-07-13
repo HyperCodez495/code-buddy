@@ -581,6 +581,15 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     help: 'Keeps the bounded shared thread in a private local JSONL journal across restarts.',
   },
   {
+    key: 'CODEBUDDY_CONVERSATION_MAX_HISTORY_BYTES',
+    label: 'Shared journal byte limit',
+    group: 'companion',
+    type: 'text',
+    default: '819200',
+    envFile: 'both',
+    help: 'Compacts the private cross-surface journal at this byte bound (32768-67108864).',
+  },
+  {
     key: 'CODEBUDDY_PREFETCH',
     label: 'Warm fresh context',
     group: 'companion',

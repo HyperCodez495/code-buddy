@@ -13,7 +13,15 @@
  *
  * @module companion/relationship-state
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { homedir } from 'os';
 import { join, dirname } from 'path';
 
@@ -38,9 +46,10 @@ export interface RelationshipState {
   celebratedMilestones: number[];
   /**
    * Companion MOOD (0–100, ~60 = content). Drifts with interactions and gently decays back to a
-   * baseline — Lisa has a real inner state that colours her voice, but it never ratchets (see
-   * `evolveTraits`). Optional so old state files (and existing tests) load unchanged; `personalityOf`
-   * fills the default on read.
+   * baseline — this is an expressive register that colours Lisa's voice, not a
+   * claim of subjective experience. It never ratchets (see `evolveTraits`).
+   * Optional so old state files (and existing tests) load unchanged;
+   * `personalityOf` fills the default on read.
    */
   mood?: number;
   /** Drifting personality traits (0–100). Optional/partial for the same backward-compat reason. */
@@ -96,10 +105,34 @@ export function loadRelationshipState(statePath = defaultStatePath()): Relations
 }
 
 export function saveRelationshipState(state: RelationshipState, statePath = defaultStatePath()): void {
+  const temporaryPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    mkdirSync(dirname(statePath), { recursive: true });
-    writeFileSync(statePath, JSON.stringify(state));
+    mkdirSync(dirname(statePath), { recursive: true, mode: 0o700 });
+    writeFileSync(temporaryPath, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 });
+    try {
+      renameSync(temporaryPath, statePath);
+    } catch {
+      // Windows can reject replacing an existing destination. Preserve the
+      // cross-platform best-effort contract while keeping the temp-first path
+      // atomic on platforms that support replacement rename.
+      writeFileSync(statePath, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 });
+      try {
+        unlinkSync(temporaryPath);
+      } catch {
+        /* already moved/removed */
+      }
+    }
+    try {
+      chmodSync(statePath, 0o600);
+    } catch {
+      /* chmod is advisory on some Windows filesystems */
+    }
   } catch {
+    try {
+      if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
+    } catch {
+      /* best effort cleanup */
+    }
     /* best effort */
   }
 }
@@ -133,12 +166,13 @@ export function markMilestonesUpTo(celebrated: readonly number[], daysTogether: 
   return [...set].sort((a, b) => a - b);
 }
 
-// ── Inner state: mood + drifting personality (MySoulmate's evolving-companion idea) ───────────
+// ── Expressive register: mood + drifting personality ──────────────────────────────────────────
 //
-// Lisa has a small numeric inner state that colours her voice and slowly EVOLVES with the kind of
-// time you spend together — but it never ratchets: every step also decays toward a baseline, so a
-// burst of one signal fades once it stops (no permanent saturation, no gamified "level up"). All
-// pure + deterministic + unit-tested; the wiring that feeds signals lives in later phases.
+// Lisa has a small numeric expressive state that colours her voice and slowly EVOLVES with the
+// kind of time you spend together — but it never ratchets: every step also decays toward a
+// baseline, so a burst of one signal fades once it stops (no permanent saturation, no gamified
+// "level up"). It models presentation, not subjective sentience. All pure + deterministic +
+// unit-tested; the wiring that feeds signals lives in later phases.
 
 /** Mood a content companion settles back to (the decay target). */
 export const MOOD_BASELINE = 60;
@@ -185,7 +219,7 @@ function clamp01(n: number): number {
 }
 
 /**
- * Normalised view of the inner state: mood/traits/sessions with defaults filled and clamped. Use
+ * Normalised view of the expressive state: mood/traits/sessions with defaults filled and clamped. Use
  * this (not the raw optional fields) everywhere a concrete value is needed.
  */
 export function personalityOf(state: RelationshipState): {
@@ -270,7 +304,7 @@ export function getPersonalitySummary(state: RelationshipState): string {
     .map(([k, v]) => `${TRAIT_LABELS_FR[k]} ${Math.round(v)}/100`)
     .join(', ');
   return [
-    `Humeur actuelle : ${moodBand(p.mood)} (${Math.round(p.mood)}/100). Lien : ${rapportTier(p.sessions)}.`,
+    `Registre expressif : ${moodBand(p.mood)} (${Math.round(p.mood)}/100). Lien : ${rapportTier(p.sessions)}.`,
     `Traits dominants : ${dominant}.`,
   ].join('\n');
 }

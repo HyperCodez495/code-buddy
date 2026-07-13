@@ -144,6 +144,79 @@ describe('companion camera bridge', () => {
     expect(result.path).toBe(path.join(tempDir, 'custom', 'scene.png'));
   });
 
+  it('supports a private one-shot capture without durable percept or path journals', async () => {
+    const result = await captureCameraSnapshot({
+      cwd: tempDir,
+      outputPath: 'private/frame.png',
+      runtime: createRuntime(),
+      platform: 'linux',
+      recordPercept: false,
+      recordSafetyEvent: false,
+    });
+
+    expect(result.success).toBe(true);
+    await expect(readRecentCompanionPercepts({ cwd: tempDir })).resolves.toEqual([]);
+    await expect(readRecentCompanionSafetyEvents({ cwd: tempDir })).resolves.toEqual([]);
+  });
+
+  it('records a path-free safety event for an explicit private one-shot capture', async () => {
+    const result = await captureCameraSnapshot({
+      cwd: tempDir,
+      outputPath: 'private/redacted-frame.png',
+      runtime: createRuntime(),
+      platform: 'linux',
+      recordPercept: false,
+      redactSafetyEvent: true,
+    });
+
+    expect(result.success).toBe(true);
+    const events = await readRecentCompanionSafetyEvents({ cwd: tempDir });
+    expect(events[0]).toMatchObject({
+      action: 'camera_snapshot',
+      payload: {
+        consent: 'explicit_one_shot',
+        platform: 'linux',
+        pathRetained: false,
+      },
+    });
+    expect(events[0]?.artifactPath).toBeUndefined();
+    expect(events[0]?.payload).not.toHaveProperty('path');
+    expect(events[0]?.payload).not.toHaveProperty('command');
+    expect(events[0]?.payload).not.toHaveProperty('device');
+  });
+
+  it('kills an in-flight ffmpeg capture when consent is withdrawn', async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = vi.fn(() => true);
+    const runtime: CameraRuntime = {
+      execFile: vi.fn(),
+      spawn: vi.fn(() => child as never),
+    };
+    const controller = new AbortController();
+    const capture = captureCameraSnapshot({
+      cwd: tempDir,
+      outputPath: 'private/aborted.png',
+      runtime,
+      platform: 'linux',
+      signal: controller.signal,
+      skipAvailabilityCheck: true,
+      recordPercept: false,
+      recordSafetyEvent: false,
+    });
+    setTimeout(() => controller.abort(), 5);
+
+    const result = await capture;
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('aborted');
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
   it('imports renderer camera snapshots without requiring ffmpeg', async () => {
     const pngBytes = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',

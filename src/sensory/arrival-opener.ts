@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { withTimeout } from '../council/with-timeout.js';
+import { guardRelationshipReply } from '../conversation/relationship-safety.js';
 
 export type ArrivalTrigger = 'morning' | 'afternoon' | 'evening' | 'night' | 'backSoon' | 'drowsy';
 
@@ -222,7 +223,7 @@ export async function buildLlmArrivalOpener(ctx: LlmArrivalContext): Promise<str
     ctx.personaPrompt?.trim() || 'Tu es un compagnon robot chaleureux, tendre et attentionné.',
     `Tu viens de voir ${who} apparaître devant ta caméra. Dis UNE seule phrase d'accueil — courte, naturelle, chaleureuse et VARIÉE, comme un vrai compagnon (pas un assistant). Pas forcément une question.`,
     `Moment : ${TRIGGER_TIME_LABEL[trigger]}.`,
-    ctx.relationalContext?.trim() ? `Ce que tu sais de lui et ton état intérieur (utilise-le en douceur, sans réciter) :\n${ctx.relationalContext.trim()}` : '',
+    ctx.relationalContext?.trim() ? `Ce que tu sais de lui et ton registre expressif (utilise-le en douceur, sans réciter ni prétendre éprouver des émotions humaines) :\n${ctx.relationalContext.trim()}` : '',
     heard.length ? `Dernières choses qu'il t'a dites (tu peux y faire référence en douceur, sans forcer) : ${heard.map((h) => `« ${h} »`).join(' ; ')}.` : '',
     avoid.length ? `N'utilise PAS ces formulations récentes : ${avoid.map((a) => `« ${a} »`).join(' ; ')}.` : '',
     `Réponds en français, UNE phrase, sans guillemets, sans emoji superflu, sans préambule.`,
@@ -242,7 +243,11 @@ export async function buildLlmArrivalOpener(ctx: LlmArrivalContext): Promise<str
     if (!raw) return null;
     const line = raw.split('\n').map((s) => s.trim()).find(Boolean) ?? '';
     const cleaned = line.replace(/^["“«]\s*/, '').replace(/\s*["”»]$/, '').trim();
-    return cleaned.length >= 2 ? cleaned : null;
+    if (cleaned.length < 2) return null;
+    const guarded = guardRelationshipReply(cleaned);
+    // Null selects the reviewed deterministic opener; a generic policy repair
+    // would sound unnatural as an arrival greeting.
+    return guarded.intervened ? null : guarded.response;
   } catch {
     return null;
   }

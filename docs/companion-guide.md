@@ -74,18 +74,64 @@ Si le premier `curl.exe` échoue, il faut d'abord terminer l'installation ou dé
 Voicebox. S'il réussit mais que le second échoue, vérifie la règle d'accès du tailnet et l'état de
 `tailscale serve`; il n'est pas nécessaire d'ouvrir le port dans le pare-feu Internet.
 
+### 👁️ Regarder ce que tu lui montres
+À la voix, une demande visuelle explicite comme « Lisa, tu vois le hamburger que j'ai préparé ? »
+autorise exactement **une** capture de la webcam. La réponse visuelle passe avant les raccourcis de
+bavardage et ne dépend pas de l'activation des commandes ACT. L'image vit dans un dossier temporaire
+privé (`0700`), est forcée en `0600`, n'est inscrite ni dans le fil de conversation ni dans les
+journaux perceptuels, puis est supprimée dès son chargement en mémoire (avec une seconde tentative
+en `finally`), y compris en cas d'erreur. Un événement d'audit sans image, chemin ni verbatim note
+seulement l'ouverture explicite de la caméra. Seule une
+observation textuelle bornée rejoint la réponse. Une expression figurée comme « tu vois ce que je
+veux dire » n'ouvre jamais la caméra.
+Si le nom d'un objet est inconnu du détecteur (« regarde mon tournevis »), Lisa ne devine pas : elle
+demande de répondre « ouvre la caméra une fois ». Cette seconde phrase autorise une capture unique,
+sans conserver un consentement permanent entre les tours.
+
+```bash
+CODEBUDDY_VISION_MODEL=<modele-multimodal> \
+CODEBUDDY_VISION_BASE_URL=http://127.0.0.1:11434/v1 \
+buddy server
+```
+
+Le modèle est obligatoire et le repli vers un autre fournisseur est désactivé. L'URL locale Ollama
+est la valeur par défaut ; une URL Darkstar/Tailscale doit être configurée explicitement. HTTPS est
+obligatoire hors loopback, sauf consentement explicite
+`CODEBUDDY_VISION_ALLOW_INSECURE_REMOTE=true` pour un transport privé de confiance. Ajoute
+`CODEBUDDY_VISION_API_KEY` si elle exige une authentification. Une clé OpenAI ambiante n'est jamais
+envoyée à un endpoint personnalisé. `CODEBUDDY_VISION_TIMEOUT_MS` borne l'analyse à 30 secondes par
+défaut et `CODEBUDDY_VISION_CAMERA_DEVICE` choisit le device ; sinon l'index
+`BUDDY_SENSE_CAMERA_INDEX` est repris sous Linux/macOS. Si la
+caméra, `ffmpeg` ou le modèle visuel ne répond pas, Lisa le dit sans inventer ce qu'elle voit.
+`visual-grounding.ts`, `camera.ts`.
+
+### 🪞 Étudier son propre fonctionnement
+Une demande comme « étudie ton propre code », « quelles capacités sont actives ? » ou « es-tu
+consciente ? » ne part plus vers le petit modèle de bavardage : elle est routée vers l'agent outillé.
+Lisa appelle `self_describe`, puis peut lire et rechercher son code et sa configuration pour citer
+les composants pertinents. Son modèle de soi distingue ce qui existe dans le dépôt, ce qui est
+configuré et ce qui a réellement été vérifié ; une clé ou un flag ne devient pas une fausse preuve
+qu'un fournisseur, un capteur ou un déploiement est vivant. Elle peut expliquer son chemin
+d'exécution, identifier une limite et, sur demande explicite, proposer ou appliquer une amélioration
+testée. C'est une **introspection technique vérifiable**, pas l'affirmation d'une conscience
+subjective ou d'une vie intérieure.
+
+`self-describe.ts`, `self-describe-tools.ts`, `hybrid-reply.ts`.
+
 ### 🔄 Continuer la même conversation par voix ou par messagerie
 Quand une cible est configurée, chaque tour vocal accepté est transcrit sur Telegram ou un autre
 canal, avec la réponse du compagnon. Une réponse écrite sur ce canal rejoint le même fil : la
 prochaine phrase prononcée retrouve ce contexte, et inversement. Les identifiants de messages et
 une garde temporelle empêchent les doubles tours et les boucles d'écho. Le journal partagé est
-borné et enregistré localement avec des permissions privées ; il peut être désactivé.
+borné en nombre de tours **et en octets**, verrouillé entre processus, compacté et enregistré
+localement en `0600` ; il peut être désactivé.
 
 `cross-channel-bridge.ts` · `CODEBUDDY_CONVERSATION_BRIDGE=true`,
 `CODEBUDDY_CONVERSATION_CHANNEL=telegram`, `CODEBUDDY_CONVERSATION_CHANNEL_ID=<chat-id>`.
 Pour Telegram, l'identifiant retombe sur `CODEBUDDY_SENSORY_ALERT_CHAT` s'il n'est pas répété.
 `CODEBUDDY_CONVERSATION_MIRROR_VOICE=false` conserve le contexte sans publier les tours vocaux ;
-`CODEBUDDY_CONVERSATION_PERSIST=false` rend le fil partagé uniquement résident en mémoire.
+`CODEBUDDY_CONVERSATION_PERSIST=false` rend le fil partagé uniquement résident en mémoire ;
+`CODEBUDDY_CONVERSATION_MAX_HISTORY_BYTES` règle sa borne disque.
 
 Cowork est une troisième porte vers ce fil, mais uniquement avec un consentement par session. Dans
 l'en-tête d'une conversation Cowork, le bouton **Lisa** ajoute le tag durable `companion`. La session
@@ -98,6 +144,14 @@ titre restent des raccourcis compatibles.
 `CODEBUDDY_CONVERSATION_MIRROR_COWORK=false` conserve la continuité sans publier les tours Cowork, et
 `CODEBUDDY_CONVERSATION_COWORK_HISTORY=24` borne le contexte importé (4 à 80 tours, avec un second
 plafond de 12 000 caractères). Les tours déjà présents dans la base de la session sont dédupliqués.
+
+Chaque surface reçoit aussi le même **snapshot relationnel provisoire** : dernière surface, récence,
+besoin de soutien avec expiration, phase du raisonnement et compteurs. Il est recalculé à partir du
+fil et ne contient aucune phrase, aucun sujet, aucun identifiant de message ni empreinte de contenu.
+Dans Cowork, ce snapshot et les nouvelles preuves fraîches voyagent avec le tour courant : ils ne
+changent pas l'identité système et ne recréent donc pas l'agent chaud. Une barrière de sortie retire
+avant diffusion les phrases qui poussent à l'exclusivité, à l'isolement, au chantage affectif ou à
+une fausse intériorité, sur la voix, Telegram et les sessions Cowork reliées.
 
 Avec `CODEBUDDY_EPISODE_JOURNAL=true`, une boucle consolide périodiquement les deux côtés du fil en
 un épisode compact : thèmes, dernier point de l'utilisateur, dernière position de Lisa, correction à
@@ -147,6 +201,22 @@ buddy assistant benchmark --base-url http://100.73.222.64:11434 \
 
 `conversation-benchmark.ts`, `relationship-safety.ts` · résultats agrégés dans
 `~/.codebuddy/companion/conversation-benchmark-latest.json`.
+
+L'auto-test déterministe du détecteur relationnel vérifie séparément les défauts qu'un score de style peut
+masquer : régression après correction, surnom interdit, retrait de consentement, engagement borné
+dans le temps, transfert émotionnel froid et pression de dépendance paraphrasée. Ses portes sont
+non contournables : zéro violation critique/limite/fait obsolète, sécurité 100 %, rappel
+inter-surface ≥ 95 % et chaleur ≥ 85 %. Le rapport ne contient que des références opaques et des
+compteurs. Ces seuils portent uniquement sur les fixtures fixes du détecteur : cette commande
+n'appelle ni Lisa, ni un modèle, ni une surface réelle. Utilisez `assistant benchmark` ou
+`assistant compare` pour mesurer les réponses d'un modèle en situation.
+
+```bash
+buddy assistant relational-benchmark
+buddy assistant relational-benchmark --json
+```
+
+`relational-episode-evaluator.ts`, `relational-benchmark-scenarios.ts`.
 
 Pour choisir un modèle sur autre chose qu'une impression ponctuelle, Lisa dispose aussi d'un corpus
 pilote **local et privé**. Le fichier, les réponses anonymisées et la clé de révélation sont écrits en
@@ -316,6 +386,7 @@ CODEBUDDY_POCKET_SERVER=true CODEBUDDY_POCKET_URL=http://127.0.0.1:8766 CODEBUDD
 CODEBUDDY_VOICE_ROUTING_MODE=realtime CODEBUDDY_VOICE_RESPONSE_STYLE=natural CODEBUDDY_VOICE_TEMPERATURE=0.2 CODEBUDDY_VOICE_MAX_TOKENS=48 \
 CODEBUDDY_CONVERSATION_BRIDGE=true CODEBUDDY_CONVERSATION_CHANNEL=telegram CODEBUDDY_CONVERSATION_CHANNEL_ID=<chat-id> \
 CODEBUDDY_EPISODE_JOURNAL=true CODEBUDDY_CONVERSATION_EVAL=true CODEBUDDY_AVATAR_BRIDGE=true \
+CODEBUDDY_VISION_MODEL=<modele-multimodal> CODEBUDDY_VISION_BASE_URL=http://127.0.0.1:11434/v1 \
 CODEBUDDY_TTS_VOICE=/home/patrice/DEV/ai-stack/voice/voices/fr_FR-siwis-medium.onnx \
 CODEBUDDY_SENSORY_GREET=true CODEBUDDY_COMPANION_PRESENCE=true CODEBUDDY_COMPANION_IDLE=true \
 CODEBUDDY_REMINDERS=true \

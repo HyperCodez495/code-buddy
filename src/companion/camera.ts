@@ -49,9 +49,17 @@ export interface CameraSnapshotOptions {
   outputPath?: string;
   device?: string;
   timeoutMs?: number;
+  /** Cancel an in-flight ffmpeg capture (for voice barge-in/consent withdrawal). */
+  signal?: AbortSignal;
+  /** Skip the separate `ffmpeg -version` preflight and rely on spawn errors. */
+  skipAvailabilityCheck?: boolean;
   runtime?: CameraRuntime;
   platform?: NodeJS.Platform;
   recordPercept?: boolean;
+  /** Record the durable safety-ledger event. Disable only for private one-shot callers. */
+  recordSafetyEvent?: boolean;
+  /** Keep the audit event but omit the temporary image path and device command. */
+  redactSafetyEvent?: boolean;
 }
 
 export interface CameraRendererSnapshotOptions {
@@ -449,7 +457,11 @@ async function runFfmpegSnapshot(
   runtime: CameraRuntime,
   args: string[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; stdout: string; stderr: string; timedOut: boolean; error?: string }> {
+  if (signal?.aborted) {
+    return { ok: false, stdout: '', stderr: '', timedOut: false, error: 'Camera capture aborted' };
+  }
   return new Promise(resolve => {
     const child = runtime.spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout: string[] = [];
@@ -457,10 +469,16 @@ async function runFfmpegSnapshot(
     let settled = false;
     let timedOut = false;
 
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      finish({ ok: false, error: 'Camera capture aborted' });
+    };
     const finish = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       resolve({
         ok: result.ok,
         stdout: stdout.join(''),
@@ -470,11 +488,14 @@ async function runFfmpegSnapshot(
       });
     };
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
       finish({ ok: false, error: `ffmpeg camera capture timed out after ${timeoutMs}ms` });
     }, timeoutMs);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
 
     child.stdout?.on('data', chunk => stdout.push(toText(chunk)));
     child.stderr?.on('data', chunk => stderr.push(toText(chunk)));
@@ -499,16 +520,24 @@ export async function captureCameraSnapshot(
 
   await ensureParentDirectory(outputPath);
 
-  const ffmpeg = await execFileResult(runtime, 'ffmpeg', ['-version'], 3000);
-  if (!ffmpeg.ok) {
-    return {
-      success: false,
-      command,
-      error: 'Cannot capture camera snapshot: ffmpeg was not found on PATH.',
-    };
+  if (options.signal?.aborted) {
+    return { success: false, command, error: 'Camera capture aborted' };
+  }
+  if (!options.skipAvailabilityCheck) {
+    const ffmpeg = await execFileResult(runtime, 'ffmpeg', ['-version'], 3000);
+    if (!ffmpeg.ok) {
+      return {
+        success: false,
+        command,
+        error: 'Cannot capture camera snapshot: ffmpeg was not found on PATH.',
+      };
+    }
+    if (options.signal?.aborted) {
+      return { success: false, command, error: 'Camera capture aborted' };
+    }
   }
 
-  const result = await runFfmpegSnapshot(runtime, args, timeoutMs);
+  const result = await runFfmpegSnapshot(runtime, args, timeoutMs, options.signal);
   if (!result.ok) {
     const details = [result.error, result.stderr.trim(), cameraTroubleshooting(platform)]
       .filter(Boolean)
@@ -555,25 +584,30 @@ export async function captureCameraSnapshot(
     }
   }
 
-  try {
-    await recordCompanionSafetyEvent({
-      kind: 'sense',
-      risk: 'medium',
-      action: 'camera_snapshot',
-      reason: 'Captured an explicit local webcam frame for Buddy vision.',
-      status: 'completed',
-      source: 'camera_snapshot',
-      artifactPath: outputPath,
-      payload: {
-        path: outputPath,
-        command,
-        device: options.device || undefined,
-        platform,
-      },
-      tags: ['camera', 'webcam', 'vision'],
-    }, { cwd });
-  } catch {
-    // Camera capture is complete; the percept journal still records the user-visible result.
+  if (options.recordSafetyEvent !== false) {
+    try {
+      const redacted = options.redactSafetyEvent === true;
+      await recordCompanionSafetyEvent({
+        kind: 'sense',
+        risk: 'medium',
+        action: 'camera_snapshot',
+        reason: 'Captured an explicit local webcam frame for Buddy vision.',
+        status: 'completed',
+        source: 'camera_snapshot',
+        ...(redacted ? {} : { artifactPath: outputPath }),
+        payload: redacted
+          ? { consent: 'explicit_one_shot', platform, pathRetained: false }
+          : {
+              path: outputPath,
+              command,
+              device: options.device || undefined,
+              platform,
+            },
+        tags: ['camera', 'webcam', 'vision'],
+      }, { cwd });
+    } catch {
+      // Camera capture is complete; the percept journal still records the user-visible result.
+    }
   }
 
   return {

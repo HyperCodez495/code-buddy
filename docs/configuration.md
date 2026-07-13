@@ -66,6 +66,7 @@
 | `CODEBUDDY_CONVERSATION_MIRROR_COWORK` | Publish linked Cowork turns to the configured channel (default: true) |
 | `CODEBUDDY_CONVERSATION_COWORK_HISTORY` | Recent shared turns imported by a linked Cowork session, clamped to 4-80 (default: 24) |
 | `CODEBUDDY_CONVERSATION_PERSIST` | Persist the bounded shared thread in a private local JSONL journal |
+| `CODEBUDDY_CONVERSATION_MAX_HISTORY_BYTES` | Compact the private journal at this byte bound (32 KiB-64 MiB; default scales with the event cap) |
 | `CODEBUDDY_EPISODE_JOURNAL` / `_EVERY` | Consolidate the complete thread into a deduplicated where-we-were memory (opt-in, default every 40 beats) |
 | `CODEBUDDY_CONVERSATION_EVAL` | Evaluate complete user/Lisa exchanges locally and learn only from recurring weaknesses (default: true) |
 | `CODEBUDDY_CONVERSATION_EVAL_EVERY` | Heartbeat interval for aggregate conversation evaluation (default: 30) |
@@ -97,6 +98,24 @@ without opening speakers or publishing to Telegram/MetaHuman.
 For a remote desktop install, Voicebox is loopback-only by default. Prefer a private Tailscale TCP
 forwarder (`tailscale serve --bg --tcp=17493 tcp://127.0.0.1:17493`) over binding the unauthenticated
 API to a public interface.
+
+### Explicit One-Shot Vision
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `CODEBUDDY_VISION_MODEL` | Multimodal model used only after an explicit spoken look/see request | unset (vision answers fail honestly) |
+| `CODEBUDDY_VISION_BASE_URL` | OpenAI-compatible visual endpoint; remote endpoints require HTTPS unless explicitly allowed below | `http://127.0.0.1:11434/v1` |
+| `CODEBUDDY_VISION_API_KEY` | Dedicated key for a custom/authenticated visual endpoint; ambient OpenAI credentials are never sent to custom hosts | unset |
+| `CODEBUDDY_VISION_ALLOW_INSECURE_REMOTE` | Permit remote plaintext HTTP only on a trusted private transport such as an explicitly accepted Tailscale path | `false` |
+| `CODEBUDDY_VISION_TIMEOUT_MS` | Deadline for the multimodal analysis request (clamped to 10–120000 ms) | `30000` |
+| `CODEBUDDY_VISION_CAMERA_DEVICE` | Explicit ffmpeg camera device; otherwise uses `BUDDY_SENSE_CAMERA_INDEX` on Linux/macOS | platform default |
+
+The voice path captures one temporary frame only after an explicit visual request. The frame is
+private (`0600` inside a `0700` directory), omitted from conversation/percept journals, deleted as
+soon as it is loaded and retried in a `finally` block, and never sent through provider fallback.
+A redacted audit event records camera use without image, path, device command, or utterance. Only
+bounded textual evidence continues; `localDeletionVerified` describes local cleanup only, never a
+remote endpoint's retention policy.
 
 ### Runtime
 

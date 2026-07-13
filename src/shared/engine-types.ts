@@ -106,6 +106,12 @@ export interface EngineStreamEvent {
 export interface EngineMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /**
+   * Stable host-side identity for injected context such as a voice or channel
+   * journal event. It is used for warm-session reconciliation only and is not
+   * forwarded to the model history.
+   */
+  contextId?: string;
 }
 
 // ── Session Configuration ──────────────────────────────────────────────
@@ -122,6 +128,13 @@ export interface EngineSessionConfig {
   workingDirectory?: string;
   /** Runtime system prompt addition supplied by the host (for active Cowork personas). */
   systemPromptAppend?: string;
+  /**
+   * Ephemeral observations/evidence for only the current user turn. Unlike
+   * `systemPromptAppend`, this must not participate in cached-agent identity.
+   */
+  currentTurnContext?: string;
+  /** Apply the companion relationship gate before streaming and history mutation. */
+  relationshipSafety?: boolean;
   /** Environment variable that signals we're running inside Electron */
   embedded?: boolean;
   /** Activate visual grounding fallback using a Set-of-Marks annotated screenshot */

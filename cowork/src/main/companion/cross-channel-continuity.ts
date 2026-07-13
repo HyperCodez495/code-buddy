@@ -10,7 +10,12 @@ import { isCompanionThreadTags } from '../../shared/companion-thread';
 import { loadCoreModule } from '../utils/core-loader';
 import { logError, logWarn } from '../utils/logger';
 
-export type CoworkEngineMessage = { role: string; content: string };
+export type CoworkEngineMessage = {
+  role: string;
+  content: string;
+  /** Stable identity carried only by messages imported from the shared journal. */
+  contextId?: string;
+};
 
 type ConversationRole = 'user' | 'assistant';
 type ConversationOrigin = 'voice' | 'channel' | 'cowork';
@@ -31,12 +36,15 @@ interface CoreBridgeConfig {
   coworkEnabled: boolean;
   coworkHistoryTurns: number;
   historyPath: string;
+  maxHistoryBytes?: number;
   target?: { channel: string; channelId: string; threadId?: string };
 }
 
 interface CoreConversationBridge {
   isActive(): boolean;
   snapshot(): CoreConversationEvent[];
+  /** Raw-free, bounded observations; optional for compatibility with an older core bundle. */
+  renderRelationshipContext?(): string;
   recordCoworkTurn(
     turn: { role: ConversationRole; content: string },
     input: { sessionId: string; messageId: string },
@@ -84,7 +92,10 @@ type CoreLoader = <T>(relativePath: string) => Promise<T | null>;
 export interface PreparedCoworkContinuity {
   active: boolean;
   messages: CoworkEngineMessage[];
+  /** Stable identity/instructions. Safe to keep in the cached agent identity. */
   systemPrompt?: string;
+  /** Per-turn observations/evidence. Must travel with the current user turn. */
+  turnContext?: string;
   recordAssistant: (messageId: string, content: string) => void;
 }
 
@@ -118,6 +129,7 @@ function configFingerprint(config: CoreBridgeConfig): string {
     coworkEnabled: config.coworkEnabled,
     coworkHistoryTurns: config.coworkHistoryTurns,
     historyPath: config.historyPath,
+    maxHistoryBytes: config.maxHistoryBytes ?? null,
     target: config.target ?? null,
   });
 }
@@ -166,7 +178,15 @@ function boundedHistory(
     const event = events[index];
     if (!event) continue;
     const length = event.content.length;
-    if (selected.length > 0 && chars + length > MAX_SHARED_HISTORY_CHARS) break;
+    const remaining = MAX_SHARED_HISTORY_CHARS - chars;
+    if (length > remaining) {
+      // The newest event must obey the same total cap. Retain a bounded head
+      // instead of allowing one oversized journal entry to bypass the limit.
+      if (selected.length === 0 && remaining > 0) {
+        selected.push({ ...event, content: event.content.slice(0, remaining) });
+      }
+      break;
+    }
     selected.push(event);
     chars += length;
   }
@@ -196,7 +216,7 @@ export class CoworkCrossChannelContinuity {
       ]);
       if (!state || !state.config.coworkEnabled || !state.bridge.isActive()) {
         return freshContextPrompt
-          ? { ...EMPTY_CONTINUITY, systemPrompt: freshContextPrompt }
+          ? { ...EMPTY_CONTINUITY, turnContext: freshContextPrompt }
           : EMPTY_CONTINUITY;
       }
 
@@ -212,9 +232,11 @@ export class CoworkCrossChannelContinuity {
       const history = boundedHistory(eligible, state.config.coworkHistoryTurns).map((event) => ({
         role: event.role,
         content: event.content,
+        contextId: event.id,
       }));
 
       this.recordTurn(state.bridge, session.id, userMessageId, 'user', currentPrompt);
+      const relationshipContext = state.bridge.renderRelationshipContext?.().trim() ?? '';
 
       const companionName = state.config.companionName || 'Lisa';
       return {
@@ -226,8 +248,10 @@ export class CoworkCrossChannelContinuity {
           `Cette session Cowork est reliée au fil personnel de ${companionName}.`,
           'Les messages antérieurs injectés peuvent provenir de la voix, de Telegram ou d\'une autre session Cowork reliée.',
           'Reprends naturellement le dernier sujet utile sans annoncer un changement de canal. Ne confonds jamais ce fil avec une session Cowork non reliée.',
-          freshContextPrompt,
         ].filter(Boolean).join('\n\n'),
+        turnContext: [relationshipContext, freshContextPrompt]
+          .filter(Boolean)
+          .join('\n\n') || undefined,
         recordAssistant: (messageId, content) => {
           this.recordTurn(state.bridge, session.id, messageId, 'assistant', content);
         },

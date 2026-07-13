@@ -97,9 +97,9 @@ export class ConversationStateManager {
           )
           .filter((line) => !/ : $/.test(line))
       : [];
-    const deliberation = renderDeliberationThreadForPrompt(
-      deliberationOverride ?? snapshot.deliberation
-    );
+    const deliberation = includeHistory
+      ? renderDeliberationThreadForPrompt(deliberationOverride ?? snapshot.deliberation)
+      : '';
     const candidates = [
       includeHistory && snapshot.focus.length
         ? `Foyer actuel : ${snapshot.focus.join(', ')}.`

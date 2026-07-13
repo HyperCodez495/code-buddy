@@ -279,32 +279,16 @@ describe('streamToSpeech — never-throws', () => {
 describe('makeVoiceReply — streaming integration', () => {
   beforeEach(() => _resetVoiceActivityForTests());
 
-  it('interrupt() mid-playback kills the audio, drops later sentences, resets the guard', async () => {
-    let killCount = 0;
-    let markPlaying!: () => void;
-    const playing = new Promise<void>((r) => (markPlaying = r));
+  it('interrupt() while the safety gate is buffering drops the incomplete answer silently', async () => {
+    let markStreamStarted!: () => void;
+    const streamStarted = new Promise<void>((resolve) => (markStreamStarted = resolve));
     const playOrder: string[] = [];
 
-    // Real blocking play: hangs until the barge-in signal SIGKILLs it (like production).
-    const play: PlayFn = (wav, opts) =>
-      new Promise<void>((resolve) => {
-        playOrder.push(wav);
-        markPlaying();
-        if (opts?.signal?.aborted) return resolve();
-        opts?.signal?.addEventListener(
-          'abort',
-          () => {
-            killCount += 1;
-            resolve();
-          },
-          { once: true },
-        );
-      });
-
-    // Stream yields sentence 1, then parks on the signal, then (post-abort) a sentence that
-    // must NEVER be played.
+    // Protected companion output is held until the complete response passes
+    // policy. Barge-in before completion therefore has nothing to kill or say.
     async function* stream(_heard: string, opts?: { signal?: AbortSignal }): AsyncGenerator<string> {
       yield 'Bonjour. ';
+      markStreamStarted();
       await new Promise<void>((resolve) => {
         if (opts?.signal?.aborted) return resolve();
         opts?.signal?.addEventListener('abort', () => resolve(), { once: true });
@@ -315,18 +299,19 @@ describe('makeVoiceReply — streaming integration', () => {
     const onHeard = makeVoiceReply({
       streamFn: stream,
       synth: async (t) => `wav:${t}`,
-      play,
+      play: async (wav) => {
+        playOrder.push(wav);
+      },
     });
 
     const turn = onHeard('raconte-moi');
-    await playing; // sentence 1 is in the speaker
-    expect(isSpeaking()).toBe(true); // half-duplex guard up
-    onHeard.interrupt(); // barge-in
+    await streamStarted;
+    expect(isSpeaking()).toBe(false);
+    onHeard.interrupt();
     await turn;
 
-    expect(killCount).toBe(1); // the audio child was killed on demand
-    expect(playOrder).toEqual(['wav:Bonjour.']); // only sentence 1 ever played
-    expect(isSpeaking()).toBe(false); // guard hard-reset → the ear re-opens now
+    expect(playOrder).toEqual([]);
+    expect(isSpeaking()).toBe(false);
   });
 
   it('falls back to the blocking replyFn when the stream errors (behavior unchanged)', async () => {

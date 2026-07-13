@@ -16,7 +16,9 @@ import { createReasoningCapture } from '../reasoning/reasoning-capture';
 import { configStore } from '../config/config-store';
 import { CoworkCrossChannelContinuity } from '../companion/cross-channel-continuity';
 import { CoworkCompanionModelRouting } from '../companion/model-routing';
+import { loadCoreModule } from '../utils/core-loader';
 import type { ContextOptimizationMetadata } from '@codebuddy/shared/context-optimization-metadata';
+import { isCompanionThreadTags } from '../../shared/companion-thread';
 import type {
   Session,
   Message,
@@ -90,6 +92,47 @@ interface TurnCheckpoint {
   turn: number;
 }
 
+interface RelationshipSafetyGuard {
+  push(delta: string): string[];
+  finish(): string[];
+  assessment(): { intervened: boolean; issues: string[] };
+}
+
+interface CoreRelationshipSafetyModule {
+  RelationshipSafetyStreamGuard?: new () => RelationshipSafetyGuard;
+}
+
+type RelationshipSafetyLoader = () => Promise<CoreRelationshipSafetyModule | null>;
+
+const RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY =
+  "Je n'arrive pas à vérifier cette réponse avec la barrière relationnelle. Je préfère ne pas l'afficher plutôt que risquer une formulation manipulatrice.";
+
+class UnavailableRelationshipSafetyGuard implements RelationshipSafetyGuard {
+  push(_delta: string): string[] {
+    return [];
+  }
+
+  finish(): string[] {
+    return [RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY];
+  }
+
+  assessment(): { intervened: boolean; issues: string[] } {
+    return { intervened: true, issues: ['guard_unavailable'] };
+  }
+}
+
+function guardStandaloneCompanionText(
+  prototype: RelationshipSafetyGuard,
+  value: string,
+  unsafeFallback = RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY,
+): string {
+  const Guard = prototype.constructor as new () => RelationshipSafetyGuard;
+  const guard = new Guard();
+  const output = [...guard.push(value), ...guard.finish()].join('').trim();
+  if (guard.assessment().intervened) return unsafeFallback;
+  return output || RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY;
+}
+
 /** Callbacks injected by SessionManager */
 interface RunnerCallbacks {
   sendToRenderer: (event: ServerEvent) => void;
@@ -109,17 +152,21 @@ export class CodeBuddyEngineRunner {
   private callbacks: RunnerCallbacks;
   private continuity: Pick<CoworkCrossChannelContinuity, 'prepare'>;
   private companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'>;
+  private relationshipSafetyLoader: RelationshipSafetyLoader;
 
   constructor(
     adapter: EngineAdapter,
     callbacks: RunnerCallbacks,
     continuity: Pick<CoworkCrossChannelContinuity, 'prepare'> = new CoworkCrossChannelContinuity(),
     companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'> = new CoworkCompanionModelRouting(),
+    relationshipSafetyLoader: RelationshipSafetyLoader = () =>
+      loadCoreModule<CoreRelationshipSafetyModule>('conversation/relationship-safety.js'),
   ) {
     this.adapter = adapter;
     this.callbacks = callbacks;
     this.continuity = continuity;
     this.companionRouting = companionRouting;
+    this.relationshipSafetyLoader = relationshipSafetyLoader;
   }
 
   /**
@@ -176,15 +223,17 @@ export class CodeBuddyEngineRunner {
     const runtimeConfig = session.intelligence?.configSetId
       ? configStore.getConfigForSet(session.intelligence.configSetId)
       : configStore.getAll();
-    const [snapshot, personaPrompt, sharedContinuity, companionRoute] = await Promise.all([
+    const [snapshot, personaPrompt, sharedContinuity, companionRoute, relationshipSafety] = await Promise.all([
       this.createTurnCheckpoint(session, prompt),
       this.resolveActivePersonaPrompt(),
       this.continuity.prepare(session, localEngineMessages, prompt, userMessageId),
       this.companionRouting.resolve(session, prompt, runtimeConfig, localRoutingHistory),
+      this.createRelationshipSafetyGuard(session),
     ]);
     const engineMessages = sharedContinuity.active
       ? [...sharedContinuity.messages, ...localEngineMessages]
       : localEngineMessages;
+    const turnContext = sharedContinuity.turnContext?.trim();
     const systemPromptAppend = [personaPrompt, sharedContinuity.systemPrompt]
       .filter((part): part is string => Boolean(part?.trim()))
       .join('\n\n') || undefined;
@@ -225,6 +274,27 @@ export class CodeBuddyEngineRunner {
     });
     const engineStartedAt = Date.now();
     let firstVisibleEventRecorded = false;
+    let relationshipSafetyFinished = false;
+    const emitVisibleContent = (delta: string): void => {
+      if (!delta) return;
+      fullContent += delta;
+      sendToRenderer({
+        type: 'stream.partial',
+        payload: { sessionId: session.id, delta },
+      });
+    };
+    const finishRelationshipSafety = (): void => {
+      if (!relationshipSafety || relationshipSafetyFinished) return;
+      relationshipSafetyFinished = true;
+      for (const delta of relationshipSafety.finish()) emitVisibleContent(delta);
+      const assessment = relationshipSafety.assessment();
+      if (assessment.intervened) {
+        log('[EngineRunner] relationship safety gate intervened', {
+          sessionId: session.id,
+          issues: assessment.issues,
+        });
+      }
+    };
     try {
       await this.adapter.runSession(
         session.id,
@@ -262,16 +332,17 @@ export class CodeBuddyEngineRunner {
           switch (event.type) {
             case 'content':
               if (event.content) {
-                fullContent += event.content;
-                sendToRenderer({
-                  type: 'stream.partial',
-                  payload: { sessionId: session.id, delta: event.content },
-                });
+                const deltas = relationshipSafety
+                  ? relationshipSafety.push(event.content)
+                  : [event.content];
+                for (const delta of deltas) emitVisibleContent(delta);
               }
               break;
 
             case 'thinking':
-              if (event.thinking) {
+              // Raw reasoning is uncommitted model text and has not passed the
+              // relationship gate. Keep it private on companion threads.
+              if (event.thinking && !relationshipSafety) {
                 reasoningCapture.push(event.thinking);
                 sendToRenderer({
                   type: 'stream.thinking',
@@ -282,13 +353,16 @@ export class CodeBuddyEngineRunner {
 
             case 'tool_start':
               if (event.tool) {
+                const visibleToolInput = relationshipSafety
+                  ? JSON.stringify({ redacted: 'companion-safety' })
+                  : event.tool.input;
                 const step = {
                   id: event.tool.id,
                   type: 'tool_call' as const,
                   status: 'running' as const,
                   title: event.tool.name,
                   toolName: event.tool.name,
-                  toolInput: event.tool.input ? tryParseJSON(event.tool.input) : undefined,
+                  toolInput: visibleToolInput ? tryParseJSON(visibleToolInput) : undefined,
                   timestamp: Date.now(),
                 };
                 sendToRenderer({
@@ -302,13 +376,20 @@ export class CodeBuddyEngineRunner {
                   type: 'tool_use',
                   id: event.tool.id,
                   name: event.tool.name,
-                  input: event.tool.input ? tryParseJSON(event.tool.input) : {},
+                  input: visibleToolInput ? tryParseJSON(visibleToolInput) : {},
                 } as ToolUseContent);
               }
               break;
 
             case 'tool_end':
               if (event.tool) {
+                const visibleToolInput = relationshipSafety
+                  ? JSON.stringify({ redacted: 'companion-safety' })
+                  : event.tool.input;
+                const visibleToolOutput = relationshipSafety
+                  ? 'Résultat traité en interne par Lisa.'
+                  : event.tool.output;
+                const visibleToolData = relationshipSafety ? undefined : event.tool.data;
                 const startedAt = toolStartTimes.get(event.tool.id);
                 const duration = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
                 toolStartTimes.delete(event.tool.id);
@@ -319,7 +400,7 @@ export class CodeBuddyEngineRunner {
                     stepId: event.tool.id,
                     updates: {
                       status: event.tool.isError ? 'error' : 'completed',
-                      toolOutput: event.tool.output,
+                      toolOutput: visibleToolOutput,
                       isError: event.tool.isError,
                       duration,
                     },
@@ -330,9 +411,9 @@ export class CodeBuddyEngineRunner {
                 contentBlocks.push({
                   type: 'tool_result',
                   toolUseId: event.tool.id,
-                  content: event.tool.output || '',
+                  content: visibleToolOutput || '',
                   isError: event.tool.isError,
-                  ...(event.tool.data !== undefined ? { data: event.tool.data } : {}),
+                  ...(visibleToolData !== undefined ? { data: visibleToolData } : {}),
                   ...(event.tool.contextOptimization
                     ? { contextOptimization: event.tool.contextOptimization }
                     : {}),
@@ -345,8 +426,8 @@ export class CodeBuddyEngineRunner {
                     session.id,
                     event.tool.id,
                     event.tool.name,
-                    event.tool.input,
-                    event.tool.data
+                    visibleToolInput,
+                    visibleToolData
                   );
                 }
 
@@ -358,9 +439,9 @@ export class CodeBuddyEngineRunner {
                       sessionId: session.id,
                       toolUseId: event.tool.id,
                       toolName: event.tool.name,
-                      rawInput: event.tool.input,
-                      data: event.tool.data,
-                      output: event.tool.output,
+                      rawInput: visibleToolInput,
+                      data: visibleToolData,
+                      output: visibleToolOutput,
                     }),
                   });
                 }
@@ -368,7 +449,7 @@ export class CodeBuddyEngineRunner {
               break;
 
             case 'tool_stream':
-              if (event.tool?.delta) {
+              if (event.tool?.delta && !relationshipSafety) {
                 sendToRenderer({
                   type: 'trace.update',
                   payload: {
@@ -394,11 +475,26 @@ export class CodeBuddyEngineRunner {
             case 'ask_user':
               if (event.askUser) {
                 const stepId = `ask_user_${Date.now()}`;
+                const visibleQuestion = relationshipSafety
+                  ? guardStandaloneCompanionText(
+                      relationshipSafety,
+                      event.askUser.question,
+                      'Peux-tu préciser ce que tu souhaites faire ensuite ?',
+                    )
+                  : event.askUser.question;
                 const inputData = { 
                   questions: [ 
                     { 
-                      question: event.askUser.question, 
-                      options: event.askUser.options?.map(o => ({ label: o })) 
+                      question: visibleQuestion,
+                      options: event.askUser.options?.map((option, index) => ({
+                        label: relationshipSafety
+                          ? guardStandaloneCompanionText(
+                              relationshipSafety,
+                              option,
+                              `Option ${index + 1}`,
+                            )
+                          : option,
+                      })),
                     } 
                   ] 
                 };
@@ -486,6 +582,7 @@ export class CodeBuddyEngineRunner {
               break;
 
             case 'done':
+              finishRelationshipSafety();
               sendToRenderer({
                 type: 'stream.done',
                 payload: { sessionId: session.id },
@@ -509,8 +606,11 @@ export class CodeBuddyEngineRunner {
           thinkingLevel: session.intelligence?.thinkingLevel,
           permissionMode: session.permissionModeOverride ?? session.permissionMode ?? 'default',
           systemPromptAppend,
+          ...(turnContext ? { currentTurnContext: turnContext } : {}),
+          ...(relationshipSafety ? { relationshipSafety: true } : {}),
         }
       );
+      finishRelationshipSafety();
       session.intelligence = {
         ...(session.intelligence ?? {
           thinkingLevel: runtimeConfig.thinkingLevel ?? 'off',
@@ -666,6 +766,23 @@ export class CodeBuddyEngineRunner {
     result.push({ role: 'user', content: currentPrompt });
 
     return result;
+  }
+
+  private async createRelationshipSafetyGuard(
+    session: Session,
+  ): Promise<RelationshipSafetyGuard | null> {
+    if (!isCompanionThreadTags(session.tags)) return null;
+    try {
+      const module = await this.relationshipSafetyLoader();
+      if (module?.RelationshipSafetyStreamGuard) {
+        return new module.RelationshipSafetyStreamGuard();
+      }
+    } catch (error) {
+      logError('[EngineRunner] relationship safety gate failed to load', error);
+    }
+    // Companion output fails closed. Ordinary coding sessions never enter this
+    // branch and keep their existing direct stream.
+    return new UnavailableRelationshipSafetyGuard();
   }
 
   async steer(sessionId: string, prompt: string): Promise<boolean> {

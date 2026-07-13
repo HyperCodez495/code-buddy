@@ -2,10 +2,31 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   isSubstantiveQuery,
   requiresGroundedAgentQuery,
+  isTechnicalSelfInspectionRequest,
   buildContextPreamble,
   makeHybridReply,
   type HybridTurn,
 } from '../../src/sensory/hybrid-reply.js';
+
+const TECHNICAL_SELF_INSPECTION_REQUESTS = [
+  'étudie ton propre code',
+  'fais une introspection technique',
+  'comment fonctionnes-tu réellement ?',
+  'quelles capacités sont actives ?',
+  'es-tu consciente ?',
+  'quelle version utilises-tu ?',
+  'de quoi es-tu faite ?',
+  'qui es-tu ?',
+  'quelle est ton architecture ?',
+  'quels capteurs sont actifs ?',
+  'quelles sont tes limites ?',
+] as const;
+
+const PERSONAL_INTROSPECTION_REQUESTS = [
+  'je fais une introspection personnelle',
+  'aide-moi à faire une introspection de ma vie',
+  'je voudrais une introspection de mes émotions',
+] as const;
 
 describe('hybrid reply — intent classifier (isSubstantiveQuery)', () => {
   it('keeps social / emotional small talk as chitchat (false)', () => {
@@ -66,6 +87,19 @@ describe('hybrid reply — intent classifier (isSubstantiveQuery)', () => {
   it('empty input is not substantive', () => {
     expect(isSubstantiveQuery('   ')).toBe(false);
   });
+
+  it('recognizes technical self-inspection without treating consciousness as an established fact', () => {
+    for (const request of TECHNICAL_SELF_INSPECTION_REQUESTS) {
+      expect(isTechnicalSelfInspectionRequest(request), request).toBe(true);
+      expect(isSubstantiveQuery(request), request).toBe(true);
+    }
+  });
+
+  it('does not confuse the user\'s personal introspection with Lisa inspecting herself', () => {
+    for (const request of PERSONAL_INTROSPECTION_REQUESTS) {
+      expect(isTechnicalSelfInspectionRequest(request), request).toBe(false);
+    }
+  });
 });
 
 describe('hybrid reply — realtime grounded-agent gate', () => {
@@ -73,6 +107,7 @@ describe('hybrid reply — realtime grounded-agent gate', () => {
     for (const s of [
       'pourquoi le ciel est bleu ?',
       'explique-moi la photosynthèse',
+      'comment fonctionne la photosynthèse ?',
       'quel est le sens de ce proverbe ?',
       'aide-moi, je ne sais pas quoi choisir',
     ]) {
@@ -90,6 +125,18 @@ describe('hybrid reply — realtime grounded-agent gate', () => {
       'qui est le président actuellement ?',
     ]) {
       expect(requiresGroundedAgentQuery(s), s).toBe(true);
+    }
+  });
+
+  it('grounds every technical self-inspection request in live agent evidence', () => {
+    for (const request of TECHNICAL_SELF_INSPECTION_REQUESTS) {
+      expect(requiresGroundedAgentQuery(request), request).toBe(true);
+    }
+  });
+
+  it('keeps personal introspection on the conversational lane', () => {
+    for (const request of PERSONAL_INTROSPECTION_REQUESTS) {
+      expect(requiresGroundedAgentQuery(request), request).toBe(false);
     }
   });
 });
@@ -163,6 +210,30 @@ describe('hybrid reply — routing & memory', () => {
     await reply('pourquoi le ciel est bleu ?');
     expect(calls.some((c) => c.startsWith('chitchat:'))).toBe(true);
     expect(calls.some((c) => c.startsWith('agent:'))).toBe(false);
+  });
+
+  it('routes technical self-inspection to the tool-capable agent, never chitchat', async () => {
+    for (const request of TECHNICAL_SELF_INSPECTION_REQUESTS) {
+      const calls: string[] = [];
+      const reply = makeHybridReply({
+        fastReply: () => null,
+        prefetch: () => null,
+        jokes: () => null,
+        chitchat: async () => {
+          calls.push('chitchat');
+          return 'unsupported claim';
+        },
+        agentReply: async (input) => {
+          calls.push(`agent:${input}`);
+          return 'Je peux verifier mon implementation sans affirmer une conscience subjective.';
+        },
+      });
+
+      expect(await reply(request), request).toContain('sans affirmer');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain(`Demande actuelle : ${request}`);
+      expect(calls[0]).not.toBe('chitchat');
+    }
   });
 
   it('feeds prior exchanges back: chitchat gets history, the agent gets a context preamble', async () => {

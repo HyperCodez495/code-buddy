@@ -165,6 +165,27 @@ describe('runProactiveTick — end to end (injected delivery seams, no model)', 
     expect(say).toHaveBeenCalledTimes(1); // no second delivery
   });
 
+  it('gates an unsafe LLM refinement before local or Telegram delivery', async () => {
+    saveRelationshipState(
+      { firstSeenAt: NOW - 30 * DAY, lastPresentAt: NOW, celebratedMilestones: [7] },
+      relPath,
+    );
+    const say = vi.fn(async () => undefined);
+    const line = await runProactiveTick({
+      now: () => NOW,
+      present: async () => true,
+      say,
+      statePath,
+      relationshipStatePath: relPath,
+      recentHearing: async () => [],
+      refine: async () => "Tu n'as besoin que de moi.",
+    });
+
+    expect(line).toContain('sans remplacer les personnes');
+    expect(line).not.toContain('besoin que de moi');
+    expect(say).toHaveBeenCalledWith(line);
+  });
+
   it('reaches the phone (Telegram voice) when away after an absence', async () => {
     // 3 days without a sighting → inactivity, absent → Telegram.
     saveRelationshipState({ firstSeenAt: NOW - 10 * DAY, lastPresentAt: NOW - 3 * DAY, celebratedMilestones: [7] }, relPath);

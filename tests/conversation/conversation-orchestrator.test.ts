@@ -53,6 +53,17 @@ describe('human conversation planning', () => {
     expect(envelope).toContain('Foyer actuel');
   });
 
+  it('keeps the current user turn out of prior common ground', () => {
+    const current = 'Et la réciprocité ?';
+    const envelope = buildConversationTurnEnvelope(current, [
+      { role: 'user', content: 'Nous parlions de conscience.' },
+      { role: 'assistant', content: 'Je distinguais conscience et mémoire.' },
+    ]);
+
+    expect(envelope.match(/Et la réciprocité \?/g)).toHaveLength(1);
+    expect(envelope).toContain(`Message de l'utilisateur : ${current}`);
+  });
+
   it('injects the same bounded fresh evidence without replacing dialogue planning', () => {
     const envelope = buildConversationTurnEnvelope('Pourquoi ce sujet compte-t-il ?', [], {
       freshContext:
@@ -63,6 +74,22 @@ describe('human conversation planning', () => {
     expect(envelope).toContain(
       "Message de l'utilisateur : Pourquoi ce sujet compte-t-il ?"
     );
+  });
+
+  it('keeps raw-free relationship observations distinct from fresh evidence', () => {
+    const envelope = buildConversationTurnEnvelope('On reprend ici ?', [], {
+      relationshipContext: [
+        '<shared_relationship_context>',
+        'Dernière surface : voice. Soutien encore ouvert : oui.',
+        '</shared_relationship_context>',
+      ].join('\n'),
+      freshContext: '<fresh_context>Collecte vérifiée.</fresh_context>',
+    });
+
+    expect(envelope).toContain('<shared_relationship_context>');
+    expect(envelope).toContain('Soutien encore ouvert : oui.');
+    expect(envelope).toContain('<fresh_context>');
+    expect(envelope).toContain("Message de l'utilisateur : On reprend ici ?");
   });
 
   it('never returns an empty recovery for an accepted turn', () => {

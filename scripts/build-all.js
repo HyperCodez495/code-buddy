@@ -49,6 +49,11 @@ if (existsSync(coworkDir)) {
   // ─── Step 3: Package installer (optional) ────────────────────────────────
   if (pack) {
     console.log('\n═══ Step 3/3: Packaging installer ═══');
+    // The embedded core lives outside app.asar at resources/dist. Stage its
+    // production dependency closure beside it before electron-builder runs;
+    // otherwise bare imports such as `chalk` cannot resolve in production.
+    run(process.execPath, ['scripts/prepare-core-runtime.js'], coworkDir);
+    run(process.execPath, ['scripts/pre-build-check.js'], coworkDir);
     run(npx, ['electron-builder', '--config', 'electron-builder.yml'], coworkDir);
   } else {
     console.log('\n═══ Step 3/3: Skipped (no --pack flag) ═══');

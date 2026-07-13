@@ -77,9 +77,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'self_describe',
     category: 'file_read',
-    keywords: ['self', 'describe', 'components', 'composants', 'briques', 'bricks', 'architecture', 'de quoi es-tu fait', 'de quoi es-tu compose', 'qui es-tu', 'capabilities', 'modules', 'buddy-sense', 'buddy-vision', 'buddy-memory'],
-    priority: 6,
-    description: "Describe the robot's own components/bricks and live faculties (self-model)",
+    keywords: ['self', 'describe', 'components', 'composants', 'briques', 'bricks', 'architecture', 'de quoi es-tu fait', 'de quoi es-tu compose', 'qui es-tu', 'capabilities', 'capacites', 'capteur', 'capteurs', 'sensors', 'modules', 'buddy-sense', 'buddy-vision', 'buddy-memory', 'introspection', 'auto inspection', 'etudie', 'examine', 'inspecte', 'propre code', 'ton code', 'fonctionne', 'fonctionnes', 'fonctionnement', 'limites', 'version', 'conscient', 'consciente', 'conscience', 'consciousness', 'modele de soi'],
+    priority: 50,
+    description: "Describe the robot's own components, verified source/build state, configured faculties, limits, and code self-inspection tools",
     fleetSafe: true,
   },
 

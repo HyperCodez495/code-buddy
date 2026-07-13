@@ -152,6 +152,26 @@ describe('Gemini SSE Streaming', () => {
       });
     });
 
+    it('preserves the base prompt and every ephemeral system addition', () => {
+      const client = createClient();
+      const messages: CodeBuddyMessage[] = [
+        { role: 'system', content: 'Base persona and safety contract.' },
+        { role: 'system', content: '<interaction_context ephemeral="true">calme</interaction_context>' },
+        {
+          role: 'system',
+          content:
+            '<companion_current_turn_context ephemeral="true">voice</companion_current_turn_context>',
+        },
+        { role: 'user', content: 'Bonjour' },
+      ];
+
+      const body = geminiProvider(client).buildGeminiBody(messages);
+
+      expect(body.systemInstruction).toEqual({
+        parts: messages.slice(0, 3).map((message) => ({ text: message.content })),
+      });
+    });
+
     it('should include generationConfig with temperature and maxOutputTokens', () => {
       const client = createClient();
       const messages: CodeBuddyMessage[] = [

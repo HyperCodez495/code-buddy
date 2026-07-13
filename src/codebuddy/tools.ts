@@ -28,6 +28,7 @@ import { getPluginMarketplace } from "../plugins/marketplace.js";
 // Import modular tool definitions
 import {
   CORE_TOOLS,
+  SELF_DESCRIBE_TOOLS,
   MORPH_EDIT_TOOL,
   isMorphEnabled,
   SEARCH_TOOLS,
@@ -139,7 +140,7 @@ export type { CodeBuddyTool, JsonSchemaProperty };
 
 // Explicit re-exports from tool-definitions (no blanket export *)
 export {
-  CORE_TOOLS, MORPH_EDIT_TOOL, isMorphEnabled, CODE_EXEC_TOOLS,
+  CORE_TOOLS, SELF_DESCRIBE_TOOLS, MORPH_EDIT_TOOL, isMorphEnabled, CODE_EXEC_TOOLS,
   SEARCH_TOOLS, TODO_TOOLS, KANBAN_TOOLS, MESSAGING_TOOLS, YUANBAO_TOOLS, HOMEASSISTANT_TOOLS, MOA_TOOLS, SPOTIFY_TOOLS, X_SEARCH_TOOLS, FEISHU_TOOLS, CRON_TOOLS, WEB_TOOLS, RESEARCH_TOOLS, ADVANCED_TOOLS, MULTIMODAL_TOOLS,
   COMPUTER_CONTROL_TOOLS, BROWSER_TOOLS, CANVAS_TOOLS, REASON_TOOL, EXECUTE_CODE_TOOL,
   WINDOWS_TOOLS,
@@ -148,6 +149,7 @@ export {
 export function getBuiltinToolNames(): string[] {
   const groups: CodeBuddyTool[][] = [
     CORE_TOOLS,
+    SELF_DESCRIBE_TOOLS,
     [MORPH_EDIT_TOOL],
     SEARCH_TOOLS,
     TODO_TOOLS,
@@ -227,6 +229,7 @@ export function initializeToolRegistry(): void {
 
   // Register all tool groups
   registerGroup(CORE_TOOLS);
+  registerGroup(SELF_DESCRIBE_TOOLS);
 
   // Register Morph tool separately with its own enabled check
   const morphMetadata = metadataMap.get('edit_file') || {

@@ -64,8 +64,15 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
   });
 
   it('extracts the final assistant entry from an uninterrupted streamed agent turn', async () => {
+    const streamOptions: Array<
+      { transientContext?: string; relationshipSafety?: boolean } | undefined
+    > = [];
     const fakeAgent = {
-      async *processUserMessageStream(): AsyncGenerator<unknown> {
+      async *processUserMessageStream(
+        _message: string,
+        options?: { transientContext?: string; relationshipSafety?: boolean },
+      ): AsyncGenerator<unknown> {
+        streamOptions.push(options);
         yield { type: 'content', content: 'partiel' };
         yield { type: 'done' };
       },
@@ -79,6 +86,8 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
       'Résultat final.'
     );
     expect(fakeAgent.abortCurrentOperation).not.toHaveBeenCalled();
+    expect(streamOptions[0]).toMatchObject({ relationshipSafety: true });
+    expect(streamOptions[0]?.transientContext).toContain('conversation_response_plan');
   });
 
   it('exposes predictive prepare and teardown without running a user turn', async () => {
