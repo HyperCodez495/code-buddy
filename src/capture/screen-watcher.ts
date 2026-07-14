@@ -40,11 +40,12 @@ export interface ScreenWatcherOptions {
   /** Capture a frame to `output`, resolve to the path. Injectable for tests. */
   capture?: (output: string) => Promise<string>;
   /**
-   * Fingerprint a frame for dedup. Default: sha1 of file bytes. May be async —
-   * e.g. the codebuddy-captured Rust daemon's perceptual hash, which dedups
-   * near-identical frames (robust to lossy re-encode), unlike a byte sha1.
+   * Fingerprint a frame for dedup. Default: Sharp dHash + colour signature,
+   * falling back to an exact SHA-256 when the optional image stack is absent.
    */
   fingerprint?: (framePath: string) => string | Promise<string>;
+  /** Maximum differing bits for perceptual hashes to still count as idle. Default: 6. */
+  perceptualHashThreshold?: number;
   /** OCR a frame to text. Default: `tesseract <frame> stdout`. */
   ocrImpl?: (framePath: string) => Promise<string>;
   /** Redact secrets/PII from text. Default: privacy-lint. */
@@ -67,17 +68,92 @@ export function redactSecrets(text: string): { text: string; redacted: boolean }
   return { text: out, redacted: true };
 }
 
-function sha1File(framePath: string): string {
+function sha256File(framePath: string): string {
   try {
-    return createHash('sha1').update(fs.readFileSync(framePath)).digest('hex');
+    return `sha256:${createHash('sha256').update(fs.readFileSync(framePath)).digest('hex')}`;
   } catch {
     return `err-${Date.now()}`;
   }
 }
 
+const HEX_BITS = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4] as const;
+
+/** Hamming + coarse colour distance for dHash fingerprints, or null for other formats. */
+export function perceptualHashDistance(left: string, right: string): number | null {
+  const matchLeft = /^dhash:([0-9a-f]{16})(?::([0-9a-f]{6}))?$/i.exec(left);
+  const matchRight = /^dhash:([0-9a-f]{16})(?::([0-9a-f]{6}))?$/i.exec(right);
+  if (!matchLeft || !matchRight) return null;
+  let distance = 0;
+  for (let index = 0; index < 16; index++) {
+    const xor = Number.parseInt(matchLeft[1]![index]!, 16)
+      ^ Number.parseInt(matchRight[1]![index]!, 16);
+    distance += HEX_BITS[xor]!;
+  }
+  if (matchLeft[2] && matchRight[2]) {
+    const channelDelta = [0, 2, 4].reduce((largest, offset) => Math.max(
+      largest,
+      Math.abs(
+        Number.parseInt(matchLeft[2]!.slice(offset, offset + 2), 16)
+        - Number.parseInt(matchRight[2]!.slice(offset, offset + 2), 16),
+      ),
+    ), 0);
+    distance += Math.ceil(channelDelta / 16);
+  }
+  return distance;
+}
+
+/**
+ * Compute a compact visual dHash through optional Sharp. Byte hashing remains a
+ * fail-closed fallback when Sharp or the image decoder is unavailable.
+ */
+async function perceptualFingerprint(framePath: string): Promise<string> {
+  try {
+    const { default: sharp } = await import('sharp');
+    const { data: pixels, info } = await sharp(framePath)
+      .resize(9, 8, { fit: 'fill' })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const luminance: number[] = [];
+    const colourTotals = [0, 0, 0];
+    for (let pixel = 0; pixel < 72; pixel++) {
+      const offset = pixel * info.channels;
+      const red = pixels[offset]!;
+      const green = pixels[offset + Math.min(1, info.channels - 1)]!;
+      const blue = pixels[offset + Math.min(2, info.channels - 1)]!;
+      luminance.push(Math.round(0.299 * red + 0.587 * green + 0.114 * blue));
+      colourTotals[0]! += red;
+      colourTotals[1]! += green;
+      colourTotals[2]! += blue;
+    }
+    let bits = '';
+    for (let row = 0; row < 8; row++) {
+      for (let column = 0; column < 8; column++) {
+        const offset = row * 9 + column;
+        bits += luminance[offset]! > luminance[offset + 1]! ? '1' : '0';
+      }
+    }
+    const colour = colourTotals
+      .map((total) => Math.round(total / 72).toString(16).padStart(2, '0'))
+      .join('');
+    return `dhash:${BigInt(`0b${bits}`).toString(16).padStart(16, '0')}:${colour}`;
+  } catch {
+    return sha256File(framePath);
+  }
+}
+
 export class ScreenWatcher {
   private readonly opts: Required<
-    Pick<ScreenWatcherOptions, 'intervalMs' | 'outDir' | 'ocr' | 'fingerprint' | 'redact' | 'now'>
+    Pick<
+      ScreenWatcherOptions,
+      | 'intervalMs'
+      | 'outDir'
+      | 'ocr'
+      | 'fingerprint'
+      | 'perceptualHashThreshold'
+      | 'redact'
+      | 'now'
+    >
   > &
     ScreenWatcherOptions;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -86,26 +162,36 @@ export class ScreenWatcher {
 
   constructor(options: ScreenWatcherOptions = {}) {
     this.opts = {
+      ...options,
       intervalMs: options.intervalMs ?? 5000,
       outDir: options.outDir ?? path.join(os.tmpdir(), 'codebuddy-screen', 'watch'),
       ocr: options.ocr ?? false,
-      fingerprint: options.fingerprint ?? sha1File,
+      fingerprint: options.fingerprint ?? perceptualFingerprint,
+      perceptualHashThreshold: Math.max(0, Math.min(64, options.perceptualHashThreshold ?? 6)),
       redact: options.redact ?? redactSecrets,
       now: options.now ?? (() => Date.now()),
-      ...options,
     };
   }
 
   /** One capture → dedup → (ocr+redact) cycle. Returns the observation. */
   async tick(): Promise<Observation> {
     fs.mkdirSync(this.opts.outDir, { recursive: true });
-    const framePath = path.join(this.opts.outDir, `frame-${this.opts.now()}-${this.frameCount++}.png`);
+    const requestedPath = path.join(
+      this.opts.outDir,
+      `frame-${this.opts.now()}-${this.frameCount++}.webp`,
+    );
     const capture = this.opts.capture ?? ((out: string) => this.defaultCapture(out));
-    await capture(framePath);
+    const framePath = await capture(requestedPath);
 
     const fp = await this.opts.fingerprint(framePath);
-    const changed = fp !== this.lastFingerprint;
-    this.lastFingerprint = fp;
+    const distance = this.lastFingerprint === null
+      ? null
+      : perceptualHashDistance(this.lastFingerprint, fp);
+    const changed = this.lastFingerprint === null
+      || (distance === null ? fp !== this.lastFingerprint : distance > this.opts.perceptualHashThreshold);
+    // Compare future frames with the last meaningful scene, not the immediately
+    // previous idle frame; otherwise tiny changes could drift forever unseen.
+    if (changed) this.lastFingerprint = fp;
 
     const obs: Observation = { ts: this.opts.now(), framePath, changed };
 
@@ -140,7 +226,14 @@ export class ScreenWatcher {
 
   private async defaultCapture(output: string): Promise<string> {
     const { ScreenRecorder } = await import('./screen-recorder.js');
-    return new ScreenRecorder().captureFrame(output);
+    const recorder = new ScreenRecorder();
+    try {
+      return await recorder.captureFrame(output);
+    } catch (error) {
+      if (path.extname(output).toLowerCase() !== '.webp') throw error;
+      const fallback = `${output.slice(0, -5)}.png`;
+      return recorder.captureFrame(fallback);
+    }
   }
 
   private async defaultOcr(framePath: string): Promise<string> {

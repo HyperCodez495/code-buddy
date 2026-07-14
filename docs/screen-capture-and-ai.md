@@ -155,6 +155,12 @@ Plus `--scale 1280` (downscale before encode) and `--qp`. The real "record-every
 | [`sharp`](https://github.com/lovell/sharp) / [`@julusian/jpeg-turbo`](https://github.com/julusian/node-jpeg-turbo) | WebP/JPEG encode + downscale | mature | — | replace the watcher's PNG+sha1 with WebP + perceptual hash |
 | WebChimera.js (libVLC) | — | — | **ABANDONED** | **skip** |
 
-**Next perf steps (not done): ** switch the watcher's frame path from `ffmpeg single-frame PNG + sha1` to `node-screenshots → sharp WebP + perceptual hash` (cheaper grab, smaller frames, robust dedup); adopt `node-av` only if the subprocess disk round-trips become the bottleneck.
+**Étape livrée le 14 juillet 2026 :** le watcher écrit maintenant en WebP et calcule avec Sharp un
+dHash visuel 64 bits. Une distance de Hamming bornée absorbe les petites variations de compression
+au lieu de considérer chaque réencodage comme une nouvelle scène. Si WebP n'est pas supporté par le
+FFmpeg local, la capture retombe sur PNG ; si Sharp manque, une empreinte SHA-256 exacte maintient la
+déduplication sans masquer l'indisponibilité du chemin perceptuel. Le remplacement du grab FFmpeg
+par `node-screenshots` reste une optimisation ultérieure ; adopter `node-av` seulement si les
+allers-retours subprocess/disque deviennent le goulot mesuré.
 
 > Sources: x264 (VideoLAN, GPL), dav1d (VideoLAN, decoder), SVT-AV1, node-av (MIT), node-screenshots (MIT), sharp (Apache-2.0), WebChimera.js (abandoned). AMD AV1 VAAPI: phoronix / Mesa 24.1 VCN4. AV1-vs-H264 compression: getstream/gumlet. Plus §1 projects (screenpipe MIT, OpenRecall AGPL, Khoj, self-operating-computer MIT, …).

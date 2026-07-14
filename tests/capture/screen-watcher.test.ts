@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { ScreenWatcher, redactSecrets, type Observation } from '../../src/capture/screen-watcher.js';
+import {
+  ScreenWatcher,
+  perceptualHashDistance,
+  redactSecrets,
+  type Observation,
+} from '../../src/capture/screen-watcher.js';
 
 describe('redactSecrets (privacy-lint reuse)', () => {
   it('leaves clean text untouched', () => {
@@ -21,6 +26,64 @@ describe('redactSecrets (privacy-lint reuse)', () => {
 });
 
 describe('ScreenWatcher dedup loop', () => {
+  it('deduplicates real WebP pixels and notices a large colour change when Sharp is available', async () => {
+    let sharp: typeof import('sharp').default;
+    try {
+      ({ default: sharp } = await import('sharp'));
+    } catch {
+      return;
+    }
+    const outDir = mkdtempSync(join(tmpdir(), 'cb-watch-webp-'));
+    const colours = [
+      { r: 220, g: 40, b: 40 },
+      { r: 220, g: 40, b: 40 },
+      { r: 30, g: 60, b: 220 },
+    ];
+    let index = 0;
+    const watcher = new ScreenWatcher({
+      outDir,
+      capture: async (out) => {
+        await sharp({
+          create: { width: 64, height: 64, channels: 3, background: colours[index++]! },
+        }).webp({ quality: index === 2 ? 65 : 85 }).toFile(out);
+        return out;
+      },
+    });
+
+    expect((await watcher.tick()).changed).toBe(true);
+    expect((await watcher.tick()).changed).toBe(false);
+    expect((await watcher.tick()).changed).toBe(true);
+  });
+
+  it('tolerates small visual hash changes but detects a materially different frame', async () => {
+    expect(perceptualHashDistance('dhash:0000000000000000', 'dhash:0000000000000003')).toBe(2);
+    expect(
+      perceptualHashDistance(
+        'dhash:0000000000000000:000000',
+        'dhash:0000000000000000:ffffff',
+      ),
+    ).toBe(16);
+    expect(perceptualHashDistance('sha256:a', 'sha256:b')).toBeNull();
+
+    const outDir = mkdtempSync(join(tmpdir(), 'cb-watch-'));
+    const fingerprints = [
+      'dhash:0000000000000000',
+      'dhash:0000000000000003',
+      'dhash:ffffffffffffffff',
+    ];
+    let index = 0;
+    const watcher = new ScreenWatcher({
+      outDir,
+      capture: async (out) => out,
+      fingerprint: () => fingerprints[index++]!,
+      perceptualHashThreshold: 2,
+    });
+
+    expect((await watcher.tick()).changed).toBe(true);
+    expect((await watcher.tick()).changed).toBe(false);
+    expect((await watcher.tick()).changed).toBe(true);
+  });
+
   it('marks the first frame changed, an identical fingerprint idle, a new one changed', async () => {
     const outDir = mkdtempSync(join(tmpdir(), 'cb-watch-'));
     const fingerprints = ['A', 'A', 'B'];
@@ -41,6 +104,7 @@ describe('ScreenWatcher dedup loop', () => {
     await watcher.tick(); // fp B vs A → changed
 
     expect(observed.map((o) => o.changed)).toEqual([true, false, true]);
+    expect(observed.every((o) => o.framePath.endsWith('.webp'))).toBe(true);
     // No OCR by default → no text.
     expect(observed.every((o) => o.text === undefined)).toBe(true);
   });

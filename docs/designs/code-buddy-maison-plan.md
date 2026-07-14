@@ -39,13 +39,13 @@ supplémentaire pour agir à l'extérieur.
 
 ### Défauts P0 à corriger avant le mode Maison
 
-1. `src/companion/presence-loop.ts::defaultPersonPresent()` convertit en booléen
-   l'objet renvoyé par `readPresenceContext()` au lieu de lire `hasMatch`.
-   L'objet existe même sans visage reconnu : la présence peut donc être déclarée
-   vraie à tort.
-2. Le fuseau est configurable ou affiché, mais l'exécution de `daily-reset`, du
-   cron et de plusieurs rappels utilise encore l'heure locale implicite. Le champ
-   `schedule.timezone` n'est pas réellement appliqué partout.
+1. Corrigé : `defaultPersonPresent()` exige strictement `hasMatch === true` ; un
+   fichier frais sans visage reconnu ne donne plus licence à une prise de parole
+   spontanée. Le contrat est couvert par un test dédié.
+2. Corrigé : `daily-reset` et le cron résolvent leurs minutes civiles dans le
+   fuseau IANA configuré avec des tests de changements d'heure. Les portes du
+   compagnon consomment le même `HouseholdClock` au lieu du fuseau implicite de
+   la machine.
 3. Corrigé le 14 juillet 2026 : `src/location/index.ts` ne fabrique plus Paris,
    une adresse, une précision ou un fuseau à partir du vide. La localisation IP
    exige désormais une source HTTP explicitement configurée, valide strictement
