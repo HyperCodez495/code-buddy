@@ -511,6 +511,13 @@ des derniers segments diffusés. Un écho correspondant reste silencieux et n'es
 journal ; une phrase distincte poursuit immédiatement la conversation. `buddy companion percepts
 stats` expose les distributions de reprise ainsi que les compteurs `quickResume`, `bargeIn` et
 `echoSuppressed`, sans ajouter de verbatim aux agrégats.
+La même durée acoustique alimente un profil d'**entrainment** borné. Les interjections trop courtes
+ne produisent pas un faux débit précis ; les tours fiables classent le rythme `slow`, `balanced` ou
+`brisk`, puis fixent une cible plus modérée pour Lisa. La longueur relative influence la forme orale,
+mais jamais les obligations de fond du plan conversationnel. Avec Voicebox, cette cible devient aussi
+une instruction acoustique par tour. `buddy companion percepts stats` et Cowork → Companion →
+Conversation vocale affichent le débit humain médian, la cible de Lisa et la dernière forme appliquée,
+toujours sans verbatim agrégé.
 Au démarrage, la route vocale est résolue en arrière-plan, le modèle Ollama choisi est
 chargé sans générer de texte et gardé résident 30 minutes, puis rafraîchi toutes les
 15 minutes (`CODEBUDDY_VOICE_MODEL_KEEP_ALIVE`, `CODEBUDDY_VOICE_MODEL_REFRESH_MS`).

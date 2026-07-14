@@ -321,6 +321,62 @@ describe('speech reaction — speech_end → STT → percept', () => {
     }
   });
 
+  it('hands acoustic timing to the voice handler and journals only the raw-free delivery profile', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-entrainment-'));
+    let context: Record<string, unknown> | undefined;
+    const delivery = {
+      pace: 'slow' as const,
+      pauseStyle: 'reflective' as const,
+      responseShape: 'balanced' as const,
+      confidence: 'high' as const,
+      targetWpm: 118,
+      humanWordCount: 8,
+      humanAudioMs: 4_000,
+      humanWpm: 120,
+    };
+    const unwire = wireSpeechReaction({
+      transcriber: async () => 'Lisa prends le temps de bien expliquer cette idée',
+      debounceMs: 0,
+      cwd: tmp,
+      onHeard: async (_text, nextContext) => {
+        context = nextContext;
+      },
+      getResponseTiming: () => ({
+        mode: 'blocking',
+        totalMs: 500,
+        spoke: true,
+        delivery,
+      }),
+    });
+    try {
+      speechEnd('/tmp/entrainment.wav', {
+        audioMs: 4_000,
+        ms: 4_200,
+        startedAtMs: 10_000,
+        endedAtMs: 14_200,
+      });
+      await tick();
+
+      expect(context).toEqual({
+        audioMs: 4_000,
+        captureMs: 4_200,
+        speechStartedAtMs: 10_000,
+        speechEndedAtMs: 14_200,
+      });
+      const percepts = await readFile(
+        path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'),
+        'utf8',
+      );
+      const recorded = JSON.parse(percepts.trim().split('\n').at(-1)!) as {
+        payload: { delivery: Record<string, unknown> };
+      };
+      expect(recorded.payload.delivery).toEqual(delivery);
+      expect(JSON.stringify(recorded.payload.delivery)).not.toContain('Lisa prends le temps');
+    } finally {
+      unwire();
+    }
+  });
+
   it('records the percept but stays silent when shouldRespond vetoes', async () => {
     const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-'));
     let heard = 0;

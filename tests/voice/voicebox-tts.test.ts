@@ -88,8 +88,9 @@ describe('Voicebox synthesis', () => {
         CODEBUDDY_VOICEBOX_PERSONALITY: 'true',
         CODEBUDDY_VOICEBOX_ENGINE: 'qwen',
         CODEBUDDY_VOICEBOX_LANGUAGE: 'fr',
+        CODEBUDDY_VOICEBOX_INSTRUCT: 'Keep the established warm tone.',
       },
-      { fetchImpl }
+      { fetchImpl, instruct: 'Speak at about 118 words per minute.' }
     );
     expect(stream).not.toBeNull();
     expect(requests).toHaveLength(2);
@@ -99,6 +100,7 @@ describe('Voicebox synthesis', () => {
       text: 'Bonjour Patrice.',
       language: 'fr',
       engine: 'qwen',
+      instruct: 'Speak at about 118 words per minute. Keep the established warm tone.',
       personality: false,
       normalize: true,
     });

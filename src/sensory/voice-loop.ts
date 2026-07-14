@@ -71,6 +71,13 @@ import {
   pushOpener,
 } from '../companion/reply-augment.js';
 import {
+  deriveVoiceDeliveryProfile,
+  voiceDeliveryGuidance,
+  voiceRendererDeliveryInstruction,
+  type VoiceDeliveryProfile,
+  type VoiceTurnContext,
+} from './voice-entrainment.js';
+import {
   groundExplicitVisualRequest,
   isAmbiguousVisualGroundingRequest,
   isExplicitVisualGroundingRequest,
@@ -91,6 +98,8 @@ export interface VoiceStepOptions {
   introspectionText?: string;
   /** Internal routing receipt used to keep post-processing on the exact provider. */
   onProviderResolved?: (route: { model: string; apiKey: string; baseURL?: string }) => void;
+  /** Raw-free cadence/length profile derived from the human's current spoken turn. */
+  delivery?: VoiceDeliveryProfile;
 }
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
@@ -134,6 +143,8 @@ export interface VoiceReplyTiming {
   replyMs?: number;
   synthMs?: number;
   playMs?: number;
+  /** Raw-free delivery profile applied to cognition and supported TTS renderers. */
+  delivery?: VoiceDeliveryProfile;
 }
 
 export interface VoiceReplyOptions {
@@ -1097,10 +1108,12 @@ let recentReplyOpeners: string[] = [];
 export async function buildSpokenPromptAugmentation(
   heard: string,
   history: VoiceHistoryTurn[] = [],
-  spokenPrefix?: string
+  spokenPrefix?: string,
+  delivery?: VoiceDeliveryProfile,
 ): Promise<string> {
   const guidance = [
     prepareConversationTurn(heard, history).systemGuidance,
+    delivery ? voiceDeliveryGuidance(delivery) : '',
     emotionGuidance(detectEmotion(heard)),
     emotionalContinuityGuidance(heard, history),
     spokenPrefix
@@ -1143,7 +1156,8 @@ export async function buildSpokenPromptAugmentation(
 async function prepareSpokenTurn(
   heard: string,
   history: VoiceHistoryTurn[] = [],
-  spokenPrefix?: string
+  spokenPrefix?: string,
+  delivery?: VoiceDeliveryProfile,
 ): Promise<{
   CodeBuddyClient: typeof import('../codebuddy/client.js').CodeBuddyClient;
   route: VoiceModelRoute;
@@ -1155,7 +1169,7 @@ async function prepareSpokenTurn(
     import('../codebuddy/client.js'),
     import('../personas/persona-manager.js').then((m) => m.getActivePersonaVoiceAsync()),
     resolveVoiceModel(heard, { history }),
-    buildSpokenPromptAugmentation(heard, history, spokenPrefix),
+    buildSpokenPromptAugmentation(heard, history, spokenPrefix, delivery),
   ]);
   const basePrompt = personaVoice.spokenPrompt || SPEAK_SYSTEM_PROMPT;
   return {
@@ -1176,7 +1190,13 @@ export async function defaultReply(
     return fast;
   }
   try {
-    const { CodeBuddyClient, route, systemPrompt } = await prepareSpokenTurn(heard, history);
+    const delivery = replyOpts?.delivery ?? deriveVoiceDeliveryProfile(heard);
+    const { CodeBuddyClient, route, systemPrompt } = await prepareSpokenTurn(
+      heard,
+      history,
+      undefined,
+      delivery,
+    );
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
@@ -1238,10 +1258,12 @@ export async function* streamCompanionReply(
       full = `${acknowledgement} `;
       yield full;
     }
+    const delivery = replyOpts?.delivery ?? deriveVoiceDeliveryProfile(heard);
     const { CodeBuddyClient, route, systemPrompt } = await prepareSpokenTurn(
       heard,
       history,
-      acknowledgement ?? undefined
+      acknowledgement ?? undefined,
+      delivery,
     );
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] stream reply model: ${route.model} — ${route.reason}`);
@@ -1311,7 +1333,7 @@ function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
   const voicebox = resolveVoiceboxConfig();
   // Cache identity covers every acoustic input. `TtsCache` hashes this string,
   // so even a long Voicebox instruction never appears in the cache filename.
-  const cacheVoice = engine === 'pocket'
+  const baseCacheVoice = engine === 'pocket'
     ? `pocket:${pocketVoice}`
     : engine === 'voicebox'
       ? [
@@ -1333,7 +1355,13 @@ function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
     const wavPath = join(tmpdir(), `cb-voice-${process.pid}-${Date.now()}.wav`);
     if (engine === 'voicebox') {
       const { synthesizeVoiceboxWav } = await import('../voice/voicebox-tts.js');
-      if (await synthesizeVoiceboxWav(text, wavPath, process.env, { signal: opts.signal })) {
+      const deliveryInstruction = opts.delivery
+        ? voiceRendererDeliveryInstruction(opts.delivery)
+        : undefined;
+      if (await synthesizeVoiceboxWav(text, wavPath, process.env, {
+        signal: opts.signal,
+        ...(deliveryInstruction ? { instruct: deliveryInstruction } : {}),
+      })) {
         return { wav: wavPath, cacheable: true };
       }
       if (opts.signal?.aborted) throw new Error('TTS synthesis was interrupted');
@@ -1373,6 +1401,9 @@ function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
   }
   return async (text: string, opts: VoiceStepOptions = {}): Promise<string> => {
     if (opts.signal?.aborted) throw new Error('TTS synthesis was interrupted');
+    const cacheVoice = opts.delivery && engine === 'voicebox'
+      ? `${baseCacheVoice}:${voiceRendererDeliveryInstruction(opts.delivery)}`
+      : baseCacheVoice;
     let cache: TtsCache;
     try {
       const { getTtsCache } = await import('./tts-cache.js');
@@ -1490,7 +1521,12 @@ function makeDefaultStreamSpeak(): StreamSpeakFn | undefined {
     const stream = engine === 'voicebox'
       ? await (async () => {
           const { openVoiceboxAudioStream } = await import('../voice/voicebox-tts.js');
-          return openVoiceboxAudioStream(text, process.env, { signal });
+          return openVoiceboxAudioStream(text, process.env, {
+            signal,
+            ...(opts.delivery
+              ? { instruct: voiceRendererDeliveryInstruction(opts.delivery) }
+              : {}),
+          });
         })()
       : await (async () => {
           const { openPocketAudioStream } = await import('../voice/local-tts.js');
@@ -1746,7 +1782,7 @@ export async function sayNow(
  * extra property, not a new call contract.
  */
 export interface VoiceReplyHandler {
-  (heard: string): Promise<void>;
+  (heard: string, context?: VoiceTurnContext): Promise<void>;
   /** Last completed turn timing (also available through `VoiceReplyOptions.onTiming`). */
   lastTiming?: VoiceReplyTiming;
   /**
@@ -1813,10 +1849,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   // The single in-flight turn's cancellation handle. null while idle.
   let currentAbort: AbortController | null = null;
 
-  const handler = async (heard: string): Promise<void> => {
+  const handler = async (heard: string, context?: VoiceTurnContext): Promise<void> => {
     const controller = new AbortController();
     currentAbort = controller;
     const { signal } = controller;
+    const delivery = deriveVoiceDeliveryProfile(heard, context);
     const startedAt = Date.now();
     let replyMs = 0;
     let synthMs = 0;
@@ -1982,7 +2019,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         firstContentAudioMs = Date.now() - startedAt;
       }
       try {
-        await play(wav, opts);
+        await play(wav, { ...(opts ?? {}), delivery });
       } finally {
         streamedWavMetadata.delete(wav);
       }
@@ -1998,6 +2035,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             try {
               streamed = await nativeStreamSpeak(text, {
                 ...opts,
+                delivery,
                 onAudioChunk: (chunk) => {
                   publisher.push(chunk);
                   opts.onAudioChunk?.(chunk);
@@ -2060,7 +2098,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         try {
           const relationshipSafety = new RelationshipSafetyStreamGuard();
           const timedReplyStream = (async function* (): AsyncGenerator<string> {
-            for await (const delta of streamFn(heard, { signal })) {
+            for await (const delta of streamFn(heard, { signal, delivery })) {
               // Provider first-token latency is measured on the raw delta. The
               // safety gate intentionally waits for a sentence boundary before
               // release, which is a separate (and potentially much longer)
@@ -2093,7 +2131,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             emitAvatarSegment(text);
             baseSynthPromise ??= resolveSynth();
             const baseSynth = await baseSynthPromise;
-            const wav = await baseSynth(text, synthOpts);
+            const wav = await baseSynth(text, { ...(synthOpts ?? {}), delivery });
             if (wav) {
               streamedWavMetadata.set(wav, {
                 isContent: !INSTANT_BACKCHANNELS.has(text.trim()),
@@ -2155,7 +2193,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         rawReply = visualReply;
       } else {
         const replyStart = Date.now();
-        rawReply = await replyFn(heard, { signal });
+        rawReply = await replyFn(heard, { signal, delivery });
         replyMs = Date.now() - replyStart;
       }
       // Interrupted during the think step → abandon silently (never speak a stale reply).
@@ -2189,7 +2227,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         const playStart = Date.now();
         let streamed = false;
         await withSpeakingGuard(async () => {
-          streamed = await timedStreamSpeak(reply, { signal });
+          streamed = await timedStreamSpeak(reply, { signal, delivery });
         });
         playMs = Date.now() - playStart;
         if (signal.aborted) return;
@@ -2212,7 +2250,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       }
       const synth = await resolveSynth();
       const synthStart = Date.now();
-      const wav = await synth(reply, { signal });
+      const wav = await synth(reply, { signal, delivery });
       synthMs = Date.now() - synthStart;
       if (!wav) return;
       // Interrupted during synth → don't start playback.
@@ -2220,7 +2258,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       const playStart = Date.now();
       await withSpeakingGuard(() => {
         noteSpokenText(reply);
-        return timedPlay(wav, { signal });
+        return timedPlay(wav, { signal, delivery });
       }); // half-duplex + interruptible
       playMs = Date.now() - playStart;
       // A barge-in kills the player early; don't claim we "spoke" the whole line.
@@ -2285,6 +2323,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         mode,
         totalMs: Date.now() - startedAt,
         spoke,
+        delivery,
         ...(firstTextMs !== undefined ? { firstTextMs } : {}),
         ...(firstSegmentMs !== undefined ? { firstSegmentMs } : {}),
         ...(firstAudioMs !== undefined ? { firstAudioMs } : {}),

@@ -75,6 +75,10 @@ export interface CompanionVoiceLoopStats {
     resumeAfterPlaybackMs?: number;
     turnTakingKind?: string;
     responseMode?: string;
+    deliveryPace?: string;
+    responseShape?: string;
+    humanWpm?: number;
+    targetWpm?: number;
     peakRms?: number;
     rmsOn?: number;
     signalMargin?: number;
@@ -96,6 +100,13 @@ export interface CompanionVoiceLoopStats {
     peakRms?: CompanionNumericStats;
     avgRms?: CompanionNumericStats;
     signalMargin?: CompanionNumericStats;
+  };
+  delivery: {
+    profiledCount: number;
+    measuredRateCount: number;
+    humanWpm?: CompanionNumericStats;
+    targetWpm?: CompanionNumericStats;
+    paceCounts: { slow: number; balanced: number; brisk: number };
   };
   health: {
     realtimeBudgetMs: number;
@@ -308,6 +319,10 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
   const peakRms: number[] = [];
   const avgRms: number[] = [];
   const signalMargin: number[] = [];
+  const humanWpm: number[] = [];
+  const targetWpm: number[] = [];
+  const paceCounts = { slow: 0, balanced: 0, brisk: 0 };
+  let profiledCount = 0;
   let slowLoopCount = 0;
   let slowSttCount = 0;
   let weakSignalCount = 0;
@@ -320,6 +335,7 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
     const latency = objectValue(payload?.latency);
     const capture = objectValue(payload?.capture);
     const turnTaking = objectValue(payload?.turnTaking);
+    const delivery = objectValue(payload?.delivery);
     const stt = finiteNumberValue(latency?.sttMs);
     const total = finiteNumberValue(latency?.totalMs);
     const decision = finiteNumberValue(latency?.decisionMs);
@@ -335,6 +351,16 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
     const peak = finiteNumberValue(capture?.peakRms) ?? finiteNumberValue(capture?.rms);
     const avg = finiteNumberValue(capture?.avgRms);
     const rmsOn = finiteNumberValue(capture?.rmsOn);
+    const measuredHumanWpm = finiteNumberValue(delivery?.humanWpm);
+    const appliedTargetWpm = finiteNumberValue(delivery?.targetWpm);
+    const deliveryPace = stringValue(delivery?.pace);
+
+    if (delivery) profiledCount++;
+    if (measuredHumanWpm !== undefined) humanWpm.push(measuredHumanWpm);
+    if (appliedTargetWpm !== undefined) targetWpm.push(appliedTargetWpm);
+    if (deliveryPace === 'slow' || deliveryPace === 'balanced' || deliveryPace === 'brisk') {
+      paceCounts[deliveryPace]++;
+    }
 
     if (stt !== undefined) {
       sttMs.push(stt);
@@ -372,6 +398,7 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
   const latestLatency = objectValue(latestPayload?.latency);
   const latestCapture = objectValue(latestPayload?.capture);
   const latestTurnTaking = objectValue(latestPayload?.turnTaking);
+  const latestDelivery = objectValue(latestPayload?.delivery);
   const latestPeakRms = finiteNumberValue(latestCapture?.peakRms) ?? finiteNumberValue(latestCapture?.rms);
   const latestRmsOn = finiteNumberValue(latestCapture?.rmsOn);
   const latestSignalMargin = latestPeakRms !== undefined && latestRmsOn !== undefined && latestRmsOn > 0
@@ -392,6 +419,10 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
           resumeAfterPlaybackMs: finiteNumberValue(latestTurnTaking?.resumeAfterPlaybackMs),
           turnTakingKind: stringValue(latestTurnTaking?.kind),
           responseMode: stringValue(latestPayload?.responseMode),
+          deliveryPace: stringValue(latestDelivery?.pace),
+          responseShape: stringValue(latestDelivery?.responseShape),
+          humanWpm: finiteNumberValue(latestDelivery?.humanWpm),
+          targetWpm: finiteNumberValue(latestDelivery?.targetWpm),
           peakRms: latestPeakRms,
           rmsOn: latestRmsOn,
           signalMargin: latestSignalMargin,
@@ -414,6 +445,13 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
       peakRms: numericStats(peakRms),
       avgRms: numericStats(avgRms),
       signalMargin: numericStats(signalMargin),
+    },
+    delivery: {
+      profiledCount,
+      measuredRateCount: humanWpm.length,
+      humanWpm: numericStats(humanWpm),
+      targetWpm: numericStats(targetWpm),
+      paceCounts,
     },
     health: {
       realtimeBudgetMs: VOICE_LOOP_BUDGET_MS,
@@ -581,6 +619,7 @@ export function formatCompanionPerceptStats(stats: CompanionPerceptStats): strin
       `- event->stt: ${fmtMs(stats.voice.latency.eventToSttStartMs)}`,
       `- capture: ${fmtMs(stats.voice.capture.captureMs)}`,
       `- signal margin: ${fmtRatio(stats.voice.capture.signalMargin)}`,
+      `- entrainment: profiled=${stats.voice.delivery.profiledCount}, measuredRate=${stats.voice.delivery.measuredRateCount}, humanWpm=${stats.voice.delivery.humanWpm ? Math.round(stats.voice.delivery.humanWpm.p50) : 'n/a'}, targetWpm=${stats.voice.delivery.targetWpm ? Math.round(stats.voice.delivery.targetWpm.p50) : 'n/a'}, pace=${stats.voice.delivery.paceCounts.slow}/${stats.voice.delivery.paceCounts.balanced}/${stats.voice.delivery.paceCounts.brisk}`,
       `- health: slowLoop=${stats.voice.health.slowLoopCount}, slowStt=${stats.voice.health.slowSttCount}, weakSignal=${stats.voice.health.weakSignalCount}, quickResume=${stats.voice.health.echoTailResumeCount}, bargeIn=${stats.voice.health.playbackBargeInCount}, echoSuppressed=${stats.voice.health.suppressedEchoCount}`,
     );
     if (stats.voice.latest) {
@@ -593,6 +632,10 @@ export function formatCompanionPerceptStats(stats: CompanionPerceptStats): strin
           + (stats.voice.latest.resumeAfterPlaybackMs !== undefined ? ` resume=${Math.round(stats.voice.latest.resumeAfterPlaybackMs)}ms` : '')
           + (stats.voice.latest.turnTakingKind ? ` turn=${stats.voice.latest.turnTakingKind}` : '')
           + (stats.voice.latest.responseMode ? ` mode=${stats.voice.latest.responseMode}` : '')
+          + (stats.voice.latest.deliveryPace ? ` pace=${stats.voice.latest.deliveryPace}` : '')
+          + (stats.voice.latest.responseShape ? ` shape=${stats.voice.latest.responseShape}` : '')
+          + (stats.voice.latest.humanWpm !== undefined ? ` humanWpm=${Math.round(stats.voice.latest.humanWpm)}` : '')
+          + (stats.voice.latest.targetWpm !== undefined ? ` targetWpm=${Math.round(stats.voice.latest.targetWpm)}` : '')
           + (stats.voice.latest.sttMs !== undefined ? ` stt=${Math.round(stats.voice.latest.sttMs)}ms` : '')
           + (stats.voice.latest.signalMargin !== undefined ? ` margin=${stats.voice.latest.signalMargin.toFixed(2)}` : ''),
       );

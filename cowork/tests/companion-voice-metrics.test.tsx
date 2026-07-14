@@ -12,6 +12,10 @@ const VOICE_STATS: CompanionVoiceLoopStats = {
     timestamp: '2026-07-14T13:20:00.000Z',
     resumeAfterPlaybackMs: 420,
     turnTakingKind: 'echo_tail',
+    deliveryPace: 'brisk',
+    responseShape: 'compact',
+    humanWpm: 200,
+    targetWpm: 184,
   },
   latency: {
     perceivedResponseMs: {
@@ -32,6 +36,13 @@ const VOICE_STATS: CompanionVoiceLoopStats = {
     },
   },
   capture: {},
+  delivery: {
+    profiledCount: 12,
+    measuredRateCount: 9,
+    humanWpm: { count: 9, min: 90, p50: 172, p95: 210, max: 230, avg: 168 },
+    targetWpm: { count: 12, min: 110, p50: 166, p95: 190, max: 195, avg: 160 },
+    paceCounts: { slow: 2, balanced: 5, brisk: 5 },
+  },
   health: {
     realtimeBudgetMs: 5_000,
     sttBudgetMs: 2_500,
@@ -53,6 +64,8 @@ describe('CompanionVoiceMetrics', () => {
     expect(screen.getByText('p50 620 ms · p95 1450 ms')).toBeTruthy();
     expect(screen.getByText('echo_tail · 420 ms')).toBeTruthy();
     expect(screen.getByText('3 / 2 / 4')).toBeTruthy();
+    expect(screen.getByText('Humain 172 → Lisa 166 mots/min')).toBeTruthy();
+    expect(screen.getByText('brisk · compact')).toBeTruthy();
     expect(container.textContent).toContain('sans verbatim agrégé');
     expect(container.textContent).not.toContain('phrase privée');
   });
@@ -65,10 +78,11 @@ describe('CompanionVoiceMetrics', () => {
           hearingCount: 0,
           latest: undefined,
           latency: {},
+          delivery: undefined,
         }}
       />,
     );
 
-    expect(screen.getAllByText('Pas encore mesuré')).toHaveLength(3);
+    expect(screen.getAllByText('Pas encore mesuré')).toHaveLength(5);
   });
 });

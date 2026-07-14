@@ -157,6 +157,15 @@ en mémoire vive des segments prononcés permet de supprimer un écho correspond
 une réponse distincte avant la fin des 1,2 seconde de garde. Les percepts conservent les durées et le
 type de reprise ; les statistiques compagnon publient p50/p95 et compteurs agrégés sans verbatim.
 
+Le tour vocal transporte maintenant sa durée acoustique jusqu'au cerveau et au renderer. Lisa estime
+un débit seulement à partir d'au moins trois mots et d'une durée plausible, rejette les mesures
+extrêmes, puis se rapproche partiellement du rythme humain dans une plage de 105 à 195 mots/minute.
+Le profil distingue débit, pauses et longueur relative ; une règle explicite interdit de sacrifier
+analyse, preuves, nuances ou argumentation philosophique pour imiter un tour bref. Voicebox reçoit
+la consigne acoustique par tour, tandis que les autres moteurs suivent la ponctuation et la structure
+du texte. Les percepts et Cowork affichent uniquement les agrégats `humanWpm`, `targetWpm`, rythme et
+forme appliquée, sans recopier la phrase.
+
 ### P4 — Lisa MetaHuman
 
 - Définir une identité visuelle originale dans une bible d'avatar.

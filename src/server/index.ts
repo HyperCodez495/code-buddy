@@ -1460,7 +1460,10 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               // the normal reply so the robot doesn't both confirm AND chat.
               // `reply` is a VoiceReplyHandler (callable + `.interrupt()`); the wrappers below
               // replace it with plain handlers, so type onHeard by the call contract they share.
-              let onHeard: (t: string) => Promise<void> = reply;
+              let onHeard: (
+                t: string,
+                context?: import('../sensory/voice-entrainment.js').VoiceTurnContext,
+              ) => Promise<void> = reply;
               let reminderShortcut: ((t: string) => boolean) | undefined;
               let maisonShortcut: ((t: string) => boolean) | undefined;
               if (process.env.CODEBUDDY_REMINDERS === 'true') {
@@ -1474,7 +1477,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   rem.isUndoCommand(t, Date.now()) ||
                   rem.isReminderVoiceCommand(t) ||
                   rem.parseVoiceReminder(t) !== null;
-                onHeard = async (t: string) => {
+                onHeard = async (t, context) => {
                   const sayCanonical = createCanonicalVoiceReplySpeaker(
                     t,
                     (content) => sayNow(content, { phoneDelivery: 'never' }),
@@ -1520,7 +1523,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                     }
                     return;
                   }
-                  await reply(t);
+                  await reply(t, context);
                 };
               }
 
@@ -1532,14 +1535,14 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 const { sayNow } = await import('../sensory/voice-loop.js');
                 maisonShortcut = maison.isMaisonVoiceCommand;
                 const inner = onHeard;
-                onHeard = async (t: string) => {
+                onHeard = async (t, context) => {
                   const sayCanonical = createCanonicalVoiceReplySpeaker(
                     t,
                     (content) => sayNow(content, { phoneDelivery: 'never' }),
                     conversationBridge,
                   );
                   if (await maison.handleMaisonVoiceCommand(t, { speak: sayCanonical })) return;
-                  await inner(t);
+                  await inner(t, context);
                 };
               }
 
@@ -1553,8 +1556,8 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 const { sayNow } = await import('../sensory/voice-loop.js');
                 const extractor = ef.makeLLMEventExtractor();
                 const inner = onHeard;
-                onHeard = async (t: string) => {
-                  await inner(t);
+                onHeard = async (t, context) => {
+                  await inner(t, context);
                   if (reminderShortcut?.(t) || maisonShortcut?.(t)) return;
                   void (async () => {
                     try {

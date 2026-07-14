@@ -119,6 +119,12 @@ describe('companion percept store', () => {
           earReadyInMs: 900,
         },
         responseMode: 'streamed',
+        delivery: {
+          pace: 'brisk',
+          responseShape: 'compact',
+          humanWpm: 200,
+          targetWpm: 184,
+        },
       },
       tags: ['speech', 'stt', 'latency'],
     }, {
@@ -153,6 +159,12 @@ describe('companion percept store', () => {
           resumeAfterPlaybackMs: 1_800,
         },
         responseMode: 'blocking',
+        delivery: {
+          pace: 'slow',
+          responseShape: 'expanded',
+          humanWpm: 100,
+          targetWpm: 119,
+        },
       },
       tags: ['speech', 'stt', 'latency'],
     }, {
@@ -175,6 +187,15 @@ describe('companion percept store', () => {
     expect(stats.voice?.latest?.responseMode).toBe('blocking');
     expect(stats.voice?.latest?.turnTakingKind).toBe('after_playback');
     expect(stats.voice?.latest?.resumeAfterPlaybackMs).toBe(1800);
+    expect(stats.voice?.delivery.profiledCount).toBe(2);
+    expect(stats.voice?.delivery.measuredRateCount).toBe(2);
+    expect(stats.voice?.delivery.humanWpm?.p50).toBe(100);
+    expect(stats.voice?.delivery.targetWpm?.p95).toBe(184);
+    expect(stats.voice?.delivery.paceCounts).toEqual({ slow: 1, balanced: 0, brisk: 1 });
+    expect(stats.voice?.latest?.deliveryPace).toBe('slow');
+    expect(stats.voice?.latest?.responseShape).toBe('expanded');
+    expect(stats.voice?.latest?.humanWpm).toBe(100);
+    expect(stats.voice?.latest?.targetWpm).toBe(119);
     expect(stats.voice?.capture.signalMargin?.min).toBeCloseTo(1.25, 2);
     expect(stats.voice?.health.slowSttCount).toBe(1);
     expect(stats.voice?.health.slowLoopCount).toBe(1);
@@ -189,8 +210,12 @@ describe('companion percept store', () => {
     expect(formatted).toContain('perceived response');
     expect(formatted).toContain('human resume after playback');
     expect(formatted).toContain('quickResume=1');
+    expect(formatted).toContain('entrainment: profiled=2');
+    expect(formatted).toContain('pace=1/0/1');
     expect(formatted).toContain('resume=1800ms');
     expect(formatted).toContain('mode=blocking');
+    expect(formatted).toContain('pace=slow');
+    expect(formatted).toContain('humanWpm=100');
     expect(formatted).toContain('weakSignal=1');
     expect(formatted).toContain('device=hw:Webcam,0');
   });

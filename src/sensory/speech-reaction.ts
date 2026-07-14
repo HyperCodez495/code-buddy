@@ -40,6 +40,7 @@ import {
   joinVoiceTurnFragments,
   resolveIncompleteTurnHoldMs,
 } from './voice-turn-taking.js';
+import type { VoiceDeliveryProfile, VoiceTurnContext } from './voice-entrainment.js';
 
 // Re-exported for back-compat: callers + tests import these from speech-reaction.
 export { resolveSpeechRecognitionEngine };
@@ -56,7 +57,7 @@ export interface SpeechReactionOptions {
   cwd?: string;
   now?: () => number;
   /** Action hook for the transcript (e.g. trigger an agent turn). */
-  onHeard?: (text: string) => void | Promise<void>;
+  onHeard?: (text: string, context?: VoiceTurnContext) => void | Promise<void>;
   /**
    * Acoustic turn-open hook, fired immediately when the Rust VAD opens — before
    * endpointing and STT. Intended only for idempotent preparation (imports,
@@ -82,6 +83,7 @@ export interface SpeechReactionOptions {
         streamFallbackSegments?: number;
         totalMs: number;
         spoke: boolean;
+        delivery?: VoiceDeliveryProfile;
       }
     | undefined;
 }
@@ -1344,7 +1346,17 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
 
         if (responded) {
           const actionStartMs = now();
-          await options.onHeard?.(text);
+          const turnContext: VoiceTurnContext = {
+            ...(finiteTimestamp(payload.audioMs) !== undefined
+              ? { audioMs: finiteTimestamp(payload.audioMs) }
+              : {}),
+            ...(finiteTimestamp(payload.ms) !== undefined
+              ? { captureMs: finiteTimestamp(payload.ms) }
+              : {}),
+            ...(captureStartedAtMs !== undefined ? { speechStartedAtMs: captureStartedAtMs } : {}),
+            ...(captureEndedAtMs !== undefined ? { speechEndedAtMs: captureEndedAtMs } : {}),
+          };
+          await options.onHeard?.(text, turnContext);
           actionMs = elapsedSince(actionStartMs, now);
           responseTiming = options.getResponseTiming?.();
           // Plain hooks historically imply speech; instrumented voice handlers report whether
@@ -1402,6 +1414,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
                 ...(responseTiming ? { voiceTotalMs: responseTiming.totalMs } : {}),
               },
               ...(responseTiming ? { responseMode: responseTiming.mode, spoke } : {}),
+              ...(responseTiming?.delivery ? { delivery: responseTiming.delivery } : {}),
               ...(voiceResume ? { turnTaking: voiceResume } : {}),
               capture: {
                 ...capturePayload,

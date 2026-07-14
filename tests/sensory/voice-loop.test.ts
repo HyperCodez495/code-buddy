@@ -649,6 +649,51 @@ describe('voice loop — heard → think → speak', () => {
     expect(spoke).toBe('Salut Patrice, on progresse.');
   });
 
+  it('propagates one acoustic delivery profile through cognition, TTS, playback and timing', async () => {
+    const observed: Array<{ stage: string; pace?: string; humanWpm?: number }> = [];
+    const onHeard = makeVoiceReply({
+      replyFn: async (_heard, opts) => {
+        observed.push({
+          stage: 'reply',
+          pace: opts?.delivery?.pace,
+          humanWpm: opts?.delivery?.humanWpm,
+        });
+        return 'Voici les trois points essentiels, clairement et sans détour.';
+      },
+      synth: async (_text, opts) => {
+        observed.push({
+          stage: 'synth',
+          pace: opts?.delivery?.pace,
+          humanWpm: opts?.delivery?.humanWpm,
+        });
+        return '/tmp/entrained.wav';
+      },
+      play: async (_wav, opts) => {
+        observed.push({
+          stage: 'play',
+          pace: opts?.delivery?.pace,
+          humanWpm: opts?.delivery?.humanWpm,
+        });
+      },
+    });
+
+    await onHeard(
+      'on avance vite maintenant donne moi les trois points essentiels',
+      { audioMs: 3_000 },
+    );
+
+    expect(observed).toEqual([
+      { stage: 'reply', pace: 'brisk', humanWpm: 200 },
+      { stage: 'synth', pace: 'brisk', humanWpm: 200 },
+      { stage: 'play', pace: 'brisk', humanWpm: 200 },
+    ]);
+    expect(onHeard.lastTiming?.delivery).toMatchObject({
+      pace: 'brisk',
+      humanWpm: 200,
+      targetWpm: 184,
+    });
+  });
+
   it('publishes both sides of a spoken exchange to the shared conversation hook', async () => {
     const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     const onHeard = makeVoiceReply({

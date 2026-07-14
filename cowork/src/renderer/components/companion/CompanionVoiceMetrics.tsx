@@ -12,6 +12,13 @@ function latencyLabel(stats: CompanionNumericStats | undefined): string {
   return `p50 ${Math.round(stats.p50)} ms · p95 ${Math.round(stats.p95)} ms`;
 }
 
+function cadenceLabel(voice: CompanionVoiceLoopStats): string {
+  const human = voice.delivery?.humanWpm;
+  const target = voice.delivery?.targetWpm;
+  if (!human || !target) return 'Pas encore mesuré';
+  return `Humain ${Math.round(human.p50)} → Lisa ${Math.round(target.p50)} mots/min`;
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-border bg-background/45 px-3 py-2">
@@ -27,6 +34,9 @@ export function CompanionVoiceMetrics({ voice }: CompanionVoiceMetricsProps) {
     ? `${latest.turnTakingKind}${latest.resumeAfterPlaybackMs !== undefined
       ? ` · ${Math.round(latest.resumeAfterPlaybackMs)} ms`
       : ''}`
+    : 'Pas encore mesuré';
+  const latestDelivery = latest?.deliveryPace
+    ? `${latest.deliveryPace}${latest.responseShape ? ` · ${latest.responseShape}` : ''}`
     : 'Pas encore mesuré';
 
   return (
@@ -46,7 +56,7 @@ export function CompanionVoiceMetrics({ voice }: CompanionVoiceMetricsProps) {
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <Metric
           label="Premier son perçu"
           value={latencyLabel(voice.latency.perceivedResponseMs)}
@@ -60,6 +70,8 @@ export function CompanionVoiceMetrics({ voice }: CompanionVoiceMetricsProps) {
           label="Traîne / interruption / échos"
           value={`${voice.health.echoTailResumeCount ?? 0} / ${voice.health.playbackBargeInCount ?? 0} / ${voice.health.suppressedEchoCount ?? 0}`}
         />
+        <Metric label="Synchronisation du débit" value={cadenceLabel(voice)} />
+        <Metric label="Dernière forme orale" value={latestDelivery} />
       </div>
     </div>
   );

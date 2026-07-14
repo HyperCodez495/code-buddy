@@ -455,8 +455,9 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       const substantive = introspectionIntent !== null || classify(heard);
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
       const stepOpts: VoiceStepOptions = {
-        ...(signal ? { signal } : {}),
+        ...(replyOpts ?? {}),
         onProviderResolved: (route) => {
+          replyOpts?.onProviderResolved?.(route);
           if (!route.baseURL) return;
           responseMainProvider = {
             apiKey: route.apiKey,

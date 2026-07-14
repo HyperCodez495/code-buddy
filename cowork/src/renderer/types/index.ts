@@ -197,6 +197,10 @@ export interface CompanionVoiceLoopStats {
     resumeAfterPlaybackMs?: number;
     turnTakingKind?: string;
     responseMode?: string;
+    deliveryPace?: string;
+    responseShape?: string;
+    humanWpm?: number;
+    targetWpm?: number;
     peakRms?: number;
     rmsOn?: number;
     signalMargin?: number;
@@ -218,6 +222,13 @@ export interface CompanionVoiceLoopStats {
     peakRms?: CompanionNumericStats;
     avgRms?: CompanionNumericStats;
     signalMargin?: CompanionNumericStats;
+  };
+  delivery?: {
+    profiledCount: number;
+    measuredRateCount: number;
+    humanWpm?: CompanionNumericStats;
+    targetWpm?: CompanionNumericStats;
+    paceCounts: { slow: number; balanced: number; brisk: number };
   };
   health: {
     realtimeBudgetMs: number;

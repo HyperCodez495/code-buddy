@@ -60,6 +60,8 @@ export interface VoiceboxRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /** Per-turn acoustic direction; merged with the configured base instruction. */
+  instruct?: string;
 }
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:17493';
@@ -226,13 +228,18 @@ export async function openVoiceboxAudioStream(
       logger.warn(`[voicebox-tts] configured profile '${config.profile}' was not found`);
       return null;
     }
+    const perTurnInstruct = options.instruct?.trim();
+    const instruct = [perTurnInstruct, config.instruct]
+      .filter((value): value is string => Boolean(value))
+      .join(' ')
+      .slice(0, 500);
     const body = {
       profile_id: profile.id,
       text: clean,
       language: config.language,
       seed: config.seed,
       model_size: config.modelSize,
-      ...(config.instruct ? { instruct: config.instruct } : {}),
+      ...(instruct ? { instruct } : {}),
       engine: config.engine,
       // Code Buddy owns persona and discourse. Never let the renderer rewrite it.
       personality: false,

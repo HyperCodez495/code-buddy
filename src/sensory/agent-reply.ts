@@ -28,6 +28,7 @@
 
 import { logger } from '../utils/logger.js';
 import type { ReplyFn, VoiceStepOptions } from './voice-loop.js';
+import { voiceDeliveryGuidance } from './voice-entrainment.js';
 import type { PermissionMode } from '../security/permission-modes.js';
 import { conversationFailureReply, prepareConversationTurn } from '../conversation/conversation-orchestrator.js';
 import { conversationTokenBudget } from '../conversation/discourse-planner.js';
@@ -267,7 +268,10 @@ export async function runInterruptibleVoiceAgentTurn(
   if (signal?.aborted) return '';
   signal?.addEventListener('abort', abort, { once: true });
   try {
-    const transientContext = prepareConversationTurn(transcript).systemGuidance;
+    const transientContext = [
+      prepareConversationTurn(transcript).systemGuidance,
+      opts?.delivery ? voiceDeliveryGuidance(opts.delivery) : '',
+    ].filter(Boolean).join('\n\n');
     for await (const _event of agent.processUserMessageStream(transcript, {
       transientContext,
       relationshipSafety: true,
@@ -408,7 +412,8 @@ function makeDefaultSummarize(): SummarizeFn {
       ((await getActivePersonaVoiceAsync()).spokenPrompt || SPEAK_SYSTEM_PROMPT) +
       " On te donne ce que tu viens de faire ou de trouver en réponse à une demande parlée. " +
       "Restitue le RÉSULTAT à voix haute en suivant ce plan, sans perdre les faits, les sources ni les nuances utiles.\n" +
-      prepareConversationTurn(transcript).systemGuidance;
+      prepareConversationTurn(transcript).systemGuidance +
+      (opts?.delivery ? `\n\n${voiceDeliveryGuidance(opts.delivery)}` : '');
     const resp = await client.chat(
       [
         { role: 'system', content: sys },
@@ -478,7 +483,7 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       const turnPromise = (async (): Promise<string> => {
         try {
           const agentOptions: VoiceStepOptions = {
-            ...(signal ? { signal } : {}),
+            ...(replyOpts ?? {}),
             ...(replyOpts?.introspectionText !== undefined
               ? { introspectionText: replyOpts.introspectionText }
               : {}),
