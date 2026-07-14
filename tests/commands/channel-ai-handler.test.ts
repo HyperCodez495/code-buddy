@@ -299,25 +299,95 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
     const send = makeSuccessfulSend();
-    const first = manager.emit(makeMessage('first concurrent', 'sess-serialized'), {
+    const sendTyping = vi.fn().mockResolvedValue(undefined);
+    const channel = {
       type: 'telegram',
       send,
-    });
+      sendTyping,
+    };
+    const first = manager.emit(makeMessage('first concurrent', 'sess-serialized'), channel);
     await firstStarted;
-    const second = manager.emit(makeMessage('second concurrent', 'sess-serialized'), {
-      type: 'telegram',
-      send,
-    });
+    const second = manager.emit(makeMessage('second concurrent', 'sess-serialized'), channel);
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenNthCalledWith(1, 'chan-42');
     releaseFirst();
     await Promise.all([first, second]);
 
+    expect(sendTyping).toHaveBeenCalledTimes(2);
+    expect(sendTyping).toHaveBeenNthCalledWith(2, 'chan-42');
     expect(hoisted.processUserMessage.mock.calls.map((call) => call[0])).toEqual([
       'first concurrent',
       'second concurrent',
     ]);
+  });
+
+  it('bounds a slow typing transport to one in-flight request and stops after the turn', async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseTurn!: () => void;
+      let markStarted!: () => void;
+      let releaseTyping!: () => void;
+      const turnBlocked = new Promise<void>((resolve) => { releaseTurn = resolve; });
+      const turnStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+      hoisted.processUserMessage.mockImplementationOnce(async () => {
+        markStarted();
+        await turnBlocked;
+        return [{ role: 'assistant', content: 'done' }];
+      });
+      const sendTyping = vi.fn(() => new Promise<void>((resolve) => {
+        releaseTyping = resolve;
+      }));
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const turn = manager.emit(makeMessage('slow turn', 'sess-typing-slow'), {
+        type: 'telegram',
+        send: makeSuccessfulSend(),
+        sendTyping,
+      });
+      await turnStarted;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sendTyping).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(sendTyping).toHaveBeenCalledTimes(1);
+
+      releaseTyping();
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(sendTyping).toHaveBeenCalledTimes(2);
+
+      releaseTurn();
+      await turn;
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(sendTyping).toHaveBeenCalledTimes(2);
+      releaseTyping();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats a rejected typing indicator as best-effort and still delivers', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const send = makeSuccessfulSend();
+      const sendTyping = vi.fn().mockRejectedValue(new Error('typing unavailable'));
+
+      await manager.emit(makeMessage('answer me', 'sess-typing-error'), {
+        type: 'telegram',
+        send,
+        sendTyping,
+      });
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      expect(sendTyping).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('continues a resident voice thread on Telegram and stores the Telegram reply for voice', async () => {

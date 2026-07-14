@@ -523,9 +523,20 @@ function evictChannelAgent(sessionKey: string, discard = false): void {
 async function serializeChannelTurn<T>(
   sessionKey: string,
   task: () => Promise<T>,
+  lifecycle: {
+    onStart?: () => void;
+    onSettled?: () => void;
+  } = {},
 ): Promise<T> {
   const previous = channelTurnTails.get(sessionKey) ?? Promise.resolve();
-  const run = previous.catch(() => undefined).then(task);
+  const run = previous.catch(() => undefined).then(async () => {
+    lifecycle.onStart?.();
+    try {
+      return await task();
+    } finally {
+      lifecycle.onSettled?.();
+    }
+  });
   const tail = run.then(
     () => undefined,
     () => undefined,
@@ -536,6 +547,59 @@ async function serializeChannelTurn<T>(
   } finally {
     if (channelTurnTails.get(sessionKey) === tail) channelTurnTails.delete(sessionKey);
   }
+}
+
+/** Keep long or queued channel turns visibly alive without sending chat noise. */
+function startChannelTypingHeartbeat(
+  channel: import('../../channels/index.js').BaseChannel,
+  channelId: string,
+): () => void {
+  const typingChannel = channel as unknown as {
+    sendTyping?: (targetId: string) => Promise<void>;
+  };
+  if (typeof typingChannel.sendTyping !== 'function') return () => undefined;
+
+  let stopped = false;
+  let inFlight = false;
+  const reportFailure = (error: unknown): void => {
+    logger.debug('Channel typing indicator unavailable', {
+      channelType: channel.type,
+      channelHash: hashForLog(channelId),
+      errorType: error instanceof Error ? error.name : 'unknown',
+    });
+  };
+  const ping = (): void => {
+    if (stopped || inFlight) return;
+    inFlight = true;
+    void Promise.resolve()
+      .then(() => typingChannel.sendTyping!(channelId))
+      .catch(reportFailure)
+      .finally(() => {
+        inFlight = false;
+      });
+  };
+  ping();
+  // Telegram displays sendChatAction for about five seconds. Refresh slightly
+  // before expiry while a turn waits in the per-session FIFO or runs the model.
+  const timer = setInterval(ping, 4_000);
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+function channelTypingLifecycle(
+  channel: import('../../channels/index.js').BaseChannel,
+  channelId: string,
+): { onStart: () => void; onSettled: () => void } {
+  let stopTyping = (): void => undefined;
+  return {
+    onStart: () => {
+      stopTyping = startChannelTypingHeartbeat(channel, channelId);
+    },
+    onSettled: () => stopTyping(),
+  };
 }
 
 function hashForLog(value: unknown): string | undefined {
@@ -961,7 +1025,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
+      const queuedAt = Date.now();
       await serializeChannelTurn(sessionKey, async () => {
+      const queueWaitMs = Date.now() - queuedAt;
+      if (queueWaitMs >= 1_000) {
+        logger.info('Channel turn dequeued after waiting', {
+          channelType: channel.type,
+          sessionHash: hashForLog(sessionKey),
+          messageHash: hashForLog(message.id),
+          queueWaitMs,
+        });
+      }
       // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
       // persists in-memory across messages; restored from disk on a cold start.
       // botId selects the per-bot persona and is already baked into sessionKey,
@@ -1474,7 +1548,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
       // 8. Persist the conversation so it survives a daemon restart / cache eviction.
       if (shouldPersistChannelSession) await persistChannelSession(agent, sessionKey);
-      });
+      }, channelTypingLifecycle(channel, message.channel.id));
     } catch (err) {
       await (cognitiveTurn as ChannelCognitiveTurn | null)?.fail().catch(() => undefined);
       cognitiveTurn = null;

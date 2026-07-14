@@ -141,6 +141,17 @@ describe('semantic response gate', () => {
     expect(deps.revise).not.toHaveBeenCalled();
   });
 
+  it('places the exact strict JSON contract in the critic prompt', async () => {
+    const critic = vi.fn(async () => critique());
+    const result = await runSemanticResponseGate(makeInput(), dependencies({ critic }));
+
+    expect(result.outcome).toBe('accepted');
+    expect(critic).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining('"schemaVersion":{"const":1}'),
+      jsonSchema: expect.objectContaining({ additionalProperties: false }),
+    }));
+  });
+
   it('accepts only from the numeric contract and applicable obligations', async () => {
     const deps = dependencies({
       critic: vi.fn(async () =>
