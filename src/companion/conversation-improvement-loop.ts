@@ -71,6 +71,35 @@ export interface ConversationImprovementDeps {
   guidancePath?: string;
 }
 
+interface TimedConversationTurn extends ConversationTurn {
+  timestamp?: string;
+}
+
+/**
+ * A heartbeat can fire after the user turn is committed but before Lisa's
+ * response reaches the shared journal. Exclude only that recent trailing
+ * exchange; a genuinely stale unanswered turn remains visible to the quality
+ * gate and is reported as incomplete.
+ */
+export const CONVERSATION_RESPONSE_GRACE_MS = 5 * 60_000;
+
+export function turnsReadyForConversationEvaluation(
+  turns: readonly TimedConversationTurn[],
+  now = Date.now(),
+  graceMs = CONVERSATION_RESPONSE_GRACE_MS,
+): ConversationTurn[] {
+  let end = turns.length;
+  const latest = turns.at(-1);
+  if (latest?.role === 'user' && latest.timestamp) {
+    const timestamp = Date.parse(latest.timestamp);
+    const ageMs = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : Infinity;
+    if (ageMs <= Math.max(0, graceMs)) {
+      while (end > 0 && turns[end - 1]?.role === 'user') end -= 1;
+    }
+  }
+  return turns.slice(0, end).map(({ role, content }) => ({ role, content }));
+}
+
 const ISSUE_PRIORITY: readonly ConversationEpisodeIssue[] = [
   'emotional_coercion',
   'dependency_pressure',
@@ -144,11 +173,12 @@ export function defaultConversationQualityJournalPath(): string {
   return join(homedir(), '.codebuddy', 'companion', 'conversation-quality.jsonl');
 }
 
-async function defaultReadConversation(limit: number): Promise<ConversationTurn[]> {
+async function defaultReadConversation(limit: number, now = Date.now()): Promise<ConversationTurn[]> {
   const { getCrossChannelConversationBridge } = await import(
     '../conversation/cross-channel-bridge.js'
   );
-  return getCrossChannelConversationBridge().history(limit);
+  const events = getCrossChannelConversationBridge().snapshot().slice(-limit);
+  return turnsReadyForConversationEvaluation(events, now);
 }
 
 function fingerprint(turns: ConversationTurn[]): string {
@@ -304,7 +334,9 @@ export async function runConversationImprovementCycle(
   const now = deps.now ?? Date.now();
   const mode = deps.mode ?? 'behavioral';
   const limit = Math.max(4, Math.min(200, deps.limit ?? 40));
-  const turns = await (deps.readConversation ?? defaultReadConversation)(limit);
+  const turns = deps.readConversation
+    ? await deps.readConversation(limit)
+    : await defaultReadConversation(limit, now);
   const report = evaluateConversationEpisode(turns);
   if (report.metrics.exchangeCount < 2) return null;
 

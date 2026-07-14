@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CONVERSATION_RESPONSE_GRACE_MS,
   formatConversationImprovementResult,
   loadConversationImprovementState,
   runConversationImprovementCycle,
+  turnsReadyForConversationEvaluation,
 } from '../../src/companion/conversation-improvement-loop.js';
 import { loadVoiceGuidance } from '../../src/companion/voice-guidance.js';
 import type { ConversationTurn } from '../../src/conversation/types.js';
@@ -36,6 +38,25 @@ function shallowConversation(extra = false, suffix = ''): ConversationTurn[] {
 }
 
 describe('runConversationImprovementCycle', () => {
+  it('waits for a recent cross-channel response but exposes a stale missing reply', () => {
+    const now = Date.parse('2026-07-14T12:00:00.000Z');
+    const complete = shallowConversation();
+    const pending = [
+      ...complete,
+      {
+        role: 'user' as const,
+        content: 'Un nouveau tour encore en cours.',
+        timestamp: new Date(now - 25_000).toISOString(),
+      },
+    ];
+
+    expect(turnsReadyForConversationEvaluation(pending, now)).toEqual(complete);
+    expect(turnsReadyForConversationEvaluation(
+      pending,
+      now + CONVERSATION_RESPONSE_GRACE_MS + 1,
+    )).toHaveLength(complete.length + 1);
+  });
+
   it('does not adapt from a single occurrence or from an unchanged transcript', async () => {
     const store = paths();
     const readConversation = async (): Promise<ConversationTurn[]> => shallowConversation();

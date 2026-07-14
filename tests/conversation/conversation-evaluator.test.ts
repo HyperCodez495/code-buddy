@@ -75,6 +75,7 @@ describe('evaluateConversationEpisode', () => {
     ]);
 
     expect(report.issues).toContain('incomplete_exchange');
+    expect(report.passes).toBe(false);
     expect(formatConversationEpisodeReport(report)).not.toContain('strictement privée');
   });
 

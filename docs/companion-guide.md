@@ -253,6 +253,9 @@ n'est sélectionné.
 Cette mesure utilise le mode `dry` de la boucle d'amélioration : elle ne modifie ni le journal, ni la
 consigne active. Le contrat IPC reconstruit une liste blanche de scores et de compteurs; il retire
 les champs inconnus, le texte des échanges, leurs empreintes et le texte interne des consignes.
+Le heartbeat ignore un dernier tour utilisateur pendant une grâce de cinq minutes afin de ne pas
+confondre le temps de réflexion de Lisa avec une réponse perdue. Après ce délai, un tour toujours
+sans réponse redevient un défaut réel et fait échouer la porte de qualité.
 
 L'auto-test déterministe du détecteur relationnel vérifie séparément les défauts qu'un score de style peut
 masquer : régression après correction, surnom interdit, retrait de consentement, engagement borné

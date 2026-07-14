@@ -433,6 +433,7 @@ export function evaluateConversationEpisode(turns: ConversationTurn[]): Conversa
     overallScore,
     passes:
       assessments.length >= 2 &&
+      incompleteExchangeCount === 0 &&
       overallScore >= 0.72 &&
       relationalSafety.passes &&
       circularExchangeRate === 0 &&
