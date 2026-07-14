@@ -62,7 +62,11 @@ const DEFAULT_AUXILIARY_TIMEOUT_MS: Record<RuntimeAuxiliaryTask, number> = {
   mcp: 30_000,
   triage_specifier: 120_000,
   session_title: 30_000,
-  semantic_review: 12_000,
+  // One developed companion turn may need up to three sequential calls:
+  // critique, one revision, then independent verification of that revision.
+  // Twelve seconds routinely covered the critique but aborted every observed
+  // revision on ordinary cloud routes, silently failing open to the weak draft.
+  semantic_review: 30_000,
 };
 
 const OPENROUTER_VISION_MODEL = 'google/gemini-2.5-flash';

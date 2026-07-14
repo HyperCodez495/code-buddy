@@ -136,7 +136,7 @@ describe('runtime auxiliary provider resolution', () => {
       providerSetting: 'openrouter',
       apiKey: 'openrouter-review-key',
       model: 'openrouter/free',
-      timeoutMs: 12_000,
+      timeoutMs: 30_000,
     });
   });
 
