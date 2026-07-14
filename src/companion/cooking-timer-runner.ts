@@ -10,7 +10,9 @@ import { getCompanionConductor } from './orchestrator.js';
 export interface CookingTimerRunnerDeps {
   store?: Pick<CookingTimerStore, 'due'>;
   say?: (text: string) => Promise<void>;
-  notify?: (text: string) => Promise<void>;
+  notify?: (text: string) => Promise<boolean | void>;
+  /** Record an already-delivered remote timer without echoing it. */
+  recordRemote?: (text: string, externalId: string) => Promise<void>;
   homeMode?: () => Promise<HomeMode>;
   conductor?: { claim: (surface: 'reminder') => boolean };
   repeatMs?: number;
@@ -26,13 +28,26 @@ export function resetCookingTimerRunnerState(): void {
 }
 
 async function defaultSay(text: string): Promise<void> {
-  const { sayNow } = await import('../sensory/voice-loop.js');
-  await sayNow(text);
+  const [{ sayNow }, { speakCanonicalVoiceInitiative }] = await Promise.all([
+    import('../sensory/voice-loop.js'),
+    import('../conversation/voice-continuity.js'),
+  ]);
+  await speakCanonicalVoiceInitiative(
+    text,
+    (content) => sayNow(content, { phoneDelivery: 'never' }),
+  );
 }
 
-async function defaultNotify(text: string): Promise<void> {
+async function defaultNotify(text: string): Promise<boolean> {
   const { sendTelegramAlert } = await import('../sensory/alert.js');
-  await sendTelegramAlert(text);
+  return sendTelegramAlert(text);
+}
+
+async function defaultRecordRemote(text: string, externalId: string): Promise<void> {
+  const { recordDeliveredChannelInitiative } = await import(
+    '../conversation/voice-continuity.js'
+  );
+  await recordDeliveredChannelInitiative(text, externalId);
 }
 
 async function currentHomeMode(deps: CookingTimerRunnerDeps): Promise<HomeMode | null> {
@@ -71,7 +86,14 @@ export async function runCookingTimerTick(
         ? `Le minuteur « ${candidate.label} » est terminé.`
         : 'Un minuteur de cuisine est terminé.';
       if (mode === 'away') {
-        await (deps.notify ?? defaultNotify)(`⏰ ${message}`);
+        const notification = `⏰ ${message}`;
+        const accepted = await (deps.notify ?? defaultNotify)(notification);
+        if (accepted !== false && (!deps.notify || deps.recordRemote)) {
+          await (deps.recordRemote ?? defaultRecordRemote)(
+            notification,
+            `cooking-timer:${candidate.id}:${candidate.dueAt}`,
+          );
+        }
       } else {
         // A requested kitchen timer is not a spontaneous companion suggestion.
         // It has reminder priority even in silent mode and resets the voice floor.

@@ -49,12 +49,35 @@ export async function runVoiceCommand(options: VoiceCommandOptions = {}): Promis
       const { transcribeWav } = await import('../sensory/speech-reaction.js');
       return transcribeWav(wav);
     });
+  let flushConversation: (() => Promise<void>) | undefined;
+  let disposeConversation: (() => void) | undefined;
   const onHeard =
     options.onHeard ??
     (await (async () => {
       const { makeVoiceReply } = await import('../sensory/voice-loop.js');
       const { makeAgentReply } = await import('../sensory/agent-reply.js');
-      return makeVoiceReply({ replyFn: makeAgentReply({ permissionMode: mode }) });
+      const { makeHybridReply } = await import('../sensory/hybrid-reply.js');
+      const { getCrossChannelConversationBridge } = await import(
+        '../conversation/cross-channel-bridge.js'
+      );
+      const bridge = getCrossChannelConversationBridge();
+      const agentReply = makeAgentReply({ permissionMode: mode });
+      const replyFn = makeHybridReply({
+        agentReply,
+        classify: () => true,
+        fastReply: () => null,
+        prefetch: () => null,
+        jokes: () => null,
+        sharedHistory: () => bridge.history(),
+      });
+      flushConversation = () => bridge.flush();
+      disposeConversation = () => replyFn.dispose();
+      return makeVoiceReply({
+        replyFn,
+        onConversationTurn: async (turn) => {
+          await bridge.recordVoiceTurn(turn);
+        },
+      });
     })());
 
   const postureLabel =
@@ -70,23 +93,29 @@ export async function runVoiceCommand(options: VoiceCommandOptions = {}): Promis
       `${options.once ? '' : ' Ctrl-C to quit.'}`
   );
 
-  let round = 0;
-  for (;;) {
-    round += 1;
-    try {
-      const wav = await record();
-      const text = (await transcribe(wav)).trim();
-      if (!text) {
-        print('… (rien entendu)');
-      } else {
-        print(`🗣️  ${text}`);
-        await onHeard(text); // drives the turn AND speaks the reply
+  try {
+    let round = 0;
+    for (;;) {
+      round += 1;
+      try {
+        const wav = await record();
+        const text = (await transcribe(wav)).trim();
+        if (!text) {
+          print('… (rien entendu)');
+        } else {
+          print(`🗣️  ${text}`);
+          await onHeard(text); // drives the turn AND speaks the reply
+          await flushConversation?.();
+        }
+      } catch (err) {
+        // A single failed round must not kill the loop.
+        logger.warn(`[voice-cmd] round failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      // A single failed round must not kill the loop.
-      logger.warn(`[voice-cmd] round failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (options.once) break;
+      if (options.maxRounds !== undefined && round >= options.maxRounds) break;
     }
-    if (options.once) break;
-    if (options.maxRounds !== undefined && round >= options.maxRounds) break;
+  } finally {
+    await flushConversation?.();
+    disposeConversation?.();
   }
 }

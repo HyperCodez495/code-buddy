@@ -48,18 +48,40 @@ describe('sendTelegramVoice — voice note to the phone', () => {
     expect(calls[0]!.chat).toBe('123');
   });
 
-  it('never throws when synthesis fails (falls back, returns false)', async () => {
+  it('reports success when synthesis fails but the text fallback is delivered', async () => {
     process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
     process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
+    let fallbackText = '';
     await expect(
       sendTelegramVoice('x', {
         synthesize: async () => {
           throw new Error('piper/ffmpeg missing');
         },
-        // text fallback also goes through global fetch; stub post is unused on the throw path.
-        post: async () => ({ ok: true }),
+        fallback: async (text) => {
+          fallbackText = text;
+          return true;
+        },
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
+    expect(fallbackText).toBe('x');
+  });
+
+  it('uses the text fallback when Telegram rejects the voice upload', async () => {
+    process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
+    process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
+    const fallback: string[] = [];
+
+    await expect(
+      sendTelegramVoice('reste lisible', {
+        synthesize: async () => ogg,
+        post: async () => ({ ok: false }),
+        fallback: async (text) => {
+          fallback.push(text);
+          return true;
+        },
+      }),
+    ).resolves.toBe(true);
+    expect(fallback).toEqual(['reste lisible']);
   });
 });
 
@@ -71,7 +93,9 @@ describe('sendTelegramAlert — never drops the notification', () => {
 
   it('no-op when unconfigured', async () => {
     const urls: string[] = [];
-    await sendTelegramAlert('hi', undefined, { fetch: async (u) => { urls.push(u); return {}; } });
+    await expect(
+      sendTelegramAlert('hi', undefined, { fetch: async (u) => { urls.push(u); return {}; } }),
+    ).resolves.toBe(false);
     expect(urls).toEqual([]);
   });
 
@@ -79,7 +103,9 @@ describe('sendTelegramAlert — never drops the notification', () => {
     process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'tok';
     process.env.CODEBUDDY_SENSORY_ALERT_CHAT = '123';
     const urls: string[] = [];
-    await sendTelegramAlert('bonjour', undefined, { fetch: async (u) => { urls.push(u); return {}; } });
+    await expect(
+      sendTelegramAlert('bonjour', undefined, { fetch: async (u) => { urls.push(u); return {}; } }),
+    ).resolves.toBe(true);
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain('/bottok/sendMessage');
   });

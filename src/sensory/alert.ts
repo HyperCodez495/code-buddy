@@ -19,6 +19,7 @@ export async function sendTelegramVoice(
   deps: {
     synthesize?: (t: string) => Promise<string>;
     post?: (url: string, form: FormData) => Promise<{ ok: boolean }>;
+    fallback?: (t: string) => Promise<boolean>;
   } = {},
 ): Promise<boolean> {
   const token = process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
@@ -38,11 +39,11 @@ export async function sendTelegramVoice(
     form.append('voice', new Blob([bytes], { type: 'audio/ogg' }), path.basename(ogg));
     form.append('caption', text.slice(0, 1024)); // text too, for skim + fallback context
     const res = await post(`https://api.telegram.org/bot${token}/sendVoice`, form);
-    return Boolean(res?.ok);
+    if (res?.ok) return true;
+    return await (deps.fallback ?? sendTelegramAlert)(text);
   } catch (err) {
     logger.warn(`[sensory] voice note failed, sending text instead: ${err instanceof Error ? err.message : String(err)}`);
-    await sendTelegramAlert(text).catch(() => undefined);
-    return false;
+    return await (deps.fallback ?? sendTelegramAlert)(text).catch(() => false);
   } finally {
     if (ogg) {
       try {
@@ -61,10 +62,10 @@ export async function sendTelegramAlert(
     fetch?: (url: string, init: RequestInit) => Promise<unknown>;
     readFile?: (p: string) => Promise<Buffer>;
   } = {},
-): Promise<void> {
+): Promise<boolean> {
   const token = process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
   const chat = process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
-  if (!token || !chat) return;
+  if (!token || !chat) return false;
   const doFetch = deps.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
   const sendText = (): Promise<unknown> =>
     doFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -82,8 +83,12 @@ export async function sendTelegramAlert(
         form.append('chat_id', chat);
         form.append('caption', caption.slice(0, 1024));
         form.append('photo', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), path.basename(imagePath));
-        await doFetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form });
-        return;
+        const result = await doFetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: 'POST',
+          body: form,
+        });
+        if (!responseWasRejected(result)) return true;
+        throw new Error('Telegram rejected the photo alert');
       } catch (photoErr) {
         // A missing/unreadable keyframe must NOT drop the whole alert — a vision
         // event with a not-yet-written image would otherwise notify Patrice with
@@ -93,8 +98,18 @@ export async function sendTelegramAlert(
         );
       }
     }
-    await sendText();
+    return !responseWasRejected(await sendText());
   } catch (err) {
     logger.warn(`[sensory] alert failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
   }
+}
+
+function responseWasRejected(result: unknown): boolean {
+  return Boolean(
+    result &&
+    typeof result === 'object' &&
+    'ok' in result &&
+    (result as { ok?: unknown }).ok === false
+  );
 }

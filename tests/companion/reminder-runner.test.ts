@@ -27,10 +27,22 @@ describe('reminder-runner', () => {
     await addReminder({ label: 'médicaments', time: '09:00' });
     const say = vi.fn(async () => {});
     const notify = vi.fn(async () => {});
-    await runReminderTick(T0, { say, notify, windowMs: 10_000, renagMs: 5000, renagMax: 2 });
+    const recordRemote = vi.fn(async () => {});
+    await runReminderTick(T0, {
+      say,
+      notify,
+      recordRemote,
+      windowMs: 10_000,
+      renagMs: 5000,
+      renagMax: 2,
+    });
     expect(say).toHaveBeenCalledTimes(1);
     expect(say.mock.calls[0][0]).toContain('médicaments');
     expect(notify).toHaveBeenCalledTimes(1);
+    expect(recordRemote).toHaveBeenCalledWith(
+      expect.stringContaining('médicaments'),
+      expect.stringMatching(/^reminder:.+:fired:/),
+    );
     expect(pendingAcks(T0.getTime(), 10_000)).toHaveLength(1); // awaiting ack
   });
 
@@ -56,11 +68,23 @@ describe('reminder-runner', () => {
     await addReminder({ label: 'médicaments', time: '09:00' });
     const say = vi.fn(async () => {});
     const notify = vi.fn(async () => {});
-    const deps = { say, notify, windowMs: 10_000, renagMs: 4000, renagMax: 1 };
+    const recordLocal = vi.fn(async () => {});
+    const deps = {
+      say,
+      notify,
+      recordLocal,
+      windowMs: 10_000,
+      renagMs: 4000,
+      renagMax: 1,
+    };
 
     await runReminderTick(T0, deps); // fire (say #1, notify #1)
     await runReminderTick(new Date(T0.getTime() + 5000), deps); // >renagMs → re-nag (say #2)
     expect(say).toHaveBeenCalledTimes(2);
+    expect(recordLocal).toHaveBeenCalledWith(
+      'Petit rappel : médicaments.',
+      expect.stringMatching(/^reminder:.+:renag:/),
+    );
 
     await runReminderTick(new Date(T0.getTime() + 11_000), deps); // >window → escalate
     expect(notify).toHaveBeenCalledTimes(2); // announce + escalation

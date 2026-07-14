@@ -15,7 +15,7 @@ import { renderTelegramHtml } from './telegram-html.js';
 import { renderAnsi } from './ansi.js';
 import { renderPlain } from './plain.js';
 
-export { renderTelegramHtml } from './telegram-html.js';
+export { renderTelegramHtml, telegramHtmlChunkToPlain } from './telegram-html.js';
 export { renderAnsi } from './ansi.js';
 export { renderPlain } from './plain.js';
 export { parseMarkdown, escapeHtml } from './markdown-core.js';

@@ -124,17 +124,23 @@ describe('cooking timer runner', () => {
   });
 
   it('routes a due timer to the phone in away mode', async () => {
-    await store.start(1_000, 'four');
+    const started = await store.start(1_000, 'four');
     clock = new Date(clock.getTime() + 1_000);
     const say = vi.fn(async () => undefined);
     const notify = vi.fn(async () => undefined);
+    const recordRemote = vi.fn(async () => undefined);
     await runCookingTimerTick(clock, {
       store,
       say,
       notify,
+      recordRemote,
       homeMode: async () => 'away',
     });
     expect(say).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('four'));
+    expect(recordRemote).toHaveBeenCalledWith(
+      expect.stringContaining('four'),
+      `cooking-timer:${started.id}:${started.dueAt}`,
+    );
   });
 });

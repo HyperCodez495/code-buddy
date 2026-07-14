@@ -115,6 +115,7 @@ import {
 } from '../../src/conversation/cross-channel-bridge.js';
 import { savePrefetchCache } from '../../src/companion/prefetch-engine.js';
 import { savePrefetchItems } from '../../src/companion/prefetch-config.js';
+import { telegramHtmlChunkToPlain } from '../../src/rendering/telegram-html.js';
 
 type InboundHandler = (message: any, channel: any) => Promise<void>;
 
@@ -348,6 +349,75 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     });
   });
 
+  it('awaits the durable Telegram user turn before asking the model', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    let releaseCommit!: () => void;
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const claimDurably = bridge.claimChannelTurnDurably.bind(bridge);
+    vi.spyOn(bridge, 'claimChannelTurnDurably').mockImplementation(async (input) => {
+      if (input.role === 'user') await commitGate;
+      return claimDurably(input);
+    });
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const pending = manager.emit(makeMessage('Attends le journal.', 'sess-durable'), {
+      type: 'telegram',
+      send: makeSuccessfulSend(),
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(hoisted.processUserMessage).not.toHaveBeenCalled();
+    releaseCommit();
+    await pending;
+    expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers explicitly without generating when the shared journal claim fails', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    vi.spyOn(bridge, 'claimChannelTurnDurably').mockResolvedValue('failed');
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = makeSuccessfulSend();
+
+    await manager.emit(makeMessage('Ne perds pas ce message.', 'sess-journal-failed'), {
+      type: 'telegram',
+      send,
+    });
+
+    expect(hoisted.processUserMessage).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(String(send.mock.calls[0]?.[0]?.content)).not.toBe('');
+  });
+
+  it('claims one Telegram update ID exactly once before generation and delivery', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = makeSuccessfulSend();
+    const message = makeMessage('Une seule fois.', 'sess-idempotent');
+
+    await manager.emit(message, { type: 'telegram', send });
+    await manager.emit(message, { type: 'telegram', send });
+
+    expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(getCrossChannelConversationBridge().history()).toEqual([
+      { role: 'user', content: 'Une seule fois.' },
+      { role: 'assistant', content: 'Here is your answer.' },
+    ]);
+  });
+
   it('does not claim an undelivered Telegram assistant turn in shared continuity', async () => {
     process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
     process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
@@ -380,7 +450,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     expect(hoisted.constructorCalls).toHaveLength(2);
   });
 
-  it('discards a generated turn when the channel transport rejects', async () => {
+  it('keeps a generated turn when plain fallback succeeds after an HTML transport rejection', async () => {
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
     const send = vi
@@ -393,20 +463,24 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       send,
     });
 
-    // The second send is the user-facing failure fallback. The generated draft
-    // itself was never delivered and must not survive in the cached agent.
+    // The first HTML attempt throws, then the complete plain answer lands.
     expect(send).toHaveBeenCalledTimes(2);
-    expect(hoisted.saveSession).not.toHaveBeenCalled();
-    expect(hoisted.dispose).toHaveBeenCalledWith({ skipSessionLearning: true });
+    expect(send.mock.calls[1]?.[0]?.content).toBe('Here is your answer.');
+    expect(hoisted.saveSession).toHaveBeenCalledTimes(1);
+    expect(hoisted.dispose).not.toHaveBeenCalled();
 
     await manager.emit(makeMessage('Nouvelle tentative.', 'sess-transport-reject'), {
       type: 'telegram',
       send,
     });
-    expect(hoisted.constructorCalls).toHaveLength(2);
+    expect(hoisted.constructorCalls).toHaveLength(1);
   });
 
   it('does not duplicate earlier Telegram chunks when a later HTML chunk fails', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
     const longResponse = Array.from(
       { length: 1_200 },
       (_, index) => `segment-${index}`,
@@ -424,14 +498,93 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       .fn()
       .mockResolvedValueOnce({ success: true, timestamp: new Date() })
       .mockResolvedValueOnce({ success: false, error: 'chunk rejected' });
+    const sendVoiceReply = vi.fn().mockResolvedValue(undefined);
+    const message = {
+      ...makeMessage('Réponse longue', 'sess-partial-html'),
+      attachments: [{ type: 'voice' }],
+    };
 
-    await manager.emit(makeMessage('Réponse longue', 'sess-partial-html'), {
+    await manager.emit(message, {
+      type: 'telegram',
+      send,
+      sendVoiceReply,
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(hoisted.saveSession).not.toHaveBeenCalled();
+    expect(sendVoiceReply).not.toHaveBeenCalled();
+    const visiblePrefix = telegramHtmlChunkToPlain(String(send.mock.calls[0]?.[0]?.content));
+    expect(visiblePrefix).not.toBe('');
+    expect(visiblePrefix.length).toBeLessThan(longResponse.length);
+    expect(bridge.history().at(-1)).toEqual({
+      role: 'assistant',
+      content: visiblePrefix.replace(/\s+/g, ' ').trim(),
+    });
+    expect(bridge.history().some((turn) => turn.content === longResponse)).toBe(false);
+  });
+
+  it('preserves an accepted Telegram prefix when the next chunk throws', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    const longResponse = Array.from(
+      { length: 1_200 },
+      (_, index) => `transport-${index}`,
+    ).join(' ');
+    hoisted.processUserMessage.mockResolvedValue([
+      { role: 'assistant', content: longResponse },
+    ]);
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'Réponse interrompue', timestamp: new Date() },
+      { type: 'assistant', content: longResponse, timestamp: new Date() },
+    ]);
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true, timestamp: new Date() })
+      .mockRejectedValueOnce(new Error('socket closed'));
+
+    await manager.emit(makeMessage('Réponse interrompue', 'sess-partial-throw'), {
       type: 'telegram',
       send,
     });
 
     expect(send).toHaveBeenCalledTimes(2);
+    const visiblePrefix = telegramHtmlChunkToPlain(String(send.mock.calls[0]?.[0]?.content));
+    expect(bridge.history().at(-1)).toEqual({
+      role: 'assistant',
+      content: visiblePrefix.replace(/\s+/g, ' ').trim(),
+    });
+    expect(bridge.history().some((turn) => turn.content === longResponse)).toBe(false);
     expect(hoisted.saveSession).not.toHaveBeenCalled();
+  });
+
+  it('stores the full answer when Telegram accepts the plain fallback', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: 'HTML rejected' })
+      .mockResolvedValueOnce({ success: true, timestamp: new Date() });
+
+    await manager.emit(makeMessage('Utilise le secours.', 'sess-plain-fallback'), {
+      type: 'telegram',
+      send,
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0]?.[0]?.parseMode).toBe('html');
+    expect(send.mock.calls[1]?.[0]?.parseMode).toBeUndefined();
+    expect(bridge.history().at(-1)).toEqual({
+      role: 'assistant',
+      content: 'Here is your answer.',
+    });
   });
 
   it('hard-gates dependency pressure before delivery and before cross-channel persistence', async () => {

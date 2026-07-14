@@ -216,6 +216,47 @@ describe('Cowork cross-channel continuity adapter', () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it('flushes pending Cowork turns through the active core bridge', async () => {
+    const flush = vi.fn(async () => undefined);
+    class FakeBridge {
+      isActive = () => true;
+      snapshot = () => [];
+      recordCoworkTurn = vi.fn(async () => true);
+      flush = flush;
+    }
+    const loader = vi.fn(async (modulePath: string) => {
+      if (modulePath === 'conversation/cross-channel-bridge.js') {
+        return {
+          CrossChannelConversationBridge: FakeBridge,
+          resolveCrossChannelBridgeConfig: () => ({
+            enabled: true,
+            companionName: 'Lisa',
+            conversationId: 'lisa',
+            coworkEnabled: true,
+            coworkHistoryTurns: 24,
+            historyPath: '/tmp/lisa.jsonl',
+            target: { channel: 'telegram', channelId: '42' },
+          }),
+        };
+      }
+      if (modulePath === 'companion/assistant-config.js') {
+        return { readAssistantConfig: () => ({ CODEBUDDY_CONVERSATION_COWORK: 'true' }) };
+      }
+      return null;
+    });
+    const continuity = new CoworkCrossChannelContinuity(loader as never);
+    await continuity.prepare(
+      session(['companion']),
+      [],
+      'Tour à rendre durable.',
+      'flush-message',
+    );
+
+    await continuity.flush();
+
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+
   it('caps even a single newest shared event at the total prompt budget', async () => {
     const hugeContent = 'x'.repeat(100_000);
     class FakeBridge {

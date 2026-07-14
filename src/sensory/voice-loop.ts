@@ -1670,6 +1670,8 @@ export async function sayNow(
     rootDir?: string;
     synth?: SynthFn;
     play?: PlayFn;
+    /** `never` prevents a caller with its own bridge/notification from double-sending. */
+    phoneDelivery?: 'env' | 'never';
   } = {}
 ): Promise<void> {
   // Sanity gate before the speakers AND the phone push: strip leaked control tokens + foreign-script
@@ -1715,7 +1717,10 @@ export async function sayNow(
   }
   // 2. Phone — when traveling, push the same line as a Telegram VOICE NOTE so it reaches you
   //    even with no one at the speakers. Opt-in, best-effort.
-  if (process.env.CODEBUDDY_VOICE_TO_TELEGRAM === 'true') {
+  if (
+    options.phoneDelivery !== 'never' &&
+    process.env.CODEBUDDY_VOICE_TO_TELEGRAM === 'true'
+  ) {
     try {
       const { sendTelegramVoice } = await import('./alert.js');
       await sendTelegramVoice(t);
@@ -2091,7 +2096,13 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             cap: options.sentenceCap ?? voiceSentenceCap(),
           });
           streamFallbackSegments = result.fallbackSegments ?? 0;
-          if (signal.aborted) return; // barge-in during the streamed turn → stay silent
+          if (signal.aborted) {
+            // Preserve only sentences whose playback completed before the
+            // interruption. The partial in-flight segment is deliberately
+            // absent from `result.spoken` and must not enter continuity.
+            if (result.spoken.trim()) publishAssistantTurn(result.spoken);
+            return;
+          }
           if (result.played) {
             mode = 'streamed';
             spoke = true;

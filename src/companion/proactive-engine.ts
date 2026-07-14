@@ -239,6 +239,8 @@ export interface ProactiveDeps {
   say?: (text: string) => Promise<void>;
   /** Deliver to the phone (absent). Default: sendTelegramVoice (falls back to text). */
   telegramVoice?: (text: string) => Promise<boolean>;
+  /** Append an already-delivered remote initiative without echoing it. */
+  recordRemote?: (text: string) => Promise<void>;
   /** Recent transcripts (for the encouragement trigger). */
   recentHearing?: () => Promise<string[]>;
   /** Optional LLM freshening of the chosen line → returns null to keep the template. */
@@ -274,13 +276,26 @@ async function defaultRecentHearing(): Promise<string[]> {
 }
 
 async function defaultSay(text: string): Promise<void> {
-  const { sayNow } = await import('../sensory/voice-loop.js');
-  await sayNow(text);
+  const [{ sayNow }, { speakCanonicalVoiceInitiative }] = await Promise.all([
+    import('../sensory/voice-loop.js'),
+    import('../conversation/voice-continuity.js'),
+  ]);
+  await speakCanonicalVoiceInitiative(
+    text,
+    (content) => sayNow(content, { phoneDelivery: 'never' }),
+  );
 }
 
 async function defaultTelegramVoice(text: string): Promise<boolean> {
   const { sendTelegramVoice } = await import('../sensory/alert.js');
   return sendTelegramVoice(text);
+}
+
+async function defaultRecordRemote(text: string): Promise<void> {
+  const { recordDeliveredChannelInitiative } = await import(
+    '../conversation/voice-continuity.js'
+  );
+  await recordDeliveredChannelInitiative(text);
 }
 
 /**
@@ -366,9 +381,17 @@ export async function runProactiveTick(deps: ProactiveDeps = {}): Promise<string
       }
     }
     try {
-      if (present) await (deps.say ?? defaultSay)(line);
-      else if (!(await (deps.telegramVoice ?? defaultTelegramVoice)(line))) {
-        throw new Error('remote proactive delivery was not accepted');
+      if (present) {
+        await (deps.say ?? defaultSay)(line);
+      } else {
+        if (!(await (deps.telegramVoice ?? defaultTelegramVoice)(line))) {
+          throw new Error('remote proactive delivery was not accepted');
+        }
+        // An injected phone transport belongs to its test/integration caller;
+        // production records the already-delivered turn once, with no mirror.
+        if (!deps.telegramVoice || deps.recordRemote) {
+          await (deps.recordRemote ?? defaultRecordRemote)(line);
+        }
       }
     } catch (error) {
       await reservation?.release();

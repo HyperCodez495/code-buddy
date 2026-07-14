@@ -172,23 +172,64 @@ function renderBlocks(tokens: Token[]): string[] {
   return blocks.filter((b) => b.trim().length > 0);
 }
 
-/** Split one oversized block (a <pre> is re-fenced per chunk) at line/char bounds. */
+interface OpenTelegramTag {
+  name: string;
+  open: string;
+  close: string;
+}
+
+const HTML_TOKEN = /<\/?[a-z]+(?:\s+[^>]*?)?>|&(?:#x?[0-9a-f]+|[a-z]+);|./gisu;
+
+/**
+ * Split one oversized rendered block without cutting an entity or leaving a
+ * formatting tag open. Active tags are closed at the end of a chunk and
+ * reopened in the next, so every Telegram message is independently valid.
+ */
 function splitBlock(block: string, maxLen: number): string[] {
-  const isPre = block.startsWith('<pre>') && block.endsWith('</pre>');
-  const inner = isPre ? block.slice(5, -6) : block;
-  const wrap = (s: string) => (isPre ? `<pre>${s}</pre>` : s);
-  const budget = maxLen - (isPre ? 11 : 0);
   const out: string[] = [];
   let cur = '';
-  const flush = () => { if (cur) { out.push(wrap(cur)); cur = ''; } };
-  for (const ln of inner.split('\n')) {
-    if (ln.length > budget) {
-      flush();
-      for (let i = 0; i < ln.length; i += budget) out.push(wrap(ln.slice(i, i + budget)));
+  let hasVisibleContent = false;
+  const openTags: OpenTelegramTag[] = [];
+  const closingTags = (): string => [...openTags].reverse().map((tag) => tag.close).join('');
+  const reopenedTags = (): string => openTags.map((tag) => tag.open).join('');
+  const flush = (): void => {
+    if (!hasVisibleContent) return;
+    out.push(cur + closingTags());
+    cur = reopenedTags();
+    hasVisibleContent = false;
+  };
+
+  for (const token of block.match(HTML_TOKEN) ?? []) {
+    const closing = token.match(/^<\/([a-z]+)>$/i);
+    if (closing) {
+      const top = openTags.at(-1);
+      if (top?.name === closing[1]!.toLowerCase()) {
+        cur += token;
+        openTags.pop();
+      } else {
+        cur += token;
+      }
       continue;
     }
-    if (cur.length + ln.length + 1 > budget) flush();
-    cur += (cur ? '\n' : '') + ln;
+
+    const opening = token.match(/^<([a-z]+)(?:\s+[^>]*)?>$/i);
+    if (opening) {
+      const tag: OpenTelegramTag = {
+        name: opening[1]!.toLowerCase(),
+        open: token,
+        close: `</${opening[1]!.toLowerCase()}>`,
+      };
+      if (cur.length + token.length + tag.close.length + closingTags().length > maxLen) {
+        flush();
+      }
+      cur += token;
+      openTags.push(tag);
+      continue;
+    }
+
+    if (cur.length + token.length + closingTags().length > maxLen) flush();
+    cur += token;
+    hasVisibleContent = true;
   }
   flush();
   return out;
@@ -222,6 +263,38 @@ export function renderTelegramHtml(md: string, maxLen: number = TG_MAX): string[
   }
   flush();
   return chunks;
+}
+
+/**
+ * Recover the text a person actually sees from one of our Telegram HTML
+ * chunks. This is intentionally scoped to the small, trusted subset emitted by
+ * `renderTelegramHtml`; it is used to preserve an already-delivered prefix
+ * when a later chunk fails instead of claiming the full draft in continuity.
+ */
+export function telegramHtmlChunkToPlain(html: string): string {
+  const withoutTags = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]*>/g, '');
+
+  return withoutTags
+    .replace(/&#(?:x([0-9a-f]+)|(\d+));/gi, (entity, hex: string | undefined, decimal: string | undefined) => {
+      const codePoint = Number.parseInt(hex ?? decimal ?? '', hex ? 16 : 10);
+      if (!Number.isSafeInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+        return entity;
+      }
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return entity;
+      }
+    })
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .trim();
 }
 
 /** Re-export so the lexer used here is the only `marked` entry point. */

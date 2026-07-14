@@ -977,7 +977,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         ? conversationBridge.history()
         : [];
       if (continuesVoiceConversation) {
-        conversationBridge.recordChannelTurn({
+        const claim = await conversationBridge.claimChannelTurnDurably({
           role: 'user',
           content: message.content,
           channel: channel.type,
@@ -985,6 +985,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           ...(message.threadId ? { threadId: message.threadId } : {}),
           externalId: message.id,
         });
+        if (claim === 'duplicate') {
+          logger.info('Duplicate channel turn skipped before generation', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+            messageHash: hashForLog(message.id),
+          });
+          return;
+        }
+        if (claim === 'failed') {
+          throw new Error('shared conversation journal claim failed');
+        }
       }
       // Derived after appending the current turn, so an affect/support signal
       // observed on Telegram is available immediately to this very response.
@@ -1242,27 +1253,46 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       let deliveryMode = response.trim() ? 'native' : 'fallback';
       let deliveredChunks = 0;
       let delivered = false;
+      let deliveredAssistantContent = '';
 
       // 6. Deliver the reply. On Telegram, render the agent's markdown to the
       //    robust HTML subset (bold / code / tables / links) so it doesn't show
       //    raw; if Telegram rejects the HTML (success:false) fall back to plain
       //    text. Other channels keep native markdown (Discord/Slack render it).
       if (channel.type === 'telegram' && response.trim()) {
-        const { renderTelegramHtml, renderPlain } = await import('../../rendering/index.js');
+        const {
+          renderTelegramHtml,
+          renderPlain,
+          telegramHtmlChunkToPlain,
+        } = await import('../../rendering/index.js');
         const chunks = renderTelegramHtml(response);
+        const acceptedChunks: string[] = [];
         let ok = chunks.length > 0;
         for (let i = 0; i < chunks.length; i++) {
-          const res = await channel.send({
-            channelId: message.channel.id,
-            content: chunks[i]!,
-            parseMode: 'html',
-            replyTo: i === 0 ? message.id : undefined,
-          });
+          let res;
+          try {
+            res = await channel.send({
+              channelId: message.channel.id,
+              content: chunks[i]!,
+              parseMode: 'html',
+              replyTo: i === 0 ? message.id : undefined,
+            });
+          } catch (error) {
+            logger.warn('Telegram HTML chunk transport rejected', {
+              sessionHash: hashForLog(sessionKey),
+              messageHash: hashForLog(message.id),
+              chunk: i + 1,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            ok = false;
+            break;
+          }
           if (!res?.success) {
             ok = false;
             break;
           }
           deliveredChunks++;
+          acceptedChunks.push(chunks[i]!);
         }
         if (!ok) {
           if (deliveredChunks === 0) {
@@ -1275,16 +1305,26 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
             });
             delivered = fallback?.success === true;
             deliveryMode = delivered ? 'plain-fallback' : 'failed';
-            if (delivered) deliveredChunks++;
+            if (delivered) {
+              deliveredChunks++;
+              deliveredAssistantContent = response;
+            }
           } else {
             // A later chunk failed. Re-sending the whole answer would repeat
-            // every preceding chunk, so mark the turn partial and evict it.
+            // every preceding chunk. Preserve only the prefix the person
+            // actually saw; the generated full draft is still evicted below.
             delivered = false;
             deliveryMode = 'partial-failure';
+            deliveredAssistantContent = acceptedChunks
+              .map(telegramHtmlChunkToPlain)
+              .filter(Boolean)
+              .join('\n\n')
+              .trim();
           }
         } else {
           deliveryMode = 'telegram-html';
           delivered = chunks.length > 0;
+          if (delivered) deliveredAssistantContent = response;
         }
       } else {
         const result = await channel.send({
@@ -1294,6 +1334,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         });
         delivered = result?.success === true;
         deliveredChunks = delivered && response.trim() ? 1 : 0;
+        if (delivered) deliveredAssistantContent = response;
         if (!delivered) deliveryMode = 'failed';
       }
       logger.info('Channel response delivered', {
@@ -1320,14 +1361,22 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
       releaseTranscriptSnapshotHold?.();
       releaseTranscriptSnapshotHold = undefined;
-      if (continuesVoiceConversation && delivered) {
-        conversationBridge.recordChannelTurn({
+      if (continuesVoiceConversation && deliveredAssistantContent) {
+        const assistantClaim = await conversationBridge.claimChannelTurnDurably({
           role: 'assistant',
-          content: response,
+          content: deliveredAssistantContent,
           channel: channel.type,
           channelId: message.channel.id,
           ...(message.threadId ? { threadId: message.threadId } : {}),
+          externalId: `${message.id}:assistant`,
         });
+        if (assistantClaim === 'failed') {
+          logger.warn('Delivered channel turn could not be committed to shared continuity', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+            messageHash: hashForLog(message.id),
+          });
+        }
       }
 
       // 7. If the user SPOKE (voice note), answer by voice too — mirror the
@@ -1337,7 +1386,12 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       const voiceChannel = channel as unknown as {
         sendVoiceReply?: (channelId: string, text: string) => Promise<void>;
       };
-      if (userSpoke && response.trim() && typeof voiceChannel.sendVoiceReply === 'function') {
+      if (
+        delivered &&
+        userSpoke &&
+        response.trim() &&
+        typeof voiceChannel.sendVoiceReply === 'function'
+      ) {
         try {
           await voiceChannel.sendVoiceReply(message.channel.id, response);
         } catch (voiceErr) {
@@ -1352,7 +1406,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       const imageChannel = channel as unknown as {
         sendImageFile?: (channelId: string, imagePath: string, caption?: string) => Promise<void>;
       };
-      if (typeof imageChannel.sendImageFile === 'function') {
+      if (delivered && typeof imageChannel.sendImageFile === 'function') {
         const os = await import('node:os');
         const fsp = await import('node:fs/promises');
         const matches = response.match(/(?:~\/|\/)[\w./-]+\.(?:png|jpe?g|gif|webp)/gi) || [];

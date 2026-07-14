@@ -1,0 +1,57 @@
+import {
+  getCrossChannelConversationBridge,
+  type CrossChannelConversationBridge,
+} from './cross-channel-bridge.js';
+import { prepareSpeech } from '../sensory/speech-sanitizer.js';
+
+export type CanonicalVoiceSpeaker = (content: string) => Promise<void>;
+
+/**
+ * Build a speaker for a deterministic spoken shortcut. The first call records
+ * the user turn once; every spoken answer is then appended and mirrored in
+ * strict bridge order. Rendering and delivery start together to avoid adding
+ * journal latency to the local voice.
+ */
+export function createCanonicalVoiceReplySpeaker(
+  heard: string,
+  speak: CanonicalVoiceSpeaker,
+  bridge: CrossChannelConversationBridge = getCrossChannelConversationBridge(),
+): CanonicalVoiceSpeaker {
+  let userTurn: Promise<boolean> | undefined;
+  return async (content: string): Promise<void> => {
+    userTurn ??= bridge.recordVoiceTurn({ role: 'user', content: heard });
+    const prepared = prepareSpeech(content);
+    if (!prepared) {
+      await userTurn;
+      return;
+    }
+    const assistantTurn = bridge.recordVoiceTurn({ role: 'assistant', content: prepared });
+    await Promise.all([speak(prepared), userTurn, assistantTurn]);
+  };
+}
+
+/** Record and mirror an unsolicited local sentence while it is spoken. */
+export async function speakCanonicalVoiceInitiative(
+  content: string,
+  speak: CanonicalVoiceSpeaker,
+  bridge: CrossChannelConversationBridge = getCrossChannelConversationBridge(),
+): Promise<void> {
+  const prepared = prepareSpeech(content);
+  if (!prepared) return;
+  await Promise.all([
+    speak(prepared),
+    bridge.recordVoiceTurn({ role: 'assistant', content: prepared }),
+  ]);
+}
+
+/** Append a proactive sentence that has already been delivered on the target channel. */
+export async function recordDeliveredChannelInitiative(
+  content: string,
+  externalId?: string,
+  bridge: CrossChannelConversationBridge = getCrossChannelConversationBridge(),
+): Promise<boolean> {
+  return bridge.recordTargetChannelTurnDurably(
+    { role: 'assistant', content },
+    externalId,
+  );
+}

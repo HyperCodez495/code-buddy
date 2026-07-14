@@ -1,7 +1,57 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const continuity = vi.hoisted(() => ({
+  bridge: {
+    history: vi.fn(() => [
+      { role: 'user' as const, content: 'Tour précédent sur Telegram.' },
+    ]),
+    recordVoiceTurn: vi.fn(async () => true),
+    flush: vi.fn(async () => undefined),
+  },
+  hybridOptions: undefined as Record<string, unknown> | undefined,
+  hybridDispose: vi.fn(),
+}));
+
+vi.mock('../../src/conversation/cross-channel-bridge.js', () => ({
+  getCrossChannelConversationBridge: () => continuity.bridge,
+}));
+
+vi.mock('../../src/sensory/agent-reply.js', () => ({
+  makeAgentReply: vi.fn(() => async () => 'agent result'),
+}));
+
+vi.mock('../../src/sensory/hybrid-reply.js', () => ({
+  makeHybridReply: vi.fn((options: Record<string, unknown>) => {
+    continuity.hybridOptions = options;
+    return Object.assign(
+      async (heard: string) => `Réponse à ${heard}`,
+      { dispose: continuity.hybridDispose },
+    );
+  }),
+}));
+
+vi.mock('../../src/sensory/voice-loop.js', () => ({
+  makeVoiceReply: vi.fn((options: {
+    replyFn: (heard: string) => Promise<string>;
+    onConversationTurn?: (turn: { role: 'user' | 'assistant'; content: string }) => Promise<void>;
+  }) => async (heard: string) => {
+    await options.onConversationTurn?.({ role: 'user', content: heard });
+    const answer = await options.replyFn(heard);
+    await options.onConversationTurn?.({ role: 'assistant', content: answer });
+  }),
+}));
+
 import { runVoiceCommand } from '../../src/cli/voice-command.js';
 
 describe('buddy voice — push-to-talk loop', () => {
+  beforeEach(() => {
+    continuity.bridge.history.mockClear();
+    continuity.bridge.recordVoiceTurn.mockClear();
+    continuity.bridge.flush.mockClear();
+    continuity.hybridDispose.mockClear();
+    continuity.hybridOptions = undefined;
+  });
+
   it('uses the guarded default posture unless plan is explicitly requested', async () => {
     const output: string[] = [];
     await runVoiceCommand({
@@ -87,5 +137,25 @@ describe('buddy voice — push-to-talk loop', () => {
       onHeard: async () => {},
     });
     expect(rounds).toBe(3);
+  });
+
+  it('joins and flushes the shared Telegram conversation by default', async () => {
+    await runVoiceCommand({
+      once: true,
+      print: () => {},
+      record: async () => '/tmp/x.wav',
+      transcribe: async () => 'On continue ici.',
+    });
+
+    const sharedHistory = continuity.hybridOptions?.sharedHistory as (() => unknown[]) | undefined;
+    expect(sharedHistory?.()).toEqual([
+      { role: 'user', content: 'Tour précédent sur Telegram.' },
+    ]);
+    expect(continuity.bridge.recordVoiceTurn.mock.calls).toEqual([
+      [{ role: 'user', content: 'On continue ici.' }],
+      [{ role: 'assistant', content: 'Réponse à On continue ici.' }],
+    ]);
+    expect(continuity.bridge.flush).toHaveBeenCalledTimes(2);
+    expect(continuity.hybridDispose).toHaveBeenCalledTimes(1);
   });
 });

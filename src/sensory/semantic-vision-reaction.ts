@@ -175,8 +175,14 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
           const greet =
             options.greet ??
             (async (text: string) => {
-              const { sayNow } = await import('./voice-loop.js');
-              await sayNow(text);
+              const [{ sayNow }, { speakCanonicalVoiceInitiative }] = await Promise.all([
+                import('./voice-loop.js'),
+                import('../conversation/voice-continuity.js'),
+              ]);
+              await speakCanonicalVoiceInitiative(
+                text,
+                (content) => sayNow(content, { phoneDelivery: 'never' }),
+              );
             });
           await greet(safeGreeting);
           saveArrivalState({

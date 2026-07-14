@@ -66,6 +66,48 @@ describe('cross-channel companion conversation', () => {
     expect(deliver.mock.calls[1]?.[1]).toContain('Lisa (voix)');
   });
 
+  it('serializes voice mirrors and flush waits for the last delivery', async () => {
+    const order: string[] = [];
+    let releaseUser!: () => void;
+    const userGate = new Promise<void>((resolve) => {
+      releaseUser = resolve;
+    });
+    const bridge = new CrossChannelConversationBridge(config(), {
+      deliver: async (_target, content) => {
+        const speaker = content.includes('question ordonnée') ? 'user' : 'assistant';
+        order.push(`start:${speaker}`);
+        if (speaker === 'user') await userGate;
+        order.push(`end:${speaker}`);
+        return true;
+      },
+      createId: (() => {
+        let id = 0;
+        return () => `ordered-${++id}`;
+      })(),
+    });
+
+    const user = bridge.recordVoiceTurn({ role: 'user', content: 'question ordonnée' });
+    const assistant = bridge.recordVoiceTurn({ role: 'assistant', content: 'réponse ordonnée' });
+    let flushed = false;
+    const flush = bridge.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(order).toEqual(['start:user']);
+    expect(flushed).toBe(false);
+    releaseUser();
+    await Promise.all([user, assistant, flush]);
+
+    expect(order).toEqual([
+      'start:user',
+      'end:user',
+      'start:assistant',
+      'end:assistant',
+    ]);
+    expect(flushed).toBe(true);
+  });
+
   it('keeps voice natural but enriches its Telegram mirror with dated clickable sources', () => {
     const events: CrossChannelConversationEvent[] = [
       {
@@ -341,6 +383,35 @@ describe('cross-channel companion conversation', () => {
     }
   });
 
+  it('activates a process that started before the rendezvous journal appeared', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-late-rendezvous-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    try {
+      const earlyVoiceProcess = new CrossChannelConversationBridge(
+        config({ target: undefined, persist: true, historyPath }),
+      );
+      expect(earlyVoiceProcess.isActive()).toBe(false);
+
+      const channelProcess = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath, mirrorVoice: false }),
+        { createId: () => 'late-rendezvous-event' },
+      );
+      await channelProcess.recordVoiceTurn({
+        role: 'user',
+        content: 'Le canal est maintenant configuré.',
+      });
+
+      expect(earlyVoiceProcess.isActive()).toBe(true);
+      expect(earlyVoiceProcess.matchesChannel('telegram', '42')).toBe(true);
+      expect(earlyVoiceProcess.history()).toContainEqual({
+        role: 'user',
+        content: 'Le canal est maintenant configuré.',
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists a complete voice → Cowork → Telegram → Cowork handoff', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'codebuddy-three-surface-'));
     const historyPath = join(directory, 'lisa.jsonl');
@@ -462,6 +533,90 @@ describe('cross-channel companion conversation', () => {
       expect(second.snapshot()).toHaveLength(1);
       expect(first.relationshipSnapshot().counters.total).toBe(1);
       expect(second.relationshipSnapshot().counters.total).toBe(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the durable winner for concurrent channel appends', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-channel-claim-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    try {
+      const first = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'first-channel-event' },
+      );
+      const second = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+        { createId: () => 'second-channel-event' },
+      );
+      const input = {
+        role: 'user' as const,
+        content: 'Un seul tour Telegram durable.',
+        channel: 'telegram' as const,
+        channelId: '42',
+        externalId: 'telegram-committed-unique',
+      };
+
+      const results = await Promise.all([
+        first.recordChannelTurnDurably(input),
+        second.recordChannelTurnDurably(input),
+      ]);
+
+      expect(results.sort()).toEqual([false, true]);
+      expect((await readFile(historyPath, 'utf8')).trim().split('\n')).toHaveLength(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps distinct external channel IDs even when their text is identical', async () => {
+    const bridge = new CrossChannelConversationBridge(config({ persist: false }));
+    const input = {
+      role: 'user' as const,
+      content: 'Oui.',
+      channel: 'telegram' as const,
+      channelId: '42',
+    };
+
+    await expect(
+      bridge.recordChannelTurnDurably({ ...input, externalId: 'update-1' }),
+    ).resolves.toBe(true);
+    await expect(
+      bridge.recordChannelTurnDurably({ ...input, externalId: 'update-2' }),
+    ).resolves.toBe(true);
+
+    expect(bridge.history()).toEqual([
+      { role: 'user', content: 'Oui.' },
+      { role: 'user', content: 'Oui.' },
+    ]);
+  });
+
+  it('rolls back a failed durable claim so the same update can retry', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-bridge-failed-claim-'));
+    try {
+      const bridgeConfig = config({
+        persist: true,
+        // appendFile on a directory deterministically fails, even as root.
+        historyPath: directory,
+      });
+      const bridge = new CrossChannelConversationBridge(bridgeConfig);
+      const input = {
+        role: 'user' as const,
+        content: 'Réessaie ce tour.',
+        channel: 'telegram' as const,
+        channelId: '42',
+        externalId: 'retryable-update',
+      };
+
+      await expect(bridge.claimChannelTurnDurably(input)).resolves.toBe('failed');
+      expect(bridge.snapshot()).toEqual([]);
+
+      bridgeConfig.historyPath = join(directory, 'conversation.jsonl');
+      await expect(bridge.claimChannelTurnDurably(input)).resolves.toBe('committed');
+      expect(bridge.history()).toEqual([
+        { role: 'user', content: 'Réessaie ce tour.' },
+      ]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

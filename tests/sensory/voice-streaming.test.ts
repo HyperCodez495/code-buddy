@@ -314,6 +314,40 @@ describe('makeVoiceReply — streaming integration', () => {
     expect(isSpeaking()).toBe(false);
   });
 
+  it('keeps a fully played sentence in continuity when barge-in interrupts the next one', async () => {
+    let secondPlaybackStarted!: () => void;
+    const secondPlayback = new Promise<void>((resolve) => {
+      secondPlaybackStarted = resolve;
+    });
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    async function* stream(): AsyncGenerator<string> {
+      yield 'Première phrase. Deuxième phrase.';
+    }
+    const onHeard = makeVoiceReply({
+      streamFn: stream,
+      synth: async (text) => `wav:${text}`,
+      play: async (wav, options) => {
+        if (!wav.includes('Deuxième')) return;
+        secondPlaybackStarted();
+        await new Promise<void>((resolve) => {
+          if (options?.signal?.aborted) return resolve();
+          options?.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      },
+      onConversationTurn: (turn) => turns.push(turn),
+    });
+
+    const turn = onHeard('Continue ton explication.');
+    await secondPlayback;
+    onHeard.interrupt();
+    await turn;
+
+    expect(turns).toEqual([
+      { role: 'user', content: 'Continue ton explication.' },
+      { role: 'assistant', content: 'Première phrase.' },
+    ]);
+  });
+
   it('falls back to the blocking replyFn when the stream errors (behavior unchanged)', async () => {
     const calls: string[] = [];
     let spoke = '';

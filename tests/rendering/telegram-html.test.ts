@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { renderTelegramHtml } from '../../src/rendering/telegram-html';
+import {
+  renderTelegramHtml,
+  telegramHtmlChunkToPlain,
+} from '../../src/rendering/telegram-html';
 
 const one = (md: string): string => renderTelegramHtml(md).join('\n');
 
@@ -60,6 +63,11 @@ describe('renderTelegramHtml', () => {
     expect(one('café 🤖 résumé')).toBe('café 🤖 résumé');
   });
 
+  it('recovers the exact visible text of a generated HTML chunk', () => {
+    const html = one('**Léa & moi**\n\n`a < b` et [le lien](https://example.com?q=1&x=2)');
+    expect(telegramHtmlChunkToPlain(html)).toBe('Léa & moi\n\na < b et le lien');
+  });
+
   it('renders bullet and ordered lists', () => {
     expect(one('- a\n- b')).toBe('• a\n• b');
     expect(one('1. a\n2. b')).toBe('1. a\n2. b');
@@ -80,6 +88,28 @@ describe('renderTelegramHtml', () => {
       expect(c.startsWith('<pre>')).toBe(true);
       expect(c.endsWith('</pre>')).toBe(true);
       expect(c.length).toBeLessThanOrEqual(4096);
+    }
+  });
+
+  it('keeps oversized bold blocks balanced in every chunk', () => {
+    const chunks = renderTelegramHtml(`**${'é & '.repeat(2_499)}fin**`);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.startsWith('<b>')).toBe(true);
+      expect(chunk.endsWith('</b>')).toBe(true);
+      expect(chunk.length).toBeLessThanOrEqual(4096);
+      expect((chunk.match(/<b>/g) ?? []).length).toBe((chunk.match(/<\/b>/g) ?? []).length);
+      expect(chunk).not.toMatch(/&(?:#x?[0-9a-f]*|[a-z]*)?$/i);
+    }
+  });
+
+  it('reopens a long formatted link instead of splitting its tags', () => {
+    const chunks = renderTelegramHtml(`[${'lien '.repeat(2_000)}](https://example.com/path)`);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.startsWith('<a href="https://example.com/path">')).toBe(true);
+      expect(chunk.endsWith('</a>')).toBe(true);
+      expect(chunk.length).toBeLessThanOrEqual(4096);
     }
   });
 

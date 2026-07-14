@@ -240,7 +240,8 @@ interface RunnerCallbacks {
 export class CodeBuddyEngineRunner {
   private adapter: EngineAdapter;
   private callbacks: RunnerCallbacks;
-  private continuity: Pick<CoworkCrossChannelContinuity, 'prepare'>;
+  private continuity: Pick<CoworkCrossChannelContinuity, 'prepare'> &
+    Partial<Pick<CoworkCrossChannelContinuity, 'flush'>>;
   private companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'>;
   private relationshipSafetyLoader: RelationshipSafetyLoader;
   private semanticResponseLoader: SemanticResponseLoader;
@@ -249,7 +250,8 @@ export class CodeBuddyEngineRunner {
   constructor(
     adapter: EngineAdapter,
     callbacks: RunnerCallbacks,
-    continuity: Pick<CoworkCrossChannelContinuity, 'prepare'> = new CoworkCrossChannelContinuity(),
+    continuity: Pick<CoworkCrossChannelContinuity, 'prepare'> &
+      Partial<Pick<CoworkCrossChannelContinuity, 'flush'>> = new CoworkCrossChannelContinuity(),
     companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'> = new CoworkCompanionModelRouting(),
     relationshipSafetyLoader: RelationshipSafetyLoader = () =>
       loadCoreModule<CoreRelationshipSafetyModule>('conversation/relationship-safety.js'),
@@ -272,6 +274,10 @@ export class CodeBuddyEngineRunner {
     this.companionRouting = companionRouting;
     this.relationshipSafetyLoader = relationshipSafetyLoader;
     this.semanticResponseLoader = semanticResponseLoader;
+  }
+
+  async flush(): Promise<void> {
+    await this.continuity.flush?.();
   }
 
   /**

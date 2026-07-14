@@ -101,6 +101,8 @@ interface CoreConversationBridge {
     turn: { role: ConversationRole; content: string },
     input: { sessionId: string; messageId: string },
   ): Promise<boolean>;
+  /** Drain pending journal appends and mirrors before Cowork exits or reconfigures. */
+  flush?(): Promise<void>;
 }
 
 interface CoreBridgeModule {
@@ -311,6 +313,11 @@ export class CoworkCrossChannelContinuity {
       loadCoreModule<T>(relativePath),
   ) {}
 
+  /** Await every pending shared-journal append and channel mirror. */
+  async flush(): Promise<void> {
+    await this.cached?.bridge.flush?.();
+  }
+
   async prepare(
     session: Session,
     localMessages: CoworkEngineMessage[],
@@ -404,6 +411,10 @@ export class CoworkCrossChannelContinuity {
     const config = bridgeModule.resolveCrossChannelBridgeConfig(mergedEnv);
     const fingerprint = configFingerprint(config);
     if (this.cached?.fingerprint === fingerprint) return this.cached;
+
+    // A runtime config change must not abandon events queued on the previous
+    // bridge just before the new target/fingerprint becomes active.
+    await this.cached?.bridge.flush?.();
 
     this.cached = {
       fingerprint,

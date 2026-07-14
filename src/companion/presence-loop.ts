@@ -253,8 +253,14 @@ function hourlyCap(deps: PresenceDeps): number {
 }
 
 async function defaultSay(text: string): Promise<void> {
-  const { sayNow } = await import('../sensory/voice-loop.js');
-  await sayNow(text);
+  const [{ sayNow }, { speakCanonicalVoiceInitiative }] = await Promise.all([
+    import('../sensory/voice-loop.js'),
+    import('../conversation/voice-continuity.js'),
+  ]);
+  await speakCanonicalVoiceInitiative(
+    text,
+    (content) => sayNow(content, { phoneDelivery: 'never' }),
+  );
 }
 
 /**

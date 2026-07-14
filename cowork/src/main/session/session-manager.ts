@@ -138,6 +138,7 @@ interface AgentRunner {
   cancel(sessionId: string): void;
   steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSdkSession?(sessionId: string): void;
+  flush?(): Promise<void>;
 }
 
 /**
@@ -629,6 +630,11 @@ export class SessionManager {
    */
   reloadConfig(): void {
     log('[SessionManager] API config changed — will apply on next query');
+  }
+
+  /** Drain durable companion continuity before the Electron process exits. */
+  async flushCompanionContinuity(): Promise<void> {
+    await this.agentRunner.flush?.();
   }
 
   /**

@@ -48,6 +48,17 @@ export interface CrossChannelConversationEvent extends ConversationTurn {
   threadId?: string;
 }
 
+export interface CrossChannelChannelTurnInput {
+  role: ConversationTurn['role'];
+  content: string;
+  channel: ChannelType;
+  channelId: string;
+  threadId?: string;
+  externalId?: string;
+}
+
+export type DurableTurnClaim = 'committed' | 'duplicate' | 'failed';
+
 export interface CrossChannelBridgeConfig {
   enabled: boolean;
   companionName: string;
@@ -418,8 +429,7 @@ async function defaultDeliver(
     process.env.CODEBUDDY_SENSORY_ALERT_TOKEN
   ) {
     const { sendTelegramAlert } = await import('../sensory/alert.js');
-    await sendTelegramAlert(content);
-    return true;
+    return sendTelegramAlert(content);
   }
   logger.warn(`[conversation-bridge] delivery failed on ${target.channel}: ${result.error ?? 'unknown error'}`);
   return false;
@@ -444,6 +454,8 @@ export class CrossChannelConversationBridge {
   private lastHistoryMtimeMs = -1;
   private lastHistorySize = -1;
   private persistenceQueue: Promise<void> = Promise.resolve();
+  /** Commit + mirror operations are ordered so Telegram cannot see Lisa before the user turn. */
+  private deliveryQueue: Promise<void> = Promise.resolve();
 
   constructor(
     readonly config: CrossChannelBridgeConfig = resolveCrossChannelBridgeConfig(),
@@ -457,13 +469,17 @@ export class CrossChannelConversationBridge {
   }
 
   isActive(): boolean {
+    // Voice, Cowork, and channel adapters often live in separate processes.
+    // Re-read the rendezvous journal here so a process that started before the
+    // configured channel was known can become active without a restart.
+    this.loadPersistedHistory();
     return this.config.enabled && Boolean(this.config.target);
   }
 
   matchesChannel(channel: ChannelType, channelId: string, threadId?: string): boolean {
     this.loadPersistedHistory();
     const target = this.config.target;
-    if (!this.isActive() || !target) return false;
+    if (!this.config.enabled || !target) return false;
     if (target.channel !== channel || target.channelId !== channelId) return false;
     return !target.threadId || target.threadId === threadId;
   }
@@ -494,7 +510,7 @@ export class CrossChannelConversationBridge {
 
   /** Wait for this process' queued journal appends (tests and graceful shutdown). */
   async flush(): Promise<void> {
-    await this.persistenceQueue;
+    await Promise.all([this.persistenceQueue, this.deliveryQueue]);
   }
 
   async recordVoiceTurn(turn: ConversationTurn, externalId?: string): Promise<boolean> {
@@ -514,43 +530,88 @@ export class CrossChannelConversationBridge {
     });
     if (!appended) return false;
     const { event } = appended;
-    if (!(await appended.committed)) return false;
-    if (!this.config.mirrorVoice || !this.config.target) return true;
-    try {
-      const deliveryContent = this.voiceMirrorContent(event, this.events);
-      return await this.deliver(
-        this.config.target,
-        mirroredLabel({ ...event, content: deliveryContent }, this.config.companionName),
-        'text'
-      );
-    } catch (error) {
-      logger.warn(
-        `[conversation-bridge] voice mirror failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-      return false;
-    }
+    return this.enqueueCommittedDelivery(appended.committed, async () => {
+      if (!this.config.mirrorVoice || !this.config.target) return true;
+      try {
+        const deliveryContent = this.voiceMirrorContent(event, this.events);
+        return await this.deliver(
+          this.config.target,
+          mirroredLabel({ ...event, content: deliveryContent }, this.config.companionName),
+          'text'
+        );
+      } catch (error) {
+        logger.warn(
+          `[conversation-bridge] voice mirror failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+        return false;
+      }
+    });
   }
 
-  recordChannelTurn(input: {
-    role: ConversationTurn['role'];
-    content: string;
-    channel: ChannelType;
-    channelId: string;
-    threadId?: string;
-    externalId?: string;
-  }): boolean {
-    if (!this.matchesChannel(input.channel, input.channelId, input.threadId)) return false;
-    return Boolean(
-      this.append({
-        role: input.role,
-        content: input.content,
-        origin: 'channel',
-        channel: input.channel,
-        channelId: input.channelId,
-        ...(input.threadId ? { threadId: input.threadId } : {}),
-        ...(input.externalId ? { externalId: input.externalId } : {}),
-      })
-    );
+  recordChannelTurn(input: CrossChannelChannelTurnInput): boolean {
+    return Boolean(this.appendChannelTurn(input));
+  }
+
+  /**
+   * Persist a channel turn before its caller continues. Unlike the legacy
+   * optimistic boolean API above, this reports the cross-process claim result:
+   * only the process that durably appended a duplicated external ID gets true.
+   */
+  async recordChannelTurnDurably(input: CrossChannelChannelTurnInput): Promise<boolean> {
+    return (await this.claimChannelTurnDurably(input)) === 'committed';
+  }
+
+  /**
+   * Claim a channel update with a discriminated outcome. Callers may silently
+   * ignore an idempotent transport retry, but must not mistake journal failure
+   * for a duplicate and lose the user's message without feedback.
+   */
+  async claimChannelTurnDurably(
+    input: CrossChannelChannelTurnInput,
+  ): Promise<DurableTurnClaim> {
+    if (!this.matchesChannel(input.channel, input.channelId, input.threadId)) return 'failed';
+    const content = input.content.replace(/\s+/g, ' ').trim();
+    if (!content) return 'failed';
+    if (
+      input.externalId &&
+      this.externalIds.has(externalDedupKey('channel', input.externalId))
+    ) {
+      return 'duplicate';
+    }
+    const appended = this.appendChannelTurn(input);
+    return appended ? appended.committed : 'duplicate';
+  }
+
+  /** Record content already delivered on the configured channel, without echoing it. */
+  async recordTargetChannelTurnDurably(
+    turn: ConversationTurn,
+    externalId?: string,
+  ): Promise<boolean> {
+    if (!this.isActive() || !this.config.target) return false;
+    const target = this.config.target;
+    return this.recordChannelTurnDurably({
+      ...turn,
+      channel: target.channel,
+      channelId: target.channelId,
+      ...(target.threadId ? { threadId: target.threadId } : {}),
+      ...(externalId ? { externalId } : {}),
+    });
+  }
+
+  private appendChannelTurn(input: CrossChannelChannelTurnInput): {
+    event: CrossChannelConversationEvent;
+    committed: Promise<DurableTurnClaim>;
+  } | null {
+    if (!this.matchesChannel(input.channel, input.channelId, input.threadId)) return null;
+    return this.append({
+      role: input.role,
+      content: input.content,
+      origin: 'channel',
+      channel: input.channel,
+      channelId: input.channelId,
+      ...(input.threadId ? { threadId: input.threadId } : {}),
+      ...(input.externalId ? { externalId: input.externalId } : {}),
+    });
   }
 
   /**
@@ -582,16 +643,32 @@ export class CrossChannelConversationBridge {
     });
     if (!appended) return false;
     const { event } = appended;
-    if (!(await appended.committed)) return false;
-    if (!this.config.mirrorCowork || !target) return true;
-    try {
-      return await this.deliver(target, mirroredLabel(event, this.config.companionName), 'text');
-    } catch (error) {
-      logger.warn(
-        `[conversation-bridge] Cowork mirror failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-      return false;
-    }
+    return this.enqueueCommittedDelivery(appended.committed, async () => {
+      if (!this.config.mirrorCowork || !target) return true;
+      try {
+        return await this.deliver(target, mirroredLabel(event, this.config.companionName), 'text');
+      } catch (error) {
+        logger.warn(
+          `[conversation-bridge] Cowork mirror failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+        return false;
+      }
+    });
+  }
+
+  private enqueueCommittedDelivery(
+    committed: Promise<DurableTurnClaim>,
+    deliver: () => Promise<boolean>,
+  ): Promise<boolean> {
+    const operation = this.deliveryQueue.then(async () => {
+      if ((await committed) !== 'committed') return false;
+      return deliver();
+    });
+    this.deliveryQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 
   private append(
@@ -602,7 +679,7 @@ export class CrossChannelConversationBridge {
       channelId?: string;
       threadId?: string;
     }
-  ): { event: CrossChannelConversationEvent; committed: Promise<boolean> } | null {
+  ): { event: CrossChannelConversationEvent; committed: Promise<DurableTurnClaim> } | null {
     const content = input.content.replace(/\s+/g, ' ').trim();
     if (!content) return null;
     if (input.externalId && this.externalIds.has(externalDedupKey(input.origin, input.externalId))) {
@@ -612,6 +689,7 @@ export class CrossChannelConversationBridge {
     const latest = this.events.at(-1);
     const now = this.now();
     if (
+      !input.externalId &&
       latest?.origin === input.origin &&
       latest.role === input.role &&
       latest.content === content &&
@@ -638,7 +716,7 @@ export class CrossChannelConversationBridge {
     this.trimEventWindow();
     const committed = this.config.persist
       ? this.persistenceQueue.then(() => this.persist(event))
-      : Promise.resolve(true);
+      : Promise.resolve<DurableTurnClaim>('committed');
     if (this.config.persist) {
       // Keep the queue alive after a failed append; callers still receive the
       // precise claim result through `committed`.
@@ -734,7 +812,7 @@ export class CrossChannelConversationBridge {
     }
   }
 
-  private async persist(event: CrossChannelConversationEvent): Promise<boolean> {
+  private async persist(event: CrossChannelConversationEvent): Promise<DurableTurnClaim> {
     const lockPath = `${this.config.historyPath}.lock`;
     let lock: Awaited<ReturnType<typeof open>> | undefined;
     let claimed = false;
@@ -776,7 +854,7 @@ export class CrossChannelConversationBridge {
         const localIndex = this.events.findIndex((candidate) => candidate === event);
         if (localIndex >= 0) this.events.splice(localIndex, 1);
         this.trimEventWindow();
-        return false;
+        return 'duplicate';
       }
       await appendFile(this.config.historyPath, `${JSON.stringify(persistedEvent)}\n`, {
         encoding: 'utf8',
@@ -791,14 +869,20 @@ export class CrossChannelConversationBridge {
 
       const historyStat = await stat(this.config.historyPath);
       if (historyStat.size > maxBytes) await this.compactPersistedHistory();
-      return true;
+      return 'committed';
     } catch (error) {
       logger.warn(
         `[conversation-bridge] history append failed: ${error instanceof Error ? error.message : String(error)}`
       );
       // Once appendFile succeeds the claim is durable even if a later stat or
-      // compaction step fails. Delivery may proceed exactly once.
-      return claimed;
+      // compaction step fails. Delivery may proceed exactly once. Otherwise
+      // remove the optimistic event/external ID so the same update can retry.
+      if (!claimed) {
+        const localIndex = this.events.findIndex((candidate) => candidate === event);
+        if (localIndex >= 0) this.events.splice(localIndex, 1);
+        this.trimEventWindow();
+      }
+      return claimed ? 'committed' : 'failed';
     } finally {
       try {
         await lock?.close();

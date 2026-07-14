@@ -1389,10 +1389,15 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               const { getCrossChannelConversationBridge } = await import(
                 '../conversation/cross-channel-bridge.js'
               );
+              const {
+                createCanonicalVoiceReplySpeaker,
+                speakCanonicalVoiceInitiative,
+              } = await import('../conversation/voice-continuity.js');
               const conversationBridge = getCrossChannelConversationBridge();
-              const sharedHistory = conversationBridge.isActive()
-                ? () => conversationBridge.history()
-                : undefined;
+              // Resolve activity on every turn. The voice process may start
+              // before Telegram/Cowork publishes the rendezvous event.
+              const sharedHistory = () =>
+                conversationBridge.isActive() ? conversationBridge.history() : [];
               let replyFn;
               if (readiness.act) {
                 // Grounded turn can take a few seconds → speak a short ack first so a real
@@ -1407,9 +1412,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                     | 'dontAsk'
                     | 'bypassPermissions') || 'default',
                   ...(speakCwd ? { cwd: speakCwd } : {}),
-                  ...(sharedHistory ? { sharedHistory } : {}),
+                  sharedHistory,
                   ack: async (_transcript, opts) => {
-                    await sayNow("D'accord, je regarde ça.", { signal: opts?.signal });
+                    await sayNow("D'accord, je regarde ça.", {
+                      signal: opts?.signal,
+                      phoneDelivery: 'never',
+                    });
                   },
                 });
               } else {
@@ -1419,22 +1427,21 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   permissionMode: 'plan',
                   ...(speakCwd ? { cwd: speakCwd } : {}),
                   classify: (heard) => classifyLisaIntrospection(heard) !== null,
-                  ...(sharedHistory ? { sharedHistory } : {}),
+                  sharedHistory,
                   ack: async (_transcript, opts) => {
-                    await sayNow("D'accord, je regarde ça.", { signal: opts?.signal });
+                    await sayNow("D'accord, je regarde ça.", {
+                      signal: opts?.signal,
+                      phoneDelivery: 'never',
+                    });
                   },
                 });
               }
               let latestVoiceTiming: import('../sensory/voice-loop.js').VoiceReplyTiming | undefined;
               const reply = makeVoiceReply({
                 replyFn,
-                ...(conversationBridge.isActive()
-                  ? {
-                      onConversationTurn: (turn) => {
-                        void conversationBridge.recordVoiceTurn(turn);
-                      },
-                    }
-                  : {}),
+                onConversationTurn: async (turn) => {
+                  await conversationBridge.recordVoiceTurn(turn);
+                },
                 onTiming: (timing) => {
                   latestVoiceTiming = timing;
                 },
@@ -1468,6 +1475,11 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   rem.isReminderVoiceCommand(t) ||
                   rem.parseVoiceReminder(t) !== null;
                 onHeard = async (t: string) => {
+                  const sayCanonical = createCanonicalVoiceReplySpeaker(
+                    t,
+                    (content) => sayNow(content, { phoneDelivery: 'never' }),
+                    conversationBridge,
+                  );
                   // Spoken undo FIRST: a bare "annule" right after a creation reverts it (the
                   // confirm-and-await flow, ambient-style — the confirmation read the cadence
                   // back, the correction stays natural speech). Window-bounded, so it never
@@ -1475,25 +1487,25 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   const undone = rem.undoPending(t, Date.now());
                   if (undone) {
                     await rem.removeReminder(undone.id);
-                    await sayNow(`OK, j'annule le rappel : ${undone.label}.`);
+                    await sayCanonical(`OK, j'annule le rappel : ${undone.label}.`);
                     return;
                   }
                   // Snooze a pending reminder ("dans 10 minutes" / "plus tard") before anything else.
                   const snoozed = rem.snoozePending(t, Date.now());
                   if (snoozed) {
                     const mins = Math.max(1, Math.round(snoozed.delayMs / 60_000));
-                    await sayNow(`D'accord, je te le rappelle dans ${mins} minute${mins > 1 ? 's' : ''}.`);
+                    await sayCanonical(`D'accord, je te le rappelle dans ${mins} minute${mins > 1 ? 's' : ''}.`);
                     return;
                   }
                   const id = rem.matchAck(t, Date.now());
                   if (id) {
                     const done = await rem.markDone(id, 'voice');
-                    if (done) await sayNow(rem.reminderReadback(done.label));
+                    if (done) await sayCanonical(rem.reminderReadback(done.label));
                     return;
                   }
                   // Manage reminders by voice (list / remove / disable) BEFORE create, so
                   // "supprime le rappel du train" isn't misread as a new reminder.
-                  if (await rem.handleReminderVoiceCommand(t, { speak: sayNow })) return;
+                  if (await rem.handleReminderVoiceCommand(t, { speak: sayCanonical })) return;
                   const created = rem.parseVoiceReminder(t);
                   if (created) {
                     try {
@@ -1502,7 +1514,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                       rem.noteCreatedForUndo(r, Date.now());
                       // Read back the CADENCE ("demain" / "tous les jours") so a mis-captured
                       // recurrence is audible on the spot (the train-bug class of confusion).
-                      await sayNow(`C'est noté : ${r.label}, ${rem.reminderCadencePhrase(r)} à ${r.time}.`);
+                      await sayCanonical(`C'est noté : ${r.label}, ${rem.reminderCadencePhrase(r)} à ${r.time}.`);
                     } catch (err) {
                       logger.warn(`[reminders] voice create failed: ${err instanceof Error ? err.message : String(err)}`);
                     }
@@ -1521,7 +1533,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 maisonShortcut = maison.isMaisonVoiceCommand;
                 const inner = onHeard;
                 onHeard = async (t: string) => {
-                  if (await maison.handleMaisonVoiceCommand(t, { speak: sayNow })) return;
+                  const sayCanonical = createCanonicalVoiceReplySpeaker(
+                    t,
+                    (content) => sayNow(content, { phoneDelivery: 'never' }),
+                    conversationBridge,
+                  );
+                  if (await maison.handleMaisonVoiceCommand(t, { speak: sayCanonical })) return;
                   await inner(t);
                 };
               }
@@ -1543,7 +1560,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                     try {
                       const captured = await ef.captureEventFollowUp(t, Date.now(), { extractor });
                       if (captured) {
-                        await sayNow(ef.confirmationLine(captured, Date.now()));
+                        const confirmation = ef.confirmationLine(captured, Date.now());
+                        await speakCanonicalVoiceInitiative(
+                          confirmation,
+                          (content) => sayNow(content, { phoneDelivery: 'never' }),
+                          conversationBridge,
+                        );
                         logger.info(`[event-followup] captured "${captured.event}" → due ${new Date(captured.dueAt).toISOString()}`);
                       }
                     } catch (err) {
@@ -1580,6 +1602,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               }
               sensoryTeardown.push(wireSpeechReaction(wireOpts));
               sensoryTeardown.push(() => replyFn.dispose());
+              sensoryTeardown.push(() => conversationBridge.flush());
               const gateLabel = alwaysRespond
                 ? 'always-respond'
                 : chimeIn

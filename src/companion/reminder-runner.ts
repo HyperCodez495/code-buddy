@@ -31,7 +31,11 @@ export interface ReminderRunnerDeps {
   /** Speak a line aloud. Default: sayNow (Piper). */
   say?: (text: string) => Promise<void>;
   /** Push a line to Telegram. Default: sendTelegramAlert. */
-  notify?: (text: string) => Promise<void>;
+  notify?: (text: string) => Promise<boolean | void>;
+  /** Record a delivered Telegram notification without sending it twice. */
+  recordRemote?: (text: string, externalId: string) => Promise<void>;
+  /** Record a voice-only re-nag so linked channels can continue from it. */
+  recordLocal?: (text: string, externalId: string) => Promise<void>;
   /** Gap between re-nags (ms). Default 60000. */
   renagMs?: number;
   /** Max re-nags before the window lapses → missed. Default 2. */
@@ -53,11 +57,40 @@ function renagMax(deps: ReminderRunnerDeps): number {
 
 async function defaultSay(text: string): Promise<void> {
   const { sayNow } = await import('../sensory/voice-loop.js');
-  await sayNow(text);
+  // The runner owns its Telegram notification separately; never emit a second
+  // voice note through sayNow's legacy environment-controlled phone path.
+  await sayNow(text, { phoneDelivery: 'never' });
 }
-async function defaultNotify(text: string): Promise<void> {
+async function defaultNotify(text: string): Promise<boolean> {
   const { sendTelegramAlert } = await import('../sensory/alert.js');
-  await sendTelegramAlert(text);
+  return sendTelegramAlert(text);
+}
+async function defaultRecordRemote(text: string, externalId: string): Promise<void> {
+  const { recordDeliveredChannelInitiative } = await import(
+    '../conversation/voice-continuity.js'
+  );
+  await recordDeliveredChannelInitiative(text, externalId);
+}
+async function defaultRecordLocal(text: string, externalId: string): Promise<void> {
+  const { getCrossChannelConversationBridge } = await import(
+    '../conversation/cross-channel-bridge.js'
+  );
+  await getCrossChannelConversationBridge().recordVoiceTurn(
+    { role: 'assistant', content: text },
+    externalId,
+  );
+}
+
+async function notifyAndRecord(
+  text: string,
+  externalId: string,
+  deps: ReminderRunnerDeps,
+  notify: (content: string) => Promise<boolean | void>,
+): Promise<void> {
+  const accepted = await notify(text);
+  if (accepted !== false && (!deps.notify || deps.recordRemote)) {
+    await (deps.recordRemote ?? defaultRecordRemote)(text, externalId);
+  }
 }
 
 /**
@@ -89,7 +122,12 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
       openAck(r, nowMs);
       const msg = reminderMessage(r);
       await say(msg);
-      await notify(`⏰ ${msg}`);
+      await notifyAndRecord(
+        `⏰ ${msg}`,
+        `reminder:${r.id}:fired:${now.toISOString()}`,
+        deps,
+        notify,
+      );
       logger.info(`[reminders] fired '${r.label}'${isOneShot(r) ? ' (one-shot → retired)' : ''} (awaiting ack)`);
     } catch (err) {
       logger.warn(`[reminders] fire '${r.label}' failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -104,7 +142,12 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
       const msg = r ? reminderMessage(r) : `C'est l'heure : ${s.label}.`;
       openAck({ id: s.id, label: s.label }, nowMs);
       await say(msg);
-      await notify(`⏰ ${msg}`);
+      await notifyAndRecord(
+        `⏰ ${msg}`,
+        `reminder:${s.id}:snoozed:${nowMs}`,
+        deps,
+        notify,
+      );
       await logReminderEvent('fired', { id: s.id, label: s.label }, { snoozed: true }, now);
       logger.info(`[reminders] snoozed reminder re-fired '${s.label}'`);
     } catch (err) {
@@ -119,7 +162,14 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
       try {
         bumpNag(a.id);
         await logReminderEvent('renag', a, { nag: a.nags }, now);
-        await say(`Petit rappel : ${a.label}.`);
+        const line = `Petit rappel : ${a.label}.`;
+        await say(line);
+        if (!deps.say || deps.recordLocal) {
+          await (deps.recordLocal ?? defaultRecordLocal)(
+            line,
+            `reminder:${a.id}:renag:${a.firedAt}:${a.nags + 1}`,
+          );
+        }
       } catch (err) {
         logger.warn(`[reminders] renag '${a.label}' failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -130,7 +180,12 @@ export async function runReminderTick(now: Date, deps: ReminderRunnerDeps = {}):
   for (const a of expireAcks(nowMs, window)) {
     try {
       await logReminderEvent('missed', a, {}, now);
-      await notify(`⚠️ Pas de confirmation : ${a.label}. (à vérifier)`);
+      await notifyAndRecord(
+        `⚠️ Pas de confirmation : ${a.label}. (à vérifier)`,
+        `reminder:${a.id}:missed:${a.firedAt}`,
+        deps,
+        notify,
+      );
       logger.warn(`[reminders] '${a.label}' not acknowledged → escalated to Telegram, logged missed`);
     } catch (err) {
       logger.warn(`[reminders] missed-escalation '${a.label}' failed: ${err instanceof Error ? err.message : String(err)}`);

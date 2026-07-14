@@ -2378,6 +2378,18 @@ async function cleanupSandboxResources(): Promise<void> {
     logError('[App] Error shutting down sandbox:', error);
   }
 
+  // Flush cross-channel companion turns before database/process teardown.
+  try {
+    await withTimeout(
+      sessionManager?.flushCompanionContinuity() ?? Promise.resolve(),
+      5000,
+      'Companion continuity flush',
+    );
+    log('[App] Companion continuity flushed');
+  } catch (error) {
+    logError('[App] Error flushing companion continuity:', error);
+  }
+
   // Shutdown MCP servers
   try {
     const mcpManager = sessionManager?.getMCPManager();
