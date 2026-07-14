@@ -14,7 +14,13 @@ import { isBrowserOperatorTool, buildBrowserActionPayload } from './browser-acti
 import { getReasoningBridge } from '../reasoning/reasoning-bridge';
 import { createReasoningCapture } from '../reasoning/reasoning-capture';
 import { configStore } from '../config/config-store';
-import { CoworkCrossChannelContinuity } from '../companion/cross-channel-continuity';
+import {
+  CoworkCrossChannelContinuity,
+  classifyCoworkCanonicalAttachment,
+  normalizeCoworkCanonicalTurn,
+  renderCoworkCanonicalTurn,
+  type CoworkCanonicalTurn,
+} from '../companion/cross-channel-continuity';
 import { CoworkCompanionModelRouting } from '../companion/model-routing';
 import { loadCoreModule } from '../utils/core-loader';
 import type { ContextOptimizationMetadata } from '@codebuddy/shared/context-optimization-metadata';
@@ -24,6 +30,7 @@ import type {
   Message,
   ServerEvent,
   ContentBlock,
+  FileAttachmentContent,
   TextContent,
   ToolUseContent,
   ToolResultContent,
@@ -133,6 +140,30 @@ function guardStandaloneCompanionText(
   return output || RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY;
 }
 
+/** Derive a safe fallback from the persisted visible message, never from attachment payloads. */
+function deriveCoworkCanonicalTurn(currentMessage: Message): CoworkCanonicalTurn {
+  const text = currentMessage.content
+    .flatMap((block) => block.type === 'text' ? [(block as TextContent).text] : [])
+    .join('\n')
+    .trim();
+  const attachments = currentMessage.content.flatMap((block) =>
+    block.type === 'file_attachment' || block.type === 'image'
+      ? [{
+          kind: block.type === 'image'
+            ? classifyCoworkCanonicalAttachment({ image: true })
+            : classifyCoworkCanonicalAttachment({
+                mimeType: (block as FileAttachmentContent).mimeType,
+                filename: (block as FileAttachmentContent).filename,
+              }),
+        }]
+      : [],
+  );
+  return {
+    text,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
 /** Callbacks injected by SessionManager */
 interface RunnerCallbacks {
   sendToRenderer: (event: ServerEvent) => void;
@@ -173,7 +204,12 @@ export class CodeBuddyEngineRunner {
    * Run a session using the Code Buddy engine.
    * Translates EngineStreamEvents to Cowork ServerEvents.
    */
-  async run(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+  async run(
+    session: Session,
+    enginePrompt: string,
+    existingMessages: Message[],
+    canonicalTurn?: CoworkCanonicalTurn,
+  ): Promise<void> {
     const { sendToRenderer, saveMessage } = this.callbacks;
     const turnStartedAt = Date.now();
 
@@ -191,6 +227,17 @@ export class CodeBuddyEngineRunner {
     const userMessageId = hasUserMessageAtEnd
       ? existingMessages[existingMessages.length - 1].id
       : uuidv4();
+    const currentUserMessage = hasUserMessageAtEnd
+      ? existingMessages[existingMessages.length - 1]
+      : undefined;
+    const companionThread = isCompanionThreadTags(session.tags);
+    const derivedTurn = canonicalTurn ?? (
+      currentUserMessage ? deriveCoworkCanonicalTurn(currentUserMessage) : undefined
+    );
+    const safeTurn = normalizeCoworkCanonicalTurn(
+      derivedTurn ?? (companionThread ? { text: '' } : { text: enginePrompt }),
+    );
+    const canonicalPrompt = renderCoworkCanonicalTurn(safeTurn);
 
     if (!hasUserMessageAtEnd) {
       // Save user message (fallback for tests/standalone runs)
@@ -198,7 +245,7 @@ export class CodeBuddyEngineRunner {
         id: userMessageId,
         sessionId: session.id,
         role: 'user',
-        content: [{ type: 'text', text: prompt } as TextContent],
+        content: [{ type: 'text', text: canonicalPrompt } as TextContent],
         timestamp: Date.now(),
       };
       saveMessage(userMessage);
@@ -212,7 +259,7 @@ export class CodeBuddyEngineRunner {
     // Local transcript conversion is synchronous. The safety checkpoint,
     // active persona, and explicit Lisa-thread rendezvous are independent and
     // begin together so continuity never adds a serial first-token waterfall.
-    const localEngineMessages = this.convertMessages(historyMessages, prompt);
+    const localEngineMessages = this.convertMessages(historyMessages, enginePrompt);
     const localRoutingHistory = localEngineMessages
       .slice(0, -1)
       .flatMap((message): Array<{ role: 'user' | 'assistant'; content: string }> =>
@@ -224,10 +271,18 @@ export class CodeBuddyEngineRunner {
       ? configStore.getConfigForSet(session.intelligence.configSetId)
       : configStore.getAll();
     const [snapshot, personaPrompt, sharedContinuity, companionRoute, relationshipSafety] = await Promise.all([
-      this.createTurnCheckpoint(session, prompt),
+      this.createTurnCheckpoint(session, canonicalPrompt),
       this.resolveActivePersonaPrompt(),
-      this.continuity.prepare(session, localEngineMessages, prompt, userMessageId),
-      this.companionRouting.resolve(session, prompt, runtimeConfig, localRoutingHistory),
+      // The continuity adapter receives history plus the canonical turn only.
+      // The current engine message may contain private attachment excerpts and
+      // must remain confined to the adapter request assembled below.
+      this.continuity.prepare(
+        session,
+        localEngineMessages.slice(0, -1),
+        safeTurn,
+        userMessageId,
+      ),
+      this.companionRouting.resolve(session, canonicalPrompt, runtimeConfig, localRoutingHistory),
       this.createRelationshipSafetyGuard(session),
     ]);
     const engineMessages = sharedContinuity.active
@@ -269,7 +324,7 @@ export class CodeBuddyEngineRunner {
       bridge: getReasoningBridge(),
       toolUseId: `${session.id}:reasoning:${userMessageId}`,
       sessionId: session.id,
-      problem: prompt,
+      problem: canonicalPrompt,
       mode: effectiveModel ?? 'embedded',
     });
     const engineStartedAt = Date.now();

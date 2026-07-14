@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { chmod, mkdtemp, readFile, readdir, rm, stat, utimes } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -155,6 +155,87 @@ describe('cross-channel companion conversation', () => {
     expect(deliver).toHaveBeenCalledTimes(2);
     expect(deliver.mock.calls[0]?.[1]).toContain('(Cowork)');
     expect(deliver.mock.calls[1]?.[1]).toContain('Lisa (Cowork)');
+  });
+
+  it('rejects an enriched Cowork engine prompt before journal or channel delivery', async () => {
+    const deliver = vi.fn(async () => true);
+    const bridge = new CrossChannelConversationBridge(config(), { deliver });
+    const enriched = [
+      'Analyse ce document.',
+      '[Attached files - use Read tool to access them]:',
+      '- secret.txt at path: /private/secret.txt',
+      '[Attached file text excerpts - verify against source before final answers]:',
+      'PRIVATE_COWORK_ENGINE_SENTINEL',
+    ].join('\n');
+
+    expect(
+      await bridge.recordCoworkTurn(
+        { role: 'user', content: enriched },
+        { sessionId: 'session-lisa', messageId: 'private-message' },
+      ),
+    ).toBe(false);
+    expect(bridge.history()).toEqual([]);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it('does not reload legacy Cowork events containing private engine context', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codebuddy-legacy-cowork-private-'));
+    const historyPath = join(directory, 'lisa.jsonl');
+    const base = {
+      conversationId: 'lisa-test',
+      role: 'user' as const,
+      timestamp: '2026-07-13T10:00:00.000Z',
+      channel: 'telegram' as const,
+      channelId: '42',
+    };
+    try {
+      await writeFile(historyPath, [
+        JSON.stringify({
+          ...base,
+          id: 'legacy-private-cowork',
+          origin: 'cowork',
+          content:
+            '[Attached file text excerpts - verify against source before final answers]: PRIVATE_LEGACY_SENTINEL',
+        }),
+        JSON.stringify({
+          ...base,
+          id: 'legacy-private-mention',
+          origin: 'cowork',
+          content:
+            'Résume la mention.\n\n<context_mentions>\n<file source="/private/mention.txt">PRIVATE_MENTION_SENTINEL</file>\n</context_mentions>',
+        }),
+        JSON.stringify({
+          ...base,
+          id: 'safe-voice',
+          origin: 'voice',
+          content: 'Tour vocal sûr.',
+        }),
+      ].join('\n') + '\n');
+
+      const bridge = new CrossChannelConversationBridge(
+        config({ persist: true, historyPath }),
+      );
+      expect(bridge.history()).toEqual([{ role: 'user', content: 'Tour vocal sûr.' }]);
+      expect(JSON.stringify(bridge.snapshot())).not.toContain('PRIVATE_LEGACY_SENTINEL');
+      expect(JSON.stringify(bridge.snapshot())).not.toContain('PRIVATE_MENTION_SENTINEL');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('does not reject a legitimate inline discussion of an internal marker', async () => {
+    const deliver = vi.fn(async () => true);
+    const bridge = new CrossChannelConversationBridge(config(), { deliver });
+    const content =
+      'Le texte « <project_context> » est un exemple de balise, pas un contexte moteur injecté.';
+
+    expect(
+      await bridge.recordCoworkTurn(
+        { role: 'user', content },
+        { sessionId: 'session-lisa', messageId: 'marker-discussion' },
+      ),
+    ).toBe(true);
+    expect(bridge.history()).toEqual([{ role: 'user', content }]);
   });
 
   it('keeps Cowork disabled and unmirrored when explicitly configured', async () => {

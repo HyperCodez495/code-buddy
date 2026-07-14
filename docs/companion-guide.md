@@ -176,6 +176,17 @@ titre restent des raccourcis compatibles.
 `CODEBUDDY_CONVERSATION_COWORK_HISTORY=24` borne le contexte importé (4 à 80 tours, avec un second
 plafond de 12 000 caractères). Les tours déjà présents dans la base de la session sont dédupliqués.
 
+Le moteur Cowork peut toujours exploiter localement les extraits de fichiers, le contexte projet et
+les mémoires ICM nécessaires à sa réponse. Le fil partagé reçoit toutefois un **tour canonique**
+séparé : uniquement le texte visible saisi par l'utilisateur et, le cas échéant, le nombre de pièces
+jointes regroupées sous des catégories fixes (`image`, `document`, `vidéo`, `audio`, `archive` ou
+`fichier`). Noms, chemins, types MIME, tailles, base64, extraits et contexte interne ne traversent
+pas automatiquement l'adaptateur de continuité : ils ne sont ni journalisés comme tour utilisateur
+ni recopiés tels quels sur Telegram. La réponse visible de Lisa reste en revanche un côté normal du
+fil partagé ; si elle cite volontairement une information du document, cette réponse est partagée.
+Pour une analyse strictement locale, utilisez `CODEBUDDY_CONVERSATION_MIRROR_COWORK=false`. Les
+anciens événements Cowork qui portent les marqueurs d'un prompt enrichi sont ignorés au chargement.
+
 Chaque surface reçoit aussi le même **snapshot relationnel provisoire** : dernière surface, récence,
 besoin de soutien avec expiration, phase du raisonnement et compteurs. Il est recalculé à partir du
 fil et ne contient aucune phrase, aucun sujet, aucun identifiant de message ni empreinte de contenu.

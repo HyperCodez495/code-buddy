@@ -33,6 +33,7 @@ vi.mock('../src/main/reasoning/reasoning-capture', () => ({
 }));
 
 import { CodeBuddyEngineRunner } from '../src/main/engine/codebuddy-engine-runner';
+import type { CoworkCanonicalTurn } from '../src/main/companion/cross-channel-continuity';
 
 const relationshipSafetyLoader = async () =>
   import('../../src/conversation/relationship-safety.js');
@@ -97,8 +98,8 @@ describe('CodeBuddyEngineRunner companion continuity', () => {
 
     expect(continuity.prepare).toHaveBeenCalledWith(
       active,
-      [{ role: 'user', content: 'Continue ton raisonnement ici.' }],
-      'Continue ton raisonnement ici.',
+      [],
+      { text: 'Continue ton raisonnement ici.' },
       'user-current',
     );
     const engineMessages = adapter.runSession.mock.calls[0]?.[1];
@@ -120,6 +121,171 @@ describe('CodeBuddyEngineRunner companion continuity', () => {
       assistant?.id,
       'Voici la suite argumentée.',
     );
+  });
+
+  it('separates the enriched engine prompt from the canonical Cowork turn', async () => {
+    const privateSentinel = 'PRIVATE_ATTACHMENT_SENTINEL';
+    const privatePath = '/private/cowork/secret-notes.txt';
+    const visiblePrompt = 'Analyse ce fichier, puis explique-moi seulement la conclusion.';
+    const enginePrompt = [
+      visiblePrompt,
+      '',
+      '[Attached files - use Read tool to access them]:',
+      `- secret-notes.txt at path: ${privatePath}`,
+      '',
+      '[Attached file text excerpts - verify against source before final answers]:',
+      privateSentinel,
+    ].join('\n');
+    const continuity = {
+      prepare: vi.fn(async (
+        _session: Session,
+        _localMessages: Array<{ role: string; content: string }>,
+        _canonicalTurn: CoworkCanonicalTurn | string,
+        _messageId: string,
+      ) => ({
+        active: true,
+        messages: [],
+        systemPrompt: 'Identité stable de Lisa.',
+        recordAssistant: vi.fn(),
+      })),
+    };
+    const adapter = {
+      runSession: vi.fn(async (
+        _sessionId: string,
+        _messages: Array<{ role: string; content: string }>,
+        onEvent: (event: { type: string; content?: string }) => void,
+      ) => {
+        onEvent({ type: 'content', content: 'La conclusion est prête.' });
+        onEvent({ type: 'done' });
+        return { content: 'La conclusion est prête.' };
+      }),
+      cancel: vi.fn(),
+      clearSession: vi.fn(),
+    };
+    const runner = new CodeBuddyEngineRunner(
+      adapter,
+      { sendToRenderer: vi.fn(), saveMessage: vi.fn() },
+      continuity,
+      undefined,
+      relationshipSafetyLoader,
+    );
+    const active: Session = {
+      id: 'linked-private-attachment',
+      title: 'Lisa',
+      status: 'idle',
+      mountedPaths: [],
+      allowedTools: [],
+      memoryEnabled: false,
+      tags: ['companion'],
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const currentUser: Message = {
+      id: 'user-private-attachment',
+      sessionId: active.id,
+      role: 'user',
+      content: [
+        {
+          type: 'file_attachment',
+          filename: 'secret-notes.txt',
+          relativePath: privatePath,
+          size: privateSentinel.length,
+          mimeType: 'text/plain',
+          inlineDataBase64: Buffer.from(privateSentinel).toString('base64'),
+        },
+        { type: 'text', text: visiblePrompt },
+      ],
+      timestamp: 1,
+    };
+
+    await runner.run(active, enginePrompt, [currentUser], {
+      text: visiblePrompt,
+      attachments: [{ kind: 'document' }],
+    });
+
+    const engineMessages = adapter.runSession.mock.calls[0]?.[1] ?? [];
+    expect(engineMessages.at(-1)).toEqual({ role: 'user', content: enginePrompt });
+    expect(JSON.stringify(engineMessages)).toContain(privateSentinel);
+    expect(JSON.stringify(engineMessages)).toContain(privatePath);
+
+    const continuityCall = continuity.prepare.mock.calls[0];
+    expect(continuityCall?.[1]).toEqual([]);
+    expect(continuityCall?.[2]).toEqual({
+      text: visiblePrompt,
+      attachments: [{ kind: 'document' }],
+    });
+    expect(continuityCall?.[3]).toBe(currentUser.id);
+    const canonicalTurn = JSON.stringify(continuityCall?.[2]);
+    expect(canonicalTurn).not.toContain(privateSentinel);
+    expect(canonicalTurn).not.toContain(privatePath);
+    expect(canonicalTurn).not.toContain('secret-notes.txt');
+    expect(canonicalTurn).not.toContain('text/plain');
+    expect(canonicalTurn).not.toContain('[Attached file text excerpts');
+    expect(JSON.stringify(continuityCall)).not.toContain(privateSentinel);
+    expect(JSON.stringify(continuityCall)).not.toContain(privatePath);
+  });
+
+  it('fails closed at the shared boundary when a companion runner has no canonical turn', async () => {
+    const privateSentinel = 'PRIVATE_DIRECT_RUNNER_SENTINEL';
+    const enginePrompt = [
+      'Analyse le contexte privé.',
+      '<context_mentions>',
+      `<file source="/private/direct.txt">${privateSentinel}</file>`,
+      '</context_mentions>',
+    ].join('\n');
+    const continuity = {
+      prepare: vi.fn(async () => ({
+        active: true,
+        messages: [],
+        systemPrompt: 'Identité stable de Lisa.',
+        recordAssistant: vi.fn(),
+      })),
+    };
+    const adapter = {
+      runSession: vi.fn(async (
+        _sessionId: string,
+        _messages: Array<{ role: string; content: string }>,
+        onEvent: (event: { type: string; content?: string }) => void,
+      ) => {
+        onEvent({ type: 'content', content: 'Réponse locale.' });
+        onEvent({ type: 'done' });
+        return { content: 'Réponse locale.' };
+      }),
+      cancel: vi.fn(),
+      clearSession: vi.fn(),
+    };
+    const saved: Message[] = [];
+    const runner = new CodeBuddyEngineRunner(
+      adapter,
+      { sendToRenderer: vi.fn(), saveMessage: (message) => saved.push(message) },
+      continuity,
+      { resolve: vi.fn(async () => null) },
+      relationshipSafetyLoader,
+    );
+    const active: Session = {
+      id: 'linked-direct-private',
+      title: 'Lisa',
+      status: 'idle',
+      mountedPaths: [],
+      allowedTools: [],
+      memoryEnabled: false,
+      tags: ['companion'],
+      createdAt: 0,
+      updatedAt: 0,
+    };
+
+    await runner.run(active, enginePrompt, []);
+
+    expect(adapter.runSession.mock.calls[0]?.[1]?.at(-1)).toEqual({
+      role: 'user',
+      content: enginePrompt,
+    });
+    expect(continuity.prepare.mock.calls[0]?.[1]).toEqual([]);
+    expect(continuity.prepare.mock.calls[0]?.[2]).toEqual({ text: '' });
+    expect(JSON.stringify(continuity.prepare.mock.calls[0])).not.toContain(privateSentinel);
+    expect(saved.find((message) => message.role === 'user')?.content).toEqual([
+      { type: 'text', text: '' },
+    ]);
   });
 
   it('buffers and removes dependency pressure before any Cowork stream event is visible', async () => {

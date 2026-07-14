@@ -184,6 +184,26 @@ const JOURNAL_LOCK_RETRY_MS = 25;
 const MIN_JOURNAL_BYTES = 32 * 1_024;
 const MAX_PERSISTED_EVENT_CONTENT_CHARS = 16_384;
 const MAX_PERSISTED_METADATA_CHARS = 512;
+const INTERNAL_COWORK_CONTEXT_MARKERS = [
+  /\[Attached files - use Read tool to access them\]/i,
+  /\[Attached file text excerpts - verify against source before final answers\]/i,
+  /\[Document workshop (?:guidance|path hints)\]/i,
+  /\[Video(?: URL)? understanding guidance\]/i,
+  /<context_mentions\b[^>]*>\s*<[^>]+\bsource=/i,
+  /<icm_memories\b[^>]*>\s*Relevant memories from past sessions:/i,
+  /<project_context\b[^>]*\bproject=/i,
+  /<project_(instructions|knowledge|memory)\b[\s\S]*<\/project_\1>/i,
+  /<session_recall_context\b[\s\S]*<\/session_recall_context>/i,
+] as const;
+
+/** Defense in depth: enriched Cowork engine prompts are never shareable conversation turns. */
+export function isSafeCoworkSharedContent(content: string): boolean {
+  return !INTERNAL_COWORK_CONTEXT_MARKERS.some((marker) => marker.test(content));
+}
+
+function eventIsSafeForSharedConversation(event: CrossChannelConversationEvent): boolean {
+  return event.origin !== 'cowork' || isSafeCoworkSharedContent(event.content);
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -543,6 +563,10 @@ export class CrossChannelConversationBridge {
     input: { sessionId: string; messageId: string }
   ): Promise<boolean> {
     if (!this.isActive() || !this.config.coworkEnabled) return false;
+    if (!isSafeCoworkSharedContent(turn.content)) {
+      logger.warn('[conversation-bridge] blocked an enriched Cowork prompt at the shared boundary');
+      return false;
+    }
     const target = this.config.target;
     const appended = this.append({
       ...turn,
@@ -657,6 +681,7 @@ export class CrossChannelConversationBridge {
           try {
             const event = JSON.parse(line) as unknown;
             return eventIsValid(event) &&
+              eventIsSafeForSharedConversation(event) &&
               event.conversationId === boundedPersistedMetadata(this.config.conversationId)
               ? [event]
               : [];
@@ -801,6 +826,7 @@ export class CrossChannelConversationBridge {
         try {
           const parsed = JSON.parse(line) as unknown;
           return eventIsValid(parsed) &&
+            eventIsSafeForSharedConversation(parsed) &&
             parsed.conversationId === boundedPersistedMetadata(this.config.conversationId)
             ? [parsed]
             : [];

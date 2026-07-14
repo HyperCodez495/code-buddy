@@ -69,6 +69,10 @@ import { generateTitleWithClaudeSdk } from '../claude/claude-sdk-one-shot';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 import { CodeBuddyEngineRunner } from '../engine/codebuddy-engine-runner';
 import {
+  classifyCoworkCanonicalAttachment,
+  type CoworkCanonicalTurn,
+} from '../companion/cross-channel-continuity';
+import {
   TurnJournal,
   type TurnJournalFence,
   type TurnJournalReadResult,
@@ -125,7 +129,12 @@ function parseSessionIntelligence(raw: string | null | undefined): SessionIntell
 }
 
 interface AgentRunner {
-  run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
+  run(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[],
+    canonicalTurn?: CoworkCanonicalTurn,
+  ): Promise<void>;
   cancel(sessionId: string): void;
   steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSdkSession?(sessionId: string): void;
@@ -404,6 +413,40 @@ function buildTurnSubmissionSnapshot(content: ContentBlock[]): {
     content: snapshot,
     recoverable: snapshot.length > 0 && nonRecoverableTypes.length === 0,
     nonRecoverableTypes,
+  };
+}
+
+/**
+ * Build the only representation allowed to leave Cowork's private engine
+ * context for the shared Lisa conversation. Attachment contents, paths,
+ * filenames, sizes and MIME strings deliberately collapse to fixed kinds.
+ */
+function buildCoworkCanonicalTurn(
+  prompt: string,
+  content: ContentBlock[],
+): CoworkCanonicalTurn {
+  const visibleText = prompt.trim() || content
+    .flatMap((block) => block.type === 'text' ? [(block as TextContent).text] : [])
+    .join('\n')
+    .trim();
+  const attachments = content.flatMap((block) => {
+    if (block.type === 'image') {
+      return [{ kind: classifyCoworkCanonicalAttachment({ image: true }) }];
+    }
+    if (block.type === 'file_attachment') {
+      const file = block as FileAttachmentContent;
+      return [{
+        kind: classifyCoworkCanonicalAttachment({
+          mimeType: file.mimeType,
+          filename: file.filename,
+        }),
+      }];
+    }
+    return [];
+  });
+  return {
+    text: visibleText,
+    ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
 
@@ -1582,6 +1625,7 @@ export class SessionManager {
         ) as FileAttachmentContent[];
         const promptForAgent =
           prompt.trim() || buildAttachmentOnlyPrompt(fileAttachments) || prompt;
+        const canonicalTurn = buildCoworkCanonicalTurn(prompt, messageContent);
         let enhancedPrompt = promptForAgent;
         if (fileAttachments.length > 0) {
           const fileContext = await buildAttachedFilesPromptContext(
@@ -1590,7 +1634,11 @@ export class SessionManager {
             promptForAgent
           );
           enhancedPrompt = `${promptForAgent}\n\n${fileContext}`;
-          logCtx('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
+          logCtx('[SessionManager] Enhanced prompt with file info', {
+            promptChars: promptForAgent.length,
+            contextChars: fileContext.length,
+            fileCount: fileAttachments.length,
+          });
         } else {
           // No attachment, but a YouTube URL in the prompt still routes to
           // understand_video (source = URL) — buildAttachedFilesPromptContext
@@ -1713,7 +1761,12 @@ export class SessionManager {
         const turnSession = options?.permissionModeOverride
           ? { ...session, permissionModeOverride: options.permissionModeOverride }
           : session;
-        await this.agentRunner.run(turnSession, enhancedPrompt, messagesForContext);
+        await this.agentRunner.run(
+          turnSession,
+          enhancedPrompt,
+          messagesForContext,
+          canonicalTurn,
+        );
         session.intelligence = appendLatencyMeasurement({
           ...defaultSessionIntelligence(),
           ...session.intelligence,

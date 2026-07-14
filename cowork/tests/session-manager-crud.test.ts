@@ -1094,6 +1094,12 @@ describe('SessionManager file attachment processing', () => {
     expect(enhancedPrompt).toContain('[Document workshop guidance]');
     expect(enhancedPrompt).toContain('[Document workshop path hints]');
     expect(enhancedPrompt).toContain('questions-livrable.docx');
+    expect(run.mock.calls[0][3]).toEqual({
+      text: '',
+      attachments: [{ kind: 'document' }],
+    });
+    expect(JSON.stringify(run.mock.calls[0][3])).not.toContain('questions.docx');
+    expect(JSON.stringify(run.mock.calls[0][3])).not.toContain('.tmp');
   });
 
   it('recovers queued prompts that never reached turn_started after a crash', async () => {
@@ -1216,6 +1222,7 @@ describe('SessionManager file attachment processing', () => {
           },
         },
       });
+      expect(runArgs[3]).toEqual({ text: 'Resume the queued prompt' });
 
       const replay = journal.read('s-queue-recover');
       const pendingRun = replay.replay.runs.find((run) => run.runId === 'turn-pending');

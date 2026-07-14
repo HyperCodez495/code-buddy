@@ -201,6 +201,12 @@ once it reaches `1.0.0`.
 - MCP deferred-schema threshold is configurable via `CODEBUDDY_MCP_DEFER_THRESHOLD` (deferred param-less stubs were skipped by some models).
 
 ### Fixed
+- **Cowork ne partage plus le contexte privé du moteur avec Lisa sur Telegram.** Le texte visible
+  et un résumé fixe des catégories de pièces jointes forment désormais un tour canonique distinct
+  du prompt enrichi utilisé localement par le moteur. Chemins, noms, types MIME, base64, extraits de
+  fichiers, mémoire projet et contexte ICM ne sont plus recopiés automatiquement dans le tour
+  utilisateur partagé ; les anciens événements Cowork enrichis sont ignorés à la lecture et le
+  prompt complet n'est plus écrit dans les logs.
 - **Cowork Media Library no longer crashes on a stale Vite chunk.** Every named lazy import now
   tolerates the one `undefined` resolution produced while `vite:preloadError` triggers its bounded
   renderer reload, preventing `Cannot read properties of undefined (reading 'MediaLibraryView')`.

@@ -17,6 +17,58 @@ export type CoworkEngineMessage = {
   contextId?: string;
 };
 
+export type CoworkCanonicalAttachmentKind =
+  | 'image'
+  | 'document'
+  | 'video'
+  | 'audio'
+  | 'archive'
+  | 'file';
+
+/**
+ * User-visible, allowlisted representation of a Cowork turn.
+ *
+ * The engine prompt may additionally contain file excerpts, absolute paths,
+ * project memory and mention context. None of that internal material is legal
+ * here: this value is the only input that may reach the shared companion
+ * journal or a mirrored Telegram message.
+ */
+export interface CoworkCanonicalTurn {
+  text: string;
+  attachments?: Array<{ kind: CoworkCanonicalAttachmentKind }>;
+}
+
+export function classifyCoworkCanonicalAttachment(input: {
+  image?: boolean;
+  mimeType?: string;
+  filename?: string;
+}): CoworkCanonicalAttachmentKind {
+  if (input.image) return 'image';
+  const mimeType = input.mimeType?.trim().toLowerCase() ?? '';
+  const filename = input.filename?.trim().toLowerCase() ?? '';
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (
+    mimeType.includes('zip') ||
+    mimeType.includes('archive') ||
+    /\.(?:zip|7z|rar|tar|tgz|gz)$/i.test(filename)
+  ) {
+    return 'archive';
+  }
+  if (
+    mimeType.startsWith('text/') ||
+    mimeType === 'application/pdf' ||
+    mimeType.includes('document') ||
+    mimeType.includes('spreadsheet') ||
+    mimeType.includes('presentation') ||
+    /\.(?:txt|md|pdf|docx?|xlsx?|csv|pptx?)$/i.test(filename)
+  ) {
+    return 'document';
+  }
+  return 'file';
+}
+
 type ConversationRole = 'user' | 'assistant';
 type ConversationOrigin = 'voice' | 'channel' | 'cowork';
 
@@ -107,6 +159,15 @@ interface CachedBridge {
 }
 
 const MAX_SHARED_HISTORY_CHARS = 12_000;
+const MAX_CANONICAL_ATTACHMENTS = 24;
+const CANONICAL_ATTACHMENT_KINDS = new Set<CoworkCanonicalAttachmentKind>([
+  'image',
+  'document',
+  'video',
+  'audio',
+  'archive',
+  'file',
+]);
 const EMPTY_CONTINUITY: PreparedCoworkContinuity = {
   active: false,
   messages: [],
@@ -115,6 +176,49 @@ const EMPTY_CONTINUITY: PreparedCoworkContinuity = {
 
 function normalizeContent(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+export function normalizeCoworkCanonicalTurn(
+  input: CoworkCanonicalTurn | string,
+): CoworkCanonicalTurn {
+  if (typeof input === 'string') return { text: normalizeContent(input) };
+  const attachments = Array.isArray(input.attachments)
+    ? input.attachments
+        .filter(
+          (attachment): attachment is { kind: CoworkCanonicalAttachmentKind } =>
+            Boolean(attachment) && CANONICAL_ATTACHMENT_KINDS.has(attachment.kind),
+        )
+        .slice(0, MAX_CANONICAL_ATTACHMENTS)
+        .map((attachment) => ({ kind: attachment.kind }))
+    : [];
+  return {
+    text: normalizeContent(typeof input.text === 'string' ? input.text : ''),
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
+/** Render only fixed labels and counts; filenames, MIME strings and paths are never accepted. */
+export function renderCoworkCanonicalTurn(input: CoworkCanonicalTurn | string): string {
+  const canonical = normalizeCoworkCanonicalTurn(input);
+  const counts = new Map<CoworkCanonicalAttachmentKind, number>();
+  for (const attachment of canonical.attachments ?? []) {
+    counts.set(attachment.kind, (counts.get(attachment.kind) ?? 0) + 1);
+  }
+  const labels: Record<CoworkCanonicalAttachmentKind, [string, string]> = {
+    image: ['image', 'images'],
+    document: ['document', 'documents'],
+    video: ['vidéo', 'vidéos'],
+    audio: ['fichier audio', 'fichiers audio'],
+    archive: ['archive', 'archives'],
+    file: ['fichier', 'fichiers'],
+  };
+  const attachmentSummary = [...counts.entries()]
+    .map(([kind, count]) => `${count} ${labels[kind][count === 1 ? 0 : 1]}`)
+    .join(', ');
+  return [
+    canonical.text,
+    attachmentSummary ? `[Pièces jointes : ${attachmentSummary}.]` : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 function messageFingerprint(role: string, content: string): string {
@@ -204,15 +308,21 @@ export class CoworkCrossChannelContinuity {
   async prepare(
     session: Session,
     localMessages: CoworkEngineMessage[],
-    currentPrompt: string,
+    currentTurn: CoworkCanonicalTurn | string,
     userMessageId: string,
   ): Promise<PreparedCoworkContinuity> {
     if (!isCompanionThreadTags(session.tags)) return EMPTY_CONTINUITY;
 
+    const canonicalTurn = normalizeCoworkCanonicalTurn(currentTurn);
+    const canonicalContent = renderCoworkCanonicalTurn(canonicalTurn);
+
     try {
       const [state, freshContextPrompt] = await Promise.all([
         this.resolveBridge(),
-        this.resolveFreshContext(currentPrompt, localMessages),
+        this.resolveFreshContext(
+          canonicalTurn.text || canonicalContent,
+          localMessages,
+        ),
       ]);
       if (!state || !state.config.coworkEnabled || !state.bridge.isActive()) {
         return freshContextPrompt
@@ -221,7 +331,7 @@ export class CoworkCrossChannelContinuity {
       }
 
       const localFingerprints = new Set(
-        [...localMessages, { role: 'user', content: currentPrompt }]
+        [...localMessages, { role: 'user', content: canonicalContent }]
           .map((message) => messageFingerprint(message.role, message.content)),
       );
       const sessionPrefix = `${session.id}:`;
@@ -235,7 +345,7 @@ export class CoworkCrossChannelContinuity {
         contextId: event.id,
       }));
 
-      this.recordTurn(state.bridge, session.id, userMessageId, 'user', currentPrompt);
+      this.recordTurn(state.bridge, session.id, userMessageId, 'user', canonicalContent);
       const relationshipContext = state.bridge.renderRelationshipContext?.().trim() ?? '';
 
       const companionName = state.config.companionName || 'Lisa';
