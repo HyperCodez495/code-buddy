@@ -94,6 +94,9 @@ export function createFlowCommand(): Command {
 
         const result = await flow.execute(goal);
         console.log(result);
+        if (!flow.succeeded) {
+          process.exitCode = 1;
+        }
       } catch (err) {
         console.error('Flow error:', err instanceof Error ? err.message : err);
         process.exit(1);

@@ -10,7 +10,7 @@
  *  3. `runDeepResearchCli` renders progress + persists a cited report using an
  *     injected orchestrator (no network).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import {
   maybeRunDeepResearch,
@@ -80,6 +80,14 @@ describe('research command --deep option', () => {
 });
 
 describe('runDeepResearchCli (injected orchestrator, no network)', () => {
+  beforeEach(() => {
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   it('persists a cited report to the requested file and logs progress', async () => {
     const logs: string[] = [];
     const written: Array<{ file: string; content: string }> = [];
@@ -139,6 +147,7 @@ describe('runDeepResearchCli (injected orchestrator, no network)', () => {
     ).resolves.toBeUndefined();
     expect(written[0]!.content).toContain('Status: failed');
     expect(written[0]!.content).toContain('kaboom');
+    expect(process.exitCode).toBe(1);
   });
 });
 

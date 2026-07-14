@@ -476,11 +476,17 @@ export function createResearchCommand(): Command {
 
         if (!jsonOutput) {
           console.log('\n' + '─'.repeat(60));
-          if (durabilityRequested && runStatus !== 'completed') {
+          if (runStatus === 'partial') {
             console.log(
-              runStatus === 'partial'
+              durabilityRequested
                 ? '⚠️ Research partial — resume is still useful.'
-                : '❌ Research workers failed — resume is required.',
+                : '⚠️ Research partial — one or more workers failed.',
+            );
+          } else if (runStatus === 'failed') {
+            console.log(
+              durabilityRequested
+                ? '❌ Research workers failed — resume is required.'
+                : '❌ Research failed — no worker completed successfully.',
             );
           } else {
             console.log(`✅ Research complete!`);
@@ -536,7 +542,7 @@ export function createResearchCommand(): Command {
             result: safeResult,
           }, null, 2));
         }
-        if ((jsonOutput || durabilityRequested) && runStatus !== 'completed') {
+        if (runStatus !== 'completed') {
           process.exitCode = 1;
         }
       } catch (err) {

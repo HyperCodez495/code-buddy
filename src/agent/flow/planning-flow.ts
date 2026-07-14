@@ -88,6 +88,16 @@ export class PlanningFlow extends EventEmitter {
     return this.stateMachine.status;
   }
 
+  /** True only when every planned step completed successfully. */
+  get succeeded(): boolean {
+    return (
+      this.stateMachine.status === AgentStatus.FINISHED &&
+      this.activePlan !== null &&
+      this.activePlan.steps.length > 0 &&
+      this.activePlan.steps.every((step) => step.status === PlanStepStatus.COMPLETED)
+    );
+  }
+
   /**
    * Execute a task using the planning flow.
    * 1. Create plan from goal
@@ -113,6 +123,21 @@ export class PlanningFlow extends EventEmitter {
       const summary = await this.synthesize();
 
       this.activePlan.completedAt = Date.now();
+
+      const incompleteSteps = this.activePlan.steps.filter(
+        (step) => step.status !== PlanStepStatus.COMPLETED,
+      );
+      if (this.activePlan.steps.length === 0 || incompleteSteps.length > 0) {
+        const error = new Error(
+          this.activePlan.steps.length === 0
+            ? 'Flow produced no executable steps'
+            : `Flow incomplete: ${incompleteSteps.length}/${this.activePlan.steps.length} step(s) did not complete`,
+        );
+        this.stateMachine.fail(error);
+        this.emit('flow:error', { error, summary, plan: this.activePlan });
+        return summary;
+      }
+
       this.stateMachine.finish('Flow completed');
       this.emit('flow:complete', { summary, plan: this.activePlan });
 
@@ -343,10 +368,14 @@ Respond ONLY with the JSON object, no markdown fences.`;
     const completed = plan.steps.filter((s) => s.status === PlanStepStatus.COMPLETED);
     const failed = plan.steps.filter((s) => s.status === PlanStepStatus.FAILED);
     const skipped = plan.steps.filter((s) => s.status === PlanStepStatus.SKIPPED);
+    const blocked = plan.steps.filter((s) => s.status === PlanStepStatus.BLOCKED);
 
     const summaryParts: string[] = [];
     summaryParts.push(`# Execution Summary\n**Goal:** ${plan.goal}`);
-    summaryParts.push(`**Steps:** ${completed.length} completed, ${failed.length} failed, ${skipped.length} skipped`);
+    summaryParts.push(
+      `**Steps:** ${completed.length} completed, ${failed.length} failed, ` +
+        `${skipped.length} skipped, ${blocked.length} blocked`,
+    );
 
     if (completed.length > 0) {
       summaryParts.push('\n## Completed');
@@ -362,6 +391,13 @@ Respond ONLY with the JSON object, no markdown fences.`;
       }
     }
 
+    if (blocked.length > 0) {
+      summaryParts.push('\n## Blocked');
+      for (const step of blocked) {
+        summaryParts.push(`- **${step.title}**: ${step.error}`);
+      }
+    }
+
     return summaryParts.join('\n');
   }
 
@@ -371,7 +407,11 @@ Respond ONLY with the JSON object, no markdown fences.`;
     const total = this.activePlan.steps.length;
     if (total === 0) return 100;
     const done = this.activePlan.steps.filter(
-      (s) => s.status === PlanStepStatus.COMPLETED || s.status === PlanStepStatus.SKIPPED || s.status === PlanStepStatus.FAILED
+      (s) =>
+        s.status === PlanStepStatus.COMPLETED ||
+        s.status === PlanStepStatus.SKIPPED ||
+        s.status === PlanStepStatus.FAILED ||
+        s.status === PlanStepStatus.BLOCKED,
     ).length;
     return Math.round((done / total) * 100);
   }

@@ -241,6 +241,7 @@ export async function runDeepResearchCli(
       ].join('\n');
       await writeFile(reportPath, failure).catch(() => undefined);
     }
+    process.exitCode = 1;
   }
 }
 

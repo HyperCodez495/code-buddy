@@ -249,6 +249,40 @@ describe('buddy research checkpoint/resume flags', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('returns exit code 1 for an ordinary non-durable --wide partial run', async () => {
+    mocks.research.mockResolvedValueOnce({
+      ...result,
+      workerResults: [
+        result.workerResults[0],
+        { ...result.workerResults[1], success: false, output: '', error: 'worker failed' },
+      ],
+      successCount: 1,
+    });
+
+    const { logs } = await run('--wide');
+
+    expect(logs.join('\n')).toContain('Research partial');
+    expect(logs.join('\n')).not.toContain('Research complete!');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('classifies a run with no workers as failed, never partial or successful', async () => {
+    mocks.research.mockResolvedValueOnce({
+      ...result,
+      subtopics: [],
+      workerResults: [],
+      successCount: 0,
+    });
+
+    const { logs } = await run('--wide');
+    const output = logs.join('\n');
+
+    expect(output).toContain('Research failed');
+    expect(output).not.toContain('Research partial');
+    expect(output).not.toContain('Research complete!');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('creates nested durable report directories and writes only scrubbed content', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'wide-research-cli-'));
     tempDirs.push(directory);

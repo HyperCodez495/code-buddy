@@ -46,6 +46,7 @@ describe('PlanningFlow', () => {
     expect(result).toContain('Execution Summary');
     expect(result).toContain('2 completed');
     expect(flow.status).toBe(AgentStatus.FINISHED);
+    expect(flow.succeeded).toBe(true);
     expect(mockSWEAgent.run).toHaveBeenCalledTimes(2);
   });
 
@@ -82,9 +83,22 @@ describe('PlanningFlow', () => {
 
     expect(result).toContain('1 failed');
     expect(result).toContain('1 skipped');
+    expect(flow.status).toBe(AgentStatus.ERROR);
+    expect(flow.succeeded).toBe(false);
 
     const plan = flow.plan!;
     expect(plan.steps[1].status).toBe(PlanStepStatus.SKIPPED);
+  });
+
+  it('does not report an empty plan as a successful flow', async () => {
+    mockPlanLLM.mockResolvedValue(JSON.stringify({ steps: [] }));
+
+    const flow = new PlanningFlow(createConfig());
+    const result = await flow.execute('No executable work');
+
+    expect(result).toContain('0 completed');
+    expect(flow.status).toBe(AgentStatus.ERROR);
+    expect(flow.succeeded).toBe(false);
   });
 
   it('falls back to single step on invalid JSON', async () => {
