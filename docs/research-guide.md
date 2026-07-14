@@ -264,25 +264,26 @@ un endpoint de confiance configuré par l'opérateur, au même titre que
 `OLLAMA_HOST`) — il suffit qu'elle soit une URL http(s) bien formée, sinon le
 provider est désactivé avec un avertissement (jamais un crash).
 
-## QA scientifique (PaperQA2) — en construction
+## QA scientifique (PaperQA2)
 
 Une direction distincte de Deep Research : au lieu de synthétiser depuis le
 web, **interroger un corpus de documents** (PDF scientifiques) avec des
 réponses ancrées dans des passages précis. Inspirée de
 [PaperQA2](https://arxiv.org/abs/2409.13740).
 
-**État réel (2026-07) : fondation posée, pas encore utilisable.** Seule la
-**Phase 1** est livrée (`src/research/paper-qa/`) : un parseur PDF structurel
-et un chunker de prose qui découpent un document en passages **avec
-provenance réelle** (page, section, offset) — sans aucun appel LLM ni réseau.
-Ce que ça permet aujourd'hui : rien de directement pilotable en CLI ou par
-l'agent — c'est une brique interne.
+**État réel (2026-07) : utilisable en CLI et par l'agent.** Le pipeline parse
+les PDF avec provenance réelle (page, section, offset), découpe la prose,
+combine BM25 et embeddings locaux, résume les passages pertinents puis produit
+une réponse ancrée qui refuse de conclure lorsque les sources ne suffisent pas.
+La commande `buddy papers ask` et le tool `paper_qa` exposent ce pipeline.
 
-Ce qui **manque encore** (Phases 2 à 4, non livrées) : un index des passages
-(embeddings), un mécanisme de réponse ancrée (citation systématique du
-passage source), et surtout un **tool/CLI pour interroger un corpus** — donc
-à ce jour, il n'existe **aucune commande `buddy` pour poser une question à
-un ensemble de PDF**. Ne pas confondre avec `buddy research ingest|recall`
-(le pont CKG déjà opérationnel, qui ingère des publications découvertes sur
-le web dans le graphe de connaissances collectif — un mécanisme différent et
-déjà utilisable).
+Les embeddings du modèle local intégré sont conservés entre les processus dans
+un cache LRU borné sous `~/.codebuddy/paper-qa/embeddings/`. Le chemin peut être
+remplacé avec `CODEBUDDY_PAPER_QA_CACHE_DIR`. Un embedder injecté reste en cache
+mémoire par défaut afin de ne pas mélanger des espaces vectoriels incompatibles;
+activez explicitement `persistentEmbeddingCache` avec un modèle correctement
+nommé pour le rendre persistant.
+
+Limite restante : les PDF purement scannés sans couche texte nécessitent encore
+un passage OCR avant leur indexation. Ne pas confondre ce corpus local avec
+`buddy research ingest|recall`, qui ingère les publications web dans le CKG.

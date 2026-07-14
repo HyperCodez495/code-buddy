@@ -29,6 +29,7 @@ import { BM25Index } from '../../search/bm25.js';
 import { cosineSimilarityF32, hybridMmrRank } from '../../memory/hybrid-mmr.js';
 import type { HybridCandidate } from '../../memory/hybrid-mmr.js';
 import { EmbeddingProvider } from '../../embeddings/embedding-provider.js';
+import { DiskEmbeddingCache } from './disk-embedding-cache.js';
 import { chunkDocument } from './prose-chunker.js';
 import type { ChunkOptions, Passage, StructuredDoc } from './types.js';
 
@@ -49,12 +50,9 @@ export interface PassageEmbedder {
 /**
  * A pluggable, bounded embedding cache keyed by a content fingerprint. Lets a
  * caller persist vectors across runs so unchanged passages are never re-embedded.
- * The default is an in-memory bounded map; a disk-backed implementation can be
- * injected without touching this module.
- *
- * TODO(phase-2+): ship an on-disk fingerprint→vector cache (e.g. under
- * `~/.codebuddy/paper-qa/embeddings/`) so a large corpus survives process
- * restarts. Left injectable + bounded here on purpose.
+ * Injected embedders default to an in-memory map so tests and custom vector
+ * spaces cannot contaminate one another. The built-in model uses the bounded
+ * disk cache under `~/.codebuddy/paper-qa/embeddings/`.
  */
 export interface EmbeddingCache {
   get(fingerprint: string): Float32Array | undefined;
@@ -95,6 +93,10 @@ export interface PassageIndexOptions {
   embeddingModel?: string;
   /** Injected embedding cache. Default: an in-memory bounded cache. */
   embeddingCache?: EmbeddingCache;
+  /** Persist vectors across processes (default true for the built-in embedder, false for injected embedders). */
+  persistentEmbeddingCache?: boolean;
+  /** Override the persistent cache directory (or set CODEBUDDY_PAPER_QA_CACHE_DIR). */
+  embeddingCacheDirectory?: string;
   /** Chunker knobs passed through to `chunkDocument`. */
   chunkOptions?: ChunkOptions;
   /** Hard cap on total indexed passages across all documents (default 20000). */
@@ -186,7 +188,17 @@ export class PassageIndex {
     this.chunkOptions = options.chunkOptions ?? {};
     this.maxPassages = clampInt(options.maxPassages, DEFAULT_MAX_PASSAGES, 1, MAX_PASSAGES_CAP);
     this.embedCharLimit = clampInt(options.embedCharLimit, DEFAULT_EMBED_CHAR_LIMIT, 1, 1_000_000);
-    this.embeddingCache = options.embeddingCache ?? new InMemoryEmbeddingCache(this.maxPassages);
+    const persistentCache = options.persistentEmbeddingCache ?? options.embedder === undefined;
+    this.embeddingCache =
+      options.embeddingCache ??
+      (persistentCache
+        ? new DiskEmbeddingCache({
+            ...(options.embeddingCacheDirectory
+              ? { directory: options.embeddingCacheDirectory }
+              : {}),
+            maxEntries: this.maxPassages,
+          })
+        : new InMemoryEmbeddingCache(this.maxPassages));
   }
 
   /** Number of indexed passages. */

@@ -16,6 +16,7 @@ export { parsePdfStructure, defaultParsePdf } from './pdf-structure.js';
 export { chunkDocument } from './prose-chunker.js';
 export { findPageNo, findSectionTitle } from './provenance.js';
 export { PassageIndex, InMemoryEmbeddingCache } from './passage-index.js';
+export { DiskEmbeddingCache } from './disk-embedding-cache.js';
 export { buildCorpusIndex } from './corpus.js';
 export { summarizePassage, summarizePassages } from './rcs.js';
 export { answerFromPassages } from './answer.js';
@@ -41,6 +42,7 @@ export type {
   PassageIndexOptions,
   PassageSearchOptions,
 } from './passage-index.js';
+export type { DiskEmbeddingCacheOptions } from './disk-embedding-cache.js';
 export type { BuildCorpusOptions } from './corpus.js';
 export type { PassageLlmMessage, PassageQaLlm, PassageSummary, RcsOptions } from './rcs.js';
 export type {
