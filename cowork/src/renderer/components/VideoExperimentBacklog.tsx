@@ -64,8 +64,14 @@ function ExperimentRow({
 }: {
   experiment: VideoExperimentView;
   updating: boolean;
-  onReview: (experiment: VideoExperimentView, status: VideoExperimentReviewStatus) => void;
+  onReview: (
+    experiment: VideoExperimentView,
+    status: VideoExperimentReviewStatus,
+    note?: string
+  ) => void;
 }) {
+  const [note, setNote] = useState(experiment.reviewNote ?? '');
+
   return (
     <li className="rounded-lg border border-border bg-background p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -86,7 +92,7 @@ function ExperimentRow({
           disabled={updating}
           value={experiment.reviewStatus}
           onChange={(event) =>
-            onReview(experiment, event.target.value as VideoExperimentReviewStatus)
+            onReview(experiment, event.target.value as VideoExperimentReviewStatus, note)
           }
         >
           {VIDEO_EXPERIMENT_STATUSES.map((status) => (
@@ -135,6 +141,27 @@ function ExperimentRow({
           title={experiment.artifactPath}
         >
           Artefact : {experiment.artifactPath}
+        </div>
+        <div className="mt-3 space-y-1.5">
+          <label className="block font-medium" htmlFor={`review-note-${experiment.id}`}>
+            Note de vérification
+          </label>
+          <textarea
+            id={`review-note-${experiment.id}`}
+            className="min-h-16 w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            maxLength={2_000}
+            placeholder="Sources primaires, contraintes Darkstar, résultat du benchmark…"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <button
+            type="button"
+            className="rounded-md border border-border px-2 py-1 hover:bg-accent disabled:opacity-50"
+            disabled={updating || note === (experiment.reviewNote ?? '')}
+            onClick={() => onReview(experiment, experiment.reviewStatus, note)}
+          >
+            Enregistrer la note
+          </button>
         </div>
       </details>
     </li>
@@ -191,13 +218,23 @@ export function VideoExperimentBacklog({ workingDir }: { workingDir?: string }) 
   }, [data, query, statusFilter]);
 
   const review = useCallback(
-    async (experiment: VideoExperimentView, status: VideoExperimentReviewStatus) => {
+    async (
+      experiment: VideoExperimentView,
+      status: VideoExperimentReviewStatus,
+      note = experiment.reviewNote ?? ''
+    ) => {
       const api = videoExperimentApi();
-      if (!api || status === experiment.reviewStatus) return;
+      if (!api) return;
       setUpdatingKey(experiment.key);
       setError(null);
       try {
-        const result = await api.review({ cwd: workingDir, key: experiment.key, status });
+        const trimmedNote = note.trim();
+        const result = await api.review({
+          cwd: workingDir,
+          key: experiment.key,
+          status,
+          ...(trimmedNote ? { note: trimmedNote } : {}),
+        });
         if (!result.ok) throw new Error(result.error || 'La mise à jour du statut a échoué.');
         setData((current) =>
           current
@@ -205,19 +242,27 @@ export function VideoExperimentBacklog({ workingDir }: { workingDir?: string }) 
                 ...current,
                 experiments: current.experiments.map((item) =>
                   item.key === experiment.key
-                    ? { ...item, reviewStatus: status, reviewedAt: result.review?.reviewedAt }
+                    ? {
+                        ...item,
+                        reviewStatus: status,
+                        reviewNote: trimmedNote || undefined,
+                        reviewedAt: result.review?.reviewedAt,
+                      }
                     : item
                 ),
                 summary: {
                   ...current.summary,
-                  byStatus: {
-                    ...current.summary.byStatus,
-                    [experiment.reviewStatus]: Math.max(
-                      0,
-                      current.summary.byStatus[experiment.reviewStatus] - 1
-                    ),
-                    [status]: current.summary.byStatus[status] + 1,
-                  },
+                  byStatus:
+                    status === experiment.reviewStatus
+                      ? current.summary.byStatus
+                      : {
+                          ...current.summary.byStatus,
+                          [experiment.reviewStatus]: Math.max(
+                            0,
+                            current.summary.byStatus[experiment.reviewStatus] - 1
+                          ),
+                          [status]: current.summary.byStatus[status] + 1,
+                        },
                 },
               }
             : current
@@ -312,7 +357,7 @@ export function VideoExperimentBacklog({ workingDir }: { workingDir?: string }) 
               key={experiment.key}
               experiment={experiment}
               updating={updatingKey === experiment.key}
-              onReview={(item, status) => void review(item, status)}
+              onReview={(item, status, note) => void review(item, status, note)}
             />
           ))}
         </ul>

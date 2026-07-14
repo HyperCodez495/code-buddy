@@ -86,5 +86,20 @@ describe('VideoExperimentBacklog', () => {
     expect((screen.getByLabelText('Statut de PanoWorld') as HTMLSelectElement).value).toBe(
       'planned'
     );
+
+    fireEvent.change(screen.getByLabelText('Note de vérification'), {
+      target: { value: 'Dépôt primaire confirmé, benchmark Darkstar à faire.' },
+    });
+    const saveNote = screen.getByRole('button', { name: 'Enregistrer la note' });
+    await waitFor(() => expect((saveNote as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(saveNote);
+    await waitFor(() =>
+      expect(review).toHaveBeenLastCalledWith({
+        cwd: '/workspace',
+        key: result.experiments[0]!.key,
+        status: 'planned',
+        note: 'Dépôt primaire confirmé, benchmark Darkstar à faire.',
+      })
+    );
   });
 });
