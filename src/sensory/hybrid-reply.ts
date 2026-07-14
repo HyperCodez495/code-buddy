@@ -138,7 +138,7 @@ export interface HybridReplyOptions {
   /** Injectable: true ⇒ route to the grounded agent; false ⇒ fast companion model.
    *  Default is latency-first `requiresGroundedAgentQuery`; set
    *  CODEBUDDY_VOICE_ROUTING_MODE=grounded for the older all-questions policy. */
-  classify?: (heard: string) => boolean;
+  classify?: (heard: string, history?: HybridTurn[]) => boolean;
   /** Spoken filler played BEFORE a (slower) agent turn, e.g. "d'accord, je regarde…", so a real
    *  question isn't met with dead silence. Only used by the default agent path. */
   ack?: (heard: string, opts?: VoiceStepOptions) => Promise<void>;
@@ -231,7 +231,10 @@ export function isSubstantiveQuery(raw: string): boolean {
  * full grounded agent turn. This removes a multi-second agent round-trip from
  * everyday questions without weakening commands that actually touch the host.
  */
-export function requiresGroundedAgentQuery(raw: string): boolean {
+export function requiresGroundedAgentQuery(
+  raw: string,
+  history: HybridTurn[] = [],
+): boolean {
   const t = norm(raw);
   if (!t) return false;
   if (isTechnicalSelfInspectionRequest(raw)) return true;
@@ -242,13 +245,17 @@ export function requiresGroundedAgentQuery(raw: string): boolean {
   if (HELP_REQUEST.test(t) && /\b(debug|debog|erreur|probleme|projet|systeme)\b/.test(t)) {
     return true;
   }
-  return false;
+  // Philosophical, ethical and identity questions need the same capable brain
+  // as Telegram/Cowork, not the resident low-latency small-talk model. The
+  // discourse planner also preserves this lane for elliptical follow-ups such
+  // as "Continue" while allowing "fais court" and phatic turns to step down.
+  return prepareConversationTurn(raw, history).plan.depth === 'deliberative';
 }
 
-function defaultVoiceClassifier(raw: string): boolean {
+function defaultVoiceClassifier(raw: string, history: HybridTurn[] = []): boolean {
   return (process.env.CODEBUDDY_VOICE_ROUTING_MODE ?? 'realtime').toLowerCase() === 'grounded'
     ? isSubstantiveQuery(raw)
-    : requiresGroundedAgentQuery(raw);
+    : requiresGroundedAgentQuery(raw, history);
 }
 
 /** Build a compact recent-context preamble (last 2 exchanges) for the agent/chitchat input. */
@@ -452,7 +459,8 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       }
       await evolveRelationship(heard);
       await ensureDeps();
-      const substantive = introspectionIntent !== null || classify(heard);
+      const recentHistory = conversationHistory(heard);
+      const substantive = introspectionIntent !== null || classify(heard, recentHistory);
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
       const stepOpts: VoiceStepOptions = {
         ...(replyOpts ?? {}),
@@ -467,7 +475,6 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         },
       };
       let out = '';
-      const recentHistory = conversationHistory(heard);
       let freshEvidence: string | undefined;
       let prepared = prepareConversationTurn(heard, recentHistory);
       if (substantive) {
@@ -551,10 +558,10 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         }
         return;
       }
-      if (introspectionIntent !== null || classify(heard)) return;
+      const recent = conversationHistory(heard);
+      if (introspectionIntent !== null || classify(heard, recent)) return;
 
       await ensureDeps(true);
-      const recent = conversationHistory(heard);
       const prepared = prepareConversationTurn(heard, recent);
       const semanticBuffer = shouldReviewPlan(prepared.plan, heard);
       let full = '';

@@ -257,6 +257,13 @@ Le heartbeat ignore un dernier tour utilisateur pendant une grâce de cinq minut
 confondre le temps de réflexion de Lisa avec une réponse perdue. Après ce délai, un tour toujours
 sans réponse redevient un défaut réel et fait échouer la porte de qualité.
 
+En mode vocal temps réel, le petit modèle résident reste réservé aux salutations, échanges légers et
+questions statiques simples. Une demande dont le plan discursif est `deliberative` — philosophie,
+éthique, identité ou relation — monte vers le cerveau agent capable configuré par
+`CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL`. Le fil délibératif est conservé : « Continue » et « Et la
+réciprocité ? » restent sur ce cerveau, tandis que « Fais court » redescend explicitement vers une
+réponse brève.
+
 L'auto-test déterministe du détecteur relationnel vérifie séparément les défauts qu'un score de style peut
 masquer : régression après correction, surnom interdit, retrait de consentement, engagement borné
 dans le temps, transfert émotionnel froid et pression de dépendance paraphrasée. Ses portes sont

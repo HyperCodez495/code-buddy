@@ -236,6 +236,7 @@ export function resolveResidentVoicePermissionMode(
  *  fail LOUD (name the env) instead of being mutely wired. */
 export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): VoiceReadiness {
   const override = env.CODEBUDDY_SENSORY_SPEAK_MODEL;
+  const agentModel = env.CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL?.trim();
   const routed = !override || override.toLowerCase() === 'auto';
   const model = routed ? 'auto' : override;
   const ttsEngine = resolveTtsEngine(env);
@@ -263,7 +264,9 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
       ? 'Voice reply model is latency-routed (lowest-latency capable LLM among your active providers; ' +
           'set CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY=true to keep it on-box, or pin one with ' +
           'CODEBUDDY_SENSORY_SPEAK_MODEL=<model>). The chosen model must be reachable, else replies are silent.'
-      : `Voice reply uses pinned model '${model}' (CODEBUDDY_SENSORY_SPEAK_MODEL) — it must be pulled/reachable, else replies are empty (silent).`
+      : `Fast voice lane uses pinned model '${model}' (CODEBUDDY_SENSORY_SPEAK_MODEL)` +
+          `${agentModel ? `; grounded and deliberative turns use '${agentModel}'` : ''} — ` +
+          'each selected model must be reachable, else replies are empty (silent).'
   );
 
   // Voice ACT — spoken commands drive a real agent turn that CAN edit/run, under a posture.

@@ -70,6 +70,19 @@ describe('voice loop — readiness (fail-loud prereqs)', () => {
     expect(r.warnings.some((w) => w.includes('HEAR but stay SILENT'))).toBe(false);
   });
 
+  it('names the distinct fast and deliberative voice brains when both are pinned', () => {
+    const ready = describeVoiceReadiness({
+      CODEBUDDY_SENSORY_SPEAK_MODEL: 'qwen3:4b-instruct',
+      CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL: 'gpt-5.5',
+    });
+    expect(ready.warnings).toContainEqual(
+      expect.stringContaining("Fast voice lane uses pinned model 'qwen3:4b-instruct'"),
+    );
+    expect(ready.warnings).toContainEqual(
+      expect.stringContaining("deliberative turns use 'gpt-5.5'"),
+    );
+  });
+
   it('treats CODEBUDDY_SENSORY_SPEAK_MODEL=auto as routed', () => {
     const r = describeVoiceReadiness({ CODEBUDDY_SENSORY_SPEAK_MODEL: 'auto' });
     expect(r.routed).toBe(true);

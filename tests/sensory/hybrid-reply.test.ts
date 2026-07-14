@@ -129,6 +129,23 @@ describe('hybrid reply — realtime grounded-agent gate', () => {
     }
   });
 
+  it('promotes philosophical deliberation and its elliptical follow-ups to the capable agent', () => {
+    const history: HybridTurn[] = [
+      { role: 'user', content: 'La conscience fonde-t-elle notre liberté ?' },
+      { role: 'assistant', content: 'Elle éclaire le choix sans abolir toute causalité.' },
+    ];
+    for (const request of [
+      'Une intelligence artificielle peut-elle réellement aimer ?',
+      'La conscience fonde-t-elle notre liberté ?',
+      'La réciprocité compte-t-elle davantage que son origine ?',
+    ]) {
+      expect(requiresGroundedAgentQuery(request), request).toBe(true);
+    }
+    expect(requiresGroundedAgentQuery('Continue.', history)).toBe(true);
+    expect(requiresGroundedAgentQuery('Et la réciprocité ?', history)).toBe(true);
+    expect(requiresGroundedAgentQuery('Fais court.', history)).toBe(false);
+  });
+
   it('keeps tools, repository state, private data, and fresh facts grounded', () => {
     for (const s of [
       'vérifie les logs du service',
@@ -224,6 +241,15 @@ describe('hybrid reply — routing & memory', () => {
     await reply('pourquoi le ciel est bleu ?');
     expect(calls.some((c) => c.startsWith('chitchat:'))).toBe(true);
     expect(calls.some((c) => c.startsWith('agent:'))).toBe(false);
+  });
+
+  it('uses the grounded capable lane for philosophy and keeps a deep follow-up there', async () => {
+    const { reply, calls } = harness();
+    await reply('La conscience fonde-t-elle notre liberté ?');
+    await reply('Continue.');
+
+    expect(calls.filter((call) => call.startsWith('agent:'))).toHaveLength(2);
+    expect(calls.some((call) => call.startsWith('chitchat:'))).toBe(false);
   });
 
   it('routes technical self-inspection to the tool-capable agent, never chitchat', async () => {
