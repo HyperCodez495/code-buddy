@@ -93,10 +93,19 @@ export interface ParsedPdf {
  */
 export type PdfParseFn = (data: Uint8Array) => Promise<ParsedPdf | null>;
 
+/** Render and OCR selected physical pages, returning text keyed by page number. */
+export type PdfOcrFn = (
+  data: Uint8Array,
+  pageNumbers: number[],
+  language: string,
+) => Promise<ParsedPdfPage[]>;
+
 /** Injectable side-effect boundaries for {@link parsePdfStructure}. */
 export interface PdfStructureDeps {
   /** Override the pdf-parse access (default: dynamic `pdf-parse` import). */
   parsePdf?: PdfParseFn;
+  /** Override the scanned-page OCR boundary (default: pdf-parse screenshots + Tesseract.js). */
+  ocrPdf?: PdfOcrFn;
   /** Override file reading (default: `fs/promises` readFile). */
   readFile?: (path: string) => Promise<Buffer>;
   /** Override warning sink (default: project logger). */
@@ -111,6 +120,12 @@ export interface ParsePdfStructureOptions {
   maxSections?: number;
   /** Override the derived docId. */
   docId?: string;
+  /** OCR pages whose text layer is empty or nearly empty (default true). */
+  ocr?: boolean;
+  /** Tesseract language code, e.g. eng, fra, eng+fra (default env or eng). */
+  ocrLanguage?: string;
+  /** Maximum scanned pages OCRed per PDF (default 50, clamped 1..500). */
+  maxOcrPages?: number;
 }
 
 /** Bounded knobs for {@link chunkDocument}. */

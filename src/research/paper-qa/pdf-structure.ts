@@ -10,8 +10,9 @@
  * Pure, injectable, never-throws: an absent/encrypted/scanned/unreadable PDF
  * yields `null` (logged), never an exception.
  *
- * TODO(phase-1+): scanned/image PDFs (no text layer) currently yield `null`.
- * OCR fallback via `OcrTool` is explicitly out of scope for Phase 1.
+ * Scanned/image pages fall back to bounded local OCR (pdf-parse rendering +
+ * Tesseract.js). OCR is injectable and can be disabled; any failure remains a
+ * never-throw `null`/partial-text degradation.
  */
 
 import { createHash } from 'node:crypto';
@@ -21,6 +22,7 @@ import type {
   PageSpan,
   ParsedPdf,
   ParsePdfStructureOptions,
+  PdfOcrFn,
   PdfParseFn,
   PdfStructureDeps,
   SectionSpan,
@@ -49,6 +51,14 @@ interface PdfParseModuleV2 {
       total?: number;
     }>;
     getInfo(): Promise<{ info?: Record<string, unknown> | null }>;
+    getScreenshot(params?: {
+      partial?: number[];
+      desiredWidth?: number;
+      imageDataUrl?: boolean;
+      imageBuffer?: boolean;
+    }): Promise<{
+      pages: Array<{ data: Uint8Array; pageNumber: number }>;
+    }>;
     destroy(): Promise<void>;
   };
 }
@@ -101,6 +111,43 @@ const defaultParsePdf: PdfParseFn = async (data) => {
     } catch {
       // ignore teardown errors
     }
+  }
+};
+
+const OCR_BATCH_SIZE = 4;
+const DEFAULT_MAX_OCR_PAGES = 50;
+const MIN_USEFUL_PAGE_TEXT = 20;
+
+/**
+ * Render selected pages and recognize them with one reused Tesseract worker.
+ * Pages are rendered in small batches to bound peak image memory.
+ */
+const defaultOcrPdf: PdfOcrFn = async (data, pageNumbers, language) => {
+  if (pageNumbers.length === 0) return [];
+  const [pdfModule, tesseractModule] = await Promise.all([
+    import('pdf-parse') as unknown as Promise<PdfParseModuleV2>,
+    import('tesseract.js'),
+  ]);
+  const worker = await tesseractModule.createWorker(language);
+  const parser = new pdfModule.PDFParse({ data, verbosity: 0 });
+  const pages: ParsedPdf['pages'] = [];
+  try {
+    for (let offset = 0; offset < pageNumbers.length; offset += OCR_BATCH_SIZE) {
+      const partial = pageNumbers.slice(offset, offset + OCR_BATCH_SIZE);
+      const rendered = await parser.getScreenshot({
+        partial,
+        desiredWidth: 1800,
+        imageDataUrl: false,
+        imageBuffer: true,
+      });
+      for (const page of rendered.pages) {
+        const result = await worker.recognize(Buffer.from(page.data));
+        pages.push({ num: page.pageNumber, text: result.data.text.trim() });
+      }
+    }
+    return pages;
+  } finally {
+    await Promise.allSettled([worker.terminate(), parser.destroy()]);
   }
 };
 
@@ -299,6 +346,7 @@ export async function parsePdfStructure(
     const parsePdf = deps.parsePdf ?? defaultParsePdf;
     const maxPages = clampInt(opts.maxPages, DEFAULT_MAX_PAGES, 1, 200000);
     const maxSections = clampInt(opts.maxSections, DEFAULT_MAX_SECTIONS, 0, 100000);
+    const maxOcrPages = clampInt(opts.maxOcrPages, DEFAULT_MAX_OCR_PAGES, 1, 500);
 
     let buffer: Buffer;
     try {
@@ -308,7 +356,8 @@ export async function parsePdfStructure(
       return null;
     }
 
-    const parsed = await parsePdf(new Uint8Array(buffer));
+    const data = new Uint8Array(buffer);
+    const parsed = await parsePdf(data);
     if (!parsed || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
       warn('paper-qa: no extractable pages (absent/encrypted/scanned pdf-parse?)', {
         path: pdfPath,
@@ -316,8 +365,37 @@ export async function parsePdfStructure(
       return null;
     }
 
-    // Build pages + fullText with exact offsets. NO uniform division.
+    // OCR only pages with no useful text layer. Native text always wins when it
+    // is at least as informative as OCR output.
     const limited = parsed.pages.slice(0, maxPages);
+    if (opts.ocr !== false) {
+      const candidates = limited
+        .filter((page) => page.text.trim().length < MIN_USEFUL_PAGE_TEXT)
+        .slice(0, maxOcrPages)
+        .map((page) => page.num);
+      if (candidates.length > 0) {
+        try {
+          const language =
+            opts.ocrLanguage?.trim() ||
+            process.env.CODEBUDDY_PAPER_QA_OCR_LANGUAGE?.trim() ||
+            'eng';
+          const ocrPages = await (deps.ocrPdf ?? defaultOcrPdf)(data, candidates, language);
+          const byPage = new Map(ocrPages.map((page) => [page.num, page.text.trim()]));
+          for (const page of limited) {
+            const ocrText = byPage.get(page.num);
+            if (ocrText && ocrText.length > page.text.trim().length) page.text = ocrText;
+          }
+        } catch (error) {
+          warn('paper-qa: scanned-page OCR unavailable', {
+            path: pdfPath,
+            pages: candidates.length,
+            error: errText(error),
+          });
+        }
+      }
+    }
+
+    // Build pages + fullText with exact offsets. NO uniform division.
     const pages: PageSpan[] = [];
     const parts: string[] = [];
     let cursor = 0;
@@ -336,6 +414,10 @@ export async function parsePdfStructure(
       }
     }
     const fullText = parts.join('');
+    if (fullText.trim().length === 0) {
+      warn('paper-qa: PDF has no extractable text after OCR fallback', { path: pdfPath });
+      return null;
+    }
 
     const sections = maxSections > 0 ? detectSections(fullText, pages, maxSections) : [];
 
@@ -367,4 +449,4 @@ function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export { defaultParsePdf };
+export { defaultParsePdf, defaultOcrPdf };

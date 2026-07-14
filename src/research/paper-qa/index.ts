@@ -12,7 +12,7 @@
  * Phase 4.
  */
 
-export { parsePdfStructure, defaultParsePdf } from './pdf-structure.js';
+export { parsePdfStructure, defaultParsePdf, defaultOcrPdf } from './pdf-structure.js';
 export { chunkDocument } from './prose-chunker.js';
 export { findPageNo, findSectionTitle } from './provenance.js';
 export { PassageIndex, InMemoryEmbeddingCache } from './passage-index.js';
@@ -29,6 +29,7 @@ export type {
   ParsedPdf,
   ParsedPdfPage,
   PdfParseFn,
+  PdfOcrFn,
   PdfStructureDeps,
   ParsePdfStructureOptions,
   ChunkOptions,

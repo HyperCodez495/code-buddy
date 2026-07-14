@@ -234,3 +234,67 @@ describe('parsePdfStructure — never-throws degradation', () => {
     expect(doc).toBeNull();
   });
 });
+
+describe('parsePdfStructure — scanned-page OCR fallback', () => {
+  it('OCRs only nearly-empty pages and preserves native page provenance', async () => {
+    const calls: Array<{ pages: number[]; language: string }> = [];
+    const doc = await parsePdfStructure(
+      '/virtual/scanned.pdf',
+      {
+        readFile: async () => Buffer.from('pdf'),
+        parsePdf: async () => fakeParsedPdf(['', 'Methods\nNative searchable prose remains intact on page two.']),
+        ocrPdf: async (_data, pages, language) => {
+          calls.push({ pages, language });
+          return [{ num: 1, text: 'Introduction\nText recovered from the scanned first page.' }];
+        },
+      },
+      { ocrLanguage: 'eng+fra' },
+    );
+
+    expect(calls).toEqual([{ pages: [1], language: 'eng+fra' }]);
+    expect(doc?.pages.map((page) => page.text)).toEqual([
+      'Introduction\nText recovered from the scanned first page.',
+      'Methods\nNative searchable prose remains intact on page two.',
+    ]);
+    expect(doc?.pages[0]?.pageNo).toBe(1);
+    expect(doc?.fullText.slice(doc.pages[0]!.charStart, doc.pages[0]!.charEnd)).toBe(
+      doc.pages[0]!.text,
+    );
+  });
+
+  it('bounds OCR page count and can be disabled explicitly', async () => {
+    const requested: number[][] = [];
+    const deps = {
+      readFile: async () => Buffer.from('pdf'),
+      parsePdf: async () => fakeParsedPdf(['', '', '', 'Native text that keeps this document readable.']),
+      ocrPdf: async (_data: Uint8Array, pages: number[]) => {
+        requested.push(pages);
+        return pages.map((num) => ({ num, text: `OCR page ${num} with enough recovered prose.` }));
+      },
+    };
+
+    const bounded = await parsePdfStructure('/virtual/bounded-scan.pdf', deps, { maxOcrPages: 2 });
+    expect(requested).toEqual([[1, 2]]);
+    expect(bounded?.pages[2]?.text).toBe('');
+
+    requested.length = 0;
+    await parsePdfStructure('/virtual/disabled-scan.pdf', deps, { ocr: false });
+    expect(requested).toEqual([]);
+  });
+
+  it('returns null without throwing when OCR fails on a textless PDF', async () => {
+    const warnings: string[] = [];
+    const doc = await parsePdfStructure('/virtual/broken-scan.pdf', {
+      readFile: async () => Buffer.from('pdf'),
+      parsePdf: async () => fakeParsedPdf(['']),
+      ocrPdf: async () => {
+        throw new Error('OCR engine unavailable');
+      },
+      warn: (message) => warnings.push(message),
+    });
+
+    expect(doc).toBeNull();
+    expect(warnings).toContain('paper-qa: scanned-page OCR unavailable');
+    expect(warnings).toContain('paper-qa: PDF has no extractable text after OCR fallback');
+  });
+});

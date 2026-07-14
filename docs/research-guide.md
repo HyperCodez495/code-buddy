@@ -284,6 +284,10 @@ mémoire par défaut afin de ne pas mélanger des espaces vectoriels incompatibl
 activez explicitement `persistentEmbeddingCache` avec un modèle correctement
 nommé pour le rendre persistant.
 
-Limite restante : les PDF purement scannés sans couche texte nécessitent encore
-un passage OCR avant leur indexation. Ne pas confondre ce corpus local avec
-`buddy research ingest|recall`, qui ingère les publications web dans le CKG.
+Les pages scannées sans couche texte passent automatiquement par un OCR local
+borné (50 pages par PDF par défaut), en réutilisant un seul worker Tesseract et
+un rendu par lots pour contenir la mémoire. `CODEBUDDY_PAPER_QA_OCR_LANGUAGE`
+choisit la langue (`eng`, `fra`, `eng+fra`, etc.). Un échec OCR n'interrompt pas
+le corpus : les pages possédant une couche texte restent indexées. Ne pas
+confondre ce corpus local avec `buddy research ingest|recall`, qui ingère les
+publications web dans le CKG.
