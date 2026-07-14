@@ -36,6 +36,19 @@ export interface ResolvePrefetchedTurnContextOptions {
   allowStale?: boolean;
 }
 
+/**
+ * Only public, source-attributed news may leave the main companion provider as
+ * semantic-review evidence. Agenda entries are private; weather can reveal a
+ * precise location; date needs no external evidence bundle.
+ */
+export function semanticReviewEvidenceFromPrefetch(
+  context: Pick<PrefetchedTurnContext, 'kind' | 'promptGuidance'> | null | undefined,
+): string | undefined {
+  if (context?.kind !== 'news') return undefined;
+  const evidence = context.promptGuidance.trim();
+  return evidence || undefined;
+}
+
 const ANALYTICAL_FOLLOW_UP =
   /\b(pourquoi|comment|analyse|analyser|explique|expliquer|impact|importance|consequence|consequences|signifie|selon toi|qu en penses|compare|comparer|laquelle|lequel|compte t (?:il|elle))\b/;
 

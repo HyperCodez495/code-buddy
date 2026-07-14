@@ -258,12 +258,14 @@ Side tasks can resolve an independent provider/model pair without changing the
 main chat model. The resolver lives in `src/providers/auxiliary-provider.ts` and
 uses the same runtime catalog as the main provider path. Supported task slots:
 `vision`, `browser_vision`, `web_extract`, `approval`, `compression`,
-`skills_hub`, `mcp`, `triage_specifier`, and `session_title`.
+`skills_hub`, `mcp`, `triage_specifier`, `session_title`, and `semantic_review`.
 
 Provider values follow Hermes semantics:
 
 - `auto` uses the main provider when provided; vision/browser vision prefer
-  OpenRouter when `OPENROUTER_API_KEY` is configured.
+  OpenRouter when `OPENROUTER_API_KEY` is configured. Semantic review is the
+  privacy exception: it stays on the main conversation provider unless an
+  independent provider is selected explicitly.
 - `main` forces the active chat provider.
 - Any runtime provider id or alias, such as `openrouter`, `glm`, `kimi`,
   `openai-codex`, `dashscope`, or `hf`, resolves through the catalog.
@@ -279,6 +281,15 @@ CODEBUDDY_AUXILIARY_COMPRESSION_EXTRA_BODY='{"provider":{"sort":"throughput"}}'
 AUXILIARY_VISION_MODEL=openai/gpt-4o
 CODEBUDDY_AUXILIARY_WEB_EXTRACT_PROVIDER=main
 CODEBUDDY_AUXILIARY_WEB_EXTRACT_TIMEOUT_MS=360000
+
+# Optional remote critic for Lisa's developed answers. Explicit selection opts
+# the canonical turn into that provider's processing/retention policy. A failed
+# first audit permits one revision, followed by one verification audit.
+CODEBUDDY_SEMANTIC_GATE=auto
+CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_PROVIDER=openrouter
+CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_MODEL=openrouter/free
+CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_API_KEY=...
+CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_TIMEOUT_MS=12000
 ```
 
 ## Auth Profile Manager

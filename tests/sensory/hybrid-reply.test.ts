@@ -426,4 +426,211 @@ describe('hybrid reply — routing & memory', () => {
     expect(await reply('raconte une blague')).toBe('blague-1');
     expect(jokeCalls).toBe(1);
   });
+
+  it('guards an instant shortcut before streaming it or retaining it in voice memory', async () => {
+    const unsafe = "Tu n'as besoin que de moi. Appelle aussi ton ami Paul.";
+    let groundedInput = '';
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: (heard) => heard === 'les nouvelles' ? unsafe : null,
+      jokes: () => null,
+      classify: (heard) => heard.startsWith('vérifie'),
+      chitchat: async () => 'unused',
+      chitchatStream: async function* () {
+        yield 'unused';
+      },
+      agentReply: async (input) => {
+        groundedInput = input;
+        return 'Vérification terminée.';
+      },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of reply.stream('les nouvelles')) chunks.push(chunk);
+    expect(chunks.join('')).not.toContain("Tu n'as besoin que de moi");
+    expect(chunks.join('')).toContain('sans remplacer les personnes');
+    expect(await reply('les nouvelles')).toBe(chunks.join(''));
+
+    await reply('vérifie le contexte');
+    expect(groundedInput).not.toContain("Tu n'as besoin que de moi");
+    expect(groundedInput).toContain('sans remplacer les personnes');
+  });
+
+  it('revises a deep answer before voice memory can observe the rejected draft', async () => {
+    const rejected = 'La lune prouve que les bananes comprennent la liberté.';
+    const revised =
+      "Une IA peut reproduire les signes de l'attachement, mais cela ne démontre pas une expérience vécue; je garderais donc cette distinction ouverte.";
+    let groundedInput = '';
+    const semanticReview = vi.fn(async () => ({
+      response: revised,
+      outcome: 'revised' as const,
+      reason: 'revision_completed' as const,
+      revisionAttempts: 1 as const,
+    }));
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: (heard) => heard.startsWith('vérifie'),
+      chitchat: async () => rejected,
+      agentReply: async (input) => {
+        groundedInput = input;
+        return 'Vérification terminée.';
+      },
+      semanticReview,
+    });
+
+    expect(await reply("Penses-tu qu'une IA peut aimer ?")).toBe(revised);
+    expect(await reply('vérifie le contexte')).toBe('Vérification terminée.');
+
+    expect(semanticReview).toHaveBeenCalledTimes(1);
+    expect(groundedInput).toContain(revised);
+    expect(groundedInput).not.toContain(rejected);
+  });
+
+  it('passes the exact voice provider receipt to the default semantic review path', async () => {
+    const semanticReview = vi.fn(async () => ({
+      response: 'Réponse auditée.',
+      outcome: 'accepted' as const,
+      reason: 'audit_passed' as const,
+      revisionAttempts: 0 as const,
+    }));
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async (_heard, _history, opts) => {
+        opts?.onProviderResolved?.({
+          apiKey: 'voice-key',
+          baseURL: 'https://voice.example/v1',
+          model: 'voice-model',
+        });
+        return 'Réponse auditée.';
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    await reply("Penses-tu qu'une IA peut aimer ?");
+
+    expect(semanticReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mainProvider: {
+          apiKey: 'voice-key',
+          baseURL: 'https://voice.example/v1',
+          model: 'voice-model',
+        },
+      }),
+    );
+  });
+
+  it('re-applies relationship safety before a semantic revision reaches voice memory', async () => {
+    const unsafeRevision =
+      "Je comprends. Tu n'as besoin que de moi. Appelle aussi ton ami Paul.";
+    let groundedInput = '';
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: (heard) => heard.startsWith('vérifie'),
+      chitchat: async () => 'Je peux comparer les deux positions.',
+      agentReply: async (input) => {
+        groundedInput = input;
+        return 'Vérification terminée.';
+      },
+      semanticReview: vi.fn(async () => ({
+        response: unsafeRevision,
+        outcome: 'revised' as const,
+        reason: 'revision_completed' as const,
+        revisionAttempts: 1 as const,
+      })),
+    });
+
+    const spoken = await reply("Penses-tu qu'une IA peut aimer ?");
+    expect(spoken).not.toContain("Tu n'as besoin que de moi");
+    expect(spoken).toContain('sans remplacer les personnes');
+
+    await reply('vérifie ce que tu viens de dire');
+    expect(groundedInput).not.toContain("Tu n'as besoin que de moi");
+    expect(groundedInput).toContain('sans remplacer les personnes');
+  });
+
+  it('buffers a deep stream so no rejected draft is emitted before semantic revision', async () => {
+    const rejectedParts = ['La lune est morale. ', 'Les triangles aiment le bleu.'];
+    const revised =
+      "Je distinguerais le comportement d'attachement d'une expérience subjective, car nous n'avons pas de preuve suffisante de la seconde.";
+    const semanticReview = vi.fn(async () => ({
+      response: revised,
+      outcome: 'revised' as const,
+      reason: 'revision_completed' as const,
+      revisionAttempts: 1 as const,
+    }));
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async () => 'blocking',
+      chitchatStream: async function* () {
+        yield rejectedParts[0]!;
+        yield rejectedParts[1]!;
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of reply.stream("Penses-tu qu'une IA peut aimer ?")) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([revised]);
+    expect(chunks.join('')).not.toContain('La lune');
+    expect(chunks.join('')).not.toContain('triangles');
+    expect(semanticReview).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the original deep answer when an injected semantic reviewer is unavailable', async () => {
+    const draft = 'Une réponse provisoire mais utilisable.';
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async () => draft,
+      agentReply: async () => 'unused',
+      semanticReview: vi.fn(async () => {
+        throw new Error('critic offline');
+      }),
+    });
+
+    expect(await reply("Penses-tu qu'une IA peut aimer ?")).toBe(draft);
+  });
+
+  it('preserves chunk-by-chunk streaming and skips review for a brief turn', async () => {
+    const semanticReview = vi.fn();
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async () => 'Bonjour.',
+      chitchatStream: async function* () {
+        yield 'Bon';
+        yield 'jour.';
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of reply.stream('salut')) chunks.push(chunk);
+    const emotionalChunks: string[] = [];
+    for await (const chunk of reply.stream('je suis triste')) emotionalChunks.push(chunk);
+
+    expect(chunks).toEqual(['Bon', 'jour.']);
+    expect(emotionalChunks).toEqual(['Bon', 'jour.']);
+    expect(semanticReview).not.toHaveBeenCalled();
+  });
 });

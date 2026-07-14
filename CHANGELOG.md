@@ -59,6 +59,16 @@ once it reaches `1.0.0`.
 
 ### Added
 
+- **Lisa contrôle désormais le sens réel de ses réponses profondes avant de les partager.** Des
+  obligations argumentatives déterministes alimentent un critique indépendant qui mesure réponse
+  effective, cohérence, appui, objection, progression et ancrage factuel, puis autorise au plus une
+  révision, elle-même recontrôlée avant livraison. Le brouillon rejeté n'entre ni dans la voix, ni dans
+  Telegram/Cowork, ni dans leur continuité canonique partagée. Les observateurs génériques du cœur
+  (AutoCapture, ICM et plugins de contexte) sont volontairement exclus de ces tours protégés plutôt
+  que de recevoir un transcript intime ou non audité. Le chemin est borné, annulable et fail-open; par défaut
+  il conserve le fournisseur principal, et un fournisseur distant économique exige un choix explicite;
+  l'ancien score lexical reste uniquement une télémétrie et ne déclenche jamais de réécriture.
+
 - **Lisa peut regarder sur demande ce que Patrice lui montre.** Une phrase vocale
   explicite comme « tu vois le hamburger que j'ai préparé ? » déclenche une capture webcam unique,
   privée (`0700`/`0600`), hors historique et supprimée avant l'attente du modèle multimodal

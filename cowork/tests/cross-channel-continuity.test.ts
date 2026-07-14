@@ -166,6 +166,7 @@ describe('Cowork cross-channel continuity adapter', () => {
     expect(prepared.systemPrompt).not.toContain('Soutien encore ouvert');
     expect(prepared.turnContext).toContain('<shared_relationship_context>');
     expect(prepared.turnContext).toContain('Soutien encore ouvert : oui.');
+    expect(prepared.freshEvidence).toBeUndefined();
     expect(recordCoworkTurn).toHaveBeenCalledWith(
       { role: 'user', content: 'Je poursuis dans Cowork.' },
       { sessionId: 'cowork-lisa-session', messageId: 'user-message' },
@@ -184,6 +185,7 @@ describe('Cowork cross-channel continuity adapter', () => {
       if (modulePath === 'conversation/prefetched-turn-context.js') {
         return {
           resolvePrefetchedTurnContextForConversation: () => ({
+            kind: 'news',
             freshness: 'fresh' as const,
             promptGuidance:
               '<fresh_context>Actualité datée, sourcée: https://example.test/news</fresh_context>',
@@ -210,6 +212,7 @@ describe('Cowork cross-channel continuity adapter', () => {
     expect(prepared.systemPrompt).toBeUndefined();
     expect(prepared.turnContext).toContain('<fresh_context>');
     expect(prepared.turnContext).toContain('https://example.test/news');
+    expect(prepared.freshEvidence).toBe(prepared.turnContext);
     expect(refresh).not.toHaveBeenCalled();
   });
 

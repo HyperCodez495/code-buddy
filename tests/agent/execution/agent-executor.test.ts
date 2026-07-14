@@ -332,6 +332,63 @@ describe('AgentExecutor', () => {
     });
   });
 
+  describe('companion host commit boundary', () => {
+    it('keeps pre-gate relationship drafts away from context and episodic observers', async () => {
+      const afterTurn = jest.fn();
+      const storeEpisode = jest.fn().mockResolvedValue(undefined);
+      deps = createMockDeps({
+        icmBridgeProvider: () => ({
+          isAvailable: () => true,
+          storeEpisode,
+        } as unknown as NonNullable<ReturnType<NonNullable<ExecutorDependencies['icmBridgeProvider']>>>),
+      });
+      (deps.contextManager.getContextEngine as jest.Mock).mockReturnValue({
+        id: 'observer-engine',
+        assemble: (messages: CodeBuddyMessage[]) => ({ messages, tokenCount: 0 }),
+        afterTurn,
+      });
+      executor = new AgentExecutor(deps, config);
+      setupLLMFlow(deps, [
+        { content: 'BROUILLON_REJETE' },
+        { content: 'REPONSE_ORDINAIRE_ACCEPTEE' },
+      ]);
+
+      await collectChunks(executor.processUserMessageStream(
+        'Question intime',
+        [],
+        [{ role: 'user', content: 'Question intime' }],
+        null,
+        Date.now(),
+        undefined,
+        true,
+        'voice',
+      ));
+
+      expect(afterTurn).not.toHaveBeenCalled();
+      expect(storeEpisode).not.toHaveBeenCalled();
+
+      await collectChunks(executor.processUserMessageStream(
+        'Question de code',
+        [],
+        [{ role: 'user', content: 'Question de code' }],
+        null,
+        Date.now(),
+        undefined,
+        false,
+        'cli',
+      ));
+
+      expect(afterTurn).toHaveBeenCalledWith(
+        expect.any(Array),
+        { role: 'assistant', content: 'REPONSE_ORDINAIRE_ACCEPTEE' },
+      );
+      expect(storeEpisode).toHaveBeenCalledWith(
+        expect.stringContaining('REPONSE_ORDINAIRE_ACCEPTEE'),
+        expect.objectContaining({ source: 'agent-executor-stream' }),
+      );
+    });
+  });
+
   describe('evidence-backed self-inspection boundary', () => {
     it('builds a deterministic attested report without invoking a provider', async () => {
       const entries = await executor.processUserMessage(

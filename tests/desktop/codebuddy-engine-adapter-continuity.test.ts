@@ -20,6 +20,8 @@ let observedStreamOptions: Array<
     surface?: string;
   } | undefined
 > = [];
+let snapshotSuspensions = 0;
+let snapshotResumptions = 0;
 
 class FakeCodeBuddyAgent {
   private history: RecordedMessage[] = [];
@@ -40,7 +42,24 @@ class FakeCodeBuddyAgent {
 
   setSystemPromptAppend(): void {}
 
+  suspendTranscriptSnapshots(): void {
+    snapshotSuspensions += 1;
+  }
+
+  resumeTranscriptSnapshots(): void {
+    snapshotResumptions += 1;
+  }
+
   dispose(): void {}
+
+  replaceLastAssistantResponse(expected: string, replacement: string): boolean {
+    const index = this.history.findLastIndex(
+      (message) => message.role === 'assistant' && message.content === expected,
+    );
+    if (index < 0) return false;
+    this.history[index] = { role: 'assistant', content: replacement };
+    return true;
+  }
 
   async *processUserMessageStream(
     prompt: string,
@@ -93,6 +112,39 @@ describe('CodeBuddyEngineAdapter warm-session continuity', () => {
     observedModelTurns = [];
     observedRecoverySessions = [];
     observedStreamOptions = [];
+    snapshotSuspensions = 0;
+    snapshotResumptions = 0;
+  });
+
+  it('registers cancellation before lazy setup can start the agent turn', async () => {
+    const adapter = new CodeBuddyEngineAdapter({ apiKey: 'test', model: 'test-model' });
+    const events: unknown[] = [];
+    const running = adapter.runSession(
+      'cancel-before-import',
+      [{ role: 'user', content: 'Ne démarre pas.' }],
+      (event) => events.push(event),
+    );
+
+    adapter.cancel('cancel-before-import');
+    await running;
+
+    expect(observedModelTurns).toHaveLength(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it('holds snapshots for a buffered response until the host releases them', async () => {
+    const adapter = new CodeBuddyEngineAdapter({ apiKey: 'test', model: 'test-model' });
+    await adapter.runSession(
+      'buffered-snapshots',
+      [{ role: 'user', content: 'Réponse argumentée.' }],
+      () => undefined,
+      { bufferAssistantResponse: true },
+    );
+
+    expect(snapshotSuspensions).toBe(1);
+    expect(snapshotResumptions).toBe(0);
+    adapter.resumeTranscriptSnapshots('buffered-snapshots');
+    expect(snapshotResumptions).toBe(1);
   });
 
   it('injects newly arrived channel context once without recreating the agent', async () => {
@@ -235,6 +287,40 @@ describe('CodeBuddyEngineAdapter warm-session continuity', () => {
     expect(
       secondTurn.filter((message) => message.content === 'Premier message brut.'),
     ).toHaveLength(1);
+  });
+
+  it('commits a last-mile semantic rewrite into the warm agent and host fingerprints', async () => {
+    const adapter = new CodeBuddyEngineAdapter({ apiKey: 'test', model: 'test-model' });
+    const firstPrompt = 'Pourquoi cette position est-elle cohérente ?';
+    const rejected = `Réponse à: ${firstPrompt}`;
+    const accepted = 'Elle est cohérente parce que ses prémisses soutiennent sa conclusion.';
+
+    await adapter.runSession(
+      'semantic-rewrite-session',
+      [{ role: 'user', content: firstPrompt }],
+      () => undefined,
+    );
+    expect(
+      adapter.replaceLastAssistantResponse(
+        'semantic-rewrite-session',
+        rejected,
+        accepted,
+      ),
+    ).toBe(true);
+
+    await adapter.runSession(
+      'semantic-rewrite-session',
+      [
+        { role: 'user', content: firstPrompt },
+        { role: 'assistant', content: accepted },
+        { role: 'user', content: 'Et quelle objection reste possible ?' },
+      ],
+      () => undefined,
+    );
+
+    const secondTurn = observedModelTurns[1] ?? [];
+    expect(secondTurn.filter((message) => message.content === accepted)).toHaveLength(1);
+    expect(secondTurn.some((message) => message.content === rejected)).toBe(false);
   });
 
   it('evicts an uncertain warm agent after a stream error instead of duplicating its user turn', async () => {

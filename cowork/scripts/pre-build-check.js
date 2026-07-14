@@ -206,6 +206,15 @@ function buildCheckList(platform, arch) {
       severity: 'fatal',
     },
     {
+      // Deep companion turns load this module dynamically. Import it during
+      // packaging so its critic/runtime dependency closure cannot disappear
+      // silently from a shipped Cowork build.
+      label: 'Code Buddy companion semantic response gate',
+      relPath: '.bundle-resources/core-runtime/dist/conversation/semantic-response-runtime.js',
+      type: 'esm-import',
+      severity: 'fatal',
+    },
+    {
       // The adapter imports CodeBuddyAgent lazily on the first prompt. Probe it
       // independently so a package can never pass startup and then fail only
       // when the user sends the first message.

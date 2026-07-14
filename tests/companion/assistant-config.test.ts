@@ -71,6 +71,13 @@ describe('assistant TTS defaults', () => {
         (setting) => setting.key === 'CODEBUDDY_CONVERSATION_COWORK_HISTORY',
       ),
     ).toMatchObject({ default: '24', type: 'text', envFile: 'both' });
+    expect(ASSISTANT_SETTINGS.find((setting) => setting.key === 'CODEBUDDY_SEMANTIC_GATE'))
+      .toMatchObject({
+        default: 'auto',
+        type: 'enum',
+        options: ['auto', 'true', 'false'],
+        envFile: 'both',
+      });
   });
 });
 

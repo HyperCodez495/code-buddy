@@ -8,6 +8,7 @@ import { savePrefetchItems } from '../../src/companion/prefetch-config.js';
 import {
   isPrefetchedTurnRequest,
   resolvePrefetchedTurnContext,
+  semanticReviewEvidenceFromPrefetch,
   shouldUsePrefetchedAnswerDirectly,
 } from '../../src/conversation/prefetched-turn-context.js';
 import { makeHybridReply } from '../../src/sensory/hybrid-reply.js';
@@ -101,6 +102,25 @@ describe('shared prefetched turn context', () => {
       ),
     ).toBe(false);
     expect(isPrefetchedTurnRequest('Quoi de neuf aujourd’hui ?', [{ kind: 'news' }])).toBe(true);
+  });
+
+  it('exports only public news context to an optional remote semantic critic', () => {
+    const publicNews = '<fresh_context>Public URL and dated headline.</fresh_context>';
+    expect(
+      semanticReviewEvidenceFromPrefetch({ kind: 'news', promptGuidance: publicNews }),
+    ).toBe(publicNews);
+    expect(
+      semanticReviewEvidenceFromPrefetch({
+        kind: 'agenda',
+        promptGuidance: '<fresh_context>Private medical appointment.</fresh_context>',
+      }),
+    ).toBeUndefined();
+    expect(
+      semanticReviewEvidenceFromPrefetch({
+        kind: 'weather',
+        promptGuidance: '<fresh_context>Precise home location.</fresh_context>',
+      }),
+    ).toBeUndefined();
   });
 
   it('gives voice an instant bulletin but grounds an analytical follow-up on the same cache', async () => {

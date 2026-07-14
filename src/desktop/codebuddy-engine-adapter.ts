@@ -184,10 +184,19 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
     let fullContent = '';
     let totalTokens = 0;
     let toolCallCount = 0;
+    const previousAbortController = this.abortControllers.get(sessionId);
+    previousAbortController?.abort();
+    // Register before the first lazy-import await. A host cancellation during
+    // adapter setup must not disappear before the streaming controller exists.
+    const abortController = new AbortController();
+    this.abortControllers.set(sessionId, abortController);
 
     try {
       // Lazy-import CodeBuddyAgent to avoid loading heavy modules at startup
       const { CodeBuddyAgent } = await import('../agent/codebuddy-agent.js');
+      if (abortController.signal.aborted) {
+        return { content: fullContent, tokenCount: totalTokens, toolCallCount };
+      }
 
       // Phase 8 — detect model / endpoint / apiKey change between turns and
       // dispose the cached agent if the identity differs so the next
@@ -299,6 +308,9 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       agent.setRecoverySessionId?.(sessionId);
       agent.setWorkingDirectory(config.workingDirectory);
       agent.setSystemPromptAppend(config.systemPromptAppend);
+      if (config.bufferAssistantResponse) {
+        agent.suspendTranscriptSnapshots();
+      }
 
       // The last message must be the user's current prompt
       const lastMessage = messages[messages.length - 1];
@@ -332,16 +344,13 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         }
       }
 
-      // Create abort controller for this session
-      const abortController = new AbortController();
-      this.abortControllers.set(sessionId, abortController);
-
       // Intercept /ultraplan
       if (lastMessage.content.trim().startsWith('/ultraplan')) {
           const { handleUltraplan } = await import('../commands/handlers/ultraplan-handler.js');
           const args = lastMessage.content.trim().replace('/ultraplan', '').trim().split(' ');
           
           await handleUltraplan(args, (msg: string) => {
+              if (abortController.signal.aborted) return;
               // Strip ANSI escape codes for cleaner UI display
               const escapeChar = String.fromCharCode(27);
               const cleanMsg = msg.replace(new RegExp(`${escapeChar}\\[[0-9;]*m`, 'g'), '');
@@ -367,6 +376,9 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         import('../agent/operating-modes.js'),
         import('../utils/confirmation-service.js'),
       ]);
+      if (abortController.signal.aborted) {
+        return { content: fullContent, tokenCount: totalTokens, toolCallCount };
+      }
       const permissionManager = getPermissionModeManager();
       const operatingModeManager = getOperatingModeManager();
       const confirmationService = ConfirmationService.getInstance();
@@ -611,9 +623,11 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // The core agent mutates its own history before provider streaming. Once
       // a turn throws, the host transcript and warm agent may disagree about
       // what committed; evicting is safer than replaying a user turn twice.
-      const failedAgent = this.agents.get(sessionId) as { dispose?: () => void } | undefined;
+      const failedAgent = this.agents.get(sessionId) as
+        | { dispose?: (options?: { skipSessionLearning?: boolean }) => void }
+        | undefined;
       try {
-        failedAgent?.dispose?.();
+        failedAgent?.dispose?.({ skipSessionLearning: true });
       } catch (disposeError) {
         logger.warn('[CodeBuddyEngineAdapter] dispose failed after turn error', {
           sessionId,
@@ -623,15 +637,19 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       this.agents.delete(sessionId);
       this.agentIdentities.delete(sessionId);
       this.hostTranscriptFingerprints.delete(sessionId);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      onEvent({ type: 'error', error: errorMsg });
+      if (!abortController.signal.aborted) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        onEvent({ type: 'error', error: errorMsg });
+      }
       return {
         content: fullContent,
         tokenCount: totalTokens,
         toolCallCount,
       };
     } finally {
-      this.abortControllers.delete(sessionId);
+      if (this.abortControllers.get(sessionId) === abortController) {
+        this.abortControllers.delete(sessionId);
+      }
     }
   }
 
@@ -641,6 +659,41 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       controller.abort();
       logger.info('[CodeBuddyEngineAdapter] cancelled session', { sessionId });
     }
+  }
+
+  /**
+   * Commit a host-side last-mile rewrite back into the warm agent. Cowork's
+   * semantic/relationship gates run after the engine stream, so both the
+   * agent transcript and the host reconciliation fingerprints must move to
+   * the exact text that was actually delivered.
+   */
+  replaceLastAssistantResponse(
+    sessionId: string,
+    expected: string,
+    replacement: string,
+  ): boolean {
+    const agent = this.agents.get(sessionId) as
+      | { replaceLastAssistantResponse?: (from: string, to: string) => boolean }
+      | undefined;
+    if (!agent?.replaceLastAssistantResponse?.(expected, replacement)) return false;
+
+    const snapshot = this.hostTranscriptFingerprints.get(sessionId);
+    if (snapshot) {
+      const expectedKey = engineMessageFingerprint({ role: 'assistant', content: expected });
+      const replacementKey = engineMessageFingerprint({ role: 'assistant', content: replacement });
+      const expectedCount = snapshot.get(expectedKey) ?? 0;
+      if (expectedCount <= 1) snapshot.delete(expectedKey);
+      else snapshot.set(expectedKey, expectedCount - 1);
+      snapshot.set(replacementKey, (snapshot.get(replacementKey) ?? 0) + 1);
+    }
+    return true;
+  }
+
+  resumeTranscriptSnapshots(sessionId: string): void {
+    const agent = this.agents.get(sessionId) as
+      | { resumeTranscriptSnapshots?: () => void }
+      | undefined;
+    agent?.resumeTranscriptSnapshots?.();
   }
 
   steer(sessionId: string, prompt: string): boolean {
@@ -659,15 +712,27 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
   }
 
   clearSession(sessionId: string): void {
+    this.clearSessionInternal(sessionId, false);
+  }
+
+  discardSession(sessionId: string): void {
+    this.clearSessionInternal(sessionId, true);
+  }
+
+  private clearSessionInternal(sessionId: string, discard: boolean): void {
     const agent = this.agents.get(sessionId);
-    if (agent && typeof (agent as { dispose?: () => void }).dispose === 'function') {
-      (agent as { dispose: () => void }).dispose();
+    const disposable = agent as
+      | { dispose?: (options?: { skipSessionLearning?: boolean }) => void }
+      | undefined;
+    if (typeof disposable?.dispose === 'function') {
+      if (discard) disposable.dispose({ skipSessionLearning: true });
+      else disposable.dispose();
     }
     this.agents.delete(sessionId);
     this.abortControllers.delete(sessionId);
     this.agentIdentities.delete(sessionId);
     this.hostTranscriptFingerprints.delete(sessionId);
-    logger.debug('[CodeBuddyEngineAdapter] cleared session', { sessionId });
+    logger.debug('[CodeBuddyEngineAdapter] cleared session', { sessionId, discard });
   }
 
   /**

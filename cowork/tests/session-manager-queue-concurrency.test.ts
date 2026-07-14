@@ -200,6 +200,48 @@ describe('SessionManager processQueue concurrency', () => {
     // processQueue should have been entered exactly once (not re-entered from finally)
     expect(processQueueEntries).toBe(1);
   });
+
+  it('runs a follow-up queued while a cancelled turn is still unwinding', async () => {
+    const manager = new SessionManager(db, sendToRenderer);
+    let releaseCancelledTurn!: () => void;
+    const cancelledTurn = new Promise<void>((resolve) => {
+      releaseCancelledTurn = resolve;
+    });
+    const processed: string[] = [];
+    const processPrompt = vi.fn(async (_session: unknown, prompt: string) => {
+      processed.push(prompt);
+      if (prompt === 'premier tour') await cancelledTurn;
+    });
+    (manager as unknown as { processPrompt: typeof processPrompt }).processPrompt = processPrompt;
+    (manager as unknown as { loadSession: (id: string) => unknown }).loadSession = (id: string) => ({
+      id,
+      title: 'Lisa',
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      status: 'running' as const,
+      cwd: '/tmp',
+    });
+    const session = {
+      id: 's1',
+      title: 'Lisa',
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      status: 'idle' as const,
+      cwd: '/tmp',
+    };
+    const enqueue = (manager as unknown as {
+      enqueuePrompt: (session: unknown, prompt: string) => void;
+    }).enqueuePrompt.bind(manager);
+
+    enqueue(session, 'premier tour');
+    await vi.waitFor(() => expect(processPrompt).toHaveBeenCalledTimes(1));
+    manager.stopSession('s1');
+    enqueue(session, 'reprise vocale');
+    releaseCancelledTurn();
+
+    await vi.waitFor(() => expect(processPrompt).toHaveBeenCalledTimes(2));
+    expect(processed).toEqual(['premier tour', 'reprise vocale']);
+  });
 });
 
 describe('SessionManager cache eviction', () => {

@@ -176,7 +176,11 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
     });
     const spoken = await reply(transcript);
     expect(spoken).toBe('Tout va bien, la boucle vocale est prête.');
-    expect(summarize).toHaveBeenCalledWith(agentOutput, transcript, undefined);
+    expect(summarize).toHaveBeenCalledWith(
+      agentOutput,
+      transcript,
+      expect.objectContaining({ onProviderResolved: expect.any(Function) }),
+    );
     expect(info).toHaveBeenCalledWith(
       expect.stringMatching(
         /^\[voice-act\] result timing: agentMs=\d+ms summaryMs=\d+ms summary=fallback$/
@@ -201,6 +205,57 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
         /^\[voice-act\] result timing: agentMs=\d+ms summaryMs=0ms summary=skipped$/
       )
     );
+  });
+
+  it('publishes only the provider that produced the text actually retained', async () => {
+    const agentRoute = {
+      model: 'grounded-model',
+      apiKey: 'grounded-key',
+      baseURL: 'https://grounded.example/v1',
+    };
+    const summaryRoute = {
+      model: 'speech-model',
+      apiKey: 'speech-key',
+      baseURL: 'https://speech.example/v1',
+    };
+    const published: typeof agentRoute[] = [];
+    const agentRunner: AgentRunner = async (_heard, opts) => {
+      opts?.onProviderResolved?.(agentRoute);
+      return '## Résultat\n- Une réponse longue qui nécessite un résumé parlé.';
+    };
+    const summarize = vi.fn(async (_output, _heard, opts) => {
+      opts?.onProviderResolved?.(summaryRoute);
+      return 'Résumé parlé retenu.';
+    });
+    const reply = makeAgentReply({ agentRunner, summarize });
+
+    expect(await reply('Explique le résultat', {
+      onProviderResolved: (route) => published.push(route as typeof agentRoute),
+    })).toBe('Résumé parlé retenu.');
+    expect(published).toEqual([summaryRoute]);
+
+    const fallbackPublished: typeof agentRoute[] = [];
+    const fallback = makeAgentReply({
+      agentRunner,
+      summarize: async (_output, _heard, opts) => {
+        opts?.onProviderResolved?.(summaryRoute);
+        throw new Error('summary unavailable');
+      },
+    });
+    expect(await fallback('Explique le résultat', {
+      onProviderResolved: (route) => fallbackPublished.push(route as typeof agentRoute),
+    })).toContain('Résultat');
+    expect(fallbackPublished).toEqual([agentRoute]);
+
+    const unreceiptedPublished: typeof agentRoute[] = [];
+    const unreceipted = makeAgentReply({
+      agentRunner,
+      summarize: async () => 'Résumé distant sans reçu de route.',
+    });
+    expect(await unreceipted('Explique le résultat', {
+      onProviderResolved: (route) => unreceiptedPublished.push(route as typeof agentRoute),
+    })).toBe('Résumé distant sans reçu de route.');
+    expect(unreceiptedPublished).toEqual([]);
   });
 
   it('never lets a second model rewrite an operational introspection as consciousness', async () => {

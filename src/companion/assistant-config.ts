@@ -599,6 +599,16 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     help: 'Preloads structured news, agenda, date and configured weather context for instant grounded replies.',
   },
   {
+    key: 'CODEBUDDY_SEMANTIC_GATE',
+    label: 'Deep-answer semantic review',
+    group: 'companion',
+    type: 'enum',
+    options: ['auto', 'true', 'false'],
+    default: 'auto',
+    envFile: 'both',
+    help: 'Audits developed answers and permits at most one independently re-audited revision before delivery.',
+  },
+  {
     key: 'CODEBUDDY_PREFETCH_INTERVAL_MS',
     label: 'Fresh-context interval ms',
     group: 'companion',

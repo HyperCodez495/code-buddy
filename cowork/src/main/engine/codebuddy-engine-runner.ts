@@ -45,8 +45,15 @@ interface EngineAdapter {
     options?: Record<string, unknown>
   ): Promise<{ content: string; tokenCount?: number; toolCallCount?: number }>;
   cancel(sessionId: string): void;
+  replaceLastAssistantResponse?(
+    sessionId: string,
+    expected: string,
+    replacement: string
+  ): boolean;
+  resumeTranscriptSnapshots?(sessionId: string): void;
   steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSession(sessionId: string): void;
+  discardSession?(sessionId: string): void;
 }
 
 interface EngineStreamEvent {
@@ -110,6 +117,58 @@ interface CoreRelationshipSafetyModule {
 }
 
 type RelationshipSafetyLoader = () => Promise<CoreRelationshipSafetyModule | null>;
+
+interface SemanticReviewHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface SemanticReviewCandidate {
+  request: string;
+  history?: readonly SemanticReviewHistoryTurn[];
+}
+
+interface SemanticReviewMainProvider {
+  apiKey: string;
+  baseURL: string;
+  model: string;
+  provider?: string;
+}
+
+interface SemanticReviewInput extends SemanticReviewCandidate {
+  draft: string;
+  evidence?: string;
+  mainProvider?: SemanticReviewMainProvider;
+  signal?: AbortSignal;
+}
+
+interface SemanticReviewResult {
+  response: string;
+}
+
+interface SemanticRuntimeOptions {
+  env?: Record<string, string | undefined>;
+}
+
+interface CoreSemanticResponseModule {
+  shouldReviewSemanticResponse?: (
+    input: SemanticReviewCandidate,
+    options?: SemanticRuntimeOptions
+  ) => boolean;
+  reviewSemanticResponse?: (
+    input: SemanticReviewInput,
+    dependencies?: undefined,
+    options?: SemanticRuntimeOptions
+  ) => Promise<SemanticReviewResult>;
+  /** Privileged settings stay outside critic inputs and renderer telemetry. */
+  runtimeEnv?: Record<string, string>;
+}
+
+interface CoreAssistantConfigModule {
+  readAssistantRuntimeEnv?: () => Record<string, string>;
+}
+
+type SemanticResponseLoader = () => Promise<CoreSemanticResponseModule | null>;
 
 const RELATIONSHIP_SAFETY_UNAVAILABLE_REPLY =
   "Je n'arrive pas à vérifier cette réponse avec la barrière relationnelle. Je préfère ne pas l'afficher plutôt que risquer une formulation manipulatrice.";
@@ -184,6 +243,8 @@ export class CodeBuddyEngineRunner {
   private continuity: Pick<CoworkCrossChannelContinuity, 'prepare'>;
   private companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'>;
   private relationshipSafetyLoader: RelationshipSafetyLoader;
+  private semanticResponseLoader: SemanticResponseLoader;
+  private postProcessingControllers = new Map<string, AbortController>();
 
   constructor(
     adapter: EngineAdapter,
@@ -192,12 +253,25 @@ export class CodeBuddyEngineRunner {
     companionRouting: Pick<CoworkCompanionModelRouting, 'resolve'> = new CoworkCompanionModelRouting(),
     relationshipSafetyLoader: RelationshipSafetyLoader = () =>
       loadCoreModule<CoreRelationshipSafetyModule>('conversation/relationship-safety.js'),
+    semanticResponseLoader: SemanticResponseLoader = async () => {
+      const [runtime, assistantConfig] = await Promise.all([
+        loadCoreModule<CoreSemanticResponseModule>('conversation/semantic-response-runtime.js'),
+        loadCoreModule<CoreAssistantConfigModule>('companion/assistant-config.js'),
+      ]);
+      if (!runtime) return null;
+      return {
+        shouldReviewSemanticResponse: runtime.shouldReviewSemanticResponse,
+        reviewSemanticResponse: runtime.reviewSemanticResponse,
+        runtimeEnv: assistantConfig?.readAssistantRuntimeEnv?.() ?? {},
+      };
+    },
   ) {
     this.adapter = adapter;
     this.callbacks = callbacks;
     this.continuity = continuity;
     this.companionRouting = companionRouting;
     this.relationshipSafetyLoader = relationshipSafetyLoader;
+    this.semanticResponseLoader = semanticResponseLoader;
   }
 
   /**
@@ -212,6 +286,10 @@ export class CodeBuddyEngineRunner {
   ): Promise<void> {
     const { sendToRenderer, saveMessage } = this.callbacks;
     const turnStartedAt = Date.now();
+    const previousPostProcessing = this.postProcessingControllers.get(session.id);
+    previousPostProcessing?.abort();
+    const postProcessingController = new AbortController();
+    this.postProcessingControllers.set(session.id, postProcessingController);
 
     // Notify session is running
     sendToRenderer({
@@ -270,7 +348,7 @@ export class CodeBuddyEngineRunner {
     const runtimeConfig = session.intelligence?.configSetId
       ? configStore.getConfigForSet(session.intelligence.configSetId)
       : configStore.getAll();
-    const [snapshot, personaPrompt, sharedContinuity, companionRoute, relationshipSafety] = await Promise.all([
+    const prepareTurn = () => Promise.all([
       this.createTurnCheckpoint(session, canonicalPrompt),
       this.resolveActivePersonaPrompt(),
       // The continuity adapter receives history plus the canonical turn only.
@@ -284,7 +362,45 @@ export class CodeBuddyEngineRunner {
       ),
       this.companionRouting.resolve(session, canonicalPrompt, runtimeConfig, localRoutingHistory),
       this.createRelationshipSafetyGuard(session),
-    ]);
+      this.loadSemanticResponseModule(session),
+    ] as const);
+    let preparation: Awaited<ReturnType<typeof prepareTurn>>;
+    try {
+      preparation = await prepareTurn();
+    } catch (error) {
+      // Preparation happens before the main run try/finally. Close the same
+      // lifecycle boundary here so a rejected checkpoint/persona/continuity
+      // promise cannot leave a stale cancellation controller or a permanent
+      // `running` renderer state behind.
+      postProcessingController.abort();
+      if (this.postProcessingControllers.get(session.id) === postProcessingController) {
+        this.postProcessingControllers.delete(session.id);
+      }
+      sendToRenderer({
+        type: 'session.status',
+        payload: { sessionId: session.id, status: 'idle' },
+      } as ServerEvent);
+      throw error;
+    }
+    const [
+      snapshot,
+      personaPrompt,
+      sharedContinuity,
+      companionRoute,
+      relationshipSafety,
+      semanticResponseModule,
+    ] = preparation;
+    if (postProcessingController.signal.aborted) {
+      this.discardEngineSession(session.id);
+      if (this.postProcessingControllers.get(session.id) === postProcessingController) {
+        this.postProcessingControllers.delete(session.id);
+      }
+      sendToRenderer({
+        type: 'session.status',
+        payload: { sessionId: session.id, status: 'idle' },
+      } as ServerEvent);
+      return;
+    }
     const engineMessages = sharedContinuity.active
       ? [...sharedContinuity.messages, ...localEngineMessages]
       : localEngineMessages;
@@ -295,6 +411,42 @@ export class CodeBuddyEngineRunner {
     const effectiveModel = companionRoute?.model ?? session.model ?? runtimeConfig.model;
     const effectiveApiKey = companionRoute?.apiKey ?? runtimeConfig.apiKey;
     const effectiveBaseURL = companionRoute?.baseURL ?? runtimeConfig.baseUrl;
+    const semanticHistory = this.buildSemanticReviewHistory(
+      sharedContinuity.messages,
+      historyMessages,
+    );
+    const semanticReviewCandidate: SemanticReviewCandidate = {
+      request: canonicalPrompt,
+      ...(semanticHistory.length > 0 ? { history: semanticHistory } : {}),
+    };
+    const semanticRuntimeOptions: SemanticRuntimeOptions | undefined = semanticResponseModule
+      ? { env: { ...process.env, ...(semanticResponseModule.runtimeEnv ?? {}) } }
+      : undefined;
+    const semanticMainProvider: SemanticReviewMainProvider | undefined =
+      effectiveModel && effectiveBaseURL
+        ? {
+            apiKey: effectiveApiKey ?? '',
+            baseURL: effectiveBaseURL,
+            model: effectiveModel,
+            ...(companionRoute?.provider ? { provider: companionRoute.provider } : {}),
+          }
+        : undefined;
+    let semanticReviewPending = false;
+    if (
+      companionThread &&
+      semanticResponseModule?.shouldReviewSemanticResponse &&
+      semanticResponseModule.reviewSemanticResponse
+    ) {
+      try {
+        semanticReviewPending = semanticResponseModule.shouldReviewSemanticResponse(
+          semanticReviewCandidate,
+          semanticRuntimeOptions,
+        );
+      } catch {
+        // Preflight is deliberately fail-open. No engine/private prompt is logged.
+        semanticReviewPending = false;
+      }
+    }
     if (companionRoute) {
       log('[EngineRunner] evidence-backed companion route', {
         sessionId: session.id,
@@ -330,18 +482,59 @@ export class CodeBuddyEngineRunner {
     const engineStartedAt = Date.now();
     let firstVisibleEventRecorded = false;
     let relationshipSafetyFinished = false;
-    const emitVisibleContent = (delta: string): void => {
+    let streamDoneEmitted = false;
+    const recordFirstVisibleEvent = (eventType: string): void => {
+      if (firstVisibleEventRecorded) return;
+      firstVisibleEventRecorded = true;
+      session.intelligence = {
+        ...(session.intelligence ?? {
+          thinkingLevel: runtimeConfig.thinkingLevel ?? 'off',
+          fastMode: false,
+          executionLocation: 'local',
+          latencyBudgetMs: 900,
+        }),
+        cacheState: 'warm',
+        lastLatency: {
+          setupMs: engineStartedAt - turnStartedAt,
+          firstTokenMs: Date.now() - turnStartedAt,
+          measuredAt: Date.now(),
+          configSetId: session.intelligence?.configSetId,
+          model: effectiveModel,
+        },
+      };
+      log('[EngineRunner] first visible stream event', {
+        sessionId: session.id,
+        setupMs: engineStartedAt - turnStartedAt,
+        engineMs: Date.now() - engineStartedAt,
+        totalMs: Date.now() - turnStartedAt,
+        eventType,
+      });
+    };
+    const emitRendererContent = (delta: string): void => {
       if (!delta) return;
-      fullContent += delta;
+      recordFirstVisibleEvent('content');
       sendToRenderer({
         type: 'stream.partial',
         payload: { sessionId: session.id, delta },
       });
     };
+    const appendRelationshipSafeContent = (delta: string): void => {
+      if (!delta) return;
+      fullContent += delta;
+      if (!semanticReviewPending) emitRendererContent(delta);
+    };
+    const emitStreamDone = (): void => {
+      if (streamDoneEmitted) return;
+      streamDoneEmitted = true;
+      sendToRenderer({
+        type: 'stream.done',
+        payload: { sessionId: session.id },
+      } as ServerEvent);
+    };
     const finishRelationshipSafety = (): void => {
       if (!relationshipSafety || relationshipSafetyFinished) return;
       relationshipSafetyFinished = true;
-      for (const delta of relationshipSafety.finish()) emitVisibleContent(delta);
+      for (const delta of relationshipSafety.finish()) appendRelationshipSafeContent(delta);
       const assessment = relationshipSafety.assessment();
       if (assessment.intervened) {
         log('[EngineRunner] relationship safety gate intervened', {
@@ -355,34 +548,12 @@ export class CodeBuddyEngineRunner {
         session.id,
         engineMessages,
         (event: EngineStreamEvent) => {
+          if (postProcessingController.signal.aborted) return;
           if (
-            !firstVisibleEventRecorded &&
-            (event.type === 'content' || event.type === 'thinking' || event.type === 'tool_start')
+            event.type === 'tool_start' ||
+            (event.type === 'thinking' && !relationshipSafety)
           ) {
-            firstVisibleEventRecorded = true;
-            session.intelligence = {
-              ...(session.intelligence ?? {
-                thinkingLevel: runtimeConfig.thinkingLevel ?? 'off',
-                fastMode: false,
-                executionLocation: 'local',
-                latencyBudgetMs: 900,
-              }),
-              cacheState: 'warm',
-              lastLatency: {
-                setupMs: engineStartedAt - turnStartedAt,
-                firstTokenMs: Date.now() - turnStartedAt,
-                measuredAt: Date.now(),
-                configSetId: session.intelligence?.configSetId,
-                model: effectiveModel,
-              },
-            };
-            log('[EngineRunner] first visible stream event', {
-              sessionId: session.id,
-              setupMs: engineStartedAt - turnStartedAt,
-              engineMs: Date.now() - engineStartedAt,
-              totalMs: Date.now() - turnStartedAt,
-              eventType: event.type,
-            });
+            recordFirstVisibleEvent(event.type);
           }
           switch (event.type) {
             case 'content':
@@ -390,7 +561,7 @@ export class CodeBuddyEngineRunner {
                 const deltas = relationshipSafety
                   ? relationshipSafety.push(event.content)
                   : [event.content];
-                for (const delta of deltas) emitVisibleContent(delta);
+                for (const delta of deltas) appendRelationshipSafeContent(delta);
               }
               break;
 
@@ -638,10 +809,7 @@ export class CodeBuddyEngineRunner {
 
             case 'done':
               finishRelationshipSafety();
-              sendToRenderer({
-                type: 'stream.done',
-                payload: { sessionId: session.id },
-              } as ServerEvent);
+              if (!semanticReviewPending) emitStreamDone();
               break;
 
             case 'error':
@@ -663,8 +831,13 @@ export class CodeBuddyEngineRunner {
           systemPromptAppend,
           ...(turnContext ? { currentTurnContext: turnContext } : {}),
           ...(relationshipSafety ? { relationshipSafety: true } : {}),
+          ...(semanticReviewPending ? { bufferAssistantResponse: true } : {}),
         }
       );
+      if (postProcessingController.signal.aborted) {
+        this.discardEngineSession(session.id);
+        return;
+      }
       finishRelationshipSafety();
       session.intelligence = {
         ...(session.intelligence ?? {
@@ -685,6 +858,77 @@ export class CodeBuddyEngineRunner {
 
       if (runtimeError && !fullContent && contentBlocks.length === 0) {
         fullContent = `**Error**: ${runtimeError}`;
+      }
+
+      if (semanticReviewPending) {
+        if (!runtimeError && fullContent.trim() && semanticResponseModule?.reviewSemanticResponse) {
+          try {
+            const reviewedDraft = fullContent;
+            const result = await semanticResponseModule.reviewSemanticResponse(
+              {
+                ...semanticReviewCandidate,
+                draft: reviewedDraft,
+                ...(sharedContinuity.freshEvidence
+                  ? { evidence: sharedContinuity.freshEvidence }
+                  : {}),
+                ...(semanticMainProvider ? { mainProvider: semanticMainProvider } : {}),
+                signal: postProcessingController.signal,
+              },
+              undefined,
+              semanticRuntimeOptions
+            );
+            if (typeof result.response === 'string' && result.response.trim()) {
+              // A semantic reviser is another model boundary. Its output must
+              // pass a fresh relationship guard before crossing IPC or memory.
+              fullContent = relationshipSafety
+                ? guardStandaloneCompanionText(relationshipSafety, result.response)
+                : result.response;
+            }
+            if (postProcessingController.signal.aborted) {
+              this.discardEngineSession(session.id);
+              return;
+            }
+            if (fullContent !== reviewedDraft) {
+              let historyReplaced = false;
+              try {
+                historyReplaced =
+                  this.adapter.replaceLastAssistantResponse?.(
+                    session.id,
+                    reviewedDraft,
+                    fullContent,
+                  ) === true;
+              } catch {
+                historyReplaced = false;
+              }
+              if (!historyReplaced) {
+                // Rebuild from Cowork's accepted transcript on the next turn;
+                // never retain a rejected draft in a warm agent.
+                this.discardEngineSession(session.id);
+                log('[EngineRunner] semantic rewrite evicted warm session', {
+                  sessionId: session.id,
+                });
+              }
+            }
+            log('[EngineRunner] semantic response gate completed', {
+              sessionId: session.id,
+              revised: fullContent !== reviewedDraft,
+            });
+          } catch {
+            // The shared runtime is fail-open. Keep the relationship-safe draft
+            // without exposing prompts, critic output, or provider errors.
+            log('[EngineRunner] semantic response gate unavailable', {
+              sessionId: session.id,
+            });
+          }
+        }
+        if (postProcessingController.signal.aborted) {
+          this.discardEngineSession(session.id);
+          return;
+        }
+        // Nothing from the candidate draft has crossed IPC yet. Emit exactly
+        // the accepted/revised text, then close the stream once.
+        emitRendererContent(fullContent);
+        emitStreamDone();
       }
 
       // Save assistant message
@@ -719,6 +963,10 @@ export class CodeBuddyEngineRunner {
         },
       } as ServerEvent);
     } catch (error) {
+      if (postProcessingController.signal.aborted) {
+        this.discardEngineSession(session.id);
+        return;
+      }
       logError('[CodeBuddyEngineRunner] session error', error);
       sendToRenderer({
         type: 'error',
@@ -728,6 +976,12 @@ export class CodeBuddyEngineRunner {
         },
       } as ServerEvent);
     } finally {
+      if (semanticReviewPending) {
+        this.adapter.resumeTranscriptSnapshots?.(session.id);
+      }
+      if (this.postProcessingControllers.get(session.id) === postProcessingController) {
+        this.postProcessingControllers.delete(session.id);
+      }
       reasoningCapture.complete(fullContent || undefined);
       // Notify session is idle
       sendToRenderer({
@@ -748,6 +1002,7 @@ export class CodeBuddyEngineRunner {
    */
   cancel(sessionId: string): void {
     try {
+      this.postProcessingControllers.get(sessionId)?.abort();
       this.adapter.cancel(sessionId);
       log('[CodeBuddyEngineRunner] cancelled', sessionId);
     } catch (error) {
@@ -755,10 +1010,20 @@ export class CodeBuddyEngineRunner {
     }
   }
 
+  private discardEngineSession(sessionId: string): void {
+    if (this.adapter.discardSession) {
+      this.adapter.discardSession(sessionId);
+    } else {
+      this.adapter.clearSession(sessionId);
+    }
+  }
+
   /**
    * Clear session state.
    */
   clearSdkSession(sessionId: string): void {
+    this.postProcessingControllers.get(sessionId)?.abort();
+    this.postProcessingControllers.delete(sessionId);
     this.adapter.clearSession(sessionId);
     log('[CodeBuddyEngineRunner] cleared', sessionId);
   }
@@ -838,6 +1103,55 @@ export class CodeBuddyEngineRunner {
     // Companion output fails closed. Ordinary coding sessions never enter this
     // branch and keep their existing direct stream.
     return new UnavailableRelationshipSafetyGuard();
+  }
+
+  private async loadSemanticResponseModule(
+    session: Session
+  ): Promise<CoreSemanticResponseModule | null> {
+    if (!isCompanionThreadTags(session.tags)) return null;
+    try {
+      return await this.semanticResponseLoader();
+    } catch {
+      // Fail open without logging module/provider errors, which could contain
+      // request fragments from a custom loader.
+      log('[EngineRunner] semantic response runtime unavailable', {
+        sessionId: session.id,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Build the critic transcript exclusively from user-visible canonical text.
+   * Attachment payloads, paths, tool inputs/results, thinking and the enriched
+   * engine prompt are intentionally impossible to enter this representation.
+   */
+  private buildSemanticReviewHistory(
+    sharedMessages: Array<{ role: string; content: string }>,
+    localMessages: Message[]
+  ): SemanticReviewHistoryTurn[] {
+    const toTurn = (role: string, content: string): SemanticReviewHistoryTurn | null => {
+      if (role !== 'user' && role !== 'assistant') return null;
+      const canonicalContent = content.replace(/\s+/g, ' ').trim().slice(0, 4_000);
+      return canonicalContent ? { role, content: canonicalContent } : null;
+    };
+    const localTurns = localMessages.flatMap((message) => {
+      const visibleText = message.content
+        .flatMap((block) => (block.type === 'text' ? [(block as TextContent).text] : []))
+        .join('\n');
+      const turn = toTurn(message.role, visibleText);
+      return turn ? [turn] : [];
+    });
+    const localFingerprints = new Set(
+      localTurns.map((turn) => `${turn.role}:${turn.content.toLocaleLowerCase('fr')}`)
+    );
+    const sharedTurns = sharedMessages.flatMap((message) => {
+      const turn = toTurn(message.role, message.content);
+      if (!turn) return [];
+      const fingerprint = `${turn.role}:${turn.content.toLocaleLowerCase('fr')}`;
+      return localFingerprints.has(fingerprint) ? [] : [turn];
+    });
+    return [...sharedTurns, ...localTurns].slice(-12);
   }
 
   async steer(sessionId: string, prompt: string): Promise<boolean> {

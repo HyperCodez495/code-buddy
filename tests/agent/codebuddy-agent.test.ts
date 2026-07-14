@@ -834,6 +834,60 @@ describe('CodeBuddyAgent', () => {
     });
   });
 
+  describe('replaceLastAssistantResponse', () => {
+    it('replaces only when the latest assistant entry matches in both projections', async () => {
+      agent = new CodeBuddyAgent('test-api-key');
+      await agent.systemPromptReady;
+      (agent as any).chatHistory = [
+        { type: 'assistant', content: 'draft', timestamp: new Date(0) },
+      ];
+      (agent as any).messages = [{ role: 'assistant', content: 'draft' }];
+
+      expect(agent.replaceLastAssistantResponse('draft', 'accepted')).toBe(true);
+      expect((agent as any).chatHistory.at(-1).content).toBe('accepted');
+      expect((agent as any).messages.at(-1).content).toBe('accepted');
+    });
+
+    it('does not rewrite an older matching assistant when the latest one differs', async () => {
+      agent = new CodeBuddyAgent('test-api-key');
+      await agent.systemPromptReady;
+      (agent as any).chatHistory = [
+        { type: 'assistant', content: 'repeated draft', timestamp: new Date(0) },
+        { type: 'user', content: 'next', timestamp: new Date(1) },
+        { type: 'assistant', content: 'different latest', timestamp: new Date(2) },
+      ];
+      (agent as any).messages = [
+        { role: 'assistant', content: 'repeated draft' },
+        { role: 'user', content: 'next' },
+        { role: 'assistant', content: 'different latest' },
+      ];
+
+      expect(agent.replaceLastAssistantResponse('repeated draft', 'accepted')).toBe(false);
+      expect((agent as any).chatHistory[0].content).toBe('repeated draft');
+      expect((agent as any).messages[0].content).toBe('repeated draft');
+    });
+
+    it('keeps periodic snapshots suspended until every nested gate releases', async () => {
+      agent = new CodeBuddyAgent('test-api-key');
+      await agent.systemPromptReady;
+      const contextManager = (agent as any).contextManager;
+      const stop = jest.fn();
+      const start = jest.fn();
+      contextManager.stopPeriodicSnapshot = stop;
+      contextManager.startPeriodicSnapshot = start;
+
+      agent.suspendTranscriptSnapshots();
+      agent.suspendTranscriptSnapshots();
+      agent.resumeTranscriptSnapshots();
+
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(start).not.toHaveBeenCalled();
+
+      agent.resumeTranscriptSnapshots();
+      expect(start).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // =========================================================================
   // processUserMessageStream (streaming)
   // =========================================================================

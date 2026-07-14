@@ -85,6 +85,8 @@ export interface VoiceStepOptions {
   signal?: AbortSignal;
   /** Exact current utterance when the grounded agent input also carries history. */
   introspectionText?: string;
+  /** Internal routing receipt used to keep post-processing on the exact provider. */
+  onProviderResolved?: (route: { model: string; apiKey: string; baseURL?: string }) => void;
 }
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
@@ -1166,11 +1168,12 @@ export async function defaultReply(
 ): Promise<string> {
   const fast = fastCompanionReply(heard);
   if (fast) {
-    logger.info(`[voice] fast reply → ${fast}`);
+    logger.info(`[voice] fast reply chars=${fast.length}`);
     return fast;
   }
   try {
     const { CodeBuddyClient, route, systemPrompt } = await prepareSpokenTurn(heard, history);
+    replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     const resp = await client.chat(
@@ -1189,9 +1192,6 @@ export async function defaultReply(
       }
     );
     const reply = (resp?.choices?.[0]?.message?.content ?? '').trim();
-    // Opener variation is local and privacy-free, so keep it active independently of
-    // relational-memory opt-in.
-    if (reply) recentReplyOpeners = pushOpener(recentReplyOpeners, reply);
     return reply || conversationFailureReply(heard, history);
   } catch (err) {
     logger.warn(`[voice] local reply failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1239,6 +1239,7 @@ export async function* streamCompanionReply(
       history,
       acknowledgement ?? undefined
     );
+    replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] stream reply model: ${route.model} — ${route.reason}`);
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     let continuation = '';
@@ -1288,7 +1289,6 @@ export async function* streamCompanionReply(
         }
       }
     }
-    if (full.trim()) recentReplyOpeners = pushOpener(recentReplyOpeners, full);
   } catch (err) {
     logger.warn(`[voice] stream reply failed: ${err instanceof Error ? err.message : String(err)}`);
     // Yields nothing → the pipeline falls back to the blocking reply.
@@ -1678,9 +1678,7 @@ export async function sayNow(
   const t = prepareSpeech(text);
   if (!t) {
     if ((text ?? '').trim()) {
-      logger.info(
-        `[voice] sayNow muted — nothing speakable after sanitize: ${JSON.stringify((text ?? '').slice(0, 120))}`
-      );
+      logger.info(`[voice] sayNow muted after sanitize inputChars=${(text ?? '').length}`);
     }
     return;
   }
@@ -2097,8 +2095,9 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
           if (result.played) {
             mode = 'streamed';
             spoke = true;
+            recentReplyOpeners = pushOpener(recentReplyOpeners, result.spoken);
             publishAssistantTurn(result.spoken);
-            logger.info(`[voice] spoke (streamed) → ${result.spoken}`);
+            logger.info(`[voice] spoke (streamed) chars=${result.spoken.length}`);
             logger.info(
               `[voice] streamed ${result.sentences.length} phrase(s) in ${Date.now() - startedAt}ms`
             );
@@ -2148,12 +2147,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       }
       if (!reply) {
         if ((rawReply ?? '').trim()) {
-          logger.info(
-            `[voice] reply muted — nothing speakable after sanitize: ${JSON.stringify((rawReply ?? '').slice(0, 120))}`
-          );
+          logger.info(`[voice] reply muted after sanitize inputChars=${(rawReply ?? '').length}`);
         }
         return; // nothing to say → silence (never an error)
       }
+      recentReplyOpeners = pushOpener(recentReplyOpeners, reply);
       // The textual answer is now committed even if the local audio device fails;
       // publish it to the shared channel so the conversation never disappears.
       publishAssistantTurn(reply);
@@ -2172,7 +2170,9 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         if (streamed) {
           mode = 'blocking';
           spoke = true;
-          logger.info(`[voice] spoke (${resolveTtsEngine()} audio stream) → ${reply}`);
+          logger.info(
+            `[voice] spoke (${resolveTtsEngine()} audio stream) chars=${reply.length}`
+          );
           logger.info(
             `[voice] timings: reply=${replyMs}ms firstAudio=${firstAudioMs ?? -1}ms ` +
               `streamPlay=${playMs}ms total=${Date.now() - startedAt}ms`
@@ -2198,7 +2198,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       if (signal.aborted) return;
       mode = 'blocking';
       spoke = true;
-      logger.info(`[voice] spoke → ${reply}`);
+      logger.info(`[voice] spoke chars=${reply.length}`);
       logger.info(
         `[voice] timings: reply=${replyMs}ms synth=${synthMs}ms play=${playMs}ms total=${Date.now() - startedAt}ms`
       );

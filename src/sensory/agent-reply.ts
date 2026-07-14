@@ -56,7 +56,9 @@ export interface AgentReplyOptions {
   cwd?: string;
   /** Injectable: run the full agent turn. Default builds a headless CodeBuddyAgent. */
   agentRunner?: AgentRunner;
-  /** Injectable: condense the agent output for speech. Default: fast LLM + SPEAK prompt. */
+  /** Injectable: condense the agent output for speech. A generative custom
+   *  summarizer must call `opts.onProviderResolved` so private review routing
+   *  can stay on its exact provider. Default: fast LLM + SPEAK prompt. */
   summarize?: SummarizeFn;
   /** Optional spoken acknowledgement played while the slow turn starts in parallel,
    *  e.g. "d'accord, je regarde…". Default: none (the ReplyFn contract returns one string;
@@ -86,6 +88,7 @@ export interface InterruptibleVoiceAgent {
   ): AsyncIterable<unknown>;
   getChatHistory(): Array<{ type?: string; content?: unknown }>;
   abortCurrentOperation(): void;
+  suspendTranscriptSnapshots?(): void;
 }
 
 const DEFAULT_APOLOGY = "Désolé, je n'ai pas réussi à traiter ta demande.";
@@ -199,7 +202,7 @@ type PreparedVoiceAgent = {
   agent: InterruptibleVoiceAgent & {
     systemPromptReady: Promise<void>;
     getMCPReady(): Promise<void>;
-    dispose(): void;
+    dispose(options?: { skipSessionLearning?: boolean }): void;
   };
 };
 
@@ -315,10 +318,14 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
       cwd,
       GROUNDED_VOICE_SYSTEM_PROMPT_APPEND
     );
+    // This agent is a one-shot private draft producer. The accepted spoken
+    // answer is journalled by the voice bridge later; its pre-audit transcript
+    // must never reach periodic or session-end learning persistence.
+    agent.suspendTranscriptSnapshots?.();
     try {
       await Promise.all([agent.systemPromptReady, agent.getMCPReady()]);
     } catch (error) {
-      agent.dispose();
+      agent.dispose({ skipSessionLearning: true });
       throw error;
     }
     logger.info(
@@ -346,17 +353,18 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
         }
       }
       if (prepared && routeKey(prepared.route) !== routeKey(desiredRoute)) {
-        prepared.agent.dispose();
+        prepared.agent.dispose({ skipSessionLearning: true });
         prepared = null;
       }
       prepared ??= await createPrepared(desiredRoute);
+      opts?.onProviderResolved?.(prepared.route);
       logger.info(`[voice-act] agent turn on ${prepared.route.model}`);
       return await runInterruptibleVoiceAgentTurn(prepared.agent, transcript, opts);
     } finally {
       // The MCP manager is process-global and stays warm, but everything owned
       // by this one-shot agent (watchers, listeners, abort controller, memory)
       // must be released even when the turn fails or is interrupted.
-      prepared?.agent.dispose();
+      prepared?.agent.dispose({ skipSessionLearning: true });
       active = false;
     }
   };
@@ -378,7 +386,9 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
     disposed = true;
     const pending = standby;
     standby = null;
-    void pending?.then((prepared) => prepared.agent.dispose()).catch(() => undefined);
+    void pending
+      ?.then((prepared) => prepared.agent.dispose({ skipSessionLearning: true }))
+      .catch(() => undefined);
   };
 
   return runner;
@@ -391,6 +401,7 @@ function makeDefaultSummarize(): SummarizeFn {
     const { resolveVoiceModel, SPEAK_SYSTEM_PROMPT } = await import('./voice-loop.js');
     const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
     const route = await resolveVoiceModel(transcript, { forceFastLane: true });
+    opts?.onProviderResolved?.(route);
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     // Inherit the active personality's spoken character (else the default companion prompt).
     const sys =
@@ -452,6 +463,12 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
   const reply = async (heard: string, replyOpts?: VoiceStepOptions): Promise<string> => {
     const signal = replyOpts?.signal;
     let agentMs = 0;
+    let agentProvider: Parameters<NonNullable<VoiceStepOptions['onProviderResolved']>>[0] | undefined;
+    const publishProvider = (
+      route: Parameters<NonNullable<VoiceStepOptions['onProviderResolved']>>[0] | undefined,
+    ): void => {
+      if (route) replyOpts?.onProviderResolved?.(route);
+    };
     try {
       // Start the useful work before playing the acknowledgement. The two promises are
       // observed together immediately: an early agent rejection therefore never becomes an
@@ -460,15 +477,15 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       const agentStartedAt = Date.now();
       const turnPromise = (async (): Promise<string> => {
         try {
-          const hasExplicitIntrospectionText = replyOpts?.introspectionText !== undefined;
-          const agentOptions = signal || hasExplicitIntrospectionText
-            ? {
-                ...(signal ? { signal } : {}),
-                ...(hasExplicitIntrospectionText
-                  ? { introspectionText: replyOpts.introspectionText }
-                  : {}),
-              }
-            : undefined;
+          const agentOptions: VoiceStepOptions = {
+            ...(signal ? { signal } : {}),
+            ...(replyOpts?.introspectionText !== undefined
+              ? { introspectionText: replyOpts.introspectionText }
+              : {}),
+            onProviderResolved: (route) => {
+              agentProvider = route;
+            },
+          };
           return await runInVoiceTurn(() =>
             agentRunner(heard, agentOptions)
           );
@@ -504,6 +521,7 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       // default/plan modes it may mean a gate or model failure, so never claim an action.
       if (!output.trim()) {
         logSpeechResultTiming(agentMs, 0, 'skipped');
+        publishProvider(agentProvider);
         return mode === 'dontAsk' || mode === 'bypassPermissions' || mode === 'acceptEdits'
           ? DEFAULT_DONE
           : DEFAULT_PLAN_NOANSWER;
@@ -513,6 +531,7 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       );
       if (introspectionIntent === 'describe' || introspectionIntent === 'inspect') {
         logSpeechResultTiming(agentMs, 0, 'skipped');
+        publishProvider(agentProvider);
         return prepareSelfInspectionVoiceReply(
           output,
           replyOpts?.introspectionText ?? heard,
@@ -520,19 +539,30 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       }
       if (isAlreadySpeakableAgentResult(output)) {
         logSpeechResultTiming(agentMs, 0, 'skipped');
+        publishProvider(agentProvider);
         return output.trim();
       }
       const summaryStartedAt = Date.now();
       try {
-        const spoken = (await summarize(output, heard, signal ? { signal } : undefined)).trim();
+        let summaryProvider: typeof agentProvider;
+        const spoken = (await summarize(output, heard, {
+          ...(replyOpts ?? {}),
+          onProviderResolved: (route) => {
+            summaryProvider = route;
+          },
+        })).trim();
         logSpeechResultTiming(agentMs, Date.now() - summaryStartedAt, 'fallback');
-        if (spoken) return spoken;
+        if (spoken) {
+          publishProvider(summaryProvider ?? (options.summarize ? undefined : agentProvider));
+          return spoken;
+        }
       } catch (err) {
         logSpeechResultTiming(agentMs, Date.now() - summaryStartedAt, 'fallback');
         logger.warn(`[voice-act] summarize failed: ${msg(err)}`);
       }
       // Summarize unavailable → speak a short truncation rather than a wall of markdown.
       const firstParagraph = output.split(/\n\s*\n/).find((line) => line.trim()) ?? output;
+      publishProvider(agentProvider);
       return firstParagraph.replace(/\s+/g, ' ').slice(0, 1200);
     } catch (err) {
       logger.warn(`[voice-act] agent reply failed: ${msg(err)}`);

@@ -328,6 +328,18 @@ describe('pre-build-check engine adapter entry', () => {
   );
 
   it.each(['darwin', 'win32', 'linux'])(
+    'lists the companion semantic gate as a fatal check on %s',
+    (platform) => {
+      const checks = buildCheckList(platform, 'x64');
+      const entry = checks.find((c) =>
+        c.relPath.includes('dist/conversation/semantic-response-runtime'),
+      );
+      expect(entry).toBeDefined();
+      expect(entry?.severity).toBe('fatal');
+    },
+  );
+
+  it.each(['darwin', 'win32', 'linux'])(
     'requires a staged bare core dependency on %s',
     (platform) => {
       const checks = buildCheckList(platform, 'x64');

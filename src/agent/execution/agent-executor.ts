@@ -2071,43 +2071,15 @@ export class AgentExecutor {
             }
           }
 
-          // Fire-and-forget auto-capture on final assistant response (streaming)
-          if (!isolatedSharedHost) {
-            try {
-              const { getAutoCaptureManager } = await import('../../memory/auto-capture.js');
-              const acm = getAutoCaptureManager();
-              if (acm) {
-                acm.processMessage('assistant', content || '').catch(err => logger.debug('Auto-capture failed', { error: String(err) }));
-              }
-            } catch { /* auto-capture optional */ }
-          }
-
-          // Fire-and-forget ICM episode storage (streaming path)
-          if (
-            !isolatedSharedHost &&
-            this.getICMBridgeProvider()
-          ) {
-            try {
-              const icm = this.getICMBridgeProvider()!();
-              if (icm?.isAvailable()) {
-                const episode = `User: ${message}\nAssistant: ${(content || '').substring(0, 500)}`;
-                icm.storeEpisode(episode, {
-                  source: 'agent-executor-stream',
-                  sessionId: process.env.CODEBUDDY_SESSION_ID,
-                  turnNumber: toolRounds,
-                }).catch(err => logger.debug('ICM episode store failed', { error: String(err) }));
-              }
-            } catch { /* ICM store optional */ }
-          }
-
-          // Context engine afterTurn hook (Native Engine v2026.3.7 — streaming path)
-          if (!isolatedSharedHost) {
-            try {
-              const engine = this.deps.contextManager.getContextEngine?.();
-              if (engine) {
-                engine.afterTurn(messages, { role: 'assistant' as const, content: content || '' });
-              }
-            } catch { /* afterTurn hook optional */ }
+          // Companion hosts own the canonical commit boundary: voice,
+          // channel and Cowork persist only relationship-safe, semantically
+          // accepted text in their surface continuity/session stores. Generic
+          // core observers (AutoCapture, ICM and plugin ContextEngine hooks)
+          // are deliberately not replayed for these protected turns: their
+          // storage/privacy contracts are independent and must never receive a
+          // pre-gate draft or intimate cross-surface transcript by accident.
+          if (!isolatedSharedHost && !relationshipSafety) {
+            this.commitAssistantSideEffects(message, messages, content || '', toolRounds);
           }
 
           break;
@@ -2188,5 +2160,41 @@ export class AgentExecutor {
       yield { type: "content", content: errorEntry.content };
       yield { type: "done" };
     }
+  }
+
+  /** Notify internal memory/context observers for an ordinary committed turn. */
+  private commitAssistantSideEffects(
+    message: string,
+    messages: CodeBuddyMessage[],
+    content: string,
+    toolRounds = 0,
+  ): void {
+    try {
+      void import('../../memory/auto-capture.js').then(({ getAutoCaptureManager }) => {
+        const acm = getAutoCaptureManager();
+        return acm?.processMessage('assistant', content);
+      }).catch(err => logger.debug('Auto-capture failed', { error: String(err) }));
+    } catch { /* auto-capture optional */ }
+
+    if (this.getICMBridgeProvider()) {
+      try {
+        const icm = this.getICMBridgeProvider()!();
+        if (icm?.isAvailable()) {
+          const episode = `User: ${message}\nAssistant: ${content.substring(0, 500)}`;
+          void icm.storeEpisode(episode, {
+            source: 'agent-executor-stream',
+            sessionId: process.env.CODEBUDDY_SESSION_ID,
+            turnNumber: toolRounds,
+          }).catch(err => logger.debug('ICM episode store failed', { error: String(err) }));
+        }
+      } catch { /* ICM store optional */ }
+    }
+
+    try {
+      const engine = this.deps.contextManager.getContextEngine?.();
+      if (engine) {
+        engine.afterTurn(messages, { role: 'assistant' as const, content });
+      }
+    } catch { /* afterTurn hook optional */ }
   }
 }

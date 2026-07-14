@@ -74,6 +74,16 @@ export interface EngineAdapter {
    */
   cancel(sessionId: string): void;
 
+  /** Replace a post-processed assistant draft in a warm session, when supported. */
+  replaceLastAssistantResponse?(
+    sessionId: string,
+    expected: string,
+    replacement: string,
+  ): boolean;
+
+  /** Release a snapshot hold created by a buffered assistant turn. */
+  resumeTranscriptSnapshots?(sessionId: string): void;
+
   /**
    * Deliver user guidance into an active run when the underlying agent
    * supports steer mode. Returns false when there is no active run/agent.
@@ -84,6 +94,9 @@ export interface EngineAdapter {
    * Clear internal state for a session (free memory, close resources).
    */
   clearSession(sessionId: string): void;
+
+  /** Discard an uncommitted/undelivered turn without session-end learning. */
+  discardSession?(sessionId: string): void;
 
   /**
    * List available models from the engine.

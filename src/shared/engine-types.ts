@@ -135,6 +135,8 @@ export interface EngineSessionConfig {
   currentTurnContext?: string;
   /** Apply the companion relationship gate before streaming and history mutation. */
   relationshipSafety?: boolean;
+  /** Keep periodic transcript snapshots paused until the host accepts its buffered draft. */
+  bufferAssistantResponse?: boolean;
   /** Environment variable that signals we're running inside Electron */
   embedded?: boolean;
   /** Activate visual grounding fallback using a Set-of-Marks annotated screenshot */

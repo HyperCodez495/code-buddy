@@ -142,6 +142,7 @@ remote endpoint's retention policy.
 | `CODEBUDDY_VOICE_RESPONSE_STYLE` | Adaptive spoken response depth: `natural`, `concise`, or `developed` | natural |
 | `CODEBUDDY_PREFETCH` | Preload structured news, agenda, date, and configured weather evidence | true |
 | `CODEBUDDY_PREFETCH_INTERVAL_MS` | Wall-clock fresh-context refresh interval | 900000 |
+| `CODEBUDDY_SEMANTIC_GATE` | Semantic audit + at most one independently re-audited revision for developed/deliberative companion answers (`auto`, `true`, `false`) | auto |
 | `CODEBUDDY_NEWS_QUERY` | Preferred news topics; the default is balanced into general and technology lanes | France/world/technology/AI |
 | `CODEBUDDY_NEWS_LOCALE` | Search language and country used for the grounded bulletin | fr-FR |
 | `CODEBUDDY_NEWS_SEARCH_PACE_MS` | Delay between free-provider news lanes to respect request-rate limits | 1100 |

@@ -90,6 +90,8 @@ export class CodeBuddyAgent extends BaseAgent {
   /** Budget alert monitoring */
   private budgetAlertManager: BudgetAlertManager = new BudgetAlertManager();
   private _budgetAlertListener?: (alert: { type: string; message: string }) => void;
+  /** Nested host gates currently holding assistant text in a private draft state. */
+  private transcriptSnapshotSuspensions = 0;
 
   /**
    * Create a new CodeBuddyAgent instance
@@ -1216,7 +1218,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
     let chatIndex = -1;
     for (let index = this.chatHistory.length - 1; index >= 0; index -= 1) {
       const entry = this.chatHistory[index];
-      if (entry?.type === 'assistant' && entry.content === expected) {
+      if (entry?.type === 'assistant') {
         chatIndex = index;
         break;
       }
@@ -1224,12 +1226,18 @@ Look at the screenshot and find the element matching the user's intent. Output o
     let messageIndex = -1;
     for (let index = this.messages.length - 1; index >= 0; index -= 1) {
       const message = this.messages[index];
-      if (message?.role === 'assistant' && message.content === expected) {
+      if (message?.role === 'assistant') {
         messageIndex = index;
         break;
       }
     }
     if (chatIndex < 0 || messageIndex < 0) return false;
+    if (
+      this.chatHistory[chatIndex]?.content !== expected ||
+      this.messages[messageIndex]?.content !== expected
+    ) {
+      return false;
+    }
     this.chatHistory[chatIndex] = { ...this.chatHistory[chatIndex]!, content: replacement };
     this.messages[messageIndex] = { ...this.messages[messageIndex]!, content: replacement };
     return true;
@@ -1461,6 +1469,27 @@ Look at the screenshot and find the element matching the user's intent. Output o
 
   setSystemPromptAppend(append: string | undefined): void {
     this.systemPromptAppend = append;
+  }
+
+  /** Keep periodic persistence from observing a host-buffered assistant draft. */
+  suspendTranscriptSnapshots(): void {
+    this.transcriptSnapshotSuspensions += 1;
+    if (this.transcriptSnapshotSuspensions === 1) {
+      this.contextManager.stopPeriodicSnapshot?.();
+    }
+  }
+
+  /** Resume periodic persistence once every nested draft gate has committed. */
+  resumeTranscriptSnapshots(): void {
+    if (this.transcriptSnapshotSuspensions <= 0) return;
+    this.transcriptSnapshotSuspensions -= 1;
+    if (this.transcriptSnapshotSuspensions === 0) {
+      this.contextManager.startPeriodicSnapshot?.(
+        () => this.historyManager.getMessagesRef(),
+        undefined,
+        this.toolHandler.getWorkingDirectory(),
+      );
+    }
   }
 
   async executeBashCommand(command: string): Promise<ToolResult> {
@@ -2093,15 +2122,17 @@ Look at the screenshot and find the element matching the user's intent. Output o
    * Clean up all resources
    * Should be called when the agent is no longer needed
    */
-  dispose(): void {
+  dispose(options: { skipSessionLearning?: boolean } = {}): void {
     // Fire SessionEnd user hook (non-blocking). Shutdown errors should be
     // visible (warn, not debug) — silent debug logs masked prior bugs.
     getUserHooksManager(process.cwd()).executeHooks('SessionEnd', {}).catch(
       (err) => logger.warn(`[user-hooks] SessionEnd error: ${err instanceof Error ? err.message : String(err)}`)
     );
-    const skipAsyncSessionLearning =
+    const headlessProcess =
       process.env.CODEBUDDY_HEADLESS === 'true' ||
       process.env.CODEBUDDY_HEADLESS === '1';
+    const skipAsyncSessionLearning =
+      options.skipSessionLearning === true || headlessProcess;
 
     if (!skipAsyncSessionLearning && isFeatureEnabled('USER_MODEL_DIALECTIC_ON_SESSION_END')) {
       const chatHistory = this.historyManager.getChatHistory();
@@ -2159,7 +2190,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
     this.contextManager.stopPeriodicSnapshot?.();
     this.peerRoutingConfig = null;
     super.dispose();
-    if (skipAsyncSessionLearning) {
+    if (headlessProcess) {
       cleanupHeadlessSingletonWatchers();
     }
   }

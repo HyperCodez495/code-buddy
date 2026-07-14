@@ -53,6 +53,10 @@ function populateEngineAdapter(root: string): void {
     'export class RelationshipSafetyStreamGuard {}',
   );
   makeFile(
+    path.join(runtime, 'dist', 'conversation', 'semantic-response-runtime.js'),
+    'export const shouldReviewSemanticResponse = () => false; export const reviewSemanticResponse = async (input) => ({ response: input.draft });',
+  );
+  makeFile(
     path.join(runtime, 'dist', 'agent', 'codebuddy-agent.js'),
     "import chalk from 'chalk'; export class CodeBuddyAgent { color = chalk.blue('ok'); }",
   );
@@ -292,6 +296,27 @@ describe('pre-build-check: runChecks', () => {
       entry.relPath.includes('conversation/relationship-safety.js')
     );
     expect(safety).toMatchObject({ passed: false, severity: 'fatal' });
+    expect(result.hasFatal).toBe(true);
+  });
+
+  it('blocks packaging when the companion semantic response gate is missing', () => {
+    populateWin32Artifacts(tmpDir);
+    fs.rmSync(
+      path.join(
+        tmpDir,
+        '.bundle-resources',
+        'core-runtime',
+        'dist',
+        'conversation',
+        'semantic-response-runtime.js',
+      ),
+    );
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const semanticGate = result.results.find((entry: { relPath: string }) =>
+      entry.relPath.includes('conversation/semantic-response-runtime.js'),
+    );
+    expect(semanticGate).toMatchObject({ passed: false, severity: 'fatal' });
     expect(result.hasFatal).toBe(true);
   });
 

@@ -162,6 +162,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 | `GROK_BASE_URL` / `GROK_MODEL` | Custom endpoint / default model |
 | `CODEBUDDY_MAX_TOKENS` | Override response token limit |
 | `CODEBUDDY_AUTOCOMPACT_PCT` | Auto-compact threshold as % of context window |
+| `CODEBUDDY_SEMANTIC_GATE` / `CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_*` | Semantic critic/revision gate and optional independent provider |
 | `MORPH_API_KEY` | Enables fast file editing |
 | `YOLO_MODE` / `MAX_COST` | Full autonomy ($10 default, $100 YOLO) |
 | `JWT_SECRET` | Required in production for API server |

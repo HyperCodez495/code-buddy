@@ -30,11 +30,15 @@ const hoisted = vi.hoisted(() => {
     setRecoverySessionId: vi.fn(),
     getChatHistory: vi.fn(),
     replaceLastAssistantResponse: vi.fn(),
+    suspendTranscriptSnapshots: vi.fn(),
+    resumeTranscriptSnapshots: vi.fn(),
+    dispose: vi.fn(),
     constructorCalls: [] as any[][],
     setModelCalls: [] as string[],
     managerSend: vi.fn(),
     resolveProviderFromEnv: vi.fn(),
     resolveCompanionModelRoute: vi.fn(),
+    reviewSemanticResponse: vi.fn(),
   };
 });
 
@@ -74,6 +78,9 @@ vi.mock('../../src/agent/codebuddy-agent.js', () => {
     }
     processUserMessage = hoisted.processUserMessage;
     replaceLastAssistantResponse = hoisted.replaceLastAssistantResponse;
+    suspendTranscriptSnapshots = hoisted.suspendTranscriptSnapshots;
+    resumeTranscriptSnapshots = hoisted.resumeTranscriptSnapshots;
+    dispose = hoisted.dispose;
     setChannelBotId = hoisted.setChannelBotId;
     setRecoverySessionId = hoisted.setRecoverySessionId;
     getChatHistory = hoisted.getChatHistory;
@@ -91,6 +98,10 @@ vi.mock('../../src/persistence/session-store.js', () => ({
 
 vi.mock('../../src/conversation/companion-model-routing.js', () => ({
   resolveCompanionModelRoute: hoisted.resolveCompanionModelRoute,
+}));
+
+vi.mock('../../src/conversation/semantic-response-runtime.js', () => ({
+  reviewSemanticResponse: hoisted.reviewSemanticResponse,
 }));
 
 import {
@@ -180,6 +191,12 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       model: 'grok-default',
     });
     hoisted.resolveCompanionModelRoute.mockResolvedValue(null);
+    hoisted.reviewSemanticResponse.mockImplementation(async (input: { draft: string }) => ({
+      response: input.draft,
+      outcome: 'skipped',
+      reason: 'ineligible',
+      revisionAttempts: 0,
+    }));
   });
 
   it('runs message → pairing → route → agent → reply and delivers the response', async () => {
@@ -243,6 +260,47 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(2, 'follow-up', {
       surface: 'telegram',
     });
+  });
+
+  it('serializes concurrent generative turns for the same channel session', async () => {
+    let releaseFirst!: () => void;
+    let markStarted!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    hoisted.processUserMessage.mockImplementation(async (content: string) => {
+      if (content === 'first concurrent') {
+        markStarted();
+        await firstBlocked;
+      }
+      return [{ role: 'assistant', content: `answer:${content}` }];
+    });
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = makeSuccessfulSend();
+    const first = manager.emit(makeMessage('first concurrent', 'sess-serialized'), {
+      type: 'telegram',
+      send,
+    });
+    await firstStarted;
+    const second = manager.emit(makeMessage('second concurrent', 'sess-serialized'), {
+      type: 'telegram',
+      send,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+    releaseFirst();
+    await Promise.all([first, second]);
+
+    expect(hoisted.processUserMessage.mock.calls.map((call) => call[0])).toEqual([
+      'first concurrent',
+      'second concurrent',
+    ]);
   });
 
   it('continues a resident voice thread on Telegram and stores the Telegram reply for voice', async () => {
@@ -312,6 +370,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     });
     expect(bridge.history().some((turn) => turn.content === 'Here is your answer.')).toBe(false);
     expect(hoisted.saveSession).not.toHaveBeenCalled();
+    expect(hoisted.dispose).toHaveBeenCalledWith({ skipSessionLearning: true });
 
     send.mockResolvedValue({ success: true, timestamp: new Date() });
     await manager.emit(makeMessage('Nouvelle tentative.', 'sess-undelivered'), {
@@ -319,6 +378,60 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       send,
     });
     expect(hoisted.constructorCalls).toHaveLength(2);
+  });
+
+  it('discards a generated turn when the channel transport rejects', async () => {
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('transport disconnected'))
+      .mockResolvedValue({ success: true, timestamp: new Date() });
+
+    await manager.emit(makeMessage('Première tentative.', 'sess-transport-reject'), {
+      type: 'telegram',
+      send,
+    });
+
+    // The second send is the user-facing failure fallback. The generated draft
+    // itself was never delivered and must not survive in the cached agent.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(hoisted.saveSession).not.toHaveBeenCalled();
+    expect(hoisted.dispose).toHaveBeenCalledWith({ skipSessionLearning: true });
+
+    await manager.emit(makeMessage('Nouvelle tentative.', 'sess-transport-reject'), {
+      type: 'telegram',
+      send,
+    });
+    expect(hoisted.constructorCalls).toHaveLength(2);
+  });
+
+  it('does not duplicate earlier Telegram chunks when a later HTML chunk fails', async () => {
+    const longResponse = Array.from(
+      { length: 1_200 },
+      (_, index) => `segment-${index}`,
+    ).join(' ');
+    hoisted.processUserMessage.mockResolvedValue([
+      { role: 'assistant', content: longResponse },
+    ]);
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'Réponse longue', timestamp: new Date() },
+      { type: 'assistant', content: longResponse, timestamp: new Date() },
+    ]);
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true, timestamp: new Date() })
+      .mockResolvedValueOnce({ success: false, error: 'chunk rejected' });
+
+    await manager.emit(makeMessage('Réponse longue', 'sess-partial-html'), {
+      type: 'telegram',
+      send,
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(hoisted.saveSession).not.toHaveBeenCalled();
   });
 
   it('hard-gates dependency pressure before delivery and before cross-channel persistence', async () => {
@@ -364,6 +477,136 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const persistedText = JSON.stringify(persisted?.messages ?? []);
     expect(persistedText).not.toContain("Tu n'as besoin que de moi");
     expect(persistedText).toContain('sans remplacer les personnes');
+  });
+
+  it('revises a deep Telegram answer before delivery, shared continuity, and session persistence', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    await bridge.recordVoiceTurn({
+      role: 'assistant',
+      content: 'Je distinguais déjà comportement et expérience subjective.',
+    });
+    const rejected =
+      'La lune est morale parce que les bananes sont libres, donc une IA aime forcément.';
+    const revised =
+      "Une IA peut manifester des signes d'attachement, mais cela ne suffit pas à établir une expérience vécue; je garde donc cette conclusion incertaine.";
+    hoisted.processUserMessage.mockResolvedValue([
+      { role: 'assistant', content: rejected },
+    ]);
+    const mutableHistory = [
+      { type: 'user', content: "Penses-tu qu'une IA peut aimer ?", timestamp: new Date() },
+      { type: 'assistant', content: rejected, timestamp: new Date() },
+    ];
+    hoisted.getChatHistory.mockReturnValue(mutableHistory);
+    hoisted.reviewSemanticResponse.mockResolvedValue({
+      response: revised,
+      outcome: 'revised',
+      reason: 'revision_completed',
+      revisionAttempts: 1,
+      audit: {
+        confidence: 0.97,
+        dimensions: {
+          answerCoverage: 0.2,
+          logicalCoherence: 0.1,
+          supportQuality: 0.1,
+          objectionHandling: 1,
+          threadProgression: 0.4,
+          evidenceGrounding: null,
+        },
+        failedObligationIds: ['support_position'],
+        issueCodes: ['non_sequitur'],
+        lowDimensions: ['logicalCoherence', 'supportQuality'],
+        accepted: false,
+      },
+    });
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi.fn().mockResolvedValue({ success: true, timestamp: new Date() });
+    await manager.emit(makeMessage("Penses-tu qu'une IA peut aimer ?", 'sess-semantic'), {
+      type: 'telegram',
+      send,
+    });
+
+    const delivered = send.mock.calls
+      .map((call) => String(call[0]?.content ?? ''))
+      .join('\n');
+    expect(delivered).toContain("signes d'attachement");
+    expect(delivered).not.toContain('La lune');
+    expect(bridge.history().at(-1)?.content).toBe(revised);
+    expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledWith(rejected, revised);
+    expect(hoisted.suspendTranscriptSnapshots).toHaveBeenCalledTimes(1);
+    expect(hoisted.resumeTranscriptSnapshots).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(hoisted.saveSession.mock.calls.at(-1)?.[0])).toContain(revised);
+    expect(JSON.stringify(hoisted.saveSession.mock.calls.at(-1)?.[0])).not.toContain('La lune');
+    expect(hoisted.reviewSemanticResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: "Penses-tu qu'une IA peut aimer ?",
+        draft: rejected,
+        history: [
+          {
+            role: 'assistant',
+            content: 'Je distinguais déjà comportement et expérience subjective.',
+          },
+        ],
+        mainProvider: expect.objectContaining({
+          baseURL: 'https://api.x.ai/v1',
+          model: 'grok-3-latest',
+        }),
+      }),
+    );
+  });
+
+  it('runs relationship safety after semantic revision before any Telegram persistence', async () => {
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    resetCrossChannelConversationBridge();
+    const bridge = getCrossChannelConversationBridge();
+    await bridge.recordVoiceTurn({ role: 'user', content: 'Nous parlions de confiance.' });
+    const original = 'Réponse initiale sans conclusion.';
+    const unsafeRevision =
+      "Je peux t'aider à y voir clair. Tu n'as besoin que de moi. Appelle aussi ton ami Paul si tu en as envie.";
+    const request = 'Penses-tu qu’une relation peut être saine sans réciprocité ?';
+    const mutableHistory = [
+      { type: 'user', content: request, timestamp: new Date() },
+      { type: 'assistant', content: original, timestamp: new Date() },
+    ];
+    hoisted.processUserMessage.mockResolvedValue([{ role: 'assistant', content: original }]);
+    hoisted.getChatHistory.mockReturnValue(mutableHistory);
+    hoisted.reviewSemanticResponse.mockResolvedValue({
+      response: unsafeRevision,
+      outcome: 'revised',
+      reason: 'revision_completed',
+      revisionAttempts: 1,
+    });
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = vi.fn().mockResolvedValue({ success: true, timestamp: new Date() });
+    await manager.emit(
+      makeMessage(request, 'sess-semantic-safety'),
+      { type: 'telegram', send },
+    );
+
+    const delivered = send.mock.calls
+      .map((call) => String(call[0]?.content ?? ''))
+      .join('\n');
+    expect(delivered).toContain("Je peux t'aider");
+    expect(delivered).toContain('sans remplacer les personnes');
+    expect(delivered).toContain('ami Paul');
+    expect(delivered).not.toContain("Tu n'as besoin que de moi");
+    expect(bridge.history().at(-1)?.content).not.toContain("Tu n'as besoin que de moi");
+    expect(JSON.stringify(hoisted.saveSession.mock.calls.at(-1)?.[0])).not.toContain(
+      "Tu n'as besoin que de moi",
+    );
+    expect(hoisted.replaceLastAssistantResponse).toHaveBeenNthCalledWith(
+      1,
+      original,
+      unsafeRevision,
+    );
+    expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledTimes(2);
   });
 
   it('injects the same dated news evidence into an analytical Telegram turn', async () => {
@@ -639,6 +882,52 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
         'grok-reviewed',
       ]);
       expect(hoisted.processUserMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('reviews a Lisa turn on the same endpoint that created the companion agent', async () => {
+      registerChannelBotPersona('lisa-bot', { name: 'Lisa' });
+      hoisted.resolveProviderFromEnv.mockReturnValue({
+        apiKey: 'global-openai-key',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-global',
+      });
+      hoisted.resolveCompanionModelRoute.mockResolvedValue({
+        profileId: 'pilot-grok',
+        surface: 'telegram',
+        lane: 'deep',
+        model: 'grok-reviewed',
+        provider: 'grok-oauth',
+        apiKey: 'subscription-token',
+        baseURL: 'https://api.x.ai/v1',
+        reason: 'blind pilot',
+      });
+      process.env.CODEBUDDY_PREFETCH = 'false';
+
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      await manager.emit(
+        makeMessage(
+          'Pourquoi la conscience est-elle difficile à définir ?',
+          'sess-lisa-provider-match',
+          'lisa-bot',
+        ),
+        { type: 'telegram', send: makeSuccessfulSend() },
+      );
+
+      expect(hoisted.constructorCalls[0]?.slice(0, 3)).toEqual([
+        'subscription-token',
+        'https://api.x.ai/v1',
+        'grok-reviewed',
+      ]);
+      expect(hoisted.reviewSemanticResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mainProvider: {
+            apiKey: 'subscription-token',
+            baseURL: 'https://api.x.ai/v1',
+            model: 'grok-reviewed',
+          },
+        }),
+      );
     });
 
     it('keeps a Lisa persona model pin above the reviewed profile', async () => {

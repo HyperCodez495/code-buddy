@@ -119,6 +119,86 @@ describe('runtime auxiliary provider resolution', () => {
     });
   });
 
+  it('routes semantic review to an independently configured cheap model', () => {
+    const resolved = resolveRuntimeAuxiliaryProvider({
+      task: 'semantic_review',
+      hasChatGptOAuth: false,
+      env: {
+        CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_PROVIDER: 'openrouter',
+        CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_API_KEY: 'openrouter-review-key',
+        CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_MODEL: 'openrouter/free',
+      },
+    });
+
+    expect(resolved).toMatchObject({
+      task: 'semantic_review',
+      provider: 'openrouter',
+      providerSetting: 'openrouter',
+      apiKey: 'openrouter-review-key',
+      model: 'openrouter/free',
+      timeoutMs: 12_000,
+    });
+  });
+
+  it('keeps semantic review on the main provider unless remote review is explicit', () => {
+    const mainProvider = resolveProviderFromCatalog({
+      env: { OPENAI_API_KEY: 'main-openai-key' },
+      hasChatGptOAuth: false,
+    });
+    const resolved = resolveRuntimeAuxiliaryProvider({
+      task: 'semantic_review',
+      hasChatGptOAuth: false,
+      env: { OPENROUTER_API_KEY: 'shared-openrouter-key' },
+      mainProvider,
+    });
+
+    expect(resolved).toMatchObject({
+      provider: 'openai',
+      providerSetting: 'auto',
+      apiKey: 'main-openai-key',
+    });
+  });
+
+  it('disables auto semantic review when the caller does not identify its main route', () => {
+    const resolved = resolveRuntimeAuxiliaryProvider({
+      task: 'semantic_review',
+      hasChatGptOAuth: false,
+      env: {
+        OPENROUTER_API_KEY: 'configured-but-not-consented',
+        OPENAI_API_KEY: 'another-configured-provider',
+      },
+    });
+
+    expect(resolved).toBeNull();
+  });
+
+  it('ignores legacy global auxiliary routing overrides for semantic review', () => {
+    const mainProvider = resolveProviderFromCatalog({
+      env: { OPENAI_API_KEY: 'main-openai-key', OPENAI_MODEL: 'main-model' },
+      hasChatGptOAuth: false,
+    });
+    const resolved = resolveRuntimeAuxiliaryProvider({
+      task: 'semantic_review',
+      hasChatGptOAuth: false,
+      mainProvider,
+      env: {
+        CODEBUDDY_AUXILIARY_PROVIDER: 'openrouter',
+        CODEBUDDY_AUXILIARY_API_KEY: 'legacy-global-key',
+        CODEBUDDY_AUXILIARY_BASE_URL: 'https://legacy.example/v1',
+        CODEBUDDY_AUXILIARY_MODEL: 'legacy/global-model',
+        OPENROUTER_API_KEY: 'configured-but-not-consented',
+      },
+    });
+
+    expect(resolved).toMatchObject({
+      provider: 'openai',
+      providerSetting: 'auto',
+      apiKey: 'main-openai-key',
+      model: 'main-model',
+    });
+    expect(resolved?.baseURL).not.toBe('https://legacy.example/v1');
+  });
+
   it('passes per-task OpenRouter extra body through the resolved provider', () => {
     const resolved = resolveRuntimeAuxiliaryProvider({
       task: 'compression',

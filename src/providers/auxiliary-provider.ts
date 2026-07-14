@@ -20,7 +20,8 @@ export type RuntimeAuxiliaryTask =
   | 'skills_hub'
   | 'mcp'
   | 'triage_specifier'
-  | 'session_title';
+  | 'session_title'
+  | 'semantic_review';
 
 export interface RuntimeAuxiliaryMainProvider extends ResolvedRuntimeProvider {
   model?: string;
@@ -61,6 +62,7 @@ const DEFAULT_AUXILIARY_TIMEOUT_MS: Record<RuntimeAuxiliaryTask, number> = {
   mcp: 30_000,
   triage_specifier: 120_000,
   session_title: 30_000,
+  semantic_review: 12_000,
 };
 
 const OPENROUTER_VISION_MODEL = 'google/gemini-2.5-flash';
@@ -119,6 +121,16 @@ function resolveAutoAuxiliaryProvider(
   timeoutMs: number,
   hasOAuth: boolean,
 ): ResolvedRuntimeAuxiliaryProvider | null {
+  // Semantic review may contain the full private transcript. In auto mode it
+  // must never discover a different configured provider behind the caller's
+  // back. Callers either supply the exact main route or explicitly opt in to a
+  // named auxiliary provider.
+  if (options.task === 'semantic_review') {
+    return options.mainProvider
+      ? resolveFromMainProvider(options, config, timeoutMs, 'auto')
+      : null;
+  }
+
   if ((options.task === 'vision' || options.task === 'browser_vision') && hasEnvValue(options.env ?? process.env, 'OPENROUTER_API_KEY')) {
     return resolveSpecificAuxiliaryProvider(
       options.task,
@@ -211,29 +223,29 @@ function finalizeAuxiliaryProvider(
 
 function readAuxiliaryEnvConfig(task: RuntimeAuxiliaryTask, env: EnvLike): AuxiliaryEnvConfig {
   const taskKey = task.toUpperCase();
+  // Semantic review can contain intimate conversation. Generic auxiliary
+  // overrides predate this task and are not consent to reroute that transcript.
+  // Only task-specific overrides may alter its provider, endpoint or model.
+  const generic = (keys: string[]): string[] => task === 'semantic_review' ? [] : keys;
   const provider = readFirstEnv(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_PROVIDER`,
     `AUXILIARY_${taskKey}_PROVIDER`,
-    'CODEBUDDY_AUXILIARY_PROVIDER',
-    'AUXILIARY_PROVIDER',
+    ...generic(['CODEBUDDY_AUXILIARY_PROVIDER', 'AUXILIARY_PROVIDER']),
   ]);
   const model = readFirstEnv(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_MODEL`,
     `AUXILIARY_${taskKey}_MODEL`,
-    'CODEBUDDY_AUXILIARY_MODEL',
-    'AUXILIARY_MODEL',
+    ...generic(['CODEBUDDY_AUXILIARY_MODEL', 'AUXILIARY_MODEL']),
   ]);
   const baseURL = readFirstEnv(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_BASE_URL`,
     `AUXILIARY_${taskKey}_BASE_URL`,
-    'CODEBUDDY_AUXILIARY_BASE_URL',
-    'AUXILIARY_BASE_URL',
+    ...generic(['CODEBUDDY_AUXILIARY_BASE_URL', 'AUXILIARY_BASE_URL']),
   ]);
   const apiKey = readFirstEnv(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_API_KEY`,
     `AUXILIARY_${taskKey}_API_KEY`,
-    'CODEBUDDY_AUXILIARY_API_KEY',
-    'AUXILIARY_API_KEY',
+    ...generic(['CODEBUDDY_AUXILIARY_API_KEY', 'AUXILIARY_API_KEY']),
   ]);
   const timeoutEntry = readFirstEnvEntry(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_TIMEOUT_MS`,
@@ -245,8 +257,7 @@ function readAuxiliaryEnvConfig(task: RuntimeAuxiliaryTask, env: EnvLike): Auxil
   const extraBodyRaw = readFirstEnv(env, [
     `CODEBUDDY_AUXILIARY_${taskKey}_EXTRA_BODY`,
     `AUXILIARY_${taskKey}_EXTRA_BODY`,
-    'CODEBUDDY_AUXILIARY_EXTRA_BODY',
-    'AUXILIARY_EXTRA_BODY',
+    ...generic(['CODEBUDDY_AUXILIARY_EXTRA_BODY', 'AUXILIARY_EXTRA_BODY']),
   ]);
 
   return {

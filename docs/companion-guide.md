@@ -530,6 +530,21 @@ statiques peuvent utiliser un modèle local plus précis (`CODEBUDDY_SENSORY_SPE
 et seules les demandes
 qui exigent outils, fichiers, données privées ou faits actuels montent vers l'agent complet
 (`CODEBUDDY_VOICE_ROUTING_MODE=realtime`; `grounded` restaure l'ancien routage de toutes les questions).
+Pour une réponse développée, Lisa dérive aussi des obligations de sens (répondre réellement,
+étayer une position, traiter l'objection active, progresser dans le fil et ancrer les faits frais).
+Un critique indépendant note ces dimensions avec un schéma JSON fermé; s'il détecte avec assez de
+confiance une lacune, une seule révision est autorisée puis auditée à son tour avant parole, affichage
+ou mémoire. Une révision non vérifiable est abandonnée au profit du brouillon initial. Ce gate ne
+consulte jamais l'ancien score lexical et ne récompense donc ni la longueur ni les mots de liaison.
+Seul le texte accepté rejoint la continuité canonique gérée par la voix, Telegram ou Cowork. Les
+observateurs mémoire génériques du cœur (AutoCapture, ICM et hooks de plugins) ne sont pas rejoués
+sur ces tours protégés : ils ont leurs propres politiques de stockage et ne reçoivent donc jamais
+par accident un brouillon rejeté ou un transcript compagnon intime.
+Il est actif en mode `auto` hors tests, désactivable avec `CODEBUDDY_SEMANTIC_GATE=false`, et peut
+utiliser un modèle économique distinct via `CODEBUDDY_AUXILIARY_SEMANTIC_REVIEW_*`. Par confidentialité,
+`auto` reste sur le fournisseur principal; choisir explicitement `openrouter` autorise l'envoi du
+tour canonique et des preuves publiques à ce fournisseur distant. Une panne, un délai ou une critique invalide conserve le brouillon initial; la
+télémétrie ne contient que dimensions et codes, jamais le transcript.
 L'oreille Rust publie aussi `audio/speech_start` dès l'ouverture du VAD. Ce signal ne donne jamais
 l'autorisation de répondre : il prépare seulement un agent de réserve (prompt système et MCP) pendant
 que la personne parle. Le transcript final et le filtre anti-TV restent les seules portes de parole.

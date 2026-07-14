@@ -131,7 +131,11 @@ interface CorePrefetchedContextModule {
     heard: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
     options?: { allowStale?: boolean },
-  ) => { freshness: 'fresh' | 'stale'; promptGuidance: string } | null;
+  ) => {
+    kind: string;
+    freshness: 'fresh' | 'stale';
+    promptGuidance: string;
+  } | null;
   isPrefetchedTurnRequest?: (heard: string) => boolean;
 }
 
@@ -148,6 +152,8 @@ export interface PreparedCoworkContinuity {
   systemPrompt?: string;
   /** Per-turn observations/evidence. Must travel with the current user turn. */
   turnContext?: string;
+  /** Public, source-derived fresh context safe for an explicitly selected critic. */
+  freshEvidence?: string;
   recordAssistant: (messageId: string, content: string) => void;
 }
 
@@ -317,16 +323,22 @@ export class CoworkCrossChannelContinuity {
     const canonicalContent = renderCoworkCanonicalTurn(canonicalTurn);
 
     try {
-      const [state, freshContextPrompt] = await Promise.all([
+      const [state, freshContext] = await Promise.all([
         this.resolveBridge(),
         this.resolveFreshContext(
           canonicalTurn.text || canonicalContent,
           localMessages,
         ),
       ]);
+      const freshContextPrompt = freshContext.promptGuidance;
+      const freshEvidence = freshContext.kind === 'news' ? freshContextPrompt : undefined;
       if (!state || !state.config.coworkEnabled || !state.bridge.isActive()) {
         return freshContextPrompt
-          ? { ...EMPTY_CONTINUITY, turnContext: freshContextPrompt }
+          ? {
+              ...EMPTY_CONTINUITY,
+              turnContext: freshContextPrompt,
+              ...(freshEvidence ? { freshEvidence } : {}),
+            }
           : EMPTY_CONTINUITY;
       }
 
@@ -362,6 +374,7 @@ export class CoworkCrossChannelContinuity {
         turnContext: [relationshipContext, freshContextPrompt]
           .filter(Boolean)
           .join('\n\n') || undefined,
+        ...(freshEvidence ? { freshEvidence } : {}),
         recordAssistant: (messageId, content) => {
           this.recordTurn(state.bridge, session.id, messageId, 'assistant', content);
         },
@@ -406,8 +419,8 @@ export class CoworkCrossChannelContinuity {
   private async resolveFreshContext(
     prompt: string,
     history: CoworkEngineMessage[],
-  ): Promise<string> {
-    if (process.env.CODEBUDDY_PREFETCH === 'false') return '';
+  ): Promise<{ kind?: string; promptGuidance: string }> {
+    if (process.env.CODEBUDDY_PREFETCH === 'false') return { promptGuidance: '' };
     const [contextModule, engineModule] = await Promise.all([
       this.coreLoader<CorePrefetchedContextModule>(
         'conversation/prefetched-turn-context.js',
@@ -436,7 +449,10 @@ export class CoworkCrossChannelContinuity {
         ),
       );
     }
-    return context?.promptGuidance?.trim() ?? '';
+    return {
+      ...(context?.kind ? { kind: context.kind } : {}),
+      promptGuidance: context?.promptGuidance?.trim() ?? '',
+    };
   }
 
   private recordTurn(

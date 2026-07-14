@@ -2023,7 +2023,8 @@ export class SessionManager {
       );
     }
 
-    if (!this.activeSessions.has(session.id)) {
+    const activeController = this.activeSessions.get(session.id);
+    if (!activeController) {
       this.processQueue(session).catch((err) => {
         logError('[SessionManager] Queue processing error:', err);
         this.sendToRenderer({
@@ -2033,6 +2034,11 @@ export class SessionManager {
           },
         });
       });
+    } else if (activeController.signal.aborted) {
+      // The cancelled worker still owns activeSessions until its awaited turn
+      // unwinds. Leave this prompt queued; that worker's finally block will
+      // hand it to a fresh controller without overlapping the cancelled turn.
+      log('[SessionManager] Cancellation unwinding, queued follow-up:', session.id);
     } else {
       log('[SessionManager] Session running, queued prompt:', session.id);
     }
@@ -2101,15 +2107,36 @@ export class SessionManager {
         log('[SessionManager] Continuing queue with newly arrived prompts:', session.id);
       }
     } finally {
-      // Only clean up here — no restart logic needed since the outer loop
-      // already handles re-checking. activeSessions is only deleted once
-      // there are truly no pending items remaining.
-      this.activeSessions.delete(session.id);
+      // A follow-up may arrive after stopSession aborts this controller but
+      // before processPrompt unwinds. Only remove our own controller, then
+      // restart that post-cancel queue on the next microtask.
+      if (this.activeSessions.get(session.id) === controller) {
+        this.activeSessions.delete(session.id);
+      }
       const queue = this.promptQueues.get(session.id);
       if (queue && queue.length === 0) {
         this.promptQueues.delete(session.id);
       }
       this.updateSessionStatus(session.id, 'idle');
+      if (queue && queue.length > 0 && !this.activeSessions.has(session.id)) {
+        const latestSession = this.loadSession(session.id);
+        if (!latestSession) {
+          this.promptQueues.delete(session.id);
+        } else {
+          queueMicrotask(() => {
+            if (this.activeSessions.has(session.id)) return;
+            this.processQueue(latestSession).catch((err) => {
+              logError('[SessionManager] Post-cancel queue processing error:', err);
+              this.sendToRenderer({
+                type: 'error',
+                payload: {
+                  message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}`,
+                },
+              });
+            });
+          });
+        }
+      }
     }
   }
 

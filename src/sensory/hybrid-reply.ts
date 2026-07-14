@@ -39,9 +39,17 @@ import {
 import {
   resolvePrefetchedTurnContext,
   resolvePrefetchedTurnContextForConversation,
+  semanticReviewEvidenceFromPrefetch,
   shouldUsePrefetchedAnswerDirectly,
 } from '../conversation/prefetched-turn-context.js';
 import { assessConversationResponse } from '../conversation/conversation-quality.js';
+import { guardRelationshipReply } from '../conversation/relationship-safety.js';
+import { deriveArgumentObligations } from '../conversation/argument-obligations.js';
+import {
+  shouldRunSemanticResponseGate,
+  type SemanticResponseGateResult,
+} from '../conversation/semantic-response-gate.js';
+import type { ConversationPlan } from '../conversation/types.js';
 import { classifyLisaIntrospection } from '../identity/lisa-introspection.js';
 
 export {
@@ -90,6 +98,20 @@ export interface HybridTurn {
   content: string;
 }
 
+export interface HybridSemanticReviewInput {
+  request: string;
+  draft: string;
+  plan: ConversationPlan;
+  history: readonly HybridTurn[];
+  evidence?: string;
+  mainProvider?: { apiKey: string; baseURL: string; model: string };
+  signal?: AbortSignal;
+}
+
+export type HybridSemanticReviewer = (
+  input: HybridSemanticReviewInput
+) => Promise<SemanticResponseGateResult>;
+
 export interface HybridReplyOptions {
   /** Permission posture for the grounded turn. Default 'default' (normal guarded permissions). */
   permissionMode?: PermissionMode;
@@ -125,6 +147,11 @@ export interface HybridReplyOptions {
   prefetch?: (heard: string) => string | null;
   /** Injectable: instant joke when asked (null ⇒ not a joke request). Default: jokes.ts. */
   jokes?: (heard: string) => string | null;
+  /**
+   * Independent semantic audit for developed/deliberative answers. The
+   * accepted or revised response is returned before voice memory is updated.
+   */
+  semanticReview?: HybridSemanticReviewer;
 }
 
 /** A normal ReplyFn with its matching streaming path attached for `makeVoiceReply`. */
@@ -249,6 +276,29 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   let pendingShortcut: { heard: string; reply: string; expiresAt: number } | null = null;
   let dependencyPromise: Promise<void> | null = null;
 
+  const reviewSemantics: HybridSemanticReviewer =
+    options.semanticReview ??
+    (async (input) => {
+      const runtime = await import('../conversation/semantic-response-runtime.js');
+      return runtime.reviewSemanticResponse(input);
+    });
+
+  function semanticReviewEnabled(): boolean {
+    if (options.semanticReview) return true;
+    const configured = process.env.CODEBUDDY_SEMANTIC_GATE?.trim().toLowerCase();
+    if (configured && ['1', 'true', 'yes', 'on', 'enabled'].includes(configured)) return true;
+    if (configured && ['0', 'false', 'no', 'off', 'disabled'].includes(configured)) return false;
+    return process.env.NODE_ENV !== 'test';
+  }
+
+  function shouldReviewPlan(plan: ConversationPlan, request: string): boolean {
+    return (
+      semanticReviewEnabled() &&
+      shouldRunSemanticResponseGate({ plan }) &&
+      deriveArgumentObligations(plan, request).length > 0
+    );
+  }
+
   function conversationHistory(currentHeard?: string): HybridTurn[] {
     let shared: HybridTurn[] = [];
     try {
@@ -311,15 +361,46 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     if (fast) return fast;
     const pre = (options.prefetch ?? defaultPrefetchMatch)(heard);
     if (pre) {
-      logger.info(`[voice-hybrid] prefetch → ${pre.slice(0, 60)}`);
+      logger.info(`[voice-hybrid] prefetch hit chars=${pre.length}`);
       return pre;
     }
     const joke = (options.jokes ?? defaultJokeMatch)(heard);
     if (joke) {
-      logger.info(`[voice-hybrid] joke → ${joke.slice(0, 60)}`);
+      logger.info(`[voice-hybrid] joke hit chars=${joke.length}`);
       return joke;
     }
     return null;
+  }
+
+  async function reviewBeforeDelivery(
+    input: HybridSemanticReviewInput
+  ): Promise<SemanticResponseGateResult | null> {
+    if (!shouldReviewPlan(input.plan, input.request)) return null;
+    try {
+      const reviewed = await reviewSemantics(input);
+      logger.info(
+        `[voice-hybrid] semantic outcome=${reviewed.outcome} reason=${reviewed.reason} revisions=${reviewed.revisionAttempts}`
+      );
+      return reviewed;
+    } catch (error) {
+      // The semantic gate is an enhancement, not a new single point of
+      // failure. Its default runtime is fail-open; injected implementations
+      // receive the same protection.
+      logger.warn(
+        `[voice-hybrid] semantic review unavailable (${error instanceof Error ? error.name : 'unknown'})`
+      );
+      return null;
+    }
+  }
+
+  function guardBeforeMemory(response: string): string {
+    const guarded = guardRelationshipReply(response);
+    if (guarded.intervened) {
+      logger.warn(
+        `[voice-hybrid] relationship safety intervened issues=${guarded.issues.join(',')}`
+      );
+    }
+    return guarded.response.trim();
   }
 
   async function evolveRelationship(heard: string): Promise<void> {
@@ -365,15 +446,29 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         // Relationship evolution is best-effort and must not delay an answer
         // that was explicitly precomputed for immediate delivery.
         void evolveRelationship(heard);
-        remember(heard, shortcut);
-        return shortcut;
+        const safeShortcut = guardBeforeMemory(shortcut);
+        remember(heard, safeShortcut);
+        return safeShortcut;
       }
       await evolveRelationship(heard);
       await ensureDeps();
       const substantive = introspectionIntent !== null || classify(heard);
-      const stepOpts = signal ? { signal } : undefined;
+      let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
+      const stepOpts: VoiceStepOptions = {
+        ...(signal ? { signal } : {}),
+        onProviderResolved: (route) => {
+          if (!route.baseURL) return;
+          responseMainProvider = {
+            apiKey: route.apiKey,
+            baseURL: route.baseURL,
+            model: route.model,
+          };
+        },
+      };
       let out = '';
       const recentHistory = conversationHistory(heard);
+      let freshEvidence: string | undefined;
+      let prepared = prepareConversationTurn(heard, recentHistory);
       if (substantive) {
         const preamble = buildContextPreamble(recentHistory);
         const freshContext = process.env.CODEBUDDY_PREFETCH === 'false'
@@ -384,7 +479,8 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         if (freshContext?.freshness === 'stale') {
           void runPrefetchCycle().catch(() => undefined);
         }
-        const prepared = prepareConversationTurn(heard, recentHistory, {
+        freshEvidence = semanticReviewEvidenceFromPrefetch(freshContext);
+        prepared = prepareConversationTurn(heard, recentHistory, {
           ...(freshContext ? { freshContext: freshContext.promptGuidance } : {}),
         });
         const input = [preamble, prepared.systemGuidance, `Demande actuelle : ${heard}`]
@@ -401,9 +497,25 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         out = (await chitchat!(heard, recentHistory, stepOpts)).trim();
       }
       if (!out && !signal?.aborted) out = conversationFailureReply(heard, recentHistory);
+      if (out && !signal?.aborted) {
+        out = guardBeforeMemory(out);
+        const reviewed = await reviewBeforeDelivery({
+          request: heard,
+          draft: out,
+          plan: prepared.plan,
+          history: recentHistory,
+          ...(freshEvidence ? { evidence: freshEvidence } : {}),
+          ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
+          ...(signal ? { signal } : {}),
+        });
+        if (reviewed) out = guardBeforeMemory(reviewed.response.trim() || out);
+      }
+      if (signal?.aborted) return '';
       remember(heard, out);
       const quality = assessConversationResponse(heard, out, recentHistory);
-      logger.info(`[voice-hybrid] ${substantive ? 'agent' : 'chitchat'} → ${out.slice(0, 60)}`);
+      logger.info(
+        `[voice-hybrid] route=${substantive ? 'agent' : 'chitchat'} responseChars=${out.length}`
+      );
       logger.info(
         `[voice-hybrid] quality score=${quality.score.toFixed(2)} sentences=${quality.sentenceCount} reasoningLinks=${quality.reasoningLinkCount} issues=${quality.issues.join(',') || 'none'}`
       );
@@ -429,11 +541,12 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       // stateful joke is never advanced twice when every audio path fails.
       const shortcut = introspectionIntent ? null : shortcutFor(heard);
       if (shortcut) {
-        pendingShortcut = { heard, reply: shortcut, expiresAt: Date.now() + 2_000 };
-        yield shortcut;
+        const safeShortcut = guardBeforeMemory(shortcut);
+        pendingShortcut = { heard, reply: safeShortcut, expiresAt: Date.now() + 2_000 };
+        yield safeShortcut;
         if (!replyOpts?.signal?.aborted) {
           void evolveRelationship(heard);
-          remember(heard, shortcut);
+          remember(heard, safeShortcut);
         }
         return;
       }
@@ -441,18 +554,52 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
 
       await ensureDeps(true);
       const recent = conversationHistory(heard);
+      const prepared = prepareConversationTurn(heard, recent);
+      const semanticBuffer = shouldReviewPlan(prepared.plan, heard);
       let full = '';
-      for await (const delta of chitchatStream!(heard, recent, replyOpts)) {
+      let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
+      const streamOptions: VoiceStepOptions = {
+        ...(replyOpts ?? {}),
+        onProviderResolved: (route) => {
+          replyOpts?.onProviderResolved?.(route);
+          if (!route.baseURL) return;
+          responseMainProvider = {
+            apiKey: route.apiKey,
+            baseURL: route.baseURL,
+            model: route.model,
+          };
+        },
+      };
+      for await (const delta of chitchatStream!(heard, recent, streamOptions)) {
         if (replyOpts?.signal?.aborted) return;
         if (typeof delta !== 'string' || delta.length === 0) continue;
         full += delta;
-        yield delta;
+        // A candidate selected for semantic review must not leak partial text
+        // before the accepted/revised answer is known. Brief/standard turns
+        // retain their original first-token streaming path.
+        if (!semanticBuffer) yield delta;
       }
-      const completed = full.trim();
+      let completed = full.trim();
+      if (completed) completed = guardBeforeMemory(completed);
+      if (completed && semanticBuffer && !replyOpts?.signal?.aborted) {
+        const reviewed = await reviewBeforeDelivery({
+          request: heard,
+          draft: completed,
+          plan: prepared.plan,
+          history: recent,
+          ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
+          ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
+        });
+        if (reviewed) {
+          completed = guardBeforeMemory(reviewed.response.trim() || completed);
+        }
+        if (replyOpts?.signal?.aborted) return;
+        yield completed;
+      }
       if (completed && !replyOpts?.signal?.aborted) {
         await evolveRelationship(heard);
         remember(heard, completed);
-        logger.info(`[voice-hybrid] chitchat stream → ${completed.slice(0, 60)}`);
+        logger.info(`[voice-hybrid] route=chitchat-stream responseChars=${completed.length}`);
       }
     } catch (err) {
       logger.warn(

@@ -11,6 +11,9 @@ import { createHash } from 'node:crypto';
 import type { ChatEntry } from '../../agent/types.js';
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import type { CompanionRuntimeRoute } from '../../conversation/companion-model-routing.js';
+import type { PreparedConversationTurn } from '../../conversation/conversation-orchestrator.js';
+import { deriveArgumentObligations } from '../../conversation/argument-obligations.js';
+import { shouldRunSemanticResponseGate } from '../../conversation/semantic-response-gate.js';
 import type { ConversationTurn } from '../../conversation/types.js';
 import {
   MODEL_NAME_PATTERN,
@@ -463,7 +466,10 @@ let aiHandlerRegistered = false;
 /** Reset the one-shot registration guard. Test-only — never call in production. */
 export function __resetChannelAIHandlerForTests(): void {
   aiHandlerRegistered = false;
-  channelAgentCache.clear();
+  for (const key of channelAgentCache.keys()) {
+    evictChannelAgent(key, true);
+  }
+  channelTurnTails.clear();
   channelBotPersonas.clear();
   __resetSessionModelOverridesForTests();
 }
@@ -489,8 +495,43 @@ interface CachedChannelAgent {
   runtimeIdentity: string;
 }
 const channelAgentCache = new Map<string, CachedChannelAgent>();
+const channelTurnTails = new Map<string, Promise<void>>();
 const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
 const CHANNEL_AGENT_MAX = 50;
+
+function evictChannelAgent(sessionKey: string, discard = false): void {
+  const cached = channelAgentCache.get(sessionKey);
+  channelAgentCache.delete(sessionKey);
+  try {
+    if (discard) cached?.agent.dispose({ skipSessionLearning: true });
+    else cached?.agent.dispose();
+  } catch {
+    // Eviction must remain best-effort; the cache reference is already gone.
+  }
+}
+
+/**
+ * One in-flight generative turn per conversation. Commands and remote approval
+ * are handled before this queue, so an approval can still unblock a waiting
+ * tool while assistant drafts cannot race into the next turn's history.
+ */
+async function serializeChannelTurn<T>(
+  sessionKey: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = channelTurnTails.get(sessionKey) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  channelTurnTails.set(sessionKey, tail);
+  try {
+    return await run;
+  } finally {
+    if (channelTurnTails.get(sessionKey) === tail) channelTurnTails.delete(sessionKey);
+  }
+}
 
 function hashForLog(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -620,11 +661,14 @@ async function getOrCreateChannelAgent(
   botId?: string,
   routeModel?: string,
   companionRoute?: CompanionRuntimeRoute,
-): Promise<import('../../agent/codebuddy-agent.js').CodeBuddyAgent> {
+): Promise<{
+  agent: import('../../agent/codebuddy-agent.js').CodeBuddyAgent;
+  effectiveRuntime: { apiKey: string; baseUrl: string; model: string };
+}> {
   const now = Date.now();
   // Evict idle agents first.
   for (const [key, cached] of channelAgentCache) {
-    if (now - cached.lastUsed > CHANNEL_AGENT_IDLE_MS) channelAgentCache.delete(key);
+    if (now - cached.lastUsed > CHANNEL_AGENT_IDLE_MS) evictChannelAgent(key);
   }
   // Per-bot persona (multi-bot): a bot may define its own model + system prompt.
   const persona = botId ? channelBotPersonas.get(botId) : undefined;
@@ -657,11 +701,14 @@ async function getOrCreateChannelAgent(
     // Reconcile a changed override on the cached agent (no eviction — the
     // in-memory conversation history is what makes the chat feel continuous).
     if (hit.agent.getCurrentModel() !== model) hit.agent.setModel(model);
-    return hit.agent;
+    return {
+      agent: hit.agent,
+      effectiveRuntime: { ...runtimeResolved, model },
+    };
   }
   // A provider/endpoint change cannot be applied through setModel(). Recreate
   // the agent, then restore its persisted transcript below.
-  if (hit) channelAgentCache.delete(sessionKey);
+  if (hit) evictChannelAgent(sessionKey);
   // Opt-in Code Explorer nudge (set CODE_EXPLORER_BIN): some models won't reach
   // for the code-graph MCP tools on their own and just say "I can't" — tell them
   // plainly that they can, and give the CLI fallback. No-op when the env is unset.
@@ -710,10 +757,13 @@ async function getOrCreateChannelAgent(
         lruKey = key;
       }
     }
-    if (lruKey) channelAgentCache.delete(lruKey);
+    if (lruKey) evictChannelAgent(lruKey);
   }
   channelAgentCache.set(sessionKey, { agent, lastUsed: now, runtimeIdentity });
-  return agent;
+  return {
+    agent,
+    effectiveRuntime: { ...runtimeResolved, model },
+  };
 }
 
 export async function registerAIMessageHandler(manager: import('../../channels/index.js').ChannelManager): Promise<void> {
@@ -721,6 +771,9 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
   aiHandlerRegistered = true;
 
   manager.onMessage(async (message, channel) => {
+    let releaseTranscriptSnapshotHold: (() => void) | undefined;
+    let generativeSessionKey: string | undefined;
+    let generativeTurnEngaged = false;
     try {
       // 1. DM pairing gate — unapproved senders get a code, then we stop.
       const { checkDMPairing, getDMPairing } = await import('../../channels/core.js');
@@ -901,6 +954,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
+      await serializeChannelTurn(sessionKey, async () => {
       // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
       // persists in-memory across messages; restored from disk on a cold start.
       // botId selects the per-bot persona and is already baked into sessionKey,
@@ -1001,7 +1055,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         });
         return;
       }
-      const agent = await getOrCreateChannelAgent(
+      const { agent, effectiveRuntime } = await getOrCreateChannelAgent(
         sessionKey,
         runtimeResolved,
         agentConfig,
@@ -1012,13 +1066,16 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
       const agentInput = message.content;
       let transientConversationContext: string | undefined;
+      let preparedConversation: PreparedConversationTurn | undefined;
+      let companionConversationHistory: ConversationTurn[] = [];
+      let companionFreshEvidence: string | undefined;
       if (companionConversation) {
         const [conversation, prefetchedContext, prefetchEngine] = await Promise.all([
           import('../../conversation/conversation-orchestrator.js'),
           import('../../conversation/prefetched-turn-context.js'),
           import('../../companion/prefetch-engine.js'),
         ]);
-        const history = sharedConversationHistory.length
+        const history: ConversationTurn[] = sharedConversationHistory.length
           ? sharedConversationHistory.slice(-12)
           : agent
               .getChatHistory()
@@ -1035,6 +1092,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
                 };
               })
               .filter((entry) => entry.content);
+        companionConversationHistory = history;
         const freshContext = process.env.CODEBUDDY_PREFETCH === 'false'
           ? null
           : prefetchedContext.resolvePrefetchedTurnContextForConversation(
@@ -1049,14 +1107,40 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         ) {
           void prefetchEngine.runPrefetchCycle().catch(() => undefined);
         }
-        transientConversationContext = conversation.prepareConversationTurn(message.content, history, {
+        companionFreshEvidence =
+          prefetchedContext.semanticReviewEvidenceFromPrefetch(freshContext);
+        preparedConversation = conversation.prepareConversationTurn(message.content, history, {
           ...(sharedRelationshipContext
             ? { relationshipContext: sharedRelationshipContext }
             : {}),
           ...(freshContext ? { freshContext: freshContext.promptGuidance } : {}),
-        }).systemGuidance;
+        });
+        transientConversationContext = preparedConversation.systemGuidance;
       }
 
+      const semanticReviewPlanned =
+        companionConversation &&
+        preparedConversation !== undefined &&
+        shouldRunSemanticResponseGate({ plan: preparedConversation.plan }) &&
+        deriveArgumentObligations(preparedConversation.plan, message.content).length > 0;
+      if (semanticReviewPlanned) {
+        agent.suspendTranscriptSnapshots();
+        let released = false;
+        releaseTranscriptSnapshotHold = () => {
+          if (released) return;
+          released = true;
+          if (channelAgentCache.get(sessionKey)?.agent === agent) {
+            agent.resumeTranscriptSnapshots();
+          }
+        };
+      }
+
+      // From this point onward the cached agent may contain a user turn or an
+      // assistant draft. Any later exception (including a rejected transport
+      // promise) must discard that private state unless delivery and
+      // persistence complete normally.
+      generativeSessionKey = sessionKey;
+      generativeTurnEngaged = true;
       const entries = await agent.processUserMessage(agentInput, {
         surface: channel.type,
         ...(transientConversationContext
@@ -1068,12 +1152,67 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       });
       const lastEntry = entries[entries.length - 1];
       let response = lastEntry ? String(lastEntry.content) : '';
+      const hasGeneratedResponse = response.trim() !== '';
       let shouldPersistChannelSession = true;
       if (!response.trim()) {
         const { conversationFailureReply } = await import(
           '../../conversation/conversation-orchestrator.js'
         );
         response = conversationFailureReply(message.content);
+      }
+      const semanticReviewEligible =
+        semanticReviewPlanned &&
+        hasGeneratedResponse &&
+        preparedConversation !== undefined;
+      if (semanticReviewEligible && preparedConversation) {
+        try {
+          const { reviewSemanticResponse } = await import(
+            '../../conversation/semantic-response-runtime.js'
+          );
+          const unreviewedResponse = response;
+          const reviewed = await reviewSemanticResponse({
+            request: message.content,
+            draft: unreviewedResponse,
+            plan: preparedConversation.plan,
+            history: companionConversationHistory,
+            ...(companionFreshEvidence ? { evidence: companionFreshEvidence } : {}),
+            mainProvider: {
+              apiKey: effectiveRuntime.apiKey,
+              baseURL: effectiveRuntime.baseUrl,
+              model: effectiveRuntime.model,
+            },
+          });
+          response = reviewed.response.trim() || unreviewedResponse;
+          if (response !== unreviewedResponse) {
+            if (!agent.replaceLastAssistantResponse(unreviewedResponse, response)) {
+              // Delivery may continue with the reviewed text, but an agent
+              // containing the rejected draft can neither be cached nor saved.
+              evictChannelAgent(sessionKey, true);
+              shouldPersistChannelSession = false;
+              logger.error('Companion semantic rewrite missed agent history', {
+                channelType: channel.type,
+                sessionHash: hashForLog(sessionKey),
+              });
+            }
+          }
+          logger.info('Companion semantic response gate completed', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+            outcome: reviewed.outcome,
+            reason: reviewed.reason,
+            revisionAttempts: reviewed.revisionAttempts,
+            issueCodes: reviewed.audit?.issueCodes ?? [],
+            lowDimensions: reviewed.audit?.lowDimensions ?? [],
+          });
+        } catch (error) {
+          // The shared runtime is fail-open; retain that property if module
+          // loading itself is unavailable in an older packaged installation.
+          logger.warn('Companion semantic response gate unavailable', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+            errorType: error instanceof Error ? error.name : 'unknown',
+          });
+        }
       }
       if (companionConversation && response.trim()) {
         const { guardRelationshipReply } = await import(
@@ -1086,7 +1225,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           if (!agent.replaceLastAssistantResponse(unguardedResponse, response)) {
             // Never retain a response that the delivery gate rejected. A cold
             // agent will restore the safe persisted transcript on the next turn.
-            channelAgentCache.delete(sessionKey);
+            evictChannelAgent(sessionKey, true);
             shouldPersistChannelSession = false;
             logger.error('Companion relationship safety rewrite missed agent history', {
               channelType: channel.type,
@@ -1126,15 +1265,23 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           deliveredChunks++;
         }
         if (!ok) {
-          // HTML rejected → send clean stripped plain text (not raw markdown).
-          const fallback = await channel.send({
-            channelId: message.channel.id,
-            content: renderPlain(response),
-            replyTo: message.id,
-          });
-          delivered = fallback?.success === true;
-          deliveryMode = delivered ? 'plain-fallback' : 'failed';
-          if (delivered) deliveredChunks++;
+          if (deliveredChunks === 0) {
+            // First HTML chunk rejected: no user-visible prefix exists, so a
+            // complete plain fallback is safe and cannot duplicate content.
+            const fallback = await channel.send({
+              channelId: message.channel.id,
+              content: renderPlain(response),
+              replyTo: message.id,
+            });
+            delivered = fallback?.success === true;
+            deliveryMode = delivered ? 'plain-fallback' : 'failed';
+            if (delivered) deliveredChunks++;
+          } else {
+            // A later chunk failed. Re-sending the whole answer would repeat
+            // every preceding chunk, so mark the turn partial and evict it.
+            delivered = false;
+            deliveryMode = 'partial-failure';
+          }
         } else {
           deliveryMode = 'telegram-html';
           delivered = chunks.length > 0;
@@ -1163,7 +1310,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         // The cached agent already contains the generated assistant turn. Drop
         // it and skip persistence so the next request cannot build on a reply
         // the user never received.
-        channelAgentCache.delete(sessionKey);
+        evictChannelAgent(sessionKey, true);
         shouldPersistChannelSession = false;
         logger.warn('Channel response was not delivered; evicting transient agent state', {
           channelType: channel.type,
@@ -1171,6 +1318,8 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           messageHash: hashForLog(message.id),
         });
       }
+      releaseTranscriptSnapshotHold?.();
+      releaseTranscriptSnapshotHold = undefined;
       if (continuesVoiceConversation && delivered) {
         conversationBridge.recordChannelTurn({
           role: 'assistant',
@@ -1223,7 +1372,13 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
       // 8. Persist the conversation so it survives a daemon restart / cache eviction.
       if (shouldPersistChannelSession) await persistChannelSession(agent, sessionKey);
+      });
     } catch (err) {
+      releaseTranscriptSnapshotHold?.();
+      releaseTranscriptSnapshotHold = undefined;
+      if (generativeTurnEngaged && generativeSessionKey) {
+        evictChannelAgent(generativeSessionKey, true);
+      }
       logger.error('Channel AI response failed', { error: err instanceof Error ? err.message : String(err) });
       try {
         const { conversationFailureReply } = await import(
