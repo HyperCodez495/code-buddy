@@ -66,6 +66,8 @@ export interface VideoCkgSourceInfo {
   answer?: string;
   /** The question asked, if any (fallback context when no richer answer exists). */
   question?: string;
+  /** Unverified lab candidates extracted from the complete transcript. */
+  candidates?: Array<{ title: string; category: string }>;
 }
 
 /** Payload handed to the bridge — the CKG-facing shape (mirrors `CkgRememberInput`
@@ -180,9 +182,14 @@ export function buildVideoIngestText(info: VideoCkgSourceInfo, opts: VideoCkgIng
 
   const perFactBudget = Math.max(60, Math.floor(maxChars / (maxFacts + 1)));
   const facts = pickKeyFacts(info.segments ?? [], maxFacts, perFactBudget);
+  const candidates = (info.candidates ?? [])
+    .slice(0, 4)
+    .map((candidate) => `${collapseWhitespace(candidate.title)} [${collapseWhitespace(candidate.category)}]`)
+    .filter((candidate) => candidate.length > 3);
 
   const parts = [header];
   if (primary) parts.push(primary);
+  if (candidates.length > 0) parts.push(`Pistes laboratoire non vérifiées : ${candidates.join(' | ')}`);
   if (facts.length > 0) parts.push(`Extraits clés : ${facts.join(' | ')}`);
 
   return truncateCleanly(parts.join('\n'), maxChars);

@@ -41,8 +41,10 @@ import type { DescribeFrameDeps } from './describe-frame.js';
 import type { CloudUnderstandDeps, CloudUnderstandOutcome, CloudSourceKind } from './cloud-understand.js';
 import { ingestVideoUnderstanding, getDefaultVideoCkgBridge, type VideoCkgBridge } from './video-ckg.js';
 import {
+  buildVideoExperimentBacklog,
   buildVideoResearchCard,
   buildVideoResearchCardPreview,
+  type VideoExperimentBacklog,
 } from './video-research-card.js';
 
 export type UnderstandMethod = 'youtube-captions' | 'youtube-audio' | 'local-file' | 'direct-url';
@@ -98,6 +100,8 @@ export interface UnderstandVideoSuccess {
   transcriptPath: string;
   /** Compact evidence-first map built from the complete transcript. */
   researchCardPath?: string;
+  /** Machine-readable lab candidates extracted from the complete transcript. */
+  experimentBacklogPath?: string;
   source: string;
   method: UnderstandMethod;
   output: string;
@@ -572,6 +576,8 @@ export async function understandVideo(
   // main agent can research the video without anchoring on its opening minutes.
   const researchCardCandidate = join(outDir, `research-${safeSlug(source)}.md`);
   let researchCardPath: string | undefined;
+  let experimentBacklogPath: string | undefined;
+  let experimentBacklog: VideoExperimentBacklog | undefined;
   let researchCardPreview = '';
   try {
     const researchCardInput = {
@@ -583,9 +589,13 @@ export async function understandVideo(
       ...(cloud?.answer ? { cloudAnswer: cloud.answer } : {}),
     };
     const researchCard = buildVideoResearchCard(researchCardInput);
+    experimentBacklog = buildVideoExperimentBacklog(researchCardInput);
     researchCardPreview = buildVideoResearchCardPreview(researchCardInput);
     await writeFile(researchCardCandidate, researchCard, 'utf8');
     researchCardPath = researchCardCandidate;
+    const backlogCandidate = join(outDir, `experiments-${safeSlug(source)}.json`);
+    await writeFile(backlogCandidate, `${JSON.stringify(experimentBacklog, null, 2)}\n`, 'utf8');
+    experimentBacklogPath = backlogCandidate;
   } catch (err) {
     logger.warn(`[video] could not persist research card to ${researchCardCandidate}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -605,9 +615,14 @@ export async function understandVideo(
     if (researchCardPreview) output += `\n\n${researchCardPreview}`;
     output += `\n\nFiche de recherche pré-structurée complète : ${researchCardPath}. Pour une demande de veille approfondie, lis cette fiche puis vérifie les noms et affirmations dans des sources primaires avant de conclure.`;
   }
+  if (experimentBacklogPath && experimentBacklog) {
+    const labels = experimentBacklog.candidates.slice(0, 4).map((candidate) => candidate.title);
+    output += `\n\nBacklog d’expériences JSON : ${experimentBacklogPath} (${experimentBacklog.candidates.length} piste(s) non vérifiée(s)${labels.length > 0 ? ` : ${labels.join(', ')}` : ''}).`;
+  }
 
   const result: UnderstandVideoSuccess = { segments, transcriptPath, source, method, output };
   if (researchCardPath) result.researchCardPath = researchCardPath;
+  if (experimentBacklogPath) result.experimentBacklogPath = experimentBacklogPath;
   if (visual) result.visual = visual;
   if (cloud) result.cloud = cloud;
 
@@ -617,7 +632,14 @@ export async function understandVideo(
   // across the app. This is a pure side effect: `result` above is already final and is
   // returned UNCHANGED below regardless of what happens here.
   if (process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true') {
-    await ingestVideoCkg({ source, method, segments, answer: cloud?.answer, question: input.question }, deps);
+    await ingestVideoCkg({
+      source,
+      method,
+      segments,
+      answer: cloud?.answer,
+      question: input.question,
+      candidates: experimentBacklog?.candidates.map(({ title, category }) => ({ title, category })),
+    }, deps);
   }
 
   return result;
@@ -629,7 +651,14 @@ export async function understandVideo(
  * caught here so it can never affect `understandVideo`'s return value or control flow).
  */
 async function ingestVideoCkg(
-  info: { source: string; method: UnderstandMethod; segments: TimedSegment[]; answer?: string; question?: string },
+  info: {
+    source: string;
+    method: UnderstandMethod;
+    segments: TimedSegment[];
+    answer?: string;
+    question?: string;
+    candidates?: Array<{ title: string; category: string }>;
+  },
   deps: UnderstandVideoDeps,
 ): Promise<void> {
   try {

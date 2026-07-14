@@ -49,6 +49,19 @@ describe('buildVideoIngestText', () => {
     expect(text).toContain('This video explains RRF rank fusion.');
   });
 
+  it('includes bounded unverified laboratory candidates', () => {
+    const text = buildVideoIngestText({
+      ...base,
+      candidates: [
+        { title: 'PanoWorld', category: 'world-model-3d' },
+        { title: 'FashionChameleon', category: 'avatar-fashion' },
+      ],
+    });
+
+    expect(text).toContain('Pistes laboratoire non vérifiées');
+    expect(text).toContain('PanoWorld [world-model-3d]');
+  });
+
   it('falls back to the asked question when there is no richer answer', () => {
     const text = buildVideoIngestText({ ...base, question: 'What is this about?' });
     expect(text).toContain('What is this about?');

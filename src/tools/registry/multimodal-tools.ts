@@ -596,7 +596,7 @@ export class VideoAnalyzeTool implements ITool {
 
 export class UnderstandVideoTool implements ITool {
   readonly name = 'understand_video';
-  readonly description = 'Understand a video (YouTube/URL/local file): timestamped transcript of what is said, and optionally (visual:true) what is shown on screen. Local-first and $0.';
+  readonly description = 'Understand a video (YouTube/URL/local file): timestamped transcript, research card, unverified experiment backlog, and optional visual analysis. Local-first and $0.';
 
   async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     try {
@@ -620,6 +620,7 @@ export class UnderstandVideoTool implements ITool {
           segments: result.segments,
           transcriptPath: result.transcriptPath,
           ...(result.researchCardPath ? { researchCardPath: result.researchCardPath } : {}),
+          ...(result.experimentBacklogPath ? { experimentBacklogPath: result.experimentBacklogPath } : {}),
           source: result.source,
           method: result.method,
           ...(result.cloud ? { cloud: result.cloud } : {}),
@@ -682,7 +683,7 @@ export class UnderstandVideoTool implements ITool {
       name: this.name,
       description: this.description,
       category: 'media' as ToolCategoryType,
-      keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'summarize', 'watch', 'visual', 'screencast', 'frames', 'ocr', 'on-screen', 'cloud', 'gemini'],
+      keywords: ['video', 'youtube', 'transcribe', 'transcript', 'captions', 'subtitles', 'summarize', 'watch', 'visual', 'screencast', 'frames', 'ocr', 'on-screen', 'cloud', 'gemini', 'research', 'experiment', 'backlog', 'innovation'],
       priority: 8,
       modifiesFiles: true,
       makesNetworkRequests: true,

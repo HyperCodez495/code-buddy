@@ -391,7 +391,7 @@ describe('understandVideo source resolution', () => {
   it('YouTube URL tries captions first and does NOT download when captions exist', async () => {
     const fetchCaptions = vi.fn(async () => [
       { text: 'intro', start: 0, duration: 2 },
-      { text: 'body', start: 2, duration: 3 },
+      { text: 'Le modèle PanoWorld produit un monde 3D cohérent.', start: 2, duration: 3 },
     ]);
     const downloadAudio = vi.fn();
     const result = await understandVideo(
@@ -413,6 +413,14 @@ describe('understandVideo source resolution', () => {
       expect(researchCard).toContain('# Fiche de recherche vidéo');
       expect(researchCard).toContain('what is it about?');
       expect(result.output).toContain('Fiche de recherche pré-structurée');
+      expect(result.experimentBacklogPath).toBeDefined();
+      expect(existsSync(result.experimentBacklogPath!)).toBe(true);
+      const backlog = JSON.parse(await readFile(result.experimentBacklogPath!, 'utf8')) as {
+        candidates: Array<{ verificationStatus: string }>;
+      };
+      expect(backlog.candidates.length).toBeGreaterThan(0);
+      expect(backlog.candidates.every((candidate) => candidate.verificationStatus === 'unverified')).toBe(true);
+      expect(result.output).toContain('Backlog d’expériences JSON');
     }
     expect(downloadAudio).not.toHaveBeenCalled();
     expect(fetchCaptions).toHaveBeenCalledTimes(1);

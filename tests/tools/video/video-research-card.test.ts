@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildVideoExperimentBacklog,
   buildVideoResearchCard,
   buildVideoResearchCardPreview,
 } from '../../../src/tools/video/video-research-card.js';
@@ -42,7 +43,10 @@ describe('buildVideoResearchCard', () => {
       ],
     });
 
-    expect(card.match(/https:\/\/github\.com\/example\/repo/g)).toHaveLength(3);
+    const linksSection = card
+      .split('## Liens mentionnés dans le transcript')[1]
+      ?.split('## Backlog d’expériences')[0] ?? '';
+    expect(linksSection.match(/https:\/\/github\.com\/example\/repo/g)).toHaveLength(1);
     expect(card).toContain('Synthèse cloud disponible (non vérifiée)');
     expect(card).toContain('Synthèse horodatée du contenu visuel.');
   });
@@ -87,5 +91,58 @@ describe('buildVideoResearchCard', () => {
     });
 
     expect(preview).toBe('');
+  });
+
+  it('turns discoveries into bounded, explicitly unverified experiments', () => {
+    const backlog = buildVideoExperimentBacklog({
+      source: 'https://youtu.be/lab',
+      method: 'youtube-captions',
+      transcriptPath: '/tmp/transcript.txt',
+      segments: [
+        { t_start: 420, t_end: 430, said: 'Le modèle PanoWorld produit des panoramas 3D cohérents sur un GPU.' },
+        { t_start: 700, t_end: 710, said: 'Un avatar FashionChameleon change de vêtement par diffusion.' },
+        { t_start: 900, t_end: 910, said: 'Le robot humanoïde exécute des commandes vocales en temps réel.' },
+      ],
+    });
+
+    expect(backlog.candidates).toHaveLength(3);
+    expect(backlog.candidates.map((candidate) => candidate.category)).toEqual([
+      'world-model-3d',
+      'avatar-fashion',
+      'robotics',
+    ]);
+    expect(backlog.candidates[0]).toMatchObject({
+      title: 'PanoWorld',
+      verificationStatus: 'unverified',
+      evidence: { t_start: 420 },
+    });
+    expect(backlog.candidates[2]?.minimumExperiment).toContain('simulation');
+  });
+
+  it('keeps later capability families despite a dense early topic', () => {
+    const genomics = Array.from({ length: 30 }, (_, index) => ({
+      t_start: index * 40,
+      t_end: index * 40 + 8,
+      said: `Le modèle génomique ADN ${index} utilise une architecture transformer open source sur GPU.`,
+    }));
+    const backlog = buildVideoExperimentBacklog({
+      source: 'https://youtu.be/diverse',
+      method: 'youtube-captions',
+      transcriptPath: '/tmp/transcript.txt',
+      segments: [
+        ...genomics,
+        { t_start: 2_000, t_end: 2_008, said: 'PanoWorld est un world model 3D spatial open source.' },
+        { t_start: 2_060, t_end: 2_068, said: 'FashionChameleon anime un avatar et change ses vêtements.' },
+        { t_start: 2_120, t_end: 2_128, said: 'Un workflow n8n orchestre les agents avec une API.' },
+      ],
+    });
+
+    expect(backlog.candidates).toHaveLength(24);
+    expect(new Set(backlog.candidates.map((candidate) => candidate.category))).toEqual(new Set([
+      'genomics',
+      'world-model-3d',
+      'avatar-fashion',
+      'workflow-automation',
+    ]));
   });
 });
