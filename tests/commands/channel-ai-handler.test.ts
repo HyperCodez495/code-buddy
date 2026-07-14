@@ -1105,6 +1105,93 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     }
   });
 
+  it('replaces a confidently rejected fresh claim with the sourced prefetched bulletin', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'codebuddy-channel-news-grounding-'));
+    const cachePath = join(directory, 'cache.json');
+    const itemsPath = join(directory, 'items.json');
+    const rejected = 'Une actualité récente inventée sans source.';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    process.env.CODEBUDDY_PREFETCH_CACHE_FILE = cachePath;
+    process.env.CODEBUDDY_PREFETCH_ITEMS_FILE = itemsPath;
+    process.env.CODEBUDDY_PREFETCH = 'true';
+    savePrefetchItems([{ kind: 'news' }], itemsPath);
+    savePrefetchCache(
+      [{
+        key: 'news',
+        kind: 'news',
+        answer: 'Bulletin vocal vérifié.',
+        at: Date.now() - 1_000,
+        context: {
+          kind: 'news',
+          query: 'actualités France',
+          locale: 'fr-FR',
+          fetchedAt: Date.now() - 1_000,
+          items: [{
+            title: 'Lyon publie des mesures horaires de qualité de l’air',
+            url: 'https://example.test/lyon-air',
+            source: 'Exemple Info',
+            summary: 'Les mesures sont désormais disponibles.',
+          }],
+        },
+      }],
+      cachePath,
+    );
+    hoisted.processUserMessage.mockResolvedValue([{ role: 'assistant', content: rejected }]);
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'Quelles sont les actualités ?', timestamp: new Date() },
+      { type: 'assistant', content: rejected, timestamp: new Date() },
+    ]);
+    hoisted.reviewSemanticResponse.mockResolvedValue({
+      response: rejected,
+      outcome: 'fail_open',
+      reason: 'revision_rejected',
+      revisionAttempts: 1,
+      audit: {
+        confidence: 0.96,
+        dimensions: {
+          answerCoverage: 0.9,
+          logicalCoherence: 0.9,
+          supportQuality: 0.2,
+          objectionHandling: 1,
+          threadProgression: 0.8,
+          evidenceGrounding: 0.1,
+        },
+        failedObligationIds: ['source_fresh_facts'],
+        issueCodes: ['ungrounded_fresh_claim', 'unsupported_claim'],
+        lowDimensions: ['supportQuality', 'evidenceGrounding'],
+        accepted: false,
+      },
+    });
+
+    try {
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const send = makeSuccessfulSend();
+      await manager.emit(
+        makeMessage('Quelles sont les actualités ?', 'sess-news-grounding'),
+        { type: 'telegram', send },
+      );
+
+      const delivered = send.mock.calls
+        .map((call) => telegramHtmlChunkToPlain(String(call[0]?.content ?? '')))
+        .join('\n');
+      expect(delivered).toContain('Lyon publie des mesures horaires');
+      expect(delivered).toContain('https://example.test/lyon-air');
+      expect(delivered).not.toContain('inventée sans source');
+      expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledWith(
+        rejected,
+        expect.stringContaining('Lyon publie des mesures horaires'),
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+      delete process.env.CODEBUDDY_PREFETCH_CACHE_FILE;
+      delete process.env.CODEBUDDY_PREFETCH_ITEMS_FILE;
+      delete process.env.CODEBUDDY_PREFETCH;
+      resetCrossChannelConversationBridge();
+    }
+  });
+
   it('restores prior history when resuming a session that already has messages', async () => {
     const priorMessages = [
       { type: 'user', content: 'earlier question' },

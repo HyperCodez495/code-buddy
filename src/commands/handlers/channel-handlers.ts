@@ -1372,7 +1372,16 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
               model: effectiveRuntime.model,
             },
           });
-          response = reviewed.response.trim() || unreviewedResponse;
+          const rejectedFreshGrounding =
+            reviewed.outcome === 'fail_open' &&
+            (reviewed.audit?.issueCodes.includes('ungrounded_fresh_claim') === true ||
+              reviewed.verificationAudit?.issueCodes.includes('ungrounded_fresh_claim') === true);
+          const groundedRecovery = rejectedFreshGrounding
+            ? prefetchedDirectFallback ??
+              "Je n’ai pas réussi à vérifier cette information fraîche avec une source exploitable. " +
+              'Je préfère ne pas l’inventer ; redemande-moi dans un instant.'
+            : undefined;
+          response = groundedRecovery ?? (reviewed.response.trim() || unreviewedResponse);
           if (response !== unreviewedResponse) {
             if (!agent.replaceLastAssistantResponse(unreviewedResponse, response)) {
               // Delivery may continue with the reviewed text, but an agent
@@ -1384,6 +1393,13 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
                 sessionHash: hashForLog(sessionKey),
               });
             }
+          }
+          if (groundedRecovery) {
+            logger.warn('Companion rejected ungrounded fresh response before delivery', {
+              channelType: channel.type,
+              sessionHash: hashForLog(sessionKey),
+              recovery: prefetchedDirectFallback ? 'prefetched_evidence' : 'honest_retry',
+            });
           }
           logger.info('Companion semantic response gate completed', {
             channelType: channel.type,
