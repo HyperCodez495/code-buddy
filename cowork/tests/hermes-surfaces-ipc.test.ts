@@ -199,7 +199,7 @@ describe('companion IPC', () => {
     });
   });
 
-  it('exposes raw-free quality insights and side-effect-free manual measurement', async () => {
+  it('exposes global raw-free quality insights without requiring an active project', async () => {
     const readConversationQualityInsights = vi.fn(() => ({
       schemaVersion: 1,
       available: true,
@@ -215,7 +215,7 @@ describe('companion IPC', () => {
       readConversationQualityInsights,
       measureConversationQualityNow,
     });
-    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+    registerCompanionIpcHandlers(projectSource(null));
 
     const insights = (await electronMock.handlers.get('companion.quality.insights')?.(
       {},

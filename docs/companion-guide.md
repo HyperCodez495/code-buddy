@@ -247,6 +247,9 @@ buddy assistant benchmark --base-url http://100.73.222.64:11434 \
 Cowork rend aussi le suivi continu visible dans **Companion → Sensory journal → Pouls
 conversationnel**. Le panneau lit les trente derniers agrégats par défaut, montre la tendance et
 les défauts récurrents, puis permet une mesure ponctuelle du fil partagé avec **Mesurer maintenant**.
+Comme ce fil est global aux surfaces Lisa, le pouls reste disponible même sans projet Cowork actif;
+les autres sens et actions qui touchent un workspace restent, eux, fermés tant qu'aucun projet
+n'est sélectionné.
 Cette mesure utilise le mode `dry` de la boucle d'amélioration : elle ne modifie ni le journal, ni la
 consigne active. Le contrat IPC reconstruit une liste blanche de scores et de compteurs; il retire
 les champs inconnus, le texte des échanges, leurs empreintes et le texte interne des consignes.

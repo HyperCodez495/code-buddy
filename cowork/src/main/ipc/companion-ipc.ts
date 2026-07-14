@@ -1280,8 +1280,6 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
   ipcMain.handle(
     'companion.quality.insights',
     async (_e, input?: { projectId?: string; windowSize?: number }) => {
-      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
-      if (!cwd) return { ok: false as const, error };
       try {
         const mod = await loadConversationQualityInsights();
         if (!mod?.readConversationQualityInsights) {
@@ -1301,8 +1299,6 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
   ipcMain.handle(
     'companion.quality.measure',
     async (_e, input?: { projectId?: string; limit?: number }) => {
-      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
-      if (!cwd) return { ok: false as const, error };
       try {
         const mod = await loadConversationQualityInsights();
         if (!mod?.measureConversationQualityNow) {

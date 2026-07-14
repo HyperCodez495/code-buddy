@@ -1960,6 +1960,7 @@ export function CompanionPanel() {
         || !openClawBridgeRes.ok
         || !skillsRes.ok
         || !privacyRes.ok;
+      setConversationQuality(qualityRes.ok ? qualityRes.insights ?? null : null);
       setLastSync(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? null
         : {
@@ -1974,8 +1975,6 @@ export function CompanionPanel() {
         if (statusRes.error === 'NO_ACTIVE_PROJECT') {
           setStatus(null);
           setStats(null);
-          setConversationQuality(null);
-          setConversationMeasurement(null);
           setPercepts([]);
           setEvaluation(null);
           setRadar(null);
@@ -2020,7 +2019,6 @@ export function CompanionPanel() {
       setStatus(statusRes.status ?? null);
       setPercepts(recentRes.ok ? recentRes.items : []);
       setStats(statsRes.ok ? statsRes.stats ?? null : null);
-      setConversationQuality(qualityRes.ok ? qualityRes.insights ?? null : null);
       setImpulses(impulsesRes.ok ? impulsesRes.brief ?? null : null);
       setMissions(missionsRes.ok ? missionsRes.items : []);
       setSafetyEvents(safetyRecentRes.ok ? safetyRecentRes.items : []);
