@@ -3,6 +3,7 @@ import {
   type CrossChannelConversationBridge,
 } from './cross-channel-bridge.js';
 import { prepareSpeech } from '../sensory/speech-sanitizer.js';
+import { logger } from '../utils/logger.js';
 
 export type CanonicalVoiceSpeaker = (content: string) => Promise<void>;
 
@@ -22,11 +23,22 @@ export function createCanonicalVoiceReplySpeaker(
     userTurn ??= bridge.recordVoiceTurn({ role: 'user', content: heard });
     const prepared = prepareSpeech(content);
     if (!prepared) {
-      await userTurn;
+      void userTurn.catch((error) => {
+        logger.warn(
+          `[voice-continuity] user mirror failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
       return;
     }
     const assistantTurn = bridge.recordVoiceTurn({ role: 'assistant', content: prepared });
-    await Promise.all([speak(prepared), userTurn, assistantTurn]);
+    // Appending both turns is synchronous and the bridge owns strict delivery
+    // order. Telegram/network latency must not keep the physical mouth locked.
+    void Promise.all([userTurn, assistantTurn]).catch((error) => {
+      logger.warn(
+        `[voice-continuity] conversation mirror failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    await speak(prepared);
   };
 }
 
@@ -38,10 +50,13 @@ export async function speakCanonicalVoiceInitiative(
 ): Promise<void> {
   const prepared = prepareSpeech(content);
   if (!prepared) return;
-  await Promise.all([
-    speak(prepared),
-    bridge.recordVoiceTurn({ role: 'assistant', content: prepared }),
-  ]);
+  const mirrored = bridge.recordVoiceTurn({ role: 'assistant', content: prepared });
+  void mirrored.catch((error) => {
+    logger.warn(
+      `[voice-continuity] initiative mirror failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+  await speak(prepared);
 }
 
 /** Append a proactive sentence that has already been delivered on the target channel. */

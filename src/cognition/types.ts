@@ -38,6 +38,8 @@ export interface WorkspaceItem<T = unknown> {
   payload: T;
   revision: number;
   depth: number;
+  /** Optional logical slot; publishing the same producer+key supersedes its prior revision. */
+  dedupeKey?: string;
 }
 
 export interface WorkspaceDraft<T = unknown> {
@@ -53,6 +55,7 @@ export interface WorkspaceDraft<T = unknown> {
   expiresAt?: number;
   ttlMs?: number;
   depth?: number;
+  dedupeKey?: string;
 }
 
 export interface WorkspaceQuery {
@@ -86,6 +89,8 @@ export interface SpecialistDefinition {
   role: string;
   subscriptions: WorkspaceKind[];
   providerGroup?: string;
+  /** Strongest data classification this specialist may receive. Required fail-closed egress gate. */
+  privacyClearance: WorkspacePrivacy;
   mailboxCapacity?: number;
   overflow?: MailboxOverflow;
   maxConcurrency?: number;
@@ -102,6 +107,8 @@ export interface SpecialistMetrics {
   coalesced: number;
   failed: number;
   deadlineMisses: number;
+  privacyRejected: number;
+  cancelled: number;
   latencyP50Ms: number;
   latencyP95Ms: number;
 }

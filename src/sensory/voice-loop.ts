@@ -178,6 +178,10 @@ export interface VoiceReplyOptions {
   onSpoke?: (text: string) => void;
   /** Shared-thread hook for mirroring voice turns to Telegram/another configured channel. */
   onConversationTurn?: (turn: ConversationTurn) => void | Promise<void>;
+  /** Correlated local cognitive copy; kept separate so channel adapters retain their stable shape. */
+  onCorrelatedConversationTurn?: (
+    turn: ConversationTurn & { turnId: string },
+  ) => void | Promise<void>;
   /** Performance hook consumed by Unreal/MetaHuman or a test renderer. */
   onAvatarEvent?: (event: AvatarEvent) => void;
   /** Explicitly enable/disable avatar publication for this handler. Default: env/renderer hook. */
@@ -1877,7 +1881,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let avatarAudioStreamIndex = 0;
     let avatarSpeechStartedAt: number | undefined;
     let avatarFinalText = '';
-    const avatarTurnId = createAvatarTurnId();
+    const avatarTurnId = context?.turnId ?? createAvatarTurnId();
     const avatarCue = planAvatarPerformance(heard, delivery);
     const avatarEnabled = options.avatarEnabled ?? (
       process.env.CODEBUDDY_AVATAR_BRIDGE !== 'false' || Boolean(options.onAvatarEvent)
@@ -2001,6 +2005,20 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       } catch (error) {
         logger.warn(
           `[voice] conversation mirror failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      try {
+        const result = options.onCorrelatedConversationTurn?.({ ...turn, turnId: avatarTurnId });
+        if (result && typeof result.then === 'function') {
+          void result.catch((error) => {
+            logger.warn(
+              `[voice] cognitive turn mirror failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
+        }
+      } catch (error) {
+        logger.warn(
+          `[voice] cognitive turn mirror failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     };

@@ -35,6 +35,7 @@ describe('canonical voice continuity helpers', () => {
 
     await reply("C'est noté.");
     await reply('Tu pourras dire annule pour le retirer.');
+    await bridge.flush();
 
     expect(bridge.history()).toEqual([
       { role: 'user', content: 'Crée un rappel.' },
@@ -54,6 +55,7 @@ describe('canonical voice continuity helpers', () => {
     const bridge = new CrossChannelConversationBridge(config(), { deliver });
 
     await speakCanonicalVoiceInitiative('Bonjour, contente de te revoir.', speak, bridge);
+    await bridge.flush();
 
     expect(bridge.snapshot()).toEqual([
       expect.objectContaining({
@@ -76,6 +78,7 @@ describe('canonical voice continuity helpers', () => {
       speak,
       bridge,
     );
+    await bridge.flush();
 
     expect(speak).toHaveBeenCalledWith('Bonjour Patrice.');
     expect(bridge.history()).toEqual([
@@ -95,6 +98,29 @@ describe('canonical voice continuity helpers', () => {
     expect(speak).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(bridge.history()).toEqual([]);
+  });
+
+  it('does not hold the local mouth while Telegram delivery is slow', async () => {
+    let releaseDelivery!: () => void;
+    const deliveryGate = new Promise<void>((resolve) => (releaseDelivery = resolve));
+    let deliveryStarted = false;
+    const deliver = vi.fn(async () => {
+      deliveryStarted = true;
+      await deliveryGate;
+      return true;
+    });
+    const speak = vi.fn(async () => undefined);
+    const bridge = new CrossChannelConversationBridge(config(), { deliver });
+    const reply = createCanonicalVoiceReplySpeaker('Crée un rappel.', speak, bridge);
+
+    await reply("C'est noté.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(speak).toHaveBeenCalledOnce();
+    expect(deliveryStarted).toBe(true);
+
+    releaseDelivery();
+    await bridge.flush();
+    expect(deliver).toHaveBeenCalledTimes(2);
   });
 
   it('appends an already-delivered remote initiative without echo', async () => {

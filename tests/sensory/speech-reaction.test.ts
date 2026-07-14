@@ -78,6 +78,63 @@ describe('speech reaction — speech_end → STT → percept', () => {
     }
   });
 
+  it('starts the correlated background lane before the spoken turn releases its mouth lock', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-background-lane-'));
+    let releaseMouth!: () => void;
+    const mouthGate = new Promise<void>((resolve) => (releaseMouth = resolve));
+    let recognized:
+      | { turnId: string; text: string; context: { turnId?: string } }
+      | undefined;
+    let heardTurnId: string | undefined;
+    const unwire = wireSpeechReaction({
+      debounceMs: 0,
+      cwd: tmp,
+      onRecognizedTurn: async (turn) => {
+        recognized = turn;
+      },
+      onHeard: async (_text, context) => {
+        heardTurnId = context?.turnId;
+        await mouthGate;
+      },
+    });
+    try {
+      transcriptFinal('Lisa, réfléchissons en parallèle');
+      await tick();
+      expect(recognized).toMatchObject({ text: 'Lisa, réfléchissons en parallèle' });
+      expect(recognized?.turnId).toMatch(/^voice_/);
+      expect(recognized?.context.turnId).toBe(recognized?.turnId);
+      expect(heardTurnId).toBe(recognized?.turnId);
+      // onHeard is still deliberately blocked, representing generation/TTS.
+      // The semantic background ingress has nevertheless already completed.
+    } finally {
+      releaseMouth();
+      await tick();
+      unwire();
+    }
+  });
+
+  it('isolates a failing background lane from the canonical voice turn', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-background-failure-'));
+    const heard: string[] = [];
+    const unwire = wireSpeechReaction({
+      debounceMs: 0,
+      cwd: tmp,
+      onRecognizedTurn: async () => {
+        throw new Error('background unavailable');
+      },
+      onHeard: async (text) => {
+        heard.push(text);
+      },
+    });
+    try {
+      transcriptFinal('Lisa, continue malgré la panne');
+      await tick();
+      expect(heard).toEqual(['Lisa, continue malgré la panne']);
+    } finally {
+      unwire();
+    }
+  });
+
   it('recognizes explicit, echo-safe barge-in phrases', () => {
     expect(isBargeInTranscript('Lisa, attends, nouvelle question')).toBe(true);
     expect(isBargeInTranscript('Arrête de parler')).toBe(true);
@@ -357,12 +414,13 @@ describe('speech reaction — speech_end → STT → percept', () => {
       });
       await tick();
 
-      expect(context).toEqual({
+      expect(context).toMatchObject({
         audioMs: 4_000,
         captureMs: 4_200,
         speechStartedAtMs: 10_000,
         speechEndedAtMs: 14_200,
       });
+      expect(context?.turnId).toMatch(/^voice_/);
       const percepts = await readFile(
         path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'),
         'utf8',

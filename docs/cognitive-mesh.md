@@ -23,8 +23,12 @@ The body can see, hear, maintain memory and deliberate concurrently, but it stil
 - `HeartbeatScheduler` now owns one in-flight lock per treatment. Dreaming or an LLM maintenance pass cannot stop other organs from receiving later beats.
 - `GlobalWorkspace` is an in-memory blackboard with a hard capacity, TTL, immutable clones, salience admission and monotone privacy.
 - `CognitiveMesh` gives each specialist a bounded mailbox, overflow policy, concurrency limit, provider-group limit, deadline signal and raw-free metrics.
+- Every specialist declares a privacy clearance. Cloud lanes accept only `cloud-ok`; trusted-LAN lanes cannot receive `local-only`; local lanes may accept all three classes. Rejected deliveries are counted without logging content.
 - The sensory adapter runs in shadow mode. It mirrors only modality, canonical event kind and observation time; raw audio, transcripts, image bytes and local image paths never enter the workspace.
-- A deterministic world-model specialist currently converts `person_entered` and `person_left` transitions into short-lived, local-only facts.
+- A separate recognized-utterance lane starts before response selection, model generation and TTS. It publishes the local-only text with one `turnId` shared by voice cognition and avatar events while the canonical mouth lock remains intact.
+- The deterministic WorldModel V1 tracks anonymous occupancy per camera with `visible|absent|unknown`, `firstSeen`, `lastSeen`, confidence, causal cursor and bounded provenance. Duplicate and out-of-order transitions cannot regress current state; wall-clock expiry becomes `unknown`, never invented absence.
+- Prospective event extraction can run while Lisa generates and speaks. Its eventual confirmation remains a mouth-serialized initiative.
+- Telegram/Cowork journal appends retain their strict bridge ordering, but slow channel delivery no longer holds the local mouth lock for reminder, maison and proactive voice initiatives.
 - Council local models and Fleet peers now start in the same wave. Local model timeouts propagate cancellation to transports that support `AbortSignal`.
 
 ## Safety and scheduling invariants
@@ -41,13 +45,13 @@ The body can see, hear, maintain memory and deliberate concurrently, but it stil
 
 ## Next loops
 
-### 1. Voice transaction decomposition
+### 1. Complete voice transaction decomposition
 
-Split STT, dialogue, memory write, Telegram continuity, TTS and background reflection into separate correlation-scoped lanes. Preserve barge-in and the single-mouth invariant. Late results from an obsolete turn must be discarded.
+The recognized-utterance lane is complete. Next, move the durable outcome percept off the post-TTS path, propagate the correlation id through reminder/maison shortcuts, and add generation checks so late proposals from an obsolete turn are discarded. Preserve barge-in and the single-mouth invariant.
 
-### 2. World model V1
+### 2. World model enrichment
 
-Track entities with provenance, confidence, `firstSeen`, `lastSeen`, `visible|absent|unknown`, 2D observations and expiry. A deterministic reducer owns facts; VLM/LLM hypotheses cannot directly rewrite them. Do not infer metric 3D geometry without calibrated sensors.
+Add anonymous tracker ids, 2D observations and explicit camera liveness refreshes. A deterministic reducer continues to own facts; VLM/LLM hypotheses cannot directly rewrite them. Do not infer metric 3D geometry without calibrated sensors.
 
 ### 3. Persistent specialist adapters
 

@@ -59,4 +59,31 @@ describe('GlobalWorkspace', () => {
     );
     expect(derived?.privacy).toBe('local-only');
   });
+
+  it('supersedes a logical slot while preserving its strongest privacy', () => {
+    const workspace = new GlobalWorkspace();
+    workspace.publish(
+      draft({
+        kind: 'fact',
+        producerId: 'world-model',
+        dedupeKey: 'entity:person',
+        privacy: 'local-only',
+        payload: { visibility: 'visible' },
+      }),
+    );
+    const replacement = workspace.publish(
+      draft({
+        kind: 'fact',
+        producerId: 'world-model',
+        dedupeKey: 'entity:person',
+        privacy: 'cloud-ok',
+        payload: { visibility: 'unknown' },
+      }),
+    );
+    expect(workspace.snapshot({ kinds: ['fact'] })).toHaveLength(1);
+    expect(replacement).toMatchObject({
+      privacy: 'local-only',
+      payload: { visibility: 'unknown' },
+    });
+  });
 });

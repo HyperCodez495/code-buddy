@@ -48,6 +48,12 @@ export type { SpeechRecognitionEngine };
 
 export type Transcriber = (wav: string) => Promise<string>;
 
+export interface RecognizedVoiceTurn {
+  turnId: string;
+  text: string;
+  context: VoiceTurnContext;
+}
+
 export interface SpeechReactionOptions {
   /** Injectable STT (tests / custom). Default: faster-whisper via python ($0). */
   transcriber?: Transcriber;
@@ -59,13 +65,18 @@ export interface SpeechReactionOptions {
   /** Action hook for the transcript (e.g. trigger an agent turn). */
   onHeard?: (text: string, context?: VoiceTurnContext) => void | Promise<void>;
   /**
+   * Fire-and-forget semantic ingress for memory and background specialists.
+   * It starts before the response gate/LLM/TTS and never owns the mouth lock.
+   */
+  onRecognizedTurn?: (turn: RecognizedVoiceTurn) => void | Promise<void>;
+  /**
    * Acoustic turn-open hook, fired immediately when the Rust VAD opens — before
    * endpointing and STT. Intended only for idempotent preparation (imports,
    * prompt/MCP warmup); it must never be interpreted as permission to reply.
    */
   onSpeechStart?: (payload: Record<string, unknown>) => void | Promise<void>;
   /** Interrupt the active think/speak turn when an explicit barge-in transcript arrives. */
-  onBargeIn?: (text: string) => void;
+  onBargeIn?: (text: string, interruptedTurnId?: string) => void;
   /**
    * Human-like response gate. The percept is ALWAYS recorded (observation/memory stay
    * continuous); `onHeard` only fires when this returns `respond: true`. Omit → respond to
@@ -1156,8 +1167,10 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   let lastAt = Number.NEGATIVE_INFINITY;
   let inFlight = false;
   let activeWav: string | undefined;
+  let activeTurnId: string | undefined;
   let disposed = false;
   let liveSeq = 0; // unique dedup key for live-mic finals (there's no WAV to key on)
+  let turnSeq = 0;
   let pendingSpeechStartedAtMs: number | undefined;
   type SpeechJob = {
     p: ReturnType<typeof perceptionOf>;
@@ -1208,6 +1221,8 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     lastAt = t;
     inFlight = true;
     activeWav = job.wav;
+    const turnId = `voice_${t}_${++turnSeq}`;
+    activeTurnId = turnId;
 
     void (async () => {
       const payload = (job.p.payload as Record<string, unknown> | undefined) ?? {};
@@ -1328,6 +1343,29 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         }
         logger.info(`[speech] heard (${sttMs}ms STT) → ${text}`);
 
+        const turnContext: VoiceTurnContext = {
+          turnId,
+          ...(finiteTimestamp(payload.audioMs) !== undefined
+            ? { audioMs: finiteTimestamp(payload.audioMs) }
+            : {}),
+          ...(finiteTimestamp(payload.ms) !== undefined
+            ? { captureMs: finiteTimestamp(payload.ms) }
+            : {}),
+          ...(captureStartedAtMs !== undefined ? { speechStartedAtMs: captureStartedAtMs } : {}),
+          ...(captureEndedAtMs !== undefined ? { speechEndedAtMs: captureEndedAtMs } : {}),
+        };
+        if (options.onRecognizedTurn) {
+          void Promise.resolve()
+            .then(() => options.onRecognizedTurn!({ turnId, text, context: turnContext }))
+            .catch((error) => {
+              logger.warn(
+                `[speech] background turn ingress failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            });
+        }
+
         let responded = Boolean(options.onHeard);
         // Human-like gate: observed + remembered above; only SPEAK if warranted.
         if (options.shouldRespond) {
@@ -1346,16 +1384,6 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
 
         if (responded) {
           const actionStartMs = now();
-          const turnContext: VoiceTurnContext = {
-            ...(finiteTimestamp(payload.audioMs) !== undefined
-              ? { audioMs: finiteTimestamp(payload.audioMs) }
-              : {}),
-            ...(finiteTimestamp(payload.ms) !== undefined
-              ? { captureMs: finiteTimestamp(payload.ms) }
-              : {}),
-            ...(captureStartedAtMs !== undefined ? { speechStartedAtMs: captureStartedAtMs } : {}),
-            ...(captureEndedAtMs !== undefined ? { speechEndedAtMs: captureEndedAtMs } : {}),
-          };
           await options.onHeard?.(text, turnContext);
           actionMs = elapsedSince(actionStartMs, now);
           responseTiming = options.getResponseTiming?.();
@@ -1455,6 +1483,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         if (spoke) lastAt = now();
         inFlight = false;
         activeWav = undefined;
+        if (activeTurnId === turnId) activeTurnId = undefined;
         const nextSpeech = pendingSpeech;
         pendingSpeech = null;
         if (nextSpeech && !disposed) {
@@ -1540,7 +1569,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         if (options.onBargeIn && isBargeInTranscript(text)) {
           logger.info(`[speech] barge-in → ${text}`);
           try {
-            options.onBargeIn(text);
+            options.onBargeIn(text, activeTurnId);
           } catch {
             /* interruption is best-effort; still queue the new utterance */
           }

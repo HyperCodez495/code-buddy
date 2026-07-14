@@ -13,6 +13,8 @@ export type VoiceResponseShape = 'compact' | 'balanced' | 'expanded';
 export type VoiceEntrainmentConfidence = 'low' | 'medium' | 'high';
 
 export interface VoiceTurnContext {
+  /** Correlates capture, cognition, avatar, channel mirror and final outcome. */
+  turnId?: string;
   /** Speech-bearing audio duration reported by the capture engine. */
   audioMs?: number;
   /** Whole capture duration, used only when audioMs is unavailable. */

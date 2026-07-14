@@ -1451,6 +1451,21 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 onConversationTurn: async (turn) => {
                   await conversationBridge.recordVoiceTurn(turn);
                 },
+                onCorrelatedConversationTurn: (turn) => {
+                  if (turn.role === 'assistant') {
+                    embodiedCognition.mesh.publish({
+                      kind: 'result',
+                      producerId: 'voice:dialogue',
+                      correlationId: turn.turnId ?? `voice-assistant:${Date.now()}`,
+                      salience: 0.8,
+                      confidence: 1,
+                      privacy: 'local-only',
+                      provenance: { source: 'voice-loop' },
+                      ttlMs: 5 * 60_000,
+                      payload: { role: turn.role, content: turn.content, surface: 'voice' },
+                    });
+                  }
+                },
                 onTiming: (timing) => {
                   latestVoiceTiming = timing;
                 },
@@ -1566,11 +1581,26 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                 const extractor = ef.makeLLMEventExtractor();
                 const inner = onHeard;
                 onHeard = async (t, context) => {
+                  // Start prospective extraction on its own cognitive lane while
+                  // the canonical response is generated and spoken. The result
+                  // may propose a later initiative, but never owns this turn's mouth.
+                  const capturePromise = reminderShortcut?.(t) || maisonShortcut?.(t)
+                    ? null
+                    : ef.captureEventFollowUp(t, Date.now(), { extractor })
+                        .then((captured) => ({ captured, error: undefined }))
+                        .catch((error: unknown) => ({ captured: null, error }));
                   await inner(t, context);
-                  if (reminderShortcut?.(t) || maisonShortcut?.(t)) return;
-                  void (async () => {
-                    try {
-                      const captured = await ef.captureEventFollowUp(t, Date.now(), { extractor });
+                  if (!capturePromise) return;
+                  void capturePromise
+                    .then(async ({ captured, error }) => {
+                      if (error) {
+                        logger.warn(
+                          `[event-followup] capture failed: ${
+                            error instanceof Error ? error.message : String(error)
+                          }`,
+                        );
+                        return;
+                      }
                       if (captured) {
                         const confirmation = ef.confirmationLine(captured, Date.now());
                         await speakCanonicalVoiceInitiative(
@@ -1580,21 +1610,36 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                         );
                         logger.info(`[event-followup] captured "${captured.event}" → due ${new Date(captured.dueAt).toISOString()}`);
                       }
-                    } catch (err) {
-                      logger.warn(`[event-followup] capture failed: ${err instanceof Error ? err.message : String(err)}`);
-                    }
-                  })();
+                    });
                 };
                 logger.info('Event follow-ups: Enabled (CODEBUDDY_COMPANION_EVENT_FOLLOWUPS) — capture dated events from conversation, ask how they went');
               }
 
               const wireOpts: Parameters<typeof wireSpeechReaction>[0] = {
                 onHeard,
+                onRecognizedTurn: ({ turnId, text }) => {
+                  embodiedCognition.mesh.publish({
+                    kind: 'utterance',
+                    producerId: 'voice:hearing',
+                    correlationId: turnId,
+                    salience: 0.9,
+                    confidence: 0.9,
+                    privacy: 'local-only',
+                    provenance: { source: 'recognized-voice-turn' },
+                    ttlMs: 5 * 60_000,
+                    payload: { role: 'user', content: text, surface: 'voice' },
+                  });
+                },
                 // The Rust VAD publishes this before endpointing/STT. Prepare
                 // the grounded standby during the user's own speaking time;
                 // the transcript gate below remains the only authority to talk.
                 onSpeechStart: () => replyFn.prewarm(),
-                onBargeIn: () => reply.interrupt(),
+                onBargeIn: (_text, interruptedTurnId) => {
+                  reply.interrupt();
+                  if (interruptedTurnId) {
+                    embodiedCognition.mesh.cancelCorrelation(interruptedTurnId);
+                  }
+                },
                 getResponseTiming: () => {
                   const timing = latestVoiceTiming;
                   latestVoiceTiming = undefined;
@@ -1651,6 +1696,32 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             name: 'pacemaker-tick',
             everyBeats,
             handler: (ctx) => logger.info(`[heartbeat] pacemaker tick — beat ${ctx.beat} (load ${ctx.load1 ?? '?'})`),
+          });
+          const configuredCognitionEvery = Number(
+            process.env.CODEBUDDY_COGNITION_METRICS_EVERY ?? 30,
+          );
+          const cognitionEvery = Number.isFinite(configuredCognitionEvery)
+            ? Math.max(10, Math.floor(configuredCognitionEvery))
+            : 30;
+          heart.register({
+            name: 'cognitive-observability',
+            everyBeats: cognitionEvery,
+            handler: () => {
+              const workspaceMetrics = embodiedCognition.workspace.metrics();
+              const specialistMetrics = embodiedCognition.mesh.metrics();
+              const queued = specialistMetrics.reduce((sum, metric) => sum + metric.queued, 0);
+              const active = specialistMetrics.reduce((sum, metric) => sum + metric.active, 0);
+              const dropped = specialistMetrics.reduce((sum, metric) => sum + metric.dropped, 0);
+              const privacyRejected = specialistMetrics.reduce(
+                (sum, metric) => sum + metric.privacyRejected,
+                0,
+              );
+              logger.info(
+                `[cognition] workspace=${workspaceMetrics.size} world=${embodiedCognition.snapshotWorld().length} ` +
+                  `queued=${queued} active=${active} dropped=${dropped} ` +
+                  `privacyRejected=${privacyRejected}`,
+              );
+            },
           });
           // Dreaming — consolidate short-term sensory memory every N beats.
           const dreamEvery = Math.max(1, Number(process.env.CODEBUDDY_DREAM_EVERY ?? 30));

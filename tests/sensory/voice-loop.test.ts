@@ -768,6 +768,26 @@ describe('voice loop — heard → think → speak', () => {
     ]);
   });
 
+  it('shares a supplied voice turn id with cognitive turns and avatar events', async () => {
+    const cognitiveTurns: Array<{ role: string; content: string; turnId: string }> = [];
+    const avatarTurnIds: string[] = [];
+    const onHeard = makeVoiceReply({
+      replyFn: async () => 'Réponse corrélée.',
+      synth: async () => '/tmp/correlated.wav',
+      play: async () => {},
+      onCorrelatedConversationTurn: (turn) => cognitiveTurns.push(turn),
+      onAvatarEvent: (event) => avatarTurnIds.push(event.turnId),
+    });
+
+    await onHeard('Question corrélée.', { turnId: 'voice-test-42' });
+    expect(cognitiveTurns).toEqual([
+      { role: 'user', content: 'Question corrélée.', turnId: 'voice-test-42' },
+      { role: 'assistant', content: 'Réponse corrélée.', turnId: 'voice-test-42' },
+    ]);
+    expect(avatarTurnIds.length).toBeGreaterThan(0);
+    expect(new Set(avatarTurnIds)).toEqual(new Set(['voice-test-42']));
+  });
+
   it('never speaks or publishes dependency pressure from a companion reply', async () => {
     const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     let synthesized = '';

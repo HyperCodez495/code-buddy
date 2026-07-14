@@ -33,6 +33,7 @@ describe('CognitiveMesh', () => {
       id: 'vision-specialist',
       role: 'vision',
       subscriptions: ['percept'],
+      privacyClearance: 'local-only',
       activate: async ({ trigger }) => {
         started.push('vision');
         await visionGate;
@@ -52,6 +53,7 @@ describe('CognitiveMesh', () => {
       id: 'memory-specialist',
       role: 'memory',
       subscriptions: ['percept'],
+      privacyClearance: 'local-only',
       activate: async () => {
         started.push('memory');
         await memoryGate;
@@ -82,6 +84,7 @@ describe('CognitiveMesh', () => {
       id: 'single-writer',
       role: 'world model',
       subscriptions: ['percept'],
+      privacyClearance: 'local-only',
       activate: async ({ trigger }) => {
         started.push(trigger.correlationId);
         if (trigger.correlationId === 'first') await gate;
@@ -104,6 +107,7 @@ describe('CognitiveMesh', () => {
       id: 'vision',
       role: 'vision',
       subscriptions: ['percept'],
+      privacyClearance: 'local-only',
       mailboxCapacity: 2,
       overflow: 'drop-lowest-salience',
       activate: async ({ trigger }) => void started.push(`vision:${trigger.correlationId}`),
@@ -112,6 +116,7 @@ describe('CognitiveMesh', () => {
       id: 'hearing',
       role: 'hearing',
       subscriptions: ['utterance'],
+      privacyClearance: 'local-only',
       mailboxCapacity: 8,
       activate: async ({ trigger }) => void started.push(`audio:${trigger.correlationId}`),
     });
@@ -130,6 +135,7 @@ describe('CognitiveMesh', () => {
       id: 'planner',
       role: 'planner',
       subscriptions: ['goal'],
+      privacyClearance: 'local-only',
       activate: ({ signal }) =>
         new Promise<void>((resolve) => {
           signal.addEventListener('abort', () => {
@@ -143,5 +149,71 @@ describe('CognitiveMesh', () => {
     mesh.stop();
     await turn();
     expect(aborted).toBe(true);
+  });
+
+  it('fails closed when specialist egress clearance is weaker than item privacy', async () => {
+    const mesh = new CognitiveMesh(new GlobalWorkspace());
+    const received: Record<string, string[]> = { cloud: [], lan: [], local: [] };
+    for (const [id, privacyClearance] of [
+      ['cloud', 'cloud-ok'],
+      ['lan', 'trusted-lan'],
+      ['local', 'local-only'],
+    ] as const) {
+      mesh.register({
+        id,
+        role: id,
+        subscriptions: ['percept'],
+        privacyClearance,
+        activate: async ({ trigger }) => void received[id]!.push(trigger.correlationId),
+      });
+    }
+    mesh.publish({ ...percept('private'), privacy: 'local-only' });
+    mesh.publish({ ...percept('lan-safe'), privacy: 'trusted-lan' });
+    mesh.publish({ ...percept('public'), privacy: 'cloud-ok' });
+    await turn();
+    expect(received.cloud).toEqual(['public']);
+    expect(received.lan).toEqual(['lan-safe', 'public']);
+    expect(received.local).toEqual(['private', 'lan-safe', 'public']);
+    expect(mesh.metrics().find((metric) => metric.id === 'cloud')?.privacyRejected).toBe(2);
+    mesh.stop();
+  });
+
+  it('aborts a cancelled turn and rejects a late result even if the specialist ignores abort', async () => {
+    const workspace = new GlobalWorkspace();
+    const mesh = new CognitiveMesh(workspace);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let wasAborted = false;
+    mesh.register({
+      id: 'slow-reflection',
+      role: 'reflection',
+      subscriptions: ['utterance'],
+      privacyClearance: 'local-only',
+      activate: async ({ trigger, signal }) => {
+        signal.addEventListener('abort', () => {
+          wasAborted = true;
+        });
+        await gate;
+        return [{
+          kind: 'proposal',
+          producerId: 'slow-reflection',
+          correlationId: trigger.correlationId,
+          salience: 0.7,
+          confidence: 0.6,
+          privacy: 'local-only',
+          provenance: { source: 'test' },
+          payload: { stale: true },
+        }];
+      },
+    });
+    mesh.publish({ ...percept('obsolete-turn'), kind: 'utterance' });
+    await turn();
+    mesh.cancelCorrelation('obsolete-turn');
+    release();
+    await turn();
+    expect(wasAborted).toBe(true);
+    expect(workspace.snapshot({ kinds: ['proposal'] })).toEqual([]);
+    expect(mesh.metrics()[0]).toMatchObject({ cancelled: 1, active: 0 });
+    mesh.stop();
   });
 });

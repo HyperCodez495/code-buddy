@@ -54,6 +54,7 @@ export interface GlobalWorkspaceOptions {
  */
 export class GlobalWorkspace {
   private readonly items = new Map<string, WorkspaceItem>();
+  private readonly slots = new Map<string, string>();
   private readonly capacity: number;
   private readonly defaultTtlMs: number;
   private readonly now: () => number;
@@ -77,13 +78,19 @@ export class GlobalWorkspace {
       return null;
     }
 
+    const slot = draft.dedupeKey ? `${draft.producerId}:${draft.dedupeKey}` : undefined;
+    const previousSlotItem = slot ? this.items.get(this.slots.get(slot) ?? '') : undefined;
     const parents = (draft.provenance.derivedFrom ?? [])
       .map((id) => this.items.get(id))
       .filter((item): item is WorkspaceItem => Boolean(item));
-    const privacy = strongestPrivacy([draft.privacy, ...parents.map((item) => item.privacy)]);
+    const privacy = strongestPrivacy([
+      draft.privacy,
+      ...parents.map((item) => item.privacy),
+      ...(previousSlotItem ? [previousSlotItem.privacy] : []),
+    ]);
     const salience = clamp01(draft.salience);
 
-    if (this.items.size >= this.capacity) {
+    if (!previousSlotItem && this.items.size >= this.capacity) {
       const victim = [...this.items.values()].sort(
         (a, b) => a.salience - b.salience || a.createdAt - b.createdAt,
       )[0];
@@ -91,9 +98,11 @@ export class GlobalWorkspace {
         this.counters.rejected++;
         return null;
       }
-      this.items.delete(victim.id);
+      this.deleteItem(victim);
       this.counters.evicted++;
     }
+
+    if (previousSlotItem) this.deleteItem(previousSlotItem);
 
     const id = `workspace_${createdAt}_${++this.sequence}`;
     const item = cloneAndFreeze<WorkspaceItem<T>>({
@@ -110,8 +119,10 @@ export class GlobalWorkspace {
       payload: draft.payload,
       revision: ++this.revision,
       depth: Math.max(0, Math.floor(draft.depth ?? 0)),
+      ...(draft.dedupeKey ? { dedupeKey: draft.dedupeKey } : {}),
     });
     this.items.set(id, item);
+    if (slot) this.slots.set(slot, id);
     this.counters.published++;
     return cloneAndFreeze(item);
   }
@@ -142,9 +153,9 @@ export class GlobalWorkspace {
 
   pruneExpired(now = this.now()): number {
     let removed = 0;
-    for (const [id, item] of this.items) {
+    for (const item of this.items.values()) {
       if (item.expiresAt > now) continue;
-      this.items.delete(id);
+      this.deleteItem(item);
       removed++;
     }
     this.counters.expired += removed;
@@ -154,5 +165,12 @@ export class GlobalWorkspace {
   metrics(): WorkspaceMetrics {
     this.pruneExpired(this.now());
     return { size: this.items.size, ...this.counters };
+  }
+
+  private deleteItem(item: WorkspaceItem): void {
+    this.items.delete(item.id);
+    if (!item.dedupeKey) return;
+    const slot = `${item.producerId}:${item.dedupeKey}`;
+    if (this.slots.get(slot) === item.id) this.slots.delete(slot);
   }
 }

@@ -12,7 +12,7 @@ interface SpecialistState {
   definition: SpecialistDefinition;
   queue: WorkspaceItem[];
   active: number;
-  controllers: Set<AbortController>;
+  controllers: Map<AbortController, string>;
   latency: number[];
   counters: Omit<SpecialistMetrics, 'id' | 'queued' | 'active' | 'latencyP50Ms' | 'latencyP95Ms'>;
 }
@@ -58,6 +58,7 @@ export class CognitiveMesh {
   private activeTotal = 0;
   private stopped = false;
   private pumpScheduled = false;
+  private readonly cancelledCorrelations = new Map<string, number>();
 
   constructor(
     readonly workspace: GlobalWorkspace,
@@ -80,7 +81,7 @@ export class CognitiveMesh {
       definition,
       queue: [],
       active: 0,
-      controllers: new Set(),
+      controllers: new Map(),
       latency: [],
       counters: {
         processed: 0,
@@ -88,22 +89,32 @@ export class CognitiveMesh {
         coalesced: 0,
         failed: 0,
         deadlineMisses: 0,
+        privacyRejected: 0,
+        cancelled: 0,
       },
     });
   }
 
   publish<T>(draft: WorkspaceDraft<T>): WorkspaceItem<T> | null {
-    if (this.stopped) return null;
+    if (this.stopped || this.cancelledCorrelations.has(draft.correlationId)) return null;
     const item = this.workspace.publish(draft);
     if (item) this.dispatch(item);
     return item;
   }
 
   dispatch(item: WorkspaceItem): void {
-    if (this.stopped || item.depth >= this.maxDepth) return;
+    if (
+      this.stopped ||
+      item.depth >= this.maxDepth ||
+      this.cancelledCorrelations.has(item.correlationId)
+    ) return;
     for (const state of this.specialists.values()) {
       if (state.definition.id === item.producerId) continue;
       if (!state.definition.subscriptions.includes(item.kind)) continue;
+      if (PRIVACY_RANK[item.privacy] > PRIVACY_RANK[state.definition.privacyClearance]) {
+        state.counters.privacyRejected++;
+        continue;
+      }
       this.enqueue(state, item);
     }
     this.schedulePump();
@@ -124,7 +135,27 @@ export class CognitiveMesh {
     this.stopped = true;
     for (const state of this.specialists.values()) {
       state.queue.length = 0;
-      for (const controller of state.controllers) controller.abort('cognitive mesh stopped');
+      for (const controller of state.controllers.keys()) controller.abort('cognitive mesh stopped');
+    }
+  }
+
+  /** Abort queued/active work and reject every late result for an obsolete turn. */
+  cancelCorrelation(correlationId: string): void {
+    if (!correlationId || this.cancelledCorrelations.has(correlationId)) return;
+    this.cancelledCorrelations.set(correlationId, Date.now());
+    if (this.cancelledCorrelations.size > 1024) {
+      const oldest = this.cancelledCorrelations.keys().next().value as string | undefined;
+      if (oldest) this.cancelledCorrelations.delete(oldest);
+    }
+    for (const state of this.specialists.values()) {
+      const before = state.queue.length;
+      state.queue = state.queue.filter((item) => item.correlationId !== correlationId);
+      state.counters.cancelled += before - state.queue.length;
+      for (const [controller, activeCorrelationId] of state.controllers) {
+        if (activeCorrelationId !== correlationId) continue;
+        state.counters.cancelled++;
+        controller.abort(`correlation cancelled: ${correlationId}`);
+      }
     }
   }
 
@@ -203,7 +234,7 @@ export class CognitiveMesh {
     this.activeTotal++;
     this.activeByProvider.set(provider, (this.activeByProvider.get(provider) ?? 0) + 1);
     const controller = new AbortController();
-    state.controllers.add(controller);
+    state.controllers.set(controller, trigger.correlationId);
     const startedAt = this.now();
     const deadlineMs = Math.max(1, Math.floor(state.definition.deadlineMs ?? 30_000));
     const deadline = setTimeout(() => {
@@ -221,6 +252,10 @@ export class CognitiveMesh {
         }),
       )
       .then((drafts) => {
+        if (
+          controller.signal.aborted ||
+          this.cancelledCorrelations.has(trigger.correlationId)
+        ) return;
         state.counters.processed++;
         for (const draft of drafts ?? []) {
           this.publish({
