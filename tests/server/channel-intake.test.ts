@@ -15,21 +15,29 @@ import path from 'path';
 const hoisted = vi.hoisted(() => ({
   onMessage: vi.fn(),
   registerChannel: vi.fn(),
+  unregisterChannel: vi.fn(),
+  getChannel: vi.fn(),
   connect: vi.fn().mockResolvedValue(undefined),
+  disconnect: vi.fn().mockResolvedValue(undefined),
+  telegramConfigs: [] as unknown[],
 }));
 
 vi.mock('../../src/channels/index.js', () => ({
   getChannelManager: () => ({
     onMessage: hoisted.onMessage,
     registerChannel: hoisted.registerChannel,
+    unregisterChannel: hoisted.unregisterChannel,
+    getChannel: hoisted.getChannel,
   }),
 }));
 
 vi.mock('../../src/channels/telegram/index.js', () => ({
   TelegramChannel: class {
     connect = hoisted.connect;
-    disconnect = vi.fn();
-    constructor(_config: unknown) {}
+    disconnect = hoisted.disconnect;
+    constructor(config: unknown) {
+      hoisted.telegramConfigs.push(config);
+    }
   },
 }));
 
@@ -50,6 +58,8 @@ describe('startConfiguredChannels server intake (GAP-7 P2)', () => {
   beforeEach(() => {
     __resetChannelAIHandlerForTests();
     vi.clearAllMocks();
+    hoisted.getChannel.mockReturnValue(undefined);
+    hoisted.telegramConfigs.length = 0;
   });
 
   afterAll(() => {
@@ -92,5 +102,36 @@ describe('startConfiguredChannels server intake (GAP-7 P2)', () => {
     expect(result.registered).toEqual([]);
     // Even with no channels, the inbound loop is wired so a later-started channel works.
     expect(hoisted.onMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses duplicate channel types and uses only the last declaration', async () => {
+    const cfg = writeConfig({
+      channels: [
+        { type: 'telegram', enabled: true, token: 'obsolete-token' },
+        { type: 'telegram', enabled: true, token: 'active-token', options: { name: 'Lisa' } },
+      ],
+    });
+
+    const result = await startConfiguredChannels(cfg, 'telegram');
+
+    expect(result.registered).toEqual(['telegram']);
+    expect(result.deduplicated).toEqual(['telegram']);
+    expect(hoisted.registerChannel).toHaveBeenCalledTimes(1);
+    expect(hoisted.connect).toHaveBeenCalledTimes(1);
+    expect(hoisted.telegramConfigs).toHaveLength(1);
+    expect(hoisted.telegramConfigs[0]).toMatchObject({ token: 'active-token' });
+  });
+
+  it('disconnects an existing runtime before replacing the same channel type', async () => {
+    const existing = { disconnect: hoisted.disconnect };
+    hoisted.getChannel.mockReturnValue(existing);
+    const cfg = writeConfig({ channels: [{ type: 'telegram', enabled: true, token: 'new-token' }] });
+
+    const result = await startConfiguredChannels(cfg, 'telegram');
+
+    expect(result.registered).toEqual(['telegram']);
+    expect(hoisted.disconnect).toHaveBeenCalledTimes(1);
+    expect(hoisted.unregisterChannel).toHaveBeenCalledWith('telegram');
+    expect(hoisted.registerChannel).toHaveBeenCalledTimes(1);
   });
 });

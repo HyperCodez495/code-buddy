@@ -122,6 +122,8 @@ export interface StartConfiguredChannelsResult {
   skipped: string[];
   /** Channel types that failed to start, with the error message. */
   failed: Array<{ type: string; error: string }>;
+  /** Duplicate config entries collapsed by type; the last declaration wins. */
+  deduplicated: string[];
   /** True when no config file/entries were found at all. */
   noConfig: boolean;
 }
@@ -141,22 +143,44 @@ export async function startConfiguredChannels(configPath?: string, onlyType?: st
   const manager = getChannelManager();
   await registerAIMessageHandler(manager);
 
-  const result: StartConfiguredChannelsResult = { registered: [], skipped: [], failed: [], noConfig: false };
+  const result: StartConfiguredChannelsResult = {
+    registered: [],
+    skipped: [],
+    failed: [],
+    deduplicated: [],
+    noConfig: false,
+  };
   const config = loadChannelConfig(configPath);
   if (!config || config.channels.length === 0) {
     result.noConfig = true;
     return result;
   }
 
-  for (const chConfig of config.channels) {
-    if (onlyType && chConfig.type !== onlyType) {
-      continue;
-    }
+  const selected = config.channels.filter((entry) => !onlyType || entry.type === onlyType);
+  const lastByType = new Map<string, (typeof selected)[number]>();
+  const counts = new Map<string, number>();
+  for (const entry of selected) {
+    lastByType.set(entry.type, entry);
+    counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
+  }
+  result.deduplicated = [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([type]) => type);
+
+  for (const chConfig of lastByType.values()) {
     if (!chConfig.enabled) {
       result.skipped.push(chConfig.type);
       continue;
     }
     try {
+      // A repeated admin start or a duplicate config must never leave an old
+      // poller/socket alive behind the manager's type-keyed replacement.
+      const channelType = chConfig.type as import('../../channels/index.js').ChannelType;
+      const existing = manager.getChannel(channelType);
+      if (existing) {
+        await existing.disconnect();
+        manager.unregisterChannel(channelType);
+      }
       const channel = await instantiateChannel(chConfig);
       if (channel) {
         manager.registerChannel(channel);
@@ -414,6 +438,9 @@ export async function handleChannels(action: string, options: ChannelOptions): P
         for (const t of result.registered) {
           console.log(`[OK] ${t} channel started`);
         }
+        for (const t of result.deduplicated) {
+          console.log(`[SKIP] duplicate ${t} config collapsed (last declaration used)`);
+        }
         for (const f of result.failed) {
           console.log(`[FAIL] ${f.type}: ${f.error}`);
         }
@@ -429,6 +456,9 @@ export async function handleChannels(action: string, options: ChannelOptions): P
         }
         for (const t of result.registered) {
           console.log(`[OK] ${t} channel started`);
+        }
+        for (const t of result.deduplicated) {
+          console.log(`[SKIP] duplicate ${t} config collapsed (last declaration used)`);
         }
         for (const t of result.skipped) {
           console.log(`[SKIP] ${t} channel disabled`);
