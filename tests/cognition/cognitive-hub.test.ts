@@ -4,10 +4,12 @@ import {
   CognitiveHubError,
   type CognitivePrincipal,
 } from '../../src/cognition/cognitive-hub.js';
+import { wireSensoryWorkspace } from '../../src/cognition/sensory-workspace.js';
 
 const EVENT_A = '00000000-0000-4000-8000-000000000001';
 const EVENT_B = '00000000-0000-4000-8000-000000000002';
 const EVENT_C = '00000000-0000-4000-8000-000000000003';
+const EVENT_D = '00000000-0000-4000-8000-000000000004';
 
 function principal(
   id: string,
@@ -97,6 +99,140 @@ describe('CognitiveHub', () => {
       })),
       'COGNITION_INVALID_REQUEST',
     );
+  });
+
+  it('canonicalizes network vision into anonymous bounded embodied state', async () => {
+    const hub = new CognitiveHub();
+    const embodied = wireSensoryWorkspace({
+      workspace: hub.workspace,
+      mesh: hub.mesh,
+      worldSweepMs: 0,
+    });
+    const sensor = principal('cowork-camera', [
+      'cognition:write',
+      'cognition:write-local',
+      'cognition:sense',
+    ]);
+    try {
+      const published = hub.publish(sensor, {
+        version: 1,
+        clientEventId: EVENT_A,
+        draft: {
+          kind: 'percept',
+          correlationId: 'cowork-vision-1',
+          salience: 0.8,
+          confidence: 0.91,
+          privacy: 'local-only',
+          payload: {
+            modality: 'vision',
+            kind: 'person_observed',
+            observedAt: Date.now(),
+            sensorId: 'cowork-camera',
+            confidence: 0.91,
+            presenceEpisodeId: 'renderer-episode-raw',
+            occupancyCount: 2,
+            box2d: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+          },
+        },
+      });
+      expect(published.item.payload).toMatchObject({
+        trackerId: expect.stringMatching(/^track-[a-f0-9]{20}$/),
+        occupancyCount: 2,
+        observation2d: {
+          sensorId: 'cowork-camera',
+          x: 0.1,
+          y: 0.2,
+          width: 0.3,
+          height: 0.4,
+        },
+      });
+      expect(JSON.stringify(published.item)).not.toContain('renderer-episode-raw');
+      expect(JSON.stringify(published.item)).not.toContain('presenceEpisodeId');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(embodied.worldModel.get('person-occupancy:cowork-camera')).toMatchObject({
+        visibility: 'visible',
+        attributes: { count: 2 },
+      });
+      expect(embodied.snapshotWorld().find((entity) => entity.type === 'person-track'))
+        .toMatchObject({ visibility: 'visible' });
+    } finally {
+      embodied.close();
+    }
+  });
+
+  it('keeps physical vision local and rejects extra sensor material', () => {
+    const hub = new CognitiveHub();
+    const sensor = principal('cowork-camera', [
+      'cognition:write',
+      'cognition:write-local',
+      'cognition:sense',
+    ]);
+    const percept = {
+      kind: 'percept',
+      correlationId: 'cowork-vision-privacy',
+      salience: 0.8,
+      confidence: 1,
+      privacy: 'local-only',
+      payload: {
+        modality: 'vision',
+        kind: 'camera_alive',
+        observedAt: Date.now(),
+        sensorId: 'cowork-camera',
+        confidence: 1,
+      },
+    };
+    expectCode(
+      () => hub.publish(sensor, {
+        version: 1,
+        clientEventId: EVENT_A,
+        draft: { ...percept, privacy: 'cloud-ok' },
+      }),
+      'COGNITION_FORBIDDEN',
+    );
+    expectCode(
+      () => hub.publish(sensor, {
+        version: 1,
+        clientEventId: EVENT_B,
+        draft: {
+          ...percept,
+          correlationId: 'cowork-vision-extra',
+          payload: { ...percept.payload, imagePath: '/private/frame.jpg' },
+        },
+      }),
+      'COGNITION_INVALID_REQUEST',
+    );
+    expectCode(
+      () => hub.publish(sensor, {
+        version: 1,
+        clientEventId: EVENT_C,
+        draft: {
+          ...percept,
+          correlationId: 'cowork-vision-invalid-box',
+          payload: {
+            ...percept.payload,
+            box2d: { x: 0.9, y: 0.1, width: 0.2, height: 0.2 },
+          },
+        },
+      }),
+      'COGNITION_INVALID_REQUEST',
+    );
+    expectCode(
+      () => hub.publish(sensor, {
+        version: 1,
+        clientEventId: EVENT_D,
+        draft: {
+          ...percept,
+          correlationId: 'cowork-vision-contradiction',
+          payload: {
+            ...percept.payload,
+            kind: 'person_observed',
+            occupancyCount: 0,
+          },
+        },
+      }),
+      'COGNITION_INVALID_REQUEST',
+    );
+    hub.close();
   });
 
   it('enforces write clearance and filters raw snapshots by route privacy', () => {

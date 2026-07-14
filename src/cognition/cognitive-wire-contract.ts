@@ -47,13 +47,71 @@ export const cognitiveSummaryPayloadSchema = z.object({
   tags: z.array(identifier.max(64)).max(16).optional(),
 }).strict();
 
+const normalizedBox2dSchema = z.object({
+  x: z.number().finite().min(0).max(1),
+  y: z.number().finite().min(0).max(1),
+  width: z.number().finite().positive().max(1),
+  height: z.number().finite().positive().max(1),
+}).strict().refine(
+  (box) => box.x + box.width <= 1 && box.y + box.height <= 1,
+  'box2d must fit inside normalized image coordinates',
+);
+
 export const cognitivePerceptPayloadSchema = z.object({
   modality: identifier.max(64),
   kind: identifier.max(64),
   observedAt: z.number().int().nonnegative(),
   sensorId: identifier.max(64),
   confidence: z.number().finite().min(0).max(1),
-}).strict();
+  /** Untrusted detector episode. The hub replaces it with a scoped hash. */
+  presenceEpisodeId: identifier.optional(),
+  occupancyCount: z.number().int().min(0).max(8).optional(),
+  departureConfirmed: z.literal(true).optional(),
+  box2d: normalizedBox2dSchema.optional(),
+}).strict().superRefine((payload, context) => {
+  const hasEmbodiedDetail = payload.presenceEpisodeId !== undefined ||
+    payload.occupancyCount !== undefined ||
+    payload.departureConfirmed !== undefined ||
+    payload.box2d !== undefined;
+  if (hasEmbodiedDetail && payload.modality !== 'vision') {
+    context.addIssue({
+      code: 'custom',
+      message: 'embodied tracking fields require vision modality',
+      path: ['modality'],
+    });
+  }
+  if (payload.box2d && !payload.presenceEpisodeId) {
+    context.addIssue({
+      code: 'custom',
+      message: 'box2d requires an anonymous presence episode',
+      path: ['box2d'],
+    });
+  }
+  if (
+    payload.occupancyCount === 0 &&
+    (payload.kind === 'person_entered' || payload.kind === 'person_observed')
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'a visible person percept cannot report zero visible detections',
+      path: ['occupancyCount'],
+    });
+  }
+  if (payload.occupancyCount !== undefined && payload.occupancyCount > 0 && payload.confidence === 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'positive visible detections require non-zero confidence',
+      path: ['confidence'],
+    });
+  }
+  if (payload.departureConfirmed && payload.kind !== 'person_left') {
+    context.addIssue({
+      code: 'custom',
+      message: 'departureConfirmed is valid only for person_left',
+      path: ['departureConfirmed'],
+    });
+  }
+});
 
 const summaryDraft = <T extends 'fact' | 'hypothesis' | 'goal' | 'plan' | 'proposal' | 'alert'>(
   kind: T,

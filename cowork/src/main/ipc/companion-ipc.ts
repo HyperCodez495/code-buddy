@@ -26,6 +26,7 @@ import type {
   CompanionAvatarRendererSnapshot,
   CompanionAvatarRendererView,
 } from '../../shared/avatar-renderer';
+import { getCoworkVisionCognition } from '../companion/vision-cognition';
 
 type CompanionPerceptModality =
   | 'vision'
@@ -2459,6 +2460,13 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         if (!result.success) {
           return { ok: false as const, error: result.error ?? 'camera snapshot import failed', result };
         }
+        // Best-effort and deliberately non-blocking: saving the explicit
+        // snapshot must not depend on the resident cognitive service.
+        void getCoworkVisionCognition().publishSnapshot({
+          width: input?.width,
+          height: input?.height,
+          mediaPipe: input?.mediaPipe,
+        });
         return { ok: true as const, result };
       } catch (err) {
         logError('[companion.camera.rendererSnapshot] failed:', err);

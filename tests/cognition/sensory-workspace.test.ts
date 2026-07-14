@@ -115,7 +115,7 @@ describe('sensory cognitive workspace shadow adapter', () => {
     }
   });
 
-  it('refreshes tracked 2D position and keeps aggregate occupancy visible when one leaves', async () => {
+  it('refreshes tracked 2D position and keeps aggregate occupancy visible when one track is lost', async () => {
     const cognition = wireSensoryWorkspace({ worldSweepMs: 0 });
     const emit = async (
       kind: string,
@@ -144,7 +144,7 @@ describe('sensory cognitive workspace shadow adapter', () => {
       await emit('person_entered', 'raw-a', 1, { x: 0.1, y: 0.2, width: 0.2, height: 0.4 });
       await emit('person_entered', 'raw-b', 2, { x: 0.6, y: 0.2, width: 0.2, height: 0.4 });
       await emit('person_observed', 'raw-b', 2, { x: 0.5, y: 0.25, width: 0.25, height: 0.5 });
-      await emit('person_left', 'raw-a', 1);
+      await emit('person_lost', 'raw-a', 1);
 
       const world = cognition.snapshotWorld();
       expect(world.filter((entity) => entity.type === 'person-track')).toHaveLength(2);
@@ -155,6 +155,10 @@ describe('sensory cognitive workspace shadow adapter', () => {
       const visibleTrack = world.find((entity) =>
         entity.type === 'person-track' && entity.visibility === 'visible'
       );
+      const uncertainTrack = world.find((entity) =>
+        entity.type === 'person-track' && entity.visibility === 'unknown'
+      );
+      expect(uncertainTrack).toBeDefined();
       expect(visibleTrack?.observation2d).toMatchObject({
         x: 0.5,
         y: 0.25,

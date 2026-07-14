@@ -12,6 +12,13 @@ const electronMock = vi.hoisted(() => {
 });
 
 const coreLoaderMock = vi.hoisted(() => ({ loadCoreModule: vi.fn(), resolveCoreEntry: vi.fn() }));
+const visionCognitionMock = vi.hoisted(() => ({
+  publishSnapshot: vi.fn(async () => ({
+    cameraPublished: true,
+    facesPublished: 1,
+    lossesPublished: 0,
+  })),
+}));
 
 vi.mock('electron', () => ({ ipcMain: { handle: electronMock.handle } }));
 vi.mock('../src/main/utils/core-loader', () => ({
@@ -19,6 +26,9 @@ vi.mock('../src/main/utils/core-loader', () => ({
   resolveCoreEntry: coreLoaderMock.resolveCoreEntry,
 }));
 vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), logError: vi.fn() }));
+vi.mock('../src/main/companion/vision-cognition', () => ({
+  getCoworkVisionCognition: () => visionCognitionMock,
+}));
 
 import { registerLessonCandidateIpcHandlers } from '../src/main/ipc/lessons-candidate-ipc';
 import { registerUserModelIpcHandlers } from '../src/main/ipc/user-model-ipc';
@@ -42,6 +52,7 @@ beforeEach(() => {
   electronMock.handle.mockClear();
   coreLoaderMock.loadCoreModule.mockReset();
   coreLoaderMock.resolveCoreEntry.mockReset();
+  visionCognitionMock.publishSnapshot.mockClear();
 });
 
 describe('lesson-candidate IPC', () => {
@@ -1435,6 +1446,59 @@ describe('companion IPC', () => {
       device: undefined,
       timeoutMs: 5000,
     });
+  });
+
+  it('bridges a successful renderer snapshot into embodied cognition', async () => {
+    const importCameraSnapshot = vi.fn(async () => ({
+      success: true,
+      path: '/tmp/proj/.codebuddy/camera/renderer.png',
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ importCameraSnapshot });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const mediaPipe = {
+      status: 'ok',
+      faces: [{
+        boundingBox: { x: 10, y: 20, width: 30, height: 40 },
+        confidence: 0.9,
+        keypoints: [{ x: 0.1, y: 0.2, z: 0.3 }],
+      }],
+    };
+    const handler = electronMock.handlers.get('companion.camera.rendererSnapshot');
+    const res = await handler?.({}, {
+      dataUrl: 'data:image/png;base64,YQ==',
+      width: 640,
+      height: 480,
+      mediaPipe,
+    }) as { ok: boolean };
+
+    expect(res.ok).toBe(true);
+    expect(importCameraSnapshot).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      dataUrl: 'data:image/png;base64,YQ==',
+      base64: undefined,
+      mediaType: undefined,
+      width: 640,
+      height: 480,
+      mediaPipe,
+      outputPath: undefined,
+    });
+    expect(visionCognitionMock.publishSnapshot).toHaveBeenCalledWith({
+      width: 640,
+      height: 480,
+      mediaPipe,
+    });
+  });
+
+  it('does not publish a failed renderer snapshot as physical evidence', async () => {
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      importCameraSnapshot: vi.fn(async () => ({ success: false, error: 'invalid image' })),
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+    const handler = electronMock.handlers.get('companion.camera.rendererSnapshot');
+    const res = await handler?.({}, { dataUrl: 'bad' }) as { ok: boolean };
+    expect(res.ok).toBe(false);
+    expect(visionCognitionMock.publishSnapshot).not.toHaveBeenCalled();
   });
 
   it('inspects camera snapshots in the active workspace', async () => {

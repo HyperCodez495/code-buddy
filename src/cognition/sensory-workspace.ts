@@ -101,6 +101,60 @@ function plausibleObservedAt(sensorTimestamp: number | undefined, receivedAt: nu
     : receivedAt;
 }
 
+export interface UntrustedSensoryPercept {
+  modality: unknown;
+  kind: unknown;
+  observedAt?: unknown;
+  sensorId?: unknown;
+  confidence?: unknown;
+  presenceEpisodeId?: unknown;
+  occupancyCount?: unknown;
+  departureConfirmed?: unknown;
+  box2d?: unknown;
+}
+
+/**
+ * Canonical trust boundary for embodied percept metadata.
+ *
+ * It deliberately rebuilds the payload from an allowlist. Detector-owned IDs
+ * are scoped and hashed here; raw IDs, images, paths, landmarks and arbitrary
+ * renderer fields therefore cannot enter the cognitive workspace.
+ */
+export function sanitizeSensoryPercept(
+  input: UntrustedSensoryPercept,
+  options: { receivedAt?: number; fallbackConfidence?: number } = {},
+): SafeSensoryPercept | null {
+  if (typeof input.modality !== 'string' || typeof input.kind !== 'string') return null;
+  const modality = input.modality.trim().slice(0, 64);
+  const kind = input.kind.trim().slice(0, 64);
+  if (!modality || !kind) return null;
+  const receivedAt = options.receivedAt ?? Date.now();
+  const sensorId = safeSensorId(input.sensorId);
+  const trackerId = safeTrackerId(input.presenceEpisodeId, sensorId);
+  const occupancyCount = typeof input.occupancyCount === 'number' &&
+    Number.isInteger(input.occupancyCount) &&
+    input.occupancyCount >= 0 &&
+    input.occupancyCount <= 100
+    ? input.occupancyCount
+    : undefined;
+  const observation2d = safeObservation2D(input.box2d, sensorId);
+  const confidence = safeConfidence(input.confidence, options.fallbackConfidence ?? 0.8);
+  return {
+    modality,
+    kind,
+    observedAt: plausibleObservedAt(
+      typeof input.observedAt === 'number' ? input.observedAt : undefined,
+      receivedAt,
+    ),
+    sensorId,
+    confidence,
+    ...(trackerId ? { trackerId } : {}),
+    ...(occupancyCount !== undefined ? { occupancyCount } : {}),
+    ...(input.departureConfirmed === true ? { departureConfirmed: true } : {}),
+    ...(observation2d ? { observation2d } : {}),
+  };
+}
+
 function observationId(percept: SafeSensoryPercept, entityId: string): string {
   return createHash('sha256')
     .update(
@@ -162,11 +216,13 @@ function observationsOf(
     occupancyCount !== undefined
   ) {
     const occupancyId = `person-occupancy:${sensorId}`;
-    const occupancyVisibility = visibility === 'unknown'
-      ? 'unknown'
-      : occupancyCount !== undefined
-        ? occupancyCount > 0 ? 'visible' : 'absent'
-        : visibility;
+    const occupancyVisibility = occupancyCount !== undefined && occupancyCount > 0
+      ? 'visible'
+      : visibility === 'unknown'
+        ? 'unknown'
+        : occupancyCount !== undefined
+          ? 'absent'
+          : visibility;
     observations.push({
       eventId: observationId(trigger.payload, occupancyId),
       entityId: occupancyId,
@@ -265,23 +321,22 @@ export function wireSensoryWorkspace(options: {
       perception.payload && typeof perception.payload === 'object'
         ? perception.payload as Record<string, unknown>
         : {};
-    const observedAt = plausibleObservedAt(perception.tsMs, receivedAt);
     const semanticConfidence = perception.kind === 'person_entered' || perception.kind === 'person_left'
       ? 0.95
       : 0.8;
-    const sensorId = safeSensorId(rawPayload.camera ?? rawPayload.sensorId);
-    const trackerId = safeTrackerId(
-      rawPayload.presenceEpisodeId ?? rawPayload.trackerId ?? rawPayload.trackId,
-      sensorId,
-    );
-    const occupancyCount = typeof rawPayload.occupancyCount === 'number' &&
-      Number.isInteger(rawPayload.occupancyCount) &&
-      rawPayload.occupancyCount >= 0 &&
-      rawPayload.occupancyCount <= 100
-      ? rawPayload.occupancyCount
-      : undefined;
-    const observation2d = safeObservation2D(rawPayload.box2d, sensorId);
-    const departureConfirmed = rawPayload.departureConfirmed === true;
+    const safePercept = sanitizeSensoryPercept({
+      modality: perception.modality,
+      kind: perception.kind,
+      observedAt: perception.tsMs,
+      sensorId: rawPayload.camera ?? rawPayload.sensorId,
+      confidence: rawPayload.confidence,
+      presenceEpisodeId:
+        rawPayload.presenceEpisodeId ?? rawPayload.trackerId ?? rawPayload.trackId,
+      occupancyCount: rawPayload.occupancyCount,
+      departureConfirmed: rawPayload.departureConfirmed,
+      box2d: rawPayload.box2d,
+    }, { receivedAt, fallbackConfidence: semanticConfidence });
+    if (!safePercept) return;
     const rawSceneDescription = perception.kind === 'scene_described' &&
       typeof rawPayload.description === 'string'
       ? rawPayload.description
@@ -299,22 +354,11 @@ export function wireSensoryWorkspace(options: {
       producerId: `sense:${perception.modality}`,
       correlationId,
       salience: Math.max(0, Math.min(1, (perception.salience ?? 0) / 255)),
-      confidence: safeConfidence(rawPayload.confidence, semanticConfidence),
+      confidence: safePercept.confidence,
       privacy: 'local-only',
       provenance: { source: 'sensory-bridge' },
       ttlMs: 10_000,
-      payload: {
-        modality: perception.modality,
-        kind: perception.kind,
-        observedAt,
-        sensorId,
-        confidence: safeConfidence(rawPayload.confidence, semanticConfidence),
-        ...(trackerId ? { trackerId } : {}),
-        ...(occupancyCount !== undefined ? { occupancyCount } : {}),
-        ...(departureConfirmed ? { departureConfirmed: true } : {}),
-        ...(observation2d ? { observation2d } : {}),
-        ...(sceneSummary ? { sceneSummary } : {}),
-      },
+      payload: sceneSummary ? { ...safePercept, sceneSummary } : safePercept,
     });
     if (projectedSceneSummary) {
       mesh.publish({
@@ -326,10 +370,10 @@ export function wireSensoryWorkspace(options: {
         privacy: scenePrivacy,
         provenance: { source: 'local-vision-description' },
         ttlMs: 45_000,
-        dedupeKey: scenePrivacy === 'local-only' ? `scene:${sensorId}` : 'scene:egress',
+        dedupeKey: scenePrivacy === 'local-only' ? `scene:${safePercept.sensorId}` : 'scene:egress',
         payload: {
           summary: scenePrivacy === 'local-only'
-            ? `Description visuelle non vérifiée (${sensorId}) : ${projectedSceneSummary}`
+            ? `Description visuelle non vérifiée (${safePercept.sensorId}) : ${projectedSceneSummary}`
             : `Description visuelle non vérifiée (caméra locale) : ${projectedSceneSummary}`,
         },
       });

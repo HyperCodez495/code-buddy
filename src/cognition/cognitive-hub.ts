@@ -21,6 +21,7 @@ import {
   type CognitiveContextProjection,
 } from './context-renderer.js';
 import { GlobalWorkspace } from './global-workspace.js';
+import { sanitizeSensoryPercept } from './sensory-workspace.js';
 import type { WorkspaceItem, WorkspaceKind, WorkspacePrivacy } from './types.js';
 
 const PRIVACY_RANK: Record<WorkspacePrivacy, number> = {
@@ -205,6 +206,32 @@ export class CognitiveHub {
 
     this.assertWritePrivacy(principal, request.draft.privacy);
     if (request.draft.kind === 'percept') this.requireScope(principal, 'cognition:sense');
+    let canonicalPayload: unknown = request.draft.payload;
+    if (request.draft.kind === 'percept') {
+      if (request.draft.payload.modality === 'vision' && request.draft.privacy !== 'local-only') {
+        throw new CognitiveHubError(
+          'COGNITION_FORBIDDEN',
+          'embodied vision percepts must remain local-only',
+        );
+      }
+      const rawEpisodeId = request.draft.payload.presenceEpisodeId;
+      canonicalPayload = sanitizeSensoryPercept({
+        ...request.draft.payload,
+        ...(rawEpisodeId
+          ? {
+            presenceEpisodeId: createHash('sha256')
+              .update(`${principal.id}\0${rawEpisodeId}`)
+              .digest('hex'),
+          }
+          : {}),
+      }, { receivedAt: Date.now() });
+      if (!canonicalPayload) {
+        throw new CognitiveHubError(
+          'COGNITION_INVALID_REQUEST',
+          'percept payload could not be canonicalized',
+        );
+      }
+    }
     if (this.cancelledCorrelations.has(request.draft.correlationId)) {
       throw new CognitiveHubError('CORRELATION_CANCELLED', 'correlation has been cancelled');
     }
@@ -240,7 +267,7 @@ export class CognitiveHub {
         source: `cognitive-bus:${safeIdentity(principal.source)}`,
         ...(parents.length > 0 ? { derivedFrom: parents.map((parent) => parent.id) } : {}),
       },
-      payload: request.draft.payload,
+      payload: canonicalPayload,
       ttlMs: request.draft.ttlMs,
       depth: parents.length > 0 ? Math.max(...parents.map((parent) => parent.depth)) + 1 : 0,
       dedupeKey: request.draft.dedupeKey,
