@@ -241,4 +241,27 @@ describe('conversation quality and fresh context', () => {
     expect(formatted.speech).toContain('collectés le 14 juillet 2026');
     expect(formatted.citations).toHaveLength(4);
   });
+
+  it('skips ellipsis fragments ending on a French connector', () => {
+    const formatted = formatNewsDigest({
+      kind: 'news',
+      query: 'actualités importantes France monde',
+      locale: 'fr-FR',
+      fetchedAt: Date.parse('2026-07-14T18:00:00Z'),
+      items: [
+        {
+          title: 'franceinfo - Actualités en temps réel et info en direct',
+          url: 'https://www.franceinfo.fr/',
+          source: 'www.franceinfo.fr',
+          summary:
+            'Tour de France 2026 : pas de ... il y a des femmes et des hommes&quot; : Flora Gorse, réserviste en Guyane, défile pour le 14 juillet à Paris...',
+        },
+      ],
+    });
+
+    expect(formatted.speech).toContain('1, Flora Gorse');
+    expect(formatted.speech).not.toContain('Il y a des femmes');
+    expect(formatted.speech).not.toContain('Tour de France 2026 : pas de');
+    expect(formatted.citations[0]?.title).toMatch(/^Flora Gorse/);
+  });
 });

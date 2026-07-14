@@ -57,6 +57,10 @@ function foldForMatch(value: string): string {
 function normalizeSummaryCandidate(value: string): string {
   let candidate = cleanSentence(value)
     .replace(/^(?:nouvelle notification|en direct|direct)\s*/i, '')
+    // An ellipsis can remove the opening half of a quote while leaving
+    // `… des hommes" : Flora Gorse …`. Drop only that unmatched quoted lead;
+    // the attributed subject after the colon is the useful headline.
+    .replace(/^[^"«“]{1,120}["»”]\s*:\s*/u, '')
     .replace(/\s+\d+\s*(?:min|h\d*|heures?)$/i, '')
     .replace(/\s+(?:publie|mis a jour)\s+le\s+\d{1,2}\b.*$/i, '')
     .trim();
@@ -75,6 +79,13 @@ function isConcreteSummaryCandidate(value: string): boolean {
   if (!value || value.length < 24 || value.includes('�')) return false;
   const folded = foldForMatch(value);
   if (GENERIC_NEWS_SUMMARY.test(folded) || GENERIC_NEWS_TITLE.test(folded)) return false;
+  // Search snippets are frequently cut at an ellipsis. A fragment such as
+  // “Tour de France 2026 : pas de…” can satisfy the length/word thresholds but
+  // is not a usable headline. Reject candidates ending on a French connector
+  // or determiner so extraction can continue with the next concrete segment.
+  if (/\b(?:a|au|aux|avec|dans|de|des|du|et|la|le|les|ou|par|pour|que|qui|sans|sur|un|une)\s*$/i.test(folded)) {
+    return false;
+  }
   const words = folded.split(' ').filter(Boolean);
   if (words.length < 5) return false;
 
