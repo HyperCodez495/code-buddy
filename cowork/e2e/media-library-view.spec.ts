@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 
-test('the new shell opens the media library without a lazy-module crash', async ({ appPage }) => {
+test('the new shell opens both media-library entries without a lazy-module crash', async ({ appPage }) => {
   const relevantErrors: string[] = [];
   appPage.on('pageerror', (error) => {
     if (/MediaLibrary(View|Panel)|Cannot read properties of undefined/.test(error.message)) {
@@ -37,6 +37,12 @@ test('the new shell opens the media library without a lazy-module crash', async 
     await tour.getByRole('button', { name: 'Passer', exact: true }).click();
     await expect(tour).toBeHidden();
   }
+
+  await appPage.getByTitle('Créations', { exact: true }).click();
+  await expect(appPage.getByTestId('creations-view')).toBeVisible();
+  await appPage.getByRole('button', { name: 'Médias', exact: true }).click();
+  await expect(appPage.getByTestId('media-library-panel')).toBeVisible();
+
   await appPage.getByTitle('Bibliothèque', { exact: true }).click();
 
   await expect(appPage.getByTestId('media-library-view')).toBeVisible();

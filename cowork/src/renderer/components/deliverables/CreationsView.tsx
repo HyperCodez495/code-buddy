@@ -10,6 +10,7 @@ import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 're
 import { FileDown, FileText, FolderOpen, Image as ImageIcon, LibraryBig, Loader2, Presentation, Radio, Table2, Clapperboard } from 'lucide-react';
 
 import { useAppStore } from '../../store';
+import { resolveLazyNamedExport } from '../../utils/vite-preload-recovery.js';
 
 const DeckStudioPanel = lazy(() => import('./DeckStudioPanel.js').then((m) => ({ default: m.DeckStudioPanel })));
 const SheetStudioPanel = lazy(() => import('./SheetStudioPanel.js').then((m) => ({ default: m.SheetStudioPanel })));
@@ -18,7 +19,11 @@ const PodStudioPanel = lazy(() => import('./PodStudioPanel.js').then((m) => ({ d
 const ImageStudioPanel = lazy(() => import('./ImageStudioPanel.js').then((m) => ({ default: m.ImageStudioPanel })));
 const VideoStudioPanel = lazy(() => import('./VideoStudioPanel.js').then((m) => ({ default: m.VideoStudioPanel })));
 const DrivePanel = lazy(() => import('./DrivePanel.js').then((m) => ({ default: m.DrivePanel })));
-const MediaLibraryPanel = lazy(() => import('./MediaLibraryPanel.js').then((m) => ({ default: m.MediaLibraryPanel })));
+const MediaLibraryPanel = lazy(() =>
+  import('./MediaLibraryPanel.js').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.MediaLibraryPanel),
+  ),
+);
 
 interface StudioTab {
   id: string;
