@@ -9,11 +9,16 @@ vi.mock('../../src/sensory/alert.js', () => ({
 }));
 
 import { sayNow } from '../../src/sensory/voice-loop.js';
+import {
+  _resetVoiceActivityForTests,
+  classifyRecentVoiceEcho,
+} from '../../src/sensory/voice-activity.js';
 
 describe('sayNow phone delivery policy', () => {
   const previous = process.env.CODEBUDDY_VOICE_TO_TELEGRAM;
 
   beforeEach(() => {
+    _resetVoiceActivityForTests();
     process.env.CODEBUDDY_VOICE_TO_TELEGRAM = 'true';
     phone.sendTelegramVoice.mockClear();
   });
@@ -40,5 +45,16 @@ describe('sayNow phone delivery policy', () => {
     });
 
     expect(phone.sendTelegramVoice).toHaveBeenCalledWith('Annonce téléphonique.');
+  });
+
+  it('registers locally played speech for transient echo discrimination', async () => {
+    await sayNow('Une phrase prononcée dans la pièce.', {
+      phoneDelivery: 'never',
+      synth: async () => '/tmp/say-now-echo.wav',
+      play: async () => undefined,
+    });
+
+    expect(classifyRecentVoiceEcho('Une phrase prononcée dans la pièce.')).toBe('echo');
+    expect(classifyRecentVoiceEcho('Une réponse humaine différente.')).toBe('distinct');
   });
 });

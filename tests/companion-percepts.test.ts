@@ -113,6 +113,11 @@ describe('companion percept store', () => {
           avgRms: 0.05,
           rmsOn: 0.04,
         },
+        turnTaking: {
+          kind: 'echo_tail',
+          resumeAfterPlaybackMs: 300,
+          earReadyInMs: 900,
+        },
         responseMode: 'streamed',
       },
       tags: ['speech', 'stt', 'latency'],
@@ -143,6 +148,10 @@ describe('companion percept store', () => {
           avgRms: 0.025,
           rmsOn: 0.04,
         },
+        turnTaking: {
+          kind: 'after_playback',
+          resumeAfterPlaybackMs: 1_800,
+        },
         responseMode: 'blocking',
       },
       tags: ['speech', 'stt', 'latency'],
@@ -161,16 +170,26 @@ describe('companion percept store', () => {
     expect(stats.voice?.latency.totalMs?.p95).toBe(6200);
     expect(stats.voice?.latency.firstAudioMs?.p50).toBe(90);
     expect(stats.voice?.latency.perceivedResponseMs?.p95).toBe(4380);
+    expect(stats.voice?.latency.resumeAfterPlaybackMs?.p50).toBe(300);
+    expect(stats.voice?.latency.resumeAfterPlaybackMs?.p95).toBe(1800);
     expect(stats.voice?.latest?.responseMode).toBe('blocking');
+    expect(stats.voice?.latest?.turnTakingKind).toBe('after_playback');
+    expect(stats.voice?.latest?.resumeAfterPlaybackMs).toBe(1800);
     expect(stats.voice?.capture.signalMargin?.min).toBeCloseTo(1.25, 2);
     expect(stats.voice?.health.slowSttCount).toBe(1);
     expect(stats.voice?.health.slowLoopCount).toBe(1);
     expect(stats.voice?.health.weakSignalCount).toBe(1);
+    expect(stats.voice?.health.echoTailResumeCount).toBe(1);
+    expect(stats.voice?.health.playbackBargeInCount).toBe(0);
+    expect(stats.voice?.health.suppressedEchoCount).toBe(0);
 
     const formatted = formatCompanionPerceptStats(stats);
     expect(formatted).toContain('Voice loop');
     expect(formatted).toContain('p95=3100ms');
     expect(formatted).toContain('perceived response');
+    expect(formatted).toContain('human resume after playback');
+    expect(formatted).toContain('quickResume=1');
+    expect(formatted).toContain('resume=1800ms');
     expect(formatted).toContain('mode=blocking');
     expect(formatted).toContain('weakSignal=1');
     expect(formatted).toContain('device=hw:Webcam,0');

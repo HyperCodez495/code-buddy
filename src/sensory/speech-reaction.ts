@@ -21,7 +21,11 @@ import type { ChildProcessWithoutNullStreams } from 'child_process';
 import type { Interface as ReadlineInterface } from 'readline';
 import { getGlobalEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
-import { isSpeaking } from './voice-activity.js';
+import {
+  classifyRecentVoiceEcho,
+  isSpeaking,
+  measureVoiceResumeTiming,
+} from './voice-activity.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
 import {
@@ -1152,10 +1156,12 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   let activeWav: string | undefined;
   let disposed = false;
   let liveSeq = 0; // unique dedup key for live-mic finals (there's no WAV to key on)
+  let pendingSpeechStartedAtMs: number | undefined;
   type SpeechJob = {
     p: ReturnType<typeof perceptionOf>;
     wav: string;
     presetText?: string;
+    speechStartedAtMs?: number;
   };
   let pendingSpeech: SpeechJob | null = null;
   let heldLiveTurn: {
@@ -1163,6 +1169,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     text: string;
     key: string;
     timer: ReturnType<typeof setTimeout>;
+    speechStartedAtMs?: number;
   } | null = null;
 
   const cleanupSpeechJob = async (job: SpeechJob): Promise<void> => {
@@ -1184,7 +1191,11 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     bypassDebounce = false
   ): void => {
     const t = now();
-    if (isSpeaking(t)) {
+    const voiceResume = job.speechStartedAtMs !== undefined
+      ? measureVoiceResumeTiming(job.speechStartedAtMs)
+      : undefined;
+    const quickPostPlaybackResume = voiceResume?.kind === 'echo_tail';
+    if (isSpeaking(t) && !quickPostPlaybackResume) {
       void cleanupSpeechJob(job);
       return; // half-duplex: ignore the mic while the robot is speaking (+ echo tail)
     }
@@ -1199,7 +1210,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     void (async () => {
       const payload = (job.p.payload as Record<string, unknown> | undefined) ?? {};
       const eventTimestamp = finiteTimestamp(job.p.receivedAt);
-      const captureStartedAtMs = finiteTimestamp(payload.startedAtMs);
+      const captureStartedAtMs = job.speechStartedAtMs ?? finiteTimestamp(payload.startedAtMs);
       const captureEndedAtMs = finiteTimestamp(payload.endedAtMs) ?? finiteTimestamp(job.p.tsMs);
       const endpointMs = finiteTimestamp(payload.endpointMs);
       const decodeMs = finiteTimestamp(payload.decodeMs);
@@ -1285,6 +1296,34 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           );
           return;
         }
+        const echoClassification = voiceResume?.kind === 'echo_tail'
+          ? classifyRecentVoiceEcho(text, captureStartedAtMs ?? transcribeStartMs)
+          : undefined;
+        if (
+          voiceResume?.kind === 'echo_tail'
+          && echoClassification !== 'distinct'
+        ) {
+          logger.info(`[speech] suppressed ${echoClassification} playback echo during acoustic tail`);
+          await recordCompanionPercept(
+            {
+              modality: 'hearing',
+              source: 'sensory_speech_reaction',
+              summary: 'Likely loudspeaker echo suppressed',
+              confidence: echoClassification === 'echo' ? 0.95 : 0.6,
+              payload: {
+                responded: false,
+                playbackEcho: true,
+                echoClassification,
+                turnTaking: voiceResume,
+                latency: latencyPayload,
+                capture: capturePayload,
+              },
+              tags: ['speech', 'echo', 'turn-taking'],
+            },
+            options.cwd ? { cwd: options.cwd } : {},
+          );
+          return;
+        }
         logger.info(`[speech] heard (${sttMs}ms STT) → ${text}`);
 
         let responded = Boolean(options.onHeard);
@@ -1363,6 +1402,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
                 ...(responseTiming ? { voiceTotalMs: responseTiming.totalMs } : {}),
               },
               ...(responseTiming ? { responseMode: responseTiming.mode, spoke } : {}),
+              ...(voiceResume ? { turnTaking: voiceResume } : {}),
               capture: {
                 ...capturePayload,
               },
@@ -1419,8 +1459,11 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     // human's speaking time for preparation, but keep the response decision on
     // `transcript_final`: television/noise can warm a standby, never make it talk.
     if (p.kind === 'speech_start') {
+      const payload = (p.payload as Record<string, unknown> | undefined) ?? {};
+      pendingSpeechStartedAtMs = finiteTimestamp(payload.startedAtMs)
+        ?? finiteTimestamp(p.receivedAt)
+        ?? now();
       if (options.onSpeechStart) {
-        const payload = (p.payload as Record<string, unknown> | undefined) ?? {};
         void Promise.resolve().then(() => options.onSpeechStart!(payload)).catch((error) => {
           logger.debug('[speech] predictive warmup skipped', {
             error: error instanceof Error ? error.message : String(error),
@@ -1435,12 +1478,17 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     // no WAV / no STT. Keyed on a synthetic id since there's no file to dedup on.
     if (p.kind === 'transcript_final') {
       const livePayload = p.payload as { text?: string; turnDetector?: string } | undefined;
+      let speechStartedAtMs = finiteTimestamp(
+        (p.payload as Record<string, unknown> | undefined)?.startedAtMs,
+      ) ?? pendingSpeechStartedAtMs;
+      pendingSpeechStartedAtMs = undefined;
       let text = livePayload?.text?.trim();
       if (!text) return;
       const key = `live:${liveSeq++}`;
       if (heldLiveTurn) {
         clearTimeout(heldLiveTurn.timer);
         text = joinVoiceTurnFragments(heldLiveTurn.text, text);
+        speechStartedAtMs = heldLiveTurn.speechStartedAtMs ?? speechStartedAtMs;
         heldLiveTurn = null;
       }
       // Smart Turn has already considered prosody and the complete audio. The
@@ -1454,11 +1502,24 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           const held = heldLiveTurn;
           if (!held || held.key !== key || disposed) return;
           heldLiveTurn = null;
-          const job = { p: held.p, wav: held.key, presetText: held.text };
+          const job = {
+            p: held.p,
+            wav: held.key,
+            presetText: held.text,
+            ...(held.speechStartedAtMs !== undefined
+              ? { speechStartedAtMs: held.speechStartedAtMs }
+              : {}),
+          };
           if (inFlight) queuePendingSpeech(job);
           else startSpeechJob(job);
         }, incompleteTurnHoldMs);
-        heldLiveTurn = { p, text, key, timer };
+        heldLiveTurn = {
+          p,
+          text,
+          key,
+          timer,
+          ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+        };
         logger.debug(`[speech] holding likely incomplete turn for ${incompleteTurnHoldMs}ms → ${text}`);
         return;
       }
@@ -1471,25 +1532,49 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
             /* interruption is best-effort; still queue the new utterance */
           }
         }
-        if (key !== activeWav) queuePendingSpeech({ p, wav: key, presetText: text });
+        if (key !== activeWav) {
+          queuePendingSpeech({
+            p,
+            wav: key,
+            presetText: text,
+            ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+          });
+        }
         return;
       }
-      startSpeechJob({ p, wav: key, presetText: text });
+      startSpeechJob({
+        p,
+        wav: key,
+        presetText: text,
+        ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+      });
       return;
     }
 
     if (p.kind !== 'speech_end') return;
     const wav = (p.payload as { wav?: string } | undefined)?.wav;
+    const speechStartedAtMs = finiteTimestamp(
+      (p.payload as Record<string, unknown> | undefined)?.startedAtMs,
+    ) ?? pendingSpeechStartedAtMs;
+    pendingSpeechStartedAtMs = undefined;
     if (!wav) return; // no audio to transcribe (the batch path needs a WAV)
 
     if (inFlight) {
       if (wav !== activeWav) {
-        queuePendingSpeech({ p, wav });
+        queuePendingSpeech({
+          p,
+          wav,
+          ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+        });
       }
       return;
     }
 
-    startSpeechJob({ p, wav });
+    startSpeechJob({
+      p,
+      wav,
+      ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+    });
   });
 
   return () => {

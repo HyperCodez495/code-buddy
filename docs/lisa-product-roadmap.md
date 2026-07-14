@@ -151,6 +151,12 @@ garantissant une seule écriture physique par événement.
 - Prosodie pilotée par intention, sans surjouer systématiquement l'émotion.
 - Mesures de latence perception → premier son et fin de parole → reprise utilisateur.
 
+La boucle mesure désormais le début de réponse humaine par rapport au dernier intervalle de lecture :
+pendant la parole (barge-in), pendant la traîne anti-écho ou après réouverture normale. Une empreinte
+en mémoire vive des segments prononcés permet de supprimer un écho correspondant tout en acceptant
+une réponse distincte avant la fin des 1,2 seconde de garde. Les percepts conservent les durées et le
+type de reprise ; les statistiques compagnon publient p50/p95 et compteurs agrégés sans verbatim.
+
 ### P4 — Lisa MetaHuman
 
 - Définir une identité visuelle originale dans une bible d'avatar.

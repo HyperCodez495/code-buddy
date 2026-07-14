@@ -491,7 +491,7 @@ les événements de l'oreille Rust. Toute panne revient au VAD sans rendre Lisa 
 Chaque percept `hearing` garde aussi la qualité de capture et la latence de
 boucle (`peakRms`, `avgRms`, seuils VAD, `sttMs`, `decisionMs`, `actionMs`,
 `firstTextMs`, `firstSegmentMs`, `firstAudioMs`, `firstContentAudioMs`,
-`perceivedResponseMs`, `totalMs`,
+`perceivedResponseMs`, `totalMs`, `resumeAfterPlaybackMs` et `turnTaking.kind`,
 mode `streamed|blocking`, device ALSA).
 `firstAudioMs` mesure le début du son dans l'action vocale ; `perceivedResponseMs`
 mesure ce que tu ressens réellement, de la transcription au premier son. Si la voix s'éloigne du temps réel,
@@ -505,6 +505,12 @@ Les réponses de bavardage sont parlées dès leur première phrase (streaming),
 `CODEBUDDY_SPEECH_DEBOUNCE_MS=800` évite les doublons micro sans imposer l'ancienne
 pause de quatre secondes entre deux tours. Le garde anti-écho reste indépendant
 (`CODEBUDDY_SENSORY_ECHO_TAIL_MS`, 1200 ms par défaut).
+Une réponse humaine qui commence pendant cette traîne n'est plus jetée aveuglément : Lisa mesure
+l'écart depuis la fin de lecture et compare la transcription à une empreinte uniquement volatile
+des derniers segments diffusés. Un écho correspondant reste silencieux et n'est pas recopié dans le
+journal ; une phrase distincte poursuit immédiatement la conversation. `buddy companion percepts
+stats` expose les distributions de reprise ainsi que les compteurs `quickResume`, `bargeIn` et
+`echoSuppressed`, sans ajouter de verbatim aux agrégats.
 Au démarrage, la route vocale est résolue en arrière-plan, le modèle Ollama choisi est
 chargé sans générer de texte et gardé résident 30 minutes, puis rafraîchi toutes les
 15 minutes (`CODEBUDDY_VOICE_MODEL_KEEP_ALIVE`, `CODEBUDDY_VOICE_MODEL_REFRESH_MS`).

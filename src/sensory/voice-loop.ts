@@ -43,7 +43,11 @@ import {
 import { conversationTokenBudget } from '../conversation/discourse-planner.js';
 import { commandExists } from '../utils/command-exists.js';
 import { inferTaskType } from '../fleet/model-capability-heuristics.js';
-import { withSpeakingGuard, interruptSpeaking } from './voice-activity.js';
+import {
+  withSpeakingGuard,
+  interruptSpeaking,
+  noteSpokenText,
+} from './voice-activity.js';
 import { prepareSpeech } from './speech-sanitizer.js';
 import { matchVoiceInteraction, VOICE_INTERACTION_PREWARM_PHRASES } from './voice-interactions.js';
 import {
@@ -1702,7 +1706,10 @@ export async function sayNow(
     const wav = await synth(t, { signal: options.signal });
     if (wav) {
       // Half-duplex: mute the ear while speaking. The signal lets barge-in kill this player too.
-      await withSpeakingGuard(() => play(wav, { signal: options.signal }));
+      await withSpeakingGuard(() => {
+        noteSpokenText(t);
+        return play(wav, { signal: options.signal });
+      });
       try {
         const { unlink } = await import('fs/promises');
         await unlink(wav);
@@ -1961,27 +1968,30 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       publishTurn({ role: 'assistant', content });
     };
     publishTurn({ role: 'user', content: heard });
-    const streamedWavIsContent = new Map<string, boolean>();
+    const streamedWavMetadata = new Map<string, { isContent: boolean; text: string }>();
     const timedPlay: PlayFn = async (wav, opts) => {
+      const metadata = streamedWavMetadata.get(wav);
+      if (metadata) noteSpokenText(metadata.text);
       if (firstAudioMs === undefined) firstAudioMs = Date.now() - startedAt;
       await publishAvatarBufferedWav(wav);
       markAvatarSpeechStarted();
       if (
         firstContentAudioMs === undefined &&
-        streamedWavIsContent.get(wav) !== false
+        metadata?.isContent !== false
       ) {
         firstContentAudioMs = Date.now() - startedAt;
       }
       try {
         await play(wav, opts);
       } finally {
-        streamedWavIsContent.delete(wav);
+        streamedWavMetadata.delete(wav);
       }
     };
     const timedStreamSpeak: StreamSpeakFn | undefined = nativeStreamSpeak
       ? async (text, opts = {}) => {
             if (firstSegmentMs === undefined) firstSegmentMs = Date.now() - startedAt;
             emitAvatarSegment(text);
+            noteSpokenText(text);
             const isBackchannel = INSTANT_BACKCHANNELS.has(text.trim());
             const publisher = createAvatarAudioPublisher('live');
             let streamed = false;
@@ -2084,7 +2094,12 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             baseSynthPromise ??= resolveSynth();
             const baseSynth = await baseSynthPromise;
             const wav = await baseSynth(text, synthOpts);
-            if (wav) streamedWavIsContent.set(wav, !INSTANT_BACKCHANNELS.has(text.trim()));
+            if (wav) {
+              streamedWavMetadata.set(wav, {
+                isContent: !INSTANT_BACKCHANNELS.has(text.trim()),
+                text,
+              });
+            }
             return wav;
           };
           const result = await streamToSpeech({
@@ -2203,7 +2218,10 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       // Interrupted during synth → don't start playback.
       if (signal.aborted) return;
       const playStart = Date.now();
-      await withSpeakingGuard(() => timedPlay(wav, { signal })); // half-duplex + interruptible
+      await withSpeakingGuard(() => {
+        noteSpokenText(reply);
+        return timedPlay(wav, { signal });
+      }); // half-duplex + interruptible
       playMs = Date.now() - playStart;
       // A barge-in kills the player early; don't claim we "spoke" the whole line.
       if (signal.aborted) return;

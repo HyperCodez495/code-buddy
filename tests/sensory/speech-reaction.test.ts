@@ -14,6 +14,12 @@ import {
 } from '../../src/sensory/speech-reaction.js';
 import { createResponseDecider } from '../../src/sensory/respond-decider.js';
 import { getGlobalEventBus } from '../../src/events/event-bus.js';
+import {
+  _resetVoiceActivityForTests,
+  beginSpeaking,
+  endSpeaking,
+  noteSpokenText,
+} from '../../src/sensory/voice-activity.js';
 
 function speechEnd(wav?: string, payload: Record<string, unknown> = {}): void {
   getGlobalEventBus().emit('sensory:perception', {
@@ -525,6 +531,94 @@ describe('speech reaction — speech_end → STT → percept', () => {
       expect(percept.payload.capture.turnProbability).toBe(0.91);
     } finally {
       unwire();
+    }
+  });
+
+  it('accepts a distinct human reply that starts inside the acoustic echo tail', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-quick-resume-'));
+    const heard: string[] = [];
+    _resetVoiceActivityForTests();
+    beginSpeaking(1_000);
+    noteSpokenText('La conscience dépend aussi de la mémoire.', 1_100);
+    endSpeaking(2_000);
+    const unwire = wireSpeechReaction({
+      debounceMs: 0,
+      cwd: tmp,
+      now: () => 2_400,
+      onHeard: async text => {
+        heard.push(text);
+      },
+      getResponseTiming: () => ({
+        mode: 'silent',
+        totalMs: 0,
+        spoke: false,
+      }),
+    });
+    try {
+      transcriptFinal('Et la réciprocité alors ?', { startedAtMs: 2_400 });
+      await tick();
+
+      expect(heard).toEqual(['Et la réciprocité alors ?']);
+      const raw = await readFile(
+        path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'),
+        'utf8',
+      );
+      const percept = JSON.parse(raw.trim()) as {
+        payload: { playbackEcho?: boolean; turnTaking?: Record<string, unknown> };
+      };
+      expect(percept.payload.playbackEcho).toBeUndefined();
+      expect(percept.payload.turnTaking).toMatchObject({
+        kind: 'echo_tail',
+        resumeAfterPlaybackMs: 400,
+        earReadyInMs: 800,
+      });
+    } finally {
+      unwire();
+      _resetVoiceActivityForTests();
+    }
+  });
+
+  it('suppresses a matching loudspeaker echo during the same tail without storing it', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-echo-tail-'));
+    const heard: string[] = [];
+    _resetVoiceActivityForTests();
+    beginSpeaking(3_000);
+    noteSpokenText('Voici la réponse que Lisa vient de prononcer.', 3_100);
+    endSpeaking(4_000);
+    const unwire = wireSpeechReaction({
+      debounceMs: 0,
+      cwd: tmp,
+      now: () => 4_250,
+      onHeard: async text => {
+        heard.push(text);
+      },
+    });
+    try {
+      transcriptFinal('Voici la réponse que Lisa vient de prononcer.', { startedAtMs: 4_250 });
+      await tick();
+
+      expect(heard).toEqual([]);
+      const raw = await readFile(
+        path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'),
+        'utf8',
+      );
+      expect(raw).not.toContain('Voici la réponse que Lisa vient de prononcer.');
+      const percept = JSON.parse(raw.trim()) as {
+        summary: string;
+        payload: Record<string, unknown>;
+      };
+      expect(percept.summary).toBe('Likely loudspeaker echo suppressed');
+      expect(percept.payload).toMatchObject({
+        playbackEcho: true,
+        echoClassification: 'echo',
+        turnTaking: {
+          kind: 'echo_tail',
+          resumeAfterPlaybackMs: 250,
+        },
+      });
+    } finally {
+      unwire();
+      _resetVoiceActivityForTests();
     }
   });
 

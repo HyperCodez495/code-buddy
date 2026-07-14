@@ -36,6 +36,7 @@ import {
   type CompanionMediaPipeVisionAnalysis,
 } from '../services/companion/mediapipe-vision';
 import { speakText } from './VoiceOutputToggle';
+import { CompanionVoiceMetrics } from './companion/CompanionVoiceMetrics';
 import type {
   CameraSnapshotInspectionResult,
   CameraSnapshotResult,
@@ -3890,6 +3891,7 @@ export function CompanionPanel() {
                 ))}
               </div>
             )}
+            {stats?.voice ? <CompanionVoiceMetrics voice={stats.voice} /> : null}
           </section>
 
           <section className="space-y-2">

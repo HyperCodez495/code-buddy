@@ -72,6 +72,8 @@ export interface CompanionVoiceLoopStats {
     totalMs?: number;
     firstAudioMs?: number;
     perceivedResponseMs?: number;
+    resumeAfterPlaybackMs?: number;
+    turnTakingKind?: string;
     responseMode?: string;
     peakRms?: number;
     rmsOn?: number;
@@ -84,6 +86,7 @@ export interface CompanionVoiceLoopStats {
     actionMs?: CompanionNumericStats;
     firstAudioMs?: CompanionNumericStats;
     perceivedResponseMs?: CompanionNumericStats;
+    resumeAfterPlaybackMs?: CompanionNumericStats;
     voiceTotalMs?: CompanionNumericStats;
     eventToSttStartMs?: CompanionNumericStats;
   };
@@ -100,6 +103,9 @@ export interface CompanionVoiceLoopStats {
     slowLoopCount: number;
     slowSttCount: number;
     weakSignalCount: number;
+    echoTailResumeCount: number;
+    playbackBargeInCount: number;
+    suppressedEchoCount: number;
   };
 }
 
@@ -294,6 +300,7 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
   const actionMs: number[] = [];
   const firstAudioMs: number[] = [];
   const perceivedResponseMs: number[] = [];
+  const resumeAfterPlaybackMs: number[] = [];
   const voiceTotalMs: number[] = [];
   const eventToSttStartMs: number[] = [];
   const captureMs: number[] = [];
@@ -304,17 +311,23 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
   let slowLoopCount = 0;
   let slowSttCount = 0;
   let weakSignalCount = 0;
+  let echoTailResumeCount = 0;
+  let playbackBargeInCount = 0;
+  let suppressedEchoCount = 0;
 
   for (const percept of hearing) {
     const payload = objectValue(percept.payload);
     const latency = objectValue(payload?.latency);
     const capture = objectValue(payload?.capture);
+    const turnTaking = objectValue(payload?.turnTaking);
     const stt = finiteNumberValue(latency?.sttMs);
     const total = finiteNumberValue(latency?.totalMs);
     const decision = finiteNumberValue(latency?.decisionMs);
     const action = finiteNumberValue(latency?.actionMs);
     const firstAudio = finiteNumberValue(latency?.firstAudioMs);
     const perceivedResponse = finiteNumberValue(latency?.perceivedResponseMs);
+    const resumeAfterPlayback = finiteNumberValue(turnTaking?.resumeAfterPlaybackMs);
+    const turnTakingKind = stringValue(turnTaking?.kind);
     const voiceTotal = finiteNumberValue(latency?.voiceTotalMs);
     const eventDelay = finiteNumberValue(latency?.eventToSttStartMs);
     const captureDuration = finiteNumberValue(capture?.ms);
@@ -335,6 +348,12 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
     if (action !== undefined) actionMs.push(action);
     if (firstAudio !== undefined) firstAudioMs.push(firstAudio);
     if (perceivedResponse !== undefined) perceivedResponseMs.push(perceivedResponse);
+    if (resumeAfterPlayback !== undefined && resumeAfterPlayback >= 0) {
+      resumeAfterPlaybackMs.push(resumeAfterPlayback);
+    }
+    if (turnTakingKind === 'echo_tail' && payload?.playbackEcho !== true) echoTailResumeCount++;
+    if (turnTakingKind === 'during_playback') playbackBargeInCount++;
+    if (payload?.playbackEcho === true) suppressedEchoCount++;
     if (voiceTotal !== undefined) voiceTotalMs.push(voiceTotal);
     if (eventDelay !== undefined) eventToSttStartMs.push(eventDelay);
     if (captureDuration !== undefined) captureMs.push(captureDuration);
@@ -352,6 +371,7 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
   const latestPayload = objectValue(latest?.payload);
   const latestLatency = objectValue(latestPayload?.latency);
   const latestCapture = objectValue(latestPayload?.capture);
+  const latestTurnTaking = objectValue(latestPayload?.turnTaking);
   const latestPeakRms = finiteNumberValue(latestCapture?.peakRms) ?? finiteNumberValue(latestCapture?.rms);
   const latestRmsOn = finiteNumberValue(latestCapture?.rmsOn);
   const latestSignalMargin = latestPeakRms !== undefined && latestRmsOn !== undefined && latestRmsOn > 0
@@ -369,6 +389,8 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
           totalMs: finiteNumberValue(latestLatency?.totalMs),
           firstAudioMs: finiteNumberValue(latestLatency?.firstAudioMs),
           perceivedResponseMs: finiteNumberValue(latestLatency?.perceivedResponseMs),
+          resumeAfterPlaybackMs: finiteNumberValue(latestTurnTaking?.resumeAfterPlaybackMs),
+          turnTakingKind: stringValue(latestTurnTaking?.kind),
           responseMode: stringValue(latestPayload?.responseMode),
           peakRms: latestPeakRms,
           rmsOn: latestRmsOn,
@@ -382,6 +404,7 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
       actionMs: numericStats(actionMs),
       firstAudioMs: numericStats(firstAudioMs),
       perceivedResponseMs: numericStats(perceivedResponseMs),
+      resumeAfterPlaybackMs: numericStats(resumeAfterPlaybackMs),
       voiceTotalMs: numericStats(voiceTotalMs),
       eventToSttStartMs: numericStats(eventToSttStartMs),
     },
@@ -398,6 +421,9 @@ function buildVoiceLoopStats(percepts: CompanionPercept[]): CompanionVoiceLoopSt
       slowLoopCount,
       slowSttCount,
       weakSignalCount,
+      echoTailResumeCount,
+      playbackBargeInCount,
+      suppressedEchoCount,
     },
   };
 }
@@ -550,11 +576,12 @@ export function formatCompanionPerceptStats(stats: CompanionPerceptStats): strin
       `- total: ${fmtMs(stats.voice.latency.totalMs)}`,
       `- perceived response: ${fmtMs(stats.voice.latency.perceivedResponseMs)}`,
       `- first audio (voice action): ${fmtMs(stats.voice.latency.firstAudioMs)}`,
+      `- human resume after playback: ${fmtMs(stats.voice.latency.resumeAfterPlaybackMs)}`,
       `- stt: ${fmtMs(stats.voice.latency.sttMs)}`,
       `- event->stt: ${fmtMs(stats.voice.latency.eventToSttStartMs)}`,
       `- capture: ${fmtMs(stats.voice.capture.captureMs)}`,
       `- signal margin: ${fmtRatio(stats.voice.capture.signalMargin)}`,
-      `- health: slowLoop=${stats.voice.health.slowLoopCount}, slowStt=${stats.voice.health.slowSttCount}, weakSignal=${stats.voice.health.weakSignalCount}`,
+      `- health: slowLoop=${stats.voice.health.slowLoopCount}, slowStt=${stats.voice.health.slowSttCount}, weakSignal=${stats.voice.health.weakSignalCount}, quickResume=${stats.voice.health.echoTailResumeCount}, bargeIn=${stats.voice.health.playbackBargeInCount}, echoSuppressed=${stats.voice.health.suppressedEchoCount}`,
     );
     if (stats.voice.latest) {
       lines.push(
@@ -563,6 +590,8 @@ export function formatCompanionPerceptStats(stats: CompanionPerceptStats): strin
           + (stats.voice.latest.totalMs !== undefined ? ` total=${Math.round(stats.voice.latest.totalMs)}ms` : '')
           + (stats.voice.latest.perceivedResponseMs !== undefined ? ` perceived=${Math.round(stats.voice.latest.perceivedResponseMs)}ms` : '')
           + (stats.voice.latest.firstAudioMs !== undefined ? ` firstAudio=${Math.round(stats.voice.latest.firstAudioMs)}ms` : '')
+          + (stats.voice.latest.resumeAfterPlaybackMs !== undefined ? ` resume=${Math.round(stats.voice.latest.resumeAfterPlaybackMs)}ms` : '')
+          + (stats.voice.latest.turnTakingKind ? ` turn=${stats.voice.latest.turnTakingKind}` : '')
           + (stats.voice.latest.responseMode ? ` mode=${stats.voice.latest.responseMode}` : '')
           + (stats.voice.latest.sttMs !== undefined ? ` stt=${Math.round(stats.voice.latest.sttMs)}ms` : '')
           + (stats.voice.latest.signalMargin !== undefined ? ` margin=${stats.voice.latest.signalMargin.toFixed(2)}` : ''),

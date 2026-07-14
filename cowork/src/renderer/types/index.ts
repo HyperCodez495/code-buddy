@@ -172,6 +172,63 @@ export interface CompanionPerceptStats {
   total: number;
   byModality: Partial<Record<CompanionPerceptModality, number>>;
   latestTimestamp?: string;
+  voice?: CompanionVoiceLoopStats;
+}
+
+export interface CompanionNumericStats {
+  count: number;
+  min: number;
+  p50: number;
+  p95: number;
+  max: number;
+  avg: number;
+}
+
+export interface CompanionVoiceLoopStats {
+  windowSize: number;
+  hearingCount: number;
+  latest?: {
+    timestamp: string;
+    device?: string;
+    sttMs?: number;
+    totalMs?: number;
+    firstAudioMs?: number;
+    perceivedResponseMs?: number;
+    resumeAfterPlaybackMs?: number;
+    turnTakingKind?: string;
+    responseMode?: string;
+    peakRms?: number;
+    rmsOn?: number;
+    signalMargin?: number;
+  };
+  latency: {
+    sttMs?: CompanionNumericStats;
+    totalMs?: CompanionNumericStats;
+    decisionMs?: CompanionNumericStats;
+    actionMs?: CompanionNumericStats;
+    firstAudioMs?: CompanionNumericStats;
+    perceivedResponseMs?: CompanionNumericStats;
+    resumeAfterPlaybackMs?: CompanionNumericStats;
+    voiceTotalMs?: CompanionNumericStats;
+    eventToSttStartMs?: CompanionNumericStats;
+  };
+  capture: {
+    captureMs?: CompanionNumericStats;
+    writeMs?: CompanionNumericStats;
+    peakRms?: CompanionNumericStats;
+    avgRms?: CompanionNumericStats;
+    signalMargin?: CompanionNumericStats;
+  };
+  health: {
+    realtimeBudgetMs: number;
+    sttBudgetMs: number;
+    slowLoopCount: number;
+    slowSttCount: number;
+    weakSignalCount: number;
+    echoTailResumeCount?: number;
+    playbackBargeInCount?: number;
+    suppressedEchoCount?: number;
+  };
 }
 
 export interface CompanionStatus {

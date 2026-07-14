@@ -3,6 +3,10 @@ import {
   beginSpeaking,
   endSpeaking,
   isSpeaking,
+  classifyRecentVoiceEcho,
+  measureVoiceResumeTiming,
+  noteSpokenText,
+  interruptSpeaking,
   withSpeakingGuard,
   _resetVoiceActivityForTests,
 } from '../../src/sensory/voice-activity.js';
@@ -62,5 +66,46 @@ describe('voice-activity — half-duplex speaking guard', () => {
     releaseA();
     await Promise.all([pA, pB]);
     expect(order).toEqual(['A-start', 'A-end', 'B-start']); // B started only after A finished
+  });
+
+  it('measures a quick human reply inside the echo tail without persisting text', () => {
+    beginSpeaking(1_000);
+    noteSpokenText('La conscience dépend aussi de la mémoire.', 1_100);
+    endSpeaking(2_000);
+
+    expect(measureVoiceResumeTiming(2_400)).toEqual({
+      kind: 'echo_tail',
+      afterPlaybackStartMs: 1_400,
+      resumeAfterPlaybackMs: 400,
+      earReadyInMs: 800,
+      playbackInterrupted: false,
+      tailBypassed: false,
+    });
+    expect(classifyRecentVoiceEcho('la conscience dépend aussi de la mémoire', 2_400))
+      .toBe('echo');
+    expect(classifyRecentVoiceEcho('Et la réciprocité alors ?', 2_400)).toBe('distinct');
+
+    expect(measureVoiceResumeTiming(3_400)).toMatchObject({
+      kind: 'after_playback',
+      resumeAfterPlaybackMs: 1_400,
+    });
+  });
+
+  it('classifies barge-in during playback and never re-arms a tail after interruption', () => {
+    beginSpeaking(5_000);
+    expect(measureVoiceResumeTiming(5_300)).toMatchObject({
+      kind: 'during_playback',
+      afterPlaybackStartMs: 300,
+    });
+
+    interruptSpeaking(5_300);
+    endSpeaking(5_400); // late finally from the cancelled player
+
+    expect(isSpeaking(5_400)).toBe(false);
+    expect(measureVoiceResumeTiming(5_300)).toMatchObject({
+      kind: 'during_playback',
+      playbackInterrupted: true,
+      tailBypassed: true,
+    });
   });
 });
