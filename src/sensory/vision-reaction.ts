@@ -17,6 +17,11 @@ import { logger } from '../utils/logger.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
 import { sendTelegramAlert } from './alert.js';
+import {
+  safeCameraKeyframePath,
+  telegramVisionPhotoPath,
+} from './camera-keyframe-policy.js';
+import { redactVisionDescriptionForEgress } from './vision-description-safety.js';
 
 /** Varied prefixes for the motion Telegram caption (the `${desc}` suffix already
  *  varies with the scene) so the notification isn't the exact same opening
@@ -49,17 +54,37 @@ export interface VisionReactionOptions {
   now?: () => number;
 }
 
-/** Default analyzer: describe the daemon's keyframe with a LOCAL Ollama vision
- *  model. Falls back to the `camera_analyze` tool (re-capture) when no keyframe. */
+export function shouldAllowVisionImageEndpoint(
+  baseURL: string,
+  remoteConsent = process.env.CODEBUDDY_VISION_REMOTE_IMAGE === 'true',
+): boolean {
+  try {
+    const url = new URL(baseURL);
+    const loopback = url.hostname === '127.0.0.1' ||
+      url.hostname === 'localhost' ||
+      url.hostname === '[::1]';
+    if (loopback) return url.protocol === 'http:' || url.protocol === 'https:';
+    return remoteConsent && url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Default analyzer: describe a validated daemon keyframe with a local Ollama
+ * vision model. It never re-captures: missing frames fail closed. */
 async function defaultAnalyze(prompt: string, imagePath?: string): Promise<VisionAnalysis> {
   if (imagePath) {
     try {
+      const baseURL = process.env.CODEBUDDY_VISION_BASE_URL || 'http://127.0.0.1:11434/v1';
+      if (!shouldAllowVisionImageEndpoint(baseURL)) {
+        logger.warn('[vision] refusing raw image egress to a non-loopback VLM endpoint');
+        return { success: false, imagePath };
+      }
       const { loadImageFromFile, buildMultimodalContent } = await import('../tools/image-input.js');
       const { CodeBuddyClient } = await import('../codebuddy/client.js');
       const img = await loadImageFromFile(imagePath);
       const content = buildMultimodalContent(prompt, [img]);
       const model = process.env.CODEBUDDY_VISION_MODEL || 'moondream';
-      const baseURL = process.env.CODEBUDDY_VISION_BASE_URL || 'http://127.0.0.1:11434/v1';
       const client = new CodeBuddyClient(process.env.OLLAMA_API_KEY || 'ollama', model, baseURL);
       const resp = await client.chat([{ role: 'user', content } as never], []);
       const desc = (resp?.choices?.[0]?.message?.content ?? '').trim();
@@ -69,12 +94,7 @@ async function defaultAnalyze(prompt: string, imagePath?: string): Promise<Visio
       return { success: false, imagePath };
     }
   }
-  // No keyframe supplied → legacy re-capture path (camera_analyze tool).
-  const { CameraAnalyzeTool } = await import('../tools/registry/vision-tools.js');
-  const tool = new CameraAnalyzeTool({});
-  const result = await tool.execute({ prompt });
-  const data = result.data as { description?: string; imagePath?: string } | undefined;
-  return { success: result.success, description: data?.description ?? result.output, imagePath: data?.imagePath };
+  return { success: false };
 }
 
 /** Security invariant (pure + testable): the camera reaction may only be wired
@@ -126,13 +146,36 @@ export function wireVisionReaction(options: VisionReactionOptions = {}): () => v
     const payload = (p.payload ?? {}) as { imagePath?: string; camera?: string };
     void (async () => {
       try {
+        const suppliedFrame = await safeCameraKeyframePath(payload.imagePath);
+        if (payload.imagePath && !suppliedFrame) {
+          logger.warn('[vision] rejected keyframe outside the configured camera spool');
+          return;
+        }
         const res = await analyzer.analyze(
-          'Décris la scène en une phrase courte : qui/quoi, et est-ce notable (personne, mouvement inhabituel) ?',
-          payload.imagePath,
+          'Décris la scène en une phrase courte : objets génériques et situation notable. Ne transcris aucun texte/OCR, nom, adresse, téléphone, identifiant, secret ou visage reconnu.',
+          suppliedFrame,
         );
         if (!res.success) return;
         const desc = res.description ?? '(no description)';
-        const frame = res.imagePath ?? payload.imagePath;
+        const alertDescription = redactVisionDescriptionForEgress(desc, 900) ?? '(description indisponible)';
+        const frame = await safeCameraKeyframePath(res.imagePath ?? suppliedFrame);
+        // Publish perception before optional journaling/notification work. A
+        // filesystem or channel failure must not make Lisa cognitively blind.
+        const describedAt = now();
+        bus.emit('sensory:perception', {
+          source: 'sensory_motion_reaction',
+          metadata: {
+            modality: 'vision',
+            kind: 'scene_described',
+            tsMs: describedAt,
+            salience: 150,
+            payload: {
+              camera: payload.camera,
+              description: desc,
+              confidence: 0.9,
+            },
+          },
+        });
         const { recordCompanionPercept } = await import('../companion/percepts.js');
         await recordCompanionPercept(
           {
@@ -150,7 +193,10 @@ export function wireVisionReaction(options: VisionReactionOptions = {}): () => v
         if (sceneSimilarity(desc, lastAlertedDesc) < alertSimThreshold || now() - lastAlertAt >= alertCooldownMs) {
           lastAlertAt = now();
           lastAlertedDesc = desc;
-          await sendTelegramAlert(`${pickMotionPrefix()}${payload.camera ? ` (${payload.camera})` : ''} : ${desc}`, frame);
+          await sendTelegramAlert(
+            `${pickMotionPrefix()}${payload.camera ? ' (caméra locale)' : ''} : ${alertDescription}`,
+            telegramVisionPhotoPath(frame),
+          );
         } else {
           logger.info('[vision] alert suppressed (scène similaire dans le cooldown)');
         }

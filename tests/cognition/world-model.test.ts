@@ -64,7 +64,7 @@ describe('WorldModel', () => {
 
   it('turns expired visibility into unknown rather than inventing absence', () => {
     const model = new WorldModel();
-    model.observe(observation());
+    model.observe(observation({ attributes: { count: 1, stable: true } }));
     expect(model.expire(1_509)).toEqual([]);
     const expired = model.expire(1_510);
     expect(expired).toHaveLength(1);
@@ -73,7 +73,9 @@ describe('WorldModel', () => {
       confidence: 0,
       expiresAt: null,
       lastSeen: 1_000,
+      attributes: { stable: true },
     });
+    expect(model.get('person-1')?.attributes).not.toHaveProperty('count');
   });
 
   it('accepts a direct absent transition but expires that claim too', () => {
@@ -155,5 +157,113 @@ describe('WorldModel', () => {
     model.observe(observation({ eventId: 'c', entityId: 'c', receivedAt: 3 }));
     expect(model.snapshot()).toHaveLength(2);
     expect(model.get('a')).toBeUndefined();
+  });
+
+  it('keeps an anonymous tracker and strict normalized 2D observation without depth', () => {
+    const model = new WorldModel();
+    const observation2d = {
+      sensorId: 'brio',
+      x: 0.1,
+      y: 0.2,
+      width: 0.3,
+      height: 0.4,
+      z: 0.8,
+      depthMeters: 2.5,
+    } as WorldObservation['observation2d'];
+
+    expect(model.observe(observation({
+      entityId: 'person-track:brio:track-a',
+      entityType: 'person-track',
+      trackerId: 'track-a',
+      observation2d,
+    })).applied).toBe(true);
+
+    expect(model.get('person-track:brio:track-a')).toMatchObject({
+      trackerId: 'track-a',
+      observation2d: {
+        space: 'image-normalized-v1',
+        sensorId: 'brio',
+        x: 0.1,
+        y: 0.2,
+        width: 0.3,
+        height: 0.4,
+        observedAt: 1_000,
+      },
+    });
+    expect(model.get('person-track:brio:track-a')?.observation2d).not.toHaveProperty('z');
+    expect(model.get('person-track:brio:track-a')?.observation2d).not.toHaveProperty(
+      'depthMeters',
+    );
+  });
+
+  it('clears image position when a track leaves or its evidence expires', () => {
+    const model = new WorldModel();
+    const tracked = {
+      entityId: 'person-track:brio:track-a',
+      entityType: 'person-track',
+      trackerId: 'track-a',
+      observation2d: { sensorId: 'brio', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+    } satisfies Partial<WorldObservation>;
+    model.observe(observation(tracked));
+    model.observe(observation({
+      ...tracked,
+      eventId: 'track-left',
+      visibility: 'absent',
+      observedAt: 1_100,
+      receivedAt: 1_110,
+    }));
+    expect(model.get(tracked.entityId)).toMatchObject({
+      visibility: 'absent',
+      observation2d: null,
+    });
+
+    const expiring = new WorldModel();
+    expiring.observe(observation(tracked));
+    expiring.expire(1_510);
+    expect(expiring.get(tracked.entityId)).toMatchObject({
+      visibility: 'unknown',
+      observation2d: null,
+    });
+
+    const missingGeometry = new WorldModel();
+    missingGeometry.observe(observation(tracked));
+    missingGeometry.observe(observation({
+      entityId: tracked.entityId,
+      entityType: tracked.entityType,
+      trackerId: tracked.trackerId,
+      eventId: 'visible-without-box',
+      observedAt: 1_200,
+      receivedAt: 1_210,
+    }));
+    expect(missingGeometry.get(tracked.entityId)).toMatchObject({
+      visibility: 'visible',
+      observation2d: null,
+    });
+  });
+
+  it('rejects invalid geometry and immutable entity identity changes', () => {
+    const model = new WorldModel();
+    expect(model.observe(observation({
+      eventId: 'bad-box',
+      observation2d: { sensorId: 'brio', x: 0.8, y: 0.2, width: 0.4, height: 0.3 },
+    }))).toEqual({ applied: false, reason: 'invalid' });
+    expect(model.observe(observation({
+      eventId: 'bad-tracker',
+      trackerId: '../../Patrice',
+    }))).toEqual({ applied: false, reason: 'invalid' });
+
+    expect(model.observe(observation({ eventId: 'identity-base' })).applied).toBe(true);
+    expect(model.observe(observation({
+      eventId: 'type-change',
+      entityType: 'camera',
+      observedAt: 1_100,
+      receivedAt: 1_110,
+    }))).toEqual({ applied: false, reason: 'invalid' });
+    expect(model.observe(observation({
+      eventId: 'tracker-binding',
+      trackerId: 'track-late',
+      observedAt: 1_200,
+      receivedAt: 1_210,
+    }))).toEqual({ applied: false, reason: 'invalid' });
   });
 });

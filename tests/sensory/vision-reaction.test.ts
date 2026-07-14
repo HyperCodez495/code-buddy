@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { wireVisionReaction, shouldWireVisionReaction, type VisionAnalyzer } from '../../src/sensory/vision-reaction.js';
+import {
+  wireVisionReaction,
+  shouldAllowVisionImageEndpoint,
+  shouldWireVisionReaction,
+  type VisionAnalyzer,
+} from '../../src/sensory/vision-reaction.js';
 import { getGlobalEventBus } from '../../src/events/event-bus.js';
 
 describe('shouldWireVisionReaction — the camera security invariant', () => {
@@ -13,12 +18,20 @@ describe('shouldWireVisionReaction — the camera security invariant', () => {
     expect(shouldWireVisionReaction({ camera: 'false', token: 'secret' })).toBe(false);
     expect(shouldWireVisionReaction({})).toBe(false);
   });
+
+  it('keeps raw VLM images loopback-only unless HTTPS remote egress is explicit', () => {
+    expect(shouldAllowVisionImageEndpoint('http://127.0.0.1:11434/v1', false)).toBe(true);
+    expect(shouldAllowVisionImageEndpoint('http://localhost:11434/v1', false)).toBe(true);
+    expect(shouldAllowVisionImageEndpoint('https://vision.example.test/v1', false)).toBe(false);
+    expect(shouldAllowVisionImageEndpoint('http://vision.example.test/v1', true)).toBe(false);
+    expect(shouldAllowVisionImageEndpoint('https://vision.example.test/v1', true)).toBe(true);
+  });
 });
 
-function motion(): void {
+function motion(payload: Record<string, unknown> = { score: 0.5 }): void {
   getGlobalEventBus().emit('sensory:perception', {
     source: 'test',
-    metadata: { modality: 'vision', kind: 'motion', payload: { score: 0.5 } },
+    metadata: { modality: 'vision', kind: 'motion', payload },
   });
 }
 
@@ -35,6 +48,11 @@ describe('vision reaction — motion → camera_analyze (debounced)', () => {
       },
     };
     let clock = 1000;
+    const described: Array<Record<string, unknown>> = [];
+    const listenerId = getGlobalEventBus().on('sensory:perception', (event) => {
+      const metadata = event.metadata as Record<string, unknown> | undefined;
+      if (metadata?.kind === 'scene_described') described.push(metadata);
+    });
     const unwire = wireVisionReaction({ analyzer, debounceMs: 5000, cwd: tmp, now: () => clock });
     try {
       motion();
@@ -55,8 +73,16 @@ describe('vision reaction — motion → camera_analyze (debounced)', () => {
       expect(lines.length).toBe(2); // one percept per analysis
       expect(percepts).toContain('a tidy desk');
       expect(percepts).toContain('sensory_motion_reaction');
+      expect(described).toHaveLength(2);
+      expect(described[0]).toMatchObject({
+        modality: 'vision',
+        kind: 'scene_described',
+        payload: { description: 'a tidy desk', confidence: 0.9 },
+      });
+      expect(JSON.stringify(described)).not.toContain('imagePath');
     } finally {
       unwire();
+      getGlobalEventBus().off(listenerId);
     }
   });
 
@@ -76,6 +102,45 @@ describe('vision reaction — motion → camera_analyze (debounced)', () => {
       expect(calls).toBe(0);
     } finally {
       unwire();
+    }
+  });
+
+  it('redacts VLM text and hides the raw camera label before Telegram egress', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'vision-egress-'));
+    const previousToken = process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
+    const previousChat = process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
+    const originalFetch = globalThis.fetch;
+    const bodies: string[] = [];
+    process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = 'test-token';
+    process.env.CODEBUDDY_SENSORY_ALERT_CHAT = 'test-chat';
+    globalThis.fetch = (async (_input, init) => {
+      if (typeof init?.body === 'string') bodies.push(init.body);
+      return { ok: true } as Response;
+    }) as typeof fetch;
+    const analyzer: VisionAnalyzer = {
+      analyze: async () => ({
+        success: true,
+        description: 'Contact test@example.com avec sk-proj-abcdefghijklmnopqrstuvwxyz dans /home/patrice/secret.txt',
+      }),
+    };
+    const unwire = wireVisionReaction({ analyzer, debounceMs: 0, cwd: tmp });
+    try {
+      motion({ score: 0.5, camera: 'Kitchen-/home/patrice-sk-proj-secret' });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const sent = bodies.join('\n');
+      expect(sent).toContain('caméra locale');
+      expect(sent).toContain('[REDACTED:pii-email]');
+      expect(sent).toContain('[REDACTED:env-key]');
+      expect(sent).not.toContain('test@example.com');
+      expect(sent).not.toContain('/home/patrice');
+      expect(sent).not.toContain('Kitchen-');
+    } finally {
+      unwire();
+      globalThis.fetch = originalFetch;
+      if (previousToken === undefined) delete process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
+      else process.env.CODEBUDDY_SENSORY_ALERT_TOKEN = previousToken;
+      if (previousChat === undefined) delete process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
+      else process.env.CODEBUDDY_SENSORY_ALERT_CHAT = previousChat;
     }
   });
 });

@@ -97,4 +97,46 @@ describe('CognitiveContextProjector', () => {
     expect(lease.turnContext.length + lease.evidence.length).toBeLessThanOrEqual(220);
     expect(`${lease.turnContext}${lease.evidence}`).not.toContain('NE_DOIT_PAS_SORTIR');
   });
+
+  it('renders only a qualitative normalized image position from world facts', () => {
+    const workspace = new GlobalWorkspace();
+    workspace.publish({
+      kind: 'fact',
+      producerId: 'world-model',
+      correlationId: 'world:track',
+      salience: 1,
+      confidence: 0.9,
+      privacy: 'local-only',
+      provenance: { source: 'deterministic-world-reducer' },
+      ttlMs: 60_000,
+      payload: {
+        id: 'person-track:brio:opaque-secret-id',
+        type: 'person-track',
+        visibility: 'visible',
+        trackerId: 'opaque-secret-id',
+        attributes: { count: 1, private: 'NE_DOIT_PAS_SORTIR' },
+        observation2d: {
+          space: 'image-normalized-v1',
+          x: 0.05,
+          y: 0.1,
+          width: 0.2,
+          height: 0.3,
+          z: 0.7,
+          depthMeters: 2,
+        },
+      },
+    });
+
+    const lease = new CognitiveContextProjector(workspace).begin({
+      consumerId: 'local-voice',
+      privacyClearance: 'local-only',
+    });
+
+    expect(lease.evidence).toContain('présence visuelle anonyme');
+    expect(lease.evidence).toContain('position image=gauche-haut');
+    expect(lease.evidence).not.toContain('opaque-secret-id');
+    expect(lease.evidence).not.toContain('NE_DOIT_PAS_SORTIR');
+    expect(lease.evidence).not.toContain('depth');
+    expect(lease.evidence).not.toContain('z=');
+  });
 });

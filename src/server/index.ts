@@ -1310,7 +1310,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               'Avatar performance bridge: Enabled (Gateway avatar:event, scope avatar:read)'
             );
           }
-          // Vision reaction (opt-in) — vision/motion → camera_analyze (local gemma).
+          // Vision reaction (opt-in) — vision/motion → bounded local VLM description.
           // Requires a shared token: a frame can trigger the webcam, so refuse to
           // wire it on an unauthenticated bridge.
           const sensoryToken = process.env.CODEBUDDY_SENSORY_TOKEN;
@@ -1329,7 +1329,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             } else if (process.env.CODEBUDDY_SENSORY_CAMERA === 'true') {
               logger.warn('Sensory vision reaction NOT enabled: set CODEBUDDY_SENSORY_TOKEN to allow camera triggering.');
             }
-            // Semantic vision events (person_entered/left, drowsy) from the vision sidecar.
+            // Semantic vision events (person_entered/lost, drowsy) from the vision sidecar.
             if (shouldWireVisionReaction({ camera: process.env.CODEBUDDY_SENSORY_CAMERA, token: sensoryToken })) {
               const { wireSemanticVisionReaction } = await import('../sensory/semantic-vision-reaction.js');
               sensoryTeardown.push(

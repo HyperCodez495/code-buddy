@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Robot eyes — semantic vision sidecar (the eye that UNDERSTANDS, not just moves).
 
-Owns one camera and feeds semantic state machines — each emits an event only on a
-TRANSITION (never per-frame → no spam, the Vigil pattern):
-  • person : person present/absent → person_entered / person_left (absence grace)
+Owns one camera and feeds bounded semantic state machines:
+  • person : person present/lost → person_entered / person_lost (absence grace)
              backend: MediaPipe face detector, or optional YOLOv8 person detector
   • drowsy : MediaPipe eyeBlink blendshape closed ≥ N s → drowsy (Vigil)
-A cheap motion gate (frame-diff) skips inference when nothing moves.
+A cheap motion gate (frame-diff) skips inference when nothing moves and emits a
+rate-limited keyframe so the brain's local VLM can refresh its scene description.
 
 Events go to Code Buddy's sensory bridge (ws://127.0.0.1:8129) as SensoryEvents
 AND to ~/.codebuddy/companion/events.jsonl (audit/stats). 100% local, $0.
 """
 import json
 import os
+import secrets
 import sys
 import time
 
@@ -25,6 +26,10 @@ CAMERA_INDEX = int(os.environ.get("BUDDY_SENSE_CAMERA_INDEX", "0"))
 CAMERA_NAME = os.environ.get("BUDDY_VISION_CAMERA_NAME", "brio")
 FRAME_DIR = os.path.expanduser(os.environ.get("BUDDY_SENSE_FRAME_DIR", "~/.codebuddy/companion"))
 EVENTS_LOG = os.path.join(FRAME_DIR, "events.jsonl")
+EVENTS_LOG_MAX_BYTES = min(
+    50 * 1024 * 1024,
+    max(1 * 1024 * 1024, int(os.environ.get("BUDDY_VISION_EVENTS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))),
+)
 MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "face_landmarker.task")
 FPS = float(os.environ.get("BUDDY_VISION_FPS", "4"))
 MOTION_THRESH = float(os.environ.get("BUDDY_VISION_MOTION", "0.02"))
@@ -34,6 +39,11 @@ YOLO_CONF = float(os.environ.get("BUDDY_VISION_YOLO_CONF", "0.35"))
 YOLO_IOU = float(os.environ.get("BUDDY_VISION_YOLO_IOU", "0.7"))
 YOLO_DEVICE = os.environ.get("BUDDY_VISION_YOLO_DEVICE", "").strip()
 YOLO_CLASSES = os.environ.get("BUDDY_VISION_YOLO_CLASSES", "0")
+EPISODE_SESSION = secrets.token_hex(4)
+MOTION_FRAME_SLOTS = min(128, max(16, int(os.environ.get("BUDDY_VISION_MOTION_FRAME_SLOTS", "32"))))
+SEMANTIC_FRAME_SLOTS = min(256, max(64, int(os.environ.get("BUDDY_VISION_SEMANTIC_FRAME_SLOTS", "64"))))
+motion_frame_sequence = 0
+semantic_frame_sequence = 0
 os.makedirs(FRAME_DIR, exist_ok=True)
 
 
@@ -81,19 +91,46 @@ class Bridge:
 
 def log_event(rec: dict) -> None:
     try:
+        if os.path.exists(EVENTS_LOG) and os.path.getsize(EVENTS_LOG) >= EVENTS_LOG_MAX_BYTES:
+            os.replace(EVENTS_LOG, f"{EVENTS_LOG}.1")
         with open(EVENTS_LOG, "a") as f:
             f.write(json.dumps(rec) + "\n")
     except Exception:
         pass
 
 
-def save_keyframe(frame) -> str | None:
-    path = os.path.join(FRAME_DIR, f"cam-{now_ms()}.jpg")
+def atomic_write_jpeg(path: str, frame) -> str | None:
+    temporary = f"{path}.{os.getpid()}.{secrets.token_hex(3)}.tmp.jpg"
     try:
-        cv2.imwrite(path, frame)
+        if not cv2.imwrite(temporary, frame):
+            return None
+        os.replace(temporary, path)
         return path
     except Exception:
         return None
+    finally:
+        try:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        except Exception:
+            pass
+
+
+def save_keyframe(frame) -> str | None:
+    """Semantic transition keyframe in a bounded, atomically replaced ring."""
+    global semantic_frame_sequence
+    slot = semantic_frame_sequence % SEMANTIC_FRAME_SLOTS
+    semantic_frame_sequence += 1
+    return atomic_write_jpeg(os.path.join(FRAME_DIR, f"semantic-{slot:03d}.jpg"), frame)
+
+
+def save_motion_keyframe(frame) -> str | None:
+    """Write into a bounded ring so continuous perception cannot fill the disk."""
+    global motion_frame_sequence
+    slot = motion_frame_sequence % MOTION_FRAME_SLOTS
+    motion_frame_sequence += 1
+    path = os.path.join(FRAME_DIR, f"motion-{slot:02d}.jpg")
+    return atomic_write_jpeg(path, frame)
 
 
 class VisionSample:
@@ -101,6 +138,24 @@ class VisionSample:
         self.present = present
         self.eye_closed = eye_closed
         self.evidence = evidence or {}
+
+
+def normalized_box(x1: float, y1: float, x2: float, y2: float, width: int, height: int) -> dict | None:
+    """Return a bounded camera-relative box; never imply depth or metric position."""
+    if width <= 0 or height <= 0:
+        return None
+    left = min(1.0, max(0.0, x1 / width))
+    top = min(1.0, max(0.0, y1 / height))
+    right = min(1.0, max(0.0, x2 / width))
+    bottom = min(1.0, max(0.0, y2 / height))
+    if right <= left or bottom <= top:
+        return None
+    return {
+        "x": round(left, 6),
+        "y": round(top, 6),
+        "width": round(right - left, 6),
+        "height": round(bottom - top, 6),
+    }
 
 
 class MediaPipeFaceDetector:
@@ -128,10 +183,23 @@ class MediaPipeFaceDetector:
         result = self.landmarker.detect(self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb))
         face_present = len(result.face_landmarks) > 0
         eye_closed = None
+        height, width = frame.shape[:2]
         if face_present and result.face_blendshapes:
             bs = {c.category_name: c.score for c in result.face_blendshapes[0]}
             eye_closed = (bs.get("eyeBlinkLeft", 0.0) + bs.get("eyeBlinkRight", 0.0)) / 2.0
-        evidence = {"detector": "mediapipe_face"}
+        evidence = {"detector": "mediapipe_face", "frameWidth": width, "frameHeight": height}
+        if face_present:
+            landmarks = result.face_landmarks[0]
+            box = normalized_box(
+                min(point.x for point in landmarks) * width,
+                min(point.y for point in landmarks) * height,
+                max(point.x for point in landmarks) * width,
+                max(point.y for point in landmarks) * height,
+                width,
+                height,
+            )
+            if box:
+                evidence["box2d"] = box
         if eye_closed is not None:
             evidence["eyeClosed"] = round(float(eye_closed), 4)
         return VisionSample(face_present, eye_closed, evidence)
@@ -166,6 +234,7 @@ class YoloPersonDetector:
             kwargs["device"] = YOLO_DEVICE
         result = self.model.predict(**kwargs)[0]
         best = None
+        height, width = frame.shape[:2]
         if result.boxes is not None:
             for item in result.boxes:
                 conf = float(item.conf[0].item())
@@ -184,32 +253,116 @@ class YoloPersonDetector:
             "detector": "yolov8",
             "model": self.model_path,
             "confidence": round(best["confidence"], 4) if best else 0.0,
+            "frameWidth": width,
+            "frameHeight": height,
         }
         if best:
             evidence["box"] = best["box"]
+            box = best["box"]
+            evidence["box2d"] = normalized_box(
+                box["x1"], box["y1"], box["x2"], box["y2"], width, height
+            )
         return VisionSample(best is not None, None, evidence)
 
 
 class PersonState:
-    """Face present/absent → person_entered / person_left (absence grace period)."""
+    """Face present/lost → person_entered / person_lost (absence grace period)."""
 
-    def __init__(self):
+    def __init__(self, episode_prefix: str = EPISODE_SESSION):
         self.present = False
         self.absent = 0
         self.grace = int(os.environ.get("BUDDY_VISION_PERSON_GRACE", "8"))
+        self.episode_prefix = episode_prefix
+        self.episode_sequence = 0
+        self.presence_episode_id = None
 
     def update(self, face_present: bool):
         if face_present:
             self.absent = 0
             if not self.present:
                 self.present = True
-                return ("person_entered", 200)
+                self.episode_sequence += 1
+                self.presence_episode_id = f"anon-{self.episode_prefix}-{self.episode_sequence}"
+                return ("person_entered", 200, self.presence_episode_id)
         elif self.present:
             self.absent += 1
             if self.absent >= self.grace:
                 self.present = False
-                return ("person_left", 120)
+                presence_episode_id = self.presence_episode_id
+                self.presence_episode_id = None
+                # Detection loss/occlusion is not proof that the person left
+                # the physical room. The brain records this as unknown.
+                return ("person_lost", 120, presence_episode_id)
         return None
+
+
+class CameraLivenessState:
+    """Low-rate camera health transitions plus a refresh before brain-side TTL expiry."""
+
+    def __init__(self, heartbeat_secs: float | None = None, failure_grace: int | None = None):
+        self.heartbeat_secs = min(10.0, max(
+            1.0,
+            heartbeat_secs if heartbeat_secs is not None
+            else float(os.environ.get("BUDDY_VISION_HEARTBEAT_SECS", "5")),
+        ))
+        self.failure_grace = max(
+            1,
+            failure_grace if failure_grace is not None
+            else int(os.environ.get("BUDDY_VISION_CAMERA_FAILURE_GRACE", "3")),
+        )
+        self.available = False
+        self.unavailable_announced = False
+        self.failures = 0
+        self.last_alive_at = None
+        self.last_unavailable_at = None
+
+    def update(self, success: bool, at: float | None = None):
+        current = time.monotonic() if at is None else at
+        if success:
+            recovered = not self.available
+            self.available = True
+            self.unavailable_announced = False
+            self.failures = 0
+            self.last_unavailable_at = None
+            if recovered or self.last_alive_at is None or current - self.last_alive_at >= self.heartbeat_secs:
+                self.last_alive_at = current
+                return ("camera_alive", 10)
+            return None
+        self.failures += 1
+        if self.failures >= self.failure_grace and not self.unavailable_announced:
+            self.available = False
+            self.unavailable_announced = True
+            self.last_unavailable_at = current
+            return ("camera_unavailable", 180)
+        if (
+            self.unavailable_announced
+            and self.last_unavailable_at is not None
+            and current - self.last_unavailable_at >= self.heartbeat_secs
+        ):
+            self.last_unavailable_at = current
+            return ("camera_unavailable", 180)
+        return None
+
+
+class MotionEventState:
+    """Rate-limit motion keyframes while keeping the first change responsive."""
+
+    def __init__(self, cooldown_secs: float | None = None):
+        self.cooldown_secs = max(
+            2.0,
+            cooldown_secs if cooldown_secs is not None
+            else float(os.environ.get("BUDDY_VISION_MOTION_EVENT_SECS", "8")),
+        )
+        self.last_emitted_at = float("-inf")
+
+    def should_emit(self, moved: bool, at: float | None = None) -> bool:
+        if not moved:
+            return False
+        current = time.monotonic() if at is None else at
+        if current - self.last_emitted_at < self.cooldown_secs:
+            return False
+        self.last_emitted_at = current
+        return True
 
 
 class DrowsyState:
@@ -311,10 +464,22 @@ def main() -> None:
     enabled = parse_enabled_detectors()
     person = PersonState() if "person" in enabled else None
     drowsy = DrowsyState() if "drowsy" in enabled else None
+    liveness = CameraLivenessState()
+    motion_events = MotionEventState()
+    observation_secs = min(
+        10.0,
+        max(0.25, float(os.environ.get("BUDDY_VISION_OBSERVATION_SECS", "1"))),
+    )
+    last_observation_at = float("-inf")
     backend, person_detector, face_detector = create_detectors(enabled)
 
     cap = cv2.VideoCapture(CAMERA_INDEX)
     if not cap.isOpened():
+        bridge.emit(
+            "camera_unavailable",
+            180,
+            {"camera": CAMERA_NAME, "confidence": 1.0, "reason": "open_failed"},
+        )
         print(f"[vision] cannot open camera index {CAMERA_INDEX}", file=sys.stderr)
         sys.exit(1)
     print(f"[vision] watching camera {CAMERA_INDEX} ({CAMERA_NAME}); detectors={sorted(enabled)} person_backend={backend}", flush=True)
@@ -325,11 +490,44 @@ def main() -> None:
         t0 = time.time()
         ok, frame = cap.read()
         if not ok:
+            transition = liveness.update(False)
+            if transition:
+                bridge.emit(
+                    transition[0],
+                    transition[1],
+                    {"camera": CAMERA_NAME, "confidence": 1.0},
+                )
             time.sleep(0.5)
             continue
+        height, width = frame.shape[:2]
+        transition = liveness.update(True)
+        if transition:
+            bridge.emit(
+                transition[0],
+                transition[1],
+                {
+                    "camera": CAMERA_NAME,
+                    "confidence": 1.0,
+                    "frameWidth": width,
+                    "frameHeight": height,
+                },
+            )
         gray = cv2.cvtColor(cv2.resize(frame, (160, 120)), cv2.COLOR_BGR2GRAY)
-        moved = motion_score(prev_gray, gray) >= MOTION_THRESH
+        score = motion_score(prev_gray, gray)
+        moved = score >= MOTION_THRESH
         prev_gray = gray
+        if motion_events.should_emit(moved):
+            keyframe = save_motion_keyframe(frame)
+            if keyframe:
+                payload = {
+                    "camera": CAMERA_NAME,
+                    "imagePath": keyframe,
+                    "motionScore": round(score, 4),
+                    "frameWidth": width,
+                    "frameHeight": height,
+                }
+                bridge.emit("motion", 80, payload)
+                log_event({"ts_ms": now_ms(), "kind": "motion", **payload})
         # Cheap gate: run inference on motion, or while a person is present (to
         # catch drowsiness even when they're sitting still).
         if moved or (person and person.present):
@@ -345,18 +543,42 @@ def main() -> None:
             if person:
                 t = person.update(person_sample.present)
                 if t:
-                    transitions.append((t[0], t[1], person_sample.evidence))
+                    transitions.append((t[0], t[1], person_sample.evidence, t[2]))
             if drowsy:
                 eye_closed = face_sample.eye_closed if face_sample and face_sample.present else None
                 t = drowsy.update(eye_closed)
                 if t:
-                    transitions.append((t[0], t[1], face_sample.evidence if face_sample else {"detector": "mediapipe_face"}))
-            for kind, salience, evidence in transitions:
+                    transitions.append((
+                        t[0],
+                        t[1],
+                        face_sample.evidence if face_sample else {"detector": "mediapipe_face"},
+                        person.presence_episode_id if person else None,
+                    ))
+            for kind, salience, evidence, presence_episode_id in transitions:
                 keyframe = save_keyframe(frame)
                 payload = {"camera": CAMERA_NAME, "imagePath": keyframe, **evidence}
+                if presence_episode_id:
+                    payload["presenceEpisodeId"] = presence_episode_id
                 bridge.emit(kind, salience, payload)
                 log_event({"ts_ms": now_ms(), "kind": kind, **payload})
                 print(f"[vision] event {kind} → bridge", flush=True)
+            if (
+                person
+                and person.present
+                and person_sample.present
+                and person.presence_episode_id
+                and t0 - last_observation_at >= observation_secs
+            ):
+                last_observation_at = t0
+                bridge.emit(
+                    "person_observed",
+                    20,
+                    {
+                        "camera": CAMERA_NAME,
+                        "presenceEpisodeId": person.presence_episode_id,
+                        **person_sample.evidence,
+                    },
+                )
         dt = time.time() - t0
         if dt < interval:
             time.sleep(interval - dt)

@@ -1,7 +1,7 @@
 # buddy-vision — the robot's semantic eye and live ear
 
 Python sidecars for camera and microphone. `watch.py` watches a camera and emits
-**semantic events** (`person_entered` / `person_left` / `drowsy`) to Code
+**semantic events** (`person_entered` / `person_lost` / `drowsy`) to Code
 Buddy's sensory bridge. `ear.py` captures a live microphone with ALSA
 `arecord`, writes utterance WAVs, and emits `speech_end` events for Code Buddy's
 faster-whisper → voice-assistant loop. Each detector is a **state machine** →
@@ -46,12 +46,24 @@ and loop latency from companion percepts.
 ## Detectors
 | event | how |
 |-------|-----|
-| `person_entered` / `person_left` | MediaPipe FaceLandmarker by default, or optional YOLOv8 person detection (`BUDDY_VISION_PERSON_BACKEND=yolo`) |
+| `person_entered` / `person_observed` / `person_lost` | MediaPipe FaceLandmarker by default, or optional YOLOv8 person detection (`BUDDY_VISION_PERSON_BACKEND=yolo`). A loss means `unknown`, never proof that the room is empty. |
+| `camera_alive` / `camera_unavailable` | Low-rate camera liveness refresh and explicit read/open failure. |
+| `motion` | Rate-limited keyframe for the brain's local VLM scene refresh. |
 | `drowsy` | `eyeBlink` blendshape closed ≥ `BUDDY_VISION_DROWSY_SECS` (Vigil) |
 
 A cheap motion gate (frame-diff) skips inference when nothing moves. On a
 transition: a JPEG keyframe is saved, the event is pushed to the bridge, and a
 line is appended to `~/.codebuddy/companion/events.jsonl` (audit/stats).
+Motion refreshes and semantic transitions use separate bounded JPEG rings with
+atomic replacement rather than accumulating one file per event.
+
+Each presence episode gets a random, process-local `presenceEpisodeId`. It
+preserves continuity of the detector episode only; it is not individual
+tracking, a name, face identity or biometric re-identification. The current
+producer deliberately exposes no exact occupancy count. `person_observed` carries a
+strict normalized 2D box (`x`, `y`, `width`, `height`) for qualitative image
+position. It does not claim metric distance, depth or 3D geometry. The current
+producer tracks one best person; multi-person tracking remains future work.
 
 ## YOLOv8 presence backend
 
@@ -83,9 +95,18 @@ YOLO env knobs: `BUDDY_VISION_YOLO_MODEL`, `BUDDY_VISION_YOLO_CONF`,
 `BUDDY_SENSE_CAMERA_INDEX`, `BUDDY_VISION_CAMERA_NAME`, `BUDDY_VISION_DETECTORS`
 (person,drowsy), `BUDDY_VISION_PERSON_BACKEND` (mediapipe,yolo),
 `BUDDY_VISION_FPS`, `BUDDY_VISION_MOTION`, `BUDDY_VISION_BLINK`,
-`BUDDY_VISION_DROWSY_SECS`, `BUDDY_VISION_PERSON_GRACE`, `BUDDY_EAR_DEVICE`,
+`BUDDY_VISION_DROWSY_SECS`, `BUDDY_VISION_PERSON_GRACE`,
+`BUDDY_VISION_HEARTBEAT_SECS`, `BUDDY_VISION_CAMERA_FAILURE_GRACE`,
+`BUDDY_VISION_OBSERVATION_SECS`, `BUDDY_VISION_MOTION_EVENT_SECS`,
+`BUDDY_VISION_MOTION_FRAME_SLOTS`, `BUDDY_VISION_SEMANTIC_FRAME_SLOTS`,
+`BUDDY_VISION_EVENTS_LOG_MAX_BYTES`, `BUDDY_EAR_DEVICE`,
 `BUDDY_EAR_RMS_ON`, `BUDDY_EAR_RMS_OFF`, `BUDDY_EAR_MIN_MS`,
 `BUDDY_EAR_MAX_MS`, `BUDDY_EAR_HANG_MS`, `BUDDY_EAR_WAV_DIR`.
+
+Camera liveness and presence refresh intervals are clamped to 10 seconds so
+they cannot exceed the brain's 15-second factual TTL. Brain-side egress knobs
+are `CODEBUDDY_VISION_CONTEXT_PRIVACY` and the separate default-off
+`CODEBUDDY_VISION_TELEGRAM_PHOTO`.
 
 ## Brain side (Code Buddy)
 `src/sensory/sensory-bridge.ts` (WS ingress) → event bus → reactions
@@ -95,3 +116,18 @@ assistant) → `alert.ts` / `voice-loop.ts`. Wired in `src/server/index.ts` when
 `CODEBUDDY_SENSORY=true`; camera reactions require
 `CODEBUDDY_SENSORY_CAMERA=true` + `CODEBUDDY_SENSORY_TOKEN`, and all sidecars
 must send the same value in `BUDDY_SENSE_TOKEN`.
+
+The local VLM emits a bounded `scene_described` summary without image bytes or
+paths. It remains `local-only` by default. Set
+`CODEBUDDY_VISION_CONTEXT_PRIVACY=cloud-ok` on the brain process only after an
+explicit privacy decision if Telegram or another cloud-routed model should use
+that short-lived, unverified visual context. Known secrets, PII and private
+paths are redacted heuristically before cloud projection; the local VLM is also
+instructed not to transcribe OCR or identities. This is not a proof that a scene
+contains no sensitive meaning, so the default remains local. Raw keyframes are
+accepted only from the configured camera spool and never enter the cognitive
+workspace. Telegram receives text only unless the separate
+`CODEBUDDY_VISION_TELEGRAM_PHOTO=true` consent is set.
+Raw VLM image inference is loopback-only by default; a non-loopback endpoint is
+accepted only over HTTPS with the separate `CODEBUDDY_VISION_REMOTE_IMAGE=true`
+consent.

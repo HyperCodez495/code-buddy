@@ -1,6 +1,6 @@
 /**
  * Semantic vision reaction — turns the HIGH-LEVEL vision events from the Python
- * vision sidecar (`person_entered` / `person_left` / `drowsy`) into a remote
+ * vision sidecar (`person_entered` / `person_lost` / `drowsy`) into a remote
  * alert. These are state-machine TRANSITIONS (already deduped at the detector,
  * one per transition), so each is meaningful → always alert, no extra throttling.
  * Opt-in via the same camera gate as the motion reaction. Best-effort, never-throws.
@@ -13,6 +13,10 @@ import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
 import { sendTelegramAlert } from './alert.js';
 import { buildArrivalOpener, buildLlmArrivalOpener, loadArrivalState, saveArrivalState, pushRecent, type ArrivalChat } from './arrival-opener.js';
+import {
+  safeCameraKeyframePath,
+  telegramVisionPhotoPath,
+} from './camera-keyframe-policy.js';
 
 /**
  * Human-readable alert POOLS per semantic event kind (extend as detectors are
@@ -30,10 +34,15 @@ export const CAMERA_MESSAGES: Record<string, string[]> = {
     '✨ Quelqu’un arrive',
   ],
   person_left: [
-    '🚪 Plus personne dans le champ',
-    '🌙 La pièce est de nouveau vide',
-    '👋 La personne est partie',
-    '🎥 Le champ est vide',
+    '👁️ Ancien signal de sortie reçu — présence à confirmer',
+    '🎥 Je ne vois plus la présence ; je ne peux pas confirmer son départ',
+    '🌫️ Le suivi visuel est perdu — situation incertaine',
+    '👋 La présence est sortie du champ ou masquée',
+  ],
+  person_lost: [
+    '👁️ Je ne vois plus la personne',
+    '🎥 La personne est sortie du champ ou masquée',
+    '🌫️ Présence visuelle perdue — situation désormais incertaine',
   ],
   drowsy: [
     '😴 Somnolence détectée (yeux fermés)',
@@ -87,6 +96,7 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
     void (async () => {
       try {
         const label = pickCameraMessage(kind);
+        const frame = await safeCameraKeyframePath(payload.imagePath);
         const { recordCompanionPercept } = await import('../companion/percepts.js');
         await recordCompanionPercept(
           {
@@ -94,13 +104,16 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
             source: 'semantic_vision_reaction',
             summary: `${kind} → ${label}`,
             confidence: 0.95,
-            payload: { event: kind, imagePath: payload.imagePath, camera: payload.camera },
+            payload: { event: kind, imagePath: frame, camera: payload.camera },
             tags: ['vision', 'event', kind],
           },
           options.cwd ? { cwd: options.cwd } : {},
         );
         logger.info(`[vision] semantic event → ${kind}`);
-        await sendTelegramAlert(`${label}${payload.camera ? ` (${payload.camera})` : ''}`, payload.imagePath);
+        await sendTelegramAlert(
+          `${label}${payload.camera ? ' (caméra locale)' : ''}`,
+          telegramVisionPhotoPath(frame),
+        );
       } catch (err) {
         logger.warn(`[vision] semantic reaction failed: ${err instanceof Error ? err.message : String(err)}`);
       }

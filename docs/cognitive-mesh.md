@@ -27,6 +27,8 @@ The body can see, hear, maintain memory and deliberate concurrently, but it stil
 - The sensory adapter runs in shadow mode. It mirrors only modality, canonical event kind and observation time; raw audio, transcripts, image bytes and local image paths never enter the workspace.
 - A separate recognized-utterance lane starts before response selection, model generation and TTS. It publishes the local-only text with one `turnId` shared by voice cognition and avatar events while the canonical mouth lock remains intact.
 - The deterministic WorldModel V1 tracks anonymous occupancy per camera with `visible|absent|unknown`, `firstSeen`, `lastSeen`, confidence, causal cursor and bounded provenance. Duplicate and out-of-order transitions cannot regress current state; wall-clock expiry becomes `unknown`, never invented absence.
+- The live eye now refreshes explicit camera-stream liveness, assigns an opaque token to each detector episode and publishes strict normalized 2D observations. Episode tokens are re-hashed at the cognition boundary, never become individual identity, and carry no exact count, depth or biometric re-identification claim. Detector loss and legacy `person_left` map to `unknown`; only `departureConfirmed: true` may establish `absent`.
+- Motion-triggered local VLM descriptions are bounded and preloaded as short-lived unverified hypotheses. Image bytes and local paths never enter the workspace. These summaries remain `local-only` unless the brain operator explicitly sets `CODEBUDDY_VISION_CONTEXT_PRIVACY=trusted-lan|cloud-ok`; known secrets, PII and paths are then heuristically redacted and untrusted markup is JSON-escaped. Raw Telegram photo egress has a separate, default-off `CODEBUDDY_VISION_TELEGRAM_PHOTO=true` consent.
 - Prospective event extraction can run while Lisa generates and speaks. Its eventual confirmation remains a mouth-serialized initiative.
 - Telegram/Cowork journal appends retain their strict bridge ordering, but slow channel delivery no longer holds the local mouth lock for reminder, maison and proactive voice initiatives.
 - Council local models and Fleet peers now start in the same wave. Local model timeouts propagate cancellation to transports that support `AbortSignal`.
@@ -79,7 +81,7 @@ The recognized-utterance lane is complete. Next, move the durable outcome percep
 
 ### 2. World model enrichment
 
-Add anonymous tracker ids, 2D observations and explicit camera liveness refreshes. A deterministic reducer continues to own facts; VLM/LLM hypotheses cannot directly rewrite them. Do not infer metric 3D geometry without calibrated sensors.
+Add real multi-person tracking and a safe Cowork MediaPipe ingress to the anonymous tracker ids, 2D observations and camera liveness now implemented. A deterministic reducer continues to own facts; VLM/LLM hypotheses cannot directly rewrite them. Do not infer metric 3D geometry without calibrated sensors. Add object permanence and cross-view identity only after calibrated evidence and a separate privacy review.
 
 ### 3. Extend persistent specialist adapters
 
