@@ -85,6 +85,18 @@ function asImageInput(bytes: Buffer, mimeType: string, source: string): ImageInp
   };
 }
 
+function sniffImageMime(bytes: Buffer): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp';
+  }
+  if (bytes.length >= 6 && /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString('ascii'))) return 'image/gif';
+  return null;
+}
+
 async function localOcr(image: ImageInput, signal: AbortSignal): Promise<string> {
   const encoded = image.data.slice(image.data.indexOf(',') + 1);
   const bytes = Buffer.from(encoded, 'base64');
@@ -172,8 +184,13 @@ async function loadAttachment(
   });
   const bytes = await readBoundedResponse(response);
   if (bytes.length === 0) throw new Error('empty image');
-  const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || attachment.mimeType || 'image/jpeg';
-  if (!mimeType.startsWith('image/')) throw new Error('attachment is not an image');
+  const declaredMime = response.headers.get('content-type')?.split(';')[0]?.trim() || attachment.mimeType || '';
+  // Telegram's file CDN can serve valid photos as application/octet-stream.
+  // Authenticate the payload from its magic bytes instead of trusting or
+  // rejecting solely on a generic HTTP Content-Type header.
+  const detectedMime = sniffImageMime(bytes);
+  const mimeType = detectedMime || (declaredMime.startsWith('image/') ? declaredMime : '');
+  if (!mimeType) throw new Error('attachment is not an image');
   return asImageInput(bytes, mimeType, 'channel-download');
 }
 

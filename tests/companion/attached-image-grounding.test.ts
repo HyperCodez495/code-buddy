@@ -38,4 +38,28 @@ describe('attached image grounding', () => {
     expect(result).toEqual({ status: 'unavailable', imageCount: 1, reason: 'no_model' });
     expect(renderAttachedImageEvidence(result)).toBe('');
   });
+
+  it('accepts a Telegram JPEG served as application/octet-stream by sniffing its bytes', async () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const analyze = vi.fn(async ({ images }: { images: Array<{ mimeType: string }> }) =>
+      `OBSERVATIONS: image reçue en ${images[0]!.mimeType}.`,
+    );
+    const result = await groundAttachedImages([
+      { type: 'image', url: 'telegram-file-id' },
+    ], 'Analyse cette photo', {
+      env: {
+        CODEBUDDY_VISION_MODEL: 'vision-local',
+        CODEBUDDY_VISION_BASE_URL: 'http://127.0.0.1:11435/v1',
+      },
+      resolveUrl: async () => 'https://api.telegram.org/file/bot-redacted/photos/file.jpg',
+      fetchImpl: vi.fn(async () => new Response(jpeg, {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      })) as never,
+      analyze: analyze as never,
+    });
+
+    expect(result.status).toBe('analyzed');
+    expect(analyze.mock.calls[0]![0].images[0]!.mimeType).toBe('image/jpeg');
+  });
 });
