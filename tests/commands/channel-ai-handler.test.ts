@@ -1032,6 +1032,79 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     }
   });
 
+  it('delivers a sourced prefetched bulletin when the provider fails on direct news', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'codebuddy-channel-news-fallback-'));
+    const cachePath = join(directory, 'cache.json');
+    const itemsPath = join(directory, 'items.json');
+    const rawFailure = 'Sorry, I encountered an error: provider unavailable.';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL = 'telegram';
+    process.env.CODEBUDDY_CONVERSATION_CHANNEL_ID = 'chan-42';
+    process.env.CODEBUDDY_PREFETCH_CACHE_FILE = cachePath;
+    process.env.CODEBUDDY_PREFETCH_ITEMS_FILE = itemsPath;
+    process.env.CODEBUDDY_PREFETCH = 'true';
+    savePrefetchItems([{ kind: 'news' }], itemsPath);
+    savePrefetchCache(
+      [
+        {
+          key: 'news',
+          kind: 'news',
+          answer: 'Bulletin vocal de secours.',
+          at: Date.now() - 1_000,
+          context: {
+            kind: 'news',
+            query: 'actualités France',
+            locale: 'fr-FR',
+            fetchedAt: Date.now() - 1_000,
+            items: [
+              {
+                title: 'Lyon publie des mesures horaires de qualité de l’air',
+                url: 'https://example.test/lyon-air',
+                source: 'Exemple Info',
+                summary: 'Les mesures sont désormais disponibles.',
+              },
+            ],
+          },
+        },
+      ],
+      cachePath,
+    );
+    hoisted.processUserMessage.mockResolvedValue([
+      { role: 'assistant', content: rawFailure },
+    ]);
+    hoisted.getChatHistory.mockReturnValue([
+      { type: 'user', content: 'Quelles sont les actualités ?', timestamp: new Date() },
+      { type: 'assistant', content: rawFailure, timestamp: new Date() },
+    ]);
+
+    try {
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const send = makeSuccessfulSend();
+      await manager.emit(
+        makeMessage('Quelles sont les actualités ?', 'sess-news-fallback'),
+        { type: 'telegram', send },
+      );
+
+      const delivered = send.mock.calls
+        .map((call) => telegramHtmlChunkToPlain(String(call[0]?.content ?? '')))
+        .join('\n');
+      expect(delivered).toContain('Lyon publie des mesures horaires');
+      expect(delivered).toContain('https://example.test/lyon-air');
+      expect(delivered).not.toContain('provider unavailable');
+      expect(delivered).not.toContain("Je n'ai pas réussi");
+      expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledWith(
+        rawFailure,
+        expect.stringContaining('Lyon publie des mesures horaires'),
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+      delete process.env.CODEBUDDY_PREFETCH_CACHE_FILE;
+      delete process.env.CODEBUDDY_PREFETCH_ITEMS_FILE;
+      delete process.env.CODEBUDDY_PREFETCH;
+      resetCrossChannelConversationBridge();
+    }
+  });
+
   it('restores prior history when resuming a session that already has messages', async () => {
     const priorMessages = [
       { type: 'user', content: 'earlier question' },

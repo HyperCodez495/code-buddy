@@ -1176,6 +1176,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       let preparedConversation: PreparedConversationTurn | undefined;
       let companionConversationHistory: ConversationTurn[] = [];
       let companionFreshEvidence: string | undefined;
+      let prefetchedDirectFallback: string | undefined;
       if (companionConversation) {
         const [conversation, prefetchedContext, prefetchEngine] = await Promise.all([
           import('../../conversation/conversation-orchestrator.js'),
@@ -1216,6 +1217,16 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         }
         companionFreshEvidence =
           prefetchedContext.semanticReviewEvidenceFromPrefetch(freshContext);
+        if (
+          freshContext &&
+          prefetchedContext.shouldUsePrefetchedAnswerDirectly(
+            message.content,
+            freshContext,
+          )
+        ) {
+          prefetchedDirectFallback =
+            freshContext.text.trim() || freshContext.speech.trim() || undefined;
+        }
         preparedConversation = conversation.prepareConversationTurn(message.content, history, {
           ...(sharedRelationshipContext
             ? { relationshipContext: sharedRelationshipContext }
@@ -1270,10 +1281,18 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         const { conversationFailureReply } = await import(
           '../../conversation/conversation-orchestrator.js'
         );
-        const replacement = conversationFailureReply(
-          message.content,
-          companionConversationHistory,
-        );
+        const replacement =
+          prefetchedDirectFallback ??
+          conversationFailureReply(
+            message.content,
+            companionConversationHistory,
+          );
+        if (prefetchedDirectFallback) {
+          logger.info('Channel provider failure recovered from prefetched companion context', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+          });
+        }
         if (rawAgentFailure) {
           if (!agent.replaceLastAssistantResponse(response, replacement)) {
             evictChannelAgent(sessionKey, true);
