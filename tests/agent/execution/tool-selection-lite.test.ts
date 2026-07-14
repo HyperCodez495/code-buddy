@@ -103,6 +103,31 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     expect(alwaysInclude).toEqual(['view_file', 'restore_context']);
   });
 
+  it('force-includes local-first video understanding for a bare shared YouTube URL', async () => {
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    await strategy.selectToolsForQuery(
+      'https://youtu.be/pmQKXepA0-c?si=oElRE50jo6Ymd31c',
+      { alwaysInclude: ['web_search'] },
+    );
+
+    const alwaysInclude = ragMock.getRelevantToolsMock.mock.calls[0]![1]?.alwaysInclude;
+    expect(alwaysInclude).toEqual([
+      'web_search',
+      'restore_context',
+      'understand_video',
+    ]);
+  });
+
+  it('does not add video understanding to unrelated web links', async () => {
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    await strategy.selectToolsForQuery('https://example.com/article', {
+      alwaysInclude: ['web_search'],
+    });
+
+    const alwaysInclude = ragMock.getRelevantToolsMock.mock.calls[0]![1]?.alwaysInclude;
+    expect(alwaysInclude).toEqual(['web_search', 'restore_context']);
+  });
+
   it('keeps the default 15-tool budget when no override is passed', async () => {
     const strategy = new ToolSelectionStrategy({ enableCaching: false });
     await strategy.selectToolsForQuery('hello world');

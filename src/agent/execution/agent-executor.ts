@@ -2150,6 +2150,10 @@ export class AgentExecutor {
       }
 
       const errorMessage = getErrorMessage(error);
+      logger.error('Agent turn failed', {
+        errorType: error instanceof Error ? error.name : 'unknown',
+        error: errorMessage.slice(0, 2_000),
+      });
       const errorEntry: ChatEntry = {
         type: "assistant",
         content: `Sorry, I encountered an error: ${errorMessage}`,

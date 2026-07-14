@@ -607,6 +607,10 @@ function hashForLog(value: unknown): string | undefined {
   return createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
 }
 
+function isAgentFailureResponse(value: string): boolean {
+  return /^Sorry, I encountered an error:/i.test(value.trim());
+}
+
 function channelHistoryTurn(
   entry: { type?: unknown; role?: unknown; content?: unknown },
 ): ConversationTurn | null {
@@ -1259,13 +1263,32 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       });
       const lastEntry = entries[entries.length - 1];
       let response = lastEntry ? String(lastEntry.content) : '';
-      const hasGeneratedResponse = response.trim() !== '';
+      const rawAgentFailure = isAgentFailureResponse(response);
+      const hasGeneratedResponse = response.trim() !== '' && !rawAgentFailure;
       let shouldPersistChannelSession = true;
-      if (!response.trim()) {
+      if (!response.trim() || rawAgentFailure) {
         const { conversationFailureReply } = await import(
           '../../conversation/conversation-orchestrator.js'
         );
-        response = conversationFailureReply(message.content);
+        const replacement = conversationFailureReply(
+          message.content,
+          companionConversationHistory,
+        );
+        if (rawAgentFailure) {
+          if (!agent.replaceLastAssistantResponse(response, replacement)) {
+            evictChannelAgent(sessionKey, true);
+            shouldPersistChannelSession = false;
+            logger.error('Channel provider failure rewrite missed agent history', {
+              channelType: channel.type,
+              sessionHash: hashForLog(sessionKey),
+            });
+          }
+          logger.warn('Channel provider failure hidden from conversation', {
+            channelType: channel.type,
+            sessionHash: hashForLog(sessionKey),
+          });
+        }
+        response = replacement;
       }
       const semanticReviewEligible =
         semanticReviewPlanned &&

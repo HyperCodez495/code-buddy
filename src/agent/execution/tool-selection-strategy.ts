@@ -135,6 +135,16 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes
 };
 
+function requiredToolsForQuery(query: string): string[] {
+  // A bare shared URL has almost no semantic words for TF-IDF/BM25 to match.
+  // Route YouTube links deterministically to the local-first caption/video
+  // cascade instead of leaving the model with only generic web search.
+  return /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch|shorts|embed|v)(?:[/?])|youtu\.be\/)[^\s]+/i
+    .test(query)
+    ? ['understand_video']
+    : [];
+}
+
 /**
  * Tool Selection Strategy
  *
@@ -198,7 +208,11 @@ export class ToolSelectionStrategy {
     // model must never be stranded without the exact callId recovery path.
     const effectiveConfig: ToolSelectionConfig = {
       ...mergedConfig,
-      alwaysInclude: Array.from(new Set([...mergedConfig.alwaysInclude, 'restore_context'])),
+      alwaysInclude: Array.from(new Set([
+        ...mergedConfig.alwaysInclude,
+        'restore_context',
+        ...requiredToolsForQuery(query),
+      ])),
     };
     const modelName = ToolSelectionStrategy.normalizeModelName(effectiveConfig.modelName);
     this.lastQuery = query;

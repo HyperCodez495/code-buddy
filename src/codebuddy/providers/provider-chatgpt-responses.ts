@@ -183,8 +183,15 @@ interface ResponsesCustomToolCallOutput {
  * lets the model preserve its chain-of-thought across tool round-trips.
  * Decryption is server-side only, by design.
  */
+interface ResponsesReasoningSummaryPart {
+  type: 'summary_text';
+  text: string;
+}
+
 interface ResponsesReasoningItem {
   type: 'reasoning';
+  /** Required when replaying a reasoning item as Responses input. */
+  summary: ResponsesReasoningSummaryPart[];
   encrypted_content: string;
 }
 
@@ -1042,6 +1049,7 @@ export async function* parseSseStream(
             input?: string;
             call_id?: string;
             encrypted_content?: string;
+            summary?: unknown;
           };
           response?: { error?: { code?: string; message?: string } };
         };
@@ -1158,8 +1166,18 @@ export async function* parseSseStream(
           typeof parsed.item.encrypted_content === 'string' &&
           onReasoningItem
         ) {
+          const summary: ResponsesReasoningSummaryPart[] = Array.isArray(parsed.item.summary)
+            ? parsed.item.summary.flatMap((part: unknown) => {
+                if (!part || typeof part !== 'object') return [];
+                const record = part as Record<string, unknown>;
+                return record.type === 'summary_text' && typeof record.text === 'string'
+                  ? [{ type: 'summary_text' as const, text: record.text }]
+                  : [];
+              })
+            : [];
           onReasoningItem({
             type: 'reasoning',
+            summary,
             encrypted_content: parsed.item.encrypted_content,
           });
           continue;

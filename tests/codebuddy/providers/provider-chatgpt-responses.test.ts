@@ -139,7 +139,7 @@ describe('convertMessages — chat/completions → Codex Responses input shape',
   });
 
   it('prepends prior reasoning items only when an assistant tool round exists', () => {
-    const reasoning = [{ type: 'reasoning' as const, encrypted_content: 'blob-1' }];
+    const reasoning = [{ type: 'reasoning' as const, summary: [], encrypted_content: 'blob-1' }];
 
     // No assistant round yet → reasoning blobs are skipped.
     const fresh = convertMessages(
@@ -163,7 +163,11 @@ describe('convertMessages — chat/completions → Codex Responses input shape',
       ] as unknown as CodeBuddyMessage[],
       reasoning,
     );
-    expect(midTurn.input[0]).toEqual({ type: 'reasoning', encrypted_content: 'blob-1' });
+    expect(midTurn.input[0]).toEqual({
+      type: 'reasoning',
+      summary: [],
+      encrypted_content: 'blob-1',
+    });
   });
 });
 
@@ -492,16 +496,38 @@ describe('parseSseStream — Codex SSE → OpenAI ChatCompletionChunk', () => {
 
   it('captures encrypted_content from reasoning items via the onReasoningItem callback', async () => {
     const stream = makeSseStream([
-      'data: {"type":"response.output_item.done","item":{"type":"reasoning","encrypted_content":"opaque-blob-A"}}\n\n',
+      'data: {"type":"response.output_item.done","item":{"type":"reasoning","summary":[{"type":"summary_text","text":"Checked the source"},{"type":"ignored","text":"drop"}],"encrypted_content":"opaque-blob-A","private_field":"drop"}}\n\n',
       'data: {"type":"response.output_text.delta","delta":"hi"}\n\n',
       'data: {"type":"response.completed"}\n\n',
     ]);
 
-    const captured: Array<{ type: string; encrypted_content: string }> = [];
+    const captured: Array<{ type: string; summary: Array<{ type: string; text: string }>; encrypted_content: string }> = [];
     for await (const _ of parseSseStream(stream, 'gpt-5.5', (item) => captured.push(item))) {
       /* drain */
     }
-    expect(captured).toEqual([{ type: 'reasoning', encrypted_content: 'opaque-blob-A' }]);
+    expect(captured).toEqual([{
+      type: 'reasoning',
+      summary: [{ type: 'summary_text', text: 'Checked the source' }],
+      encrypted_content: 'opaque-blob-A',
+    }]);
+  });
+
+  it('adds an empty required summary when the backend omits reasoning summaries', async () => {
+    const stream = makeSseStream([
+      'data: {"type":"response.output_item.done","item":{"type":"reasoning","encrypted_content":"opaque-blob-empty"}}\n\n',
+      'data: {"type":"response.completed"}\n\n',
+    ]);
+    const captured: Array<{ type: string; summary: unknown[]; encrypted_content: string }> = [];
+
+    for await (const _ of parseSseStream(stream, 'gpt-5.5', (item) => captured.push(item))) {
+      /* drain */
+    }
+
+    expect(captured).toEqual([{
+      type: 'reasoning',
+      summary: [],
+      encrypted_content: 'opaque-blob-empty',
+    }]);
   });
 
   it('emits reasoning_text.delta as delta.reasoning_content (passthrough field)', async () => {
@@ -837,7 +863,7 @@ describe('ChatGptResponsesProvider — chatStream wiring', () => {
     // Round 2 stream: completed (no body, we just inspect the request body).
     const responses: Response[] = [
       streamingResponse([
-        'data: {"type":"response.output_item.done","item":{"type":"reasoning","encrypted_content":"opaque-blob-r1"}}\n\n',
+        'data: {"type":"response.output_item.done","item":{"type":"reasoning","summary":[],"encrypted_content":"opaque-blob-r1"}}\n\n',
         'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"search","arguments":"{\\"q\\":\\"x\\"}","call_id":"c1"}}\n\n',
         'data: {"type":"response.completed"}\n\n',
       ]),
@@ -882,6 +908,7 @@ describe('ChatGptResponsesProvider — chatStream wiring', () => {
     const round2Body = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
     expect(round2Body.input[0]).toEqual({
       type: 'reasoning',
+      summary: [],
       encrypted_content: 'opaque-blob-r1',
     });
     // And the include flag should be set since reasoning effort is on.

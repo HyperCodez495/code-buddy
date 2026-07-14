@@ -237,6 +237,43 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     });
   });
 
+  it('replaces an internal provider failure before Telegram delivery and persistence', async () => {
+    const rawFailure =
+      "Sorry, I encountered an error: ChatGPT Responses backend error (400): Missing required parameter: 'input[0].summary'.";
+    const mutableHistory = [
+      { type: 'user', content: 'https://youtu.be/example', timestamp: new Date() },
+      { type: 'assistant', content: rawFailure, timestamp: new Date() },
+    ];
+    hoisted.processUserMessage.mockResolvedValue([
+      { role: 'assistant', content: rawFailure },
+    ]);
+    hoisted.getChatHistory.mockReturnValue(mutableHistory);
+
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = makeSuccessfulSend();
+    await manager.emit(makeMessage('https://youtu.be/example', 'sess-provider-failure'), {
+      type: 'telegram',
+      send,
+    });
+
+    const delivered = send.mock.calls
+      .map((call) => String(call[0]?.content ?? ''))
+      .join('\n');
+    expect(delivered).toContain("Je n'ai pas réussi");
+    expect(delivered).not.toContain('ChatGPT Responses backend error');
+    expect(delivered).not.toContain('Missing required parameter');
+    expect(hoisted.reviewSemanticResponse).not.toHaveBeenCalled();
+    expect(hoisted.replaceLastAssistantResponse).toHaveBeenCalledWith(
+      rawFailure,
+      expect.stringContaining("Je n'ai pas réussi"),
+    );
+    const persisted = JSON.stringify(hoisted.saveSession.mock.calls.at(-1)?.[0] ?? {});
+    expect(persisted).toContain("Je n'ai pas réussi");
+    expect(persisted).not.toContain('ChatGPT Responses backend error');
+    expect(persisted).not.toContain('Missing required parameter');
+  });
+
   it('blocks unpaired senders: sends the pairing prompt and does NOT run the agent', async () => {
     hoisted.checkDMPairing.mockResolvedValue({ approved: false, code: '123456' });
 
