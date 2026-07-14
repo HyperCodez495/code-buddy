@@ -98,7 +98,13 @@ export interface AutonomyModelTierReview {
   error?: string;
   ladder: AutonomyModelTierRung[];
   /** The model a basic autonomous tick would use right now. */
-  currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
+  currentChoice?: {
+    model: string;
+    baseUrl?: string;
+    tier: string;
+    paid: boolean;
+    reason: string;
+  };
 }
 
 interface CoreServiceInstaller {
@@ -482,6 +488,7 @@ export async function getAutonomyModelTierForReview(): Promise<AutonomyModelTier
       ladder,
       currentChoice: {
         model: current.model,
+        ...(current.baseUrl ? { baseUrl: current.baseUrl } : {}),
         tier: current.tier,
         paid: current.paid,
         reason: current.reason,

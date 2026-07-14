@@ -19,6 +19,8 @@ export interface LiveLauncherStartInput {
   model?: string;
   /** 'ollama' (default — $0 local) pins CODEBUDDY_PROVIDER; 'inherit' uses ambient env. */
   provider?: 'ollama' | 'inherit';
+  /** Required acknowledgement before the main process accepts ambient/cloud credentials. */
+  confirmInheritedProvider?: boolean;
   /** Ollama base URL when provider==='ollama' (default http://localhost:11434). */
   ollamaUrl?: string;
   /** Research only — force the parallel-worker (Manus-style) mode in headless runs. */
@@ -37,16 +39,25 @@ export interface LiveLauncherStartInput {
   perspectives?: number;
   /** Flow only — max retries per failed step. */
   maxRetries?: number;
-  /** Overall timeout. Defaults: 300_000 (research) / 600_000 (flow). */
+  /** Overall timeout. Defaults depend on mode (direct 5m, wide 15m, deep 30m, flow 10m). */
   timeoutMs?: number;
 }
 
 export interface LiveLauncherRunView {
   runId: string;
   kind: LiveLauncherKind;
+  /** Normalized launch mode retained so Cowork can faithfully prepare a rerun. */
+  researchMode?: 'direct' | 'wide' | 'deep';
   prompt: string;
   model?: string;
   provider: 'ollama' | 'inherit';
+  /** Effective Ollama endpoint retained for transparent, faithful reruns. */
+  ollamaUrl?: string;
+  workers?: number;
+  iterations?: number;
+  perspectives?: number;
+  maxRetries?: number;
+  timeoutMs?: number;
   status: LiveLauncherRunStatusValue;
   startedAt: number;
   endedAt?: number;
@@ -55,6 +66,9 @@ export interface LiveLauncherRunView {
   reportPath?: string;
   /** Capped tail of stdout+stderr lines. */
   logTail: string[];
+  /** Summary metadata returned by list() without transferring the full log. */
+  logLineCount?: number;
+  hasResult?: boolean;
   /** Final output: research report content, or the flow's stdout. */
   result?: string;
   error?: string;

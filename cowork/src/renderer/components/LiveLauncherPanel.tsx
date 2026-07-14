@@ -34,6 +34,7 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
   const [kind, setKind] = useState<LiveLauncherKind>('research');
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState(DEFAULT_MODEL);
+  const [ollamaUrl, setOllamaUrl] = useState('');
   const [useLocalOllama, setUseLocalOllama] = useState(true);
   const [wide, setWide] = useState(false);
   const [workers, setWorkers] = useState('5');
@@ -61,6 +62,9 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
       .then((tier) => {
         if (tier?.ok && tier.currentChoice?.model && !tier.currentChoice.paid) {
           setModel((current) => (current === DEFAULT_MODEL ? tier.currentChoice!.model : current));
+          if (tier.currentChoice.baseUrl) {
+            setOllamaUrl((current) => current.trim() || tier.currentChoice!.baseUrl!);
+          }
         }
       })
       .catch(() => undefined);
@@ -104,6 +108,15 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
   const start = useCallback(async () => {
     const trimmed = prompt.trim();
     if (!trimmed || starting || status === 'running') return;
+    if (
+      !useLocalOllama &&
+      !window.confirm(
+        `Ce lancement utilisera le provider configuré avec le modèle « ${model.trim() || DEFAULT_MODEL} ». ` +
+          'Il peut consommer des crédits API, particulièrement en mode Deep Research. Continuer ?',
+      )
+    ) {
+      return;
+    }
     setStarting(true);
     setError(null);
     setResult(null);
@@ -135,6 +148,8 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
         prompt: trimmed,
         model: model.trim() || undefined,
         provider: useLocalOllama ? 'ollama' : 'inherit',
+        ...(!useLocalOllama ? { confirmInheritedProvider: true } : {}),
+        ...(useLocalOllama && ollamaUrl.trim() ? { ollamaUrl: ollamaUrl.trim() } : {}),
         ...modeFields,
       });
       if (!response.ok || !response.runId) {
@@ -149,7 +164,20 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
     } finally {
       setStarting(false);
     }
-  }, [prompt, starting, status, kind, model, useLocalOllama, wide, workers, deep, iterations, perspectives]);
+  }, [
+    prompt,
+    starting,
+    status,
+    kind,
+    model,
+    ollamaUrl,
+    useLocalOllama,
+    wide,
+    workers,
+    deep,
+    iterations,
+    perspectives,
+  ]);
 
   const cancel = useCallback(async () => {
     if (!runId) return;
@@ -225,7 +253,7 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
             <span className="ml-auto text-[10px] text-text-muted">
               {kind === 'research'
                 ? t('liveLauncher.researchHint', 'Wide research: report with findings + recommendations')
-                : t('liveLauncher.flowHint', 'Plan → execute → synthesize')}
+                : t('liveLauncher.flowHint', 'Plan → process → synthesize')}
             </span>
           </div>
           <textarea
@@ -252,7 +280,7 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
             />
             <label
               className="flex items-center gap-1 text-[10px] text-text-secondary cursor-pointer select-none"
-              title={t('liveLauncher.ollamaHint', 'Pin CODEBUDDY_PROVIDER=ollama — free local inference')}
+              title={t('liveLauncher.ollamaHint', 'Pin CODEBUDDY_PROVIDER=ollama — free local or network inference')}
             >
               <input
                 type="checkbox"
@@ -262,7 +290,7 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
                 className="h-3 w-3 accent-accent"
                 data-testid="live-launcher-ollama"
               />
-              {t('liveLauncher.localOllama', 'local Ollama')}
+              {t('liveLauncher.localOllama', 'local/network Ollama')}
               <span className="px-1 rounded border border-success/40 text-success text-[9px]">$0</span>
             </label>
             {kind === 'research' && (
@@ -350,6 +378,19 @@ export function LiveLauncherPanel({ isOpen, onClose }: LiveLauncherPanelProps) {
               </button>
             )}
           </div>
+          {useLocalOllama && (
+            <input
+              value={ollamaUrl}
+              onChange={(event) => setOllamaUrl(event.target.value)}
+              disabled={running}
+              placeholder={t(
+                'liveLauncher.ollamaUrlPlaceholder',
+                'Ollama endpoint (e.g. http://darkstar:11434)',
+              )}
+              className="w-full px-2 py-1 rounded bg-background border border-border text-text-primary font-mono placeholder:text-text-muted disabled:opacity-50"
+              data-testid="live-launcher-ollama-url"
+            />
+          )}
         </section>
 
         {error && (

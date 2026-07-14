@@ -36,43 +36,48 @@ import { resolveLazyNamedExport } from '../utils/vite-preload-recovery';
 
 const AppStudioView = lazy(() =>
   import('./studio/AppStudioView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.AppStudioView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.AppStudioView)
+  )
 );
 const MissionControlView = lazy(() =>
   import('./os/MissionControlView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.MissionControlView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.MissionControlView)
+  )
 );
 const LabsGallery = lazy(() =>
   import('./labs/LabsGallery').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.LabsGallery),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.LabsGallery)
+  )
 );
 const CreationsView = lazy(() =>
   import('./deliverables/CreationsView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.CreationsView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.CreationsView)
+  )
 );
 const MediaLibraryView = lazy(() =>
   import('./deliverables/MediaLibraryView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.MediaLibraryView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.MediaLibraryView)
+  )
 );
 const VideoStudioView = lazy(() =>
   import('./videostudio/VideoStudioView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.VideoStudioView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.VideoStudioView)
+  )
 );
 const AssistantView = lazy(() =>
   import('./assistant/AssistantView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.AssistantView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.AssistantView)
+  )
 );
 const MeetingLiveView = lazy(() =>
   import('./MeetingLiveView').then((module) =>
-    resolveLazyNamedExport(module, (loaded) => loaded.MeetingLiveView),
-  ),
+    resolveLazyNamedExport(module, (loaded) => loaded.MeetingLiveView)
+  )
+);
+const AdvancedCommandCenter = lazy(() =>
+  import('./advanced/AdvancedCommandCenter').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.AdvancedCommandCenter)
+  )
 );
 
 interface RailItem {
@@ -83,20 +88,90 @@ interface RailItem {
 }
 
 const RAIL: RailItem[] = [
-  { view: 'chat', label: 'Chat', glyph: '💬', help: 'Discute avec Code Buddy, joins des fichiers et transforme une demande en action.' },
-  { view: 'plan', label: 'Plan', glyph: '📋', help: 'Décompose une mission en étapes lisibles avant de laisser l’agent exécuter.' },
-  { view: 'activity', label: 'Activité', glyph: '📊', help: 'Observe les outils, fichiers, modèles et décisions produits pendant la session.' },
-  { view: 'workspace', label: 'Fichiers', glyph: '📁', help: 'Explore les fichiers du projet et ouvre les artefacts générés par les agents.' },
-  { view: 'studio', label: 'App Studio', glyph: '🛠️', help: 'Construis une application avec une boucle de génération, test et amélioration.' },
-  { view: 'creations', label: 'Créations', glyph: '✨', help: 'Retrouve tes livrables : documents, feuilles, présentations et exports.' },
-  { view: 'videostudio', label: 'Video Studio', glyph: '🎬', help: 'Prépare un storyboard, génère des scènes et assemble une vidéo vérifiable.' },
-  { view: 'assistant', label: 'Assistant', glyph: '🎙️', help: 'Configure le mode vocal temps réel, Pocket TTS, le volume et les interruptions.' },
-  { view: 'meeting', label: 'Réunion', glyph: '📝', help: 'Enregistre une réunion locale avec consentement, checkpoints récupérables et notes automatiques.' },
-  { view: 'library', label: 'Bibliothèque', glyph: '🖼️', help: 'Consulte les médias et ressources réutilisables du workspace.' },
-  { view: 'capabilities', label: 'Capacités', glyph: '🧰', help: 'Active les skills, outils, serveurs MCP et providers disponibles pour l’agent.' },
-  { view: 'os', label: 'Mission Control', glyph: '🛰️', help: 'Pilote le loop 2.0 : Constitution, Exchange multi-LLM, Shadow Twin et preuves.' },
-  { view: 'labs', label: 'Labs', glyph: '🧪', help: 'Découvre les fonctionnalités expérimentales et les nouveaux modes d’orchestration.' },
-  { view: 'advanced', label: 'Avancé', glyph: '⚙️', help: 'Accède aux réglages experts, à la supervision et aux intégrations avancées.' },
+  {
+    view: 'chat',
+    label: 'Chat',
+    glyph: '💬',
+    help: 'Discute avec Code Buddy, joins des fichiers et transforme une demande en action.',
+  },
+  {
+    view: 'plan',
+    label: 'Plan',
+    glyph: '📋',
+    help: 'Décompose une mission en étapes lisibles avant de laisser l’agent exécuter.',
+  },
+  {
+    view: 'activity',
+    label: 'Activité',
+    glyph: '📊',
+    help: 'Observe les outils, fichiers, modèles et décisions produits pendant la session.',
+  },
+  {
+    view: 'workspace',
+    label: 'Fichiers',
+    glyph: '📁',
+    help: 'Explore les fichiers du projet et ouvre les artefacts générés par les agents.',
+  },
+  {
+    view: 'studio',
+    label: 'App Studio',
+    glyph: '🛠️',
+    help: 'Construis une application avec une boucle de génération, test et amélioration.',
+  },
+  {
+    view: 'creations',
+    label: 'Créations',
+    glyph: '✨',
+    help: 'Retrouve tes livrables : documents, feuilles, présentations et exports.',
+  },
+  {
+    view: 'videostudio',
+    label: 'Video Studio',
+    glyph: '🎬',
+    help: 'Prépare un storyboard, génère des scènes et assemble une vidéo vérifiable.',
+  },
+  {
+    view: 'assistant',
+    label: 'Assistant',
+    glyph: '🎙️',
+    help: 'Configure le mode vocal temps réel, Pocket TTS, le volume et les interruptions.',
+  },
+  {
+    view: 'meeting',
+    label: 'Réunion',
+    glyph: '📝',
+    help: 'Enregistre une réunion locale avec consentement, checkpoints récupérables et notes automatiques.',
+  },
+  {
+    view: 'library',
+    label: 'Bibliothèque',
+    glyph: '🖼️',
+    help: 'Consulte les médias et ressources réutilisables du workspace.',
+  },
+  {
+    view: 'capabilities',
+    label: 'Capacités',
+    glyph: '🧰',
+    help: 'Active les skills, outils, serveurs MCP et providers disponibles pour l’agent.',
+  },
+  {
+    view: 'os',
+    label: 'Mission Control',
+    glyph: '🛰️',
+    help: 'Pilote le loop 2.0 : Constitution, Exchange multi-LLM, Shadow Twin et preuves.',
+  },
+  {
+    view: 'labs',
+    label: 'Labs',
+    glyph: '🧪',
+    help: 'Découvre les fonctionnalités expérimentales et les nouveaux modes d’orchestration.',
+  },
+  {
+    view: 'advanced',
+    label: 'Avancé',
+    glyph: '⚙️',
+    help: 'Accède aux réglages experts, à la supervision et aux intégrations avancées.',
+  },
 ];
 
 const THEME_OPTIONS = [
@@ -111,86 +186,6 @@ const THEME_OPTIONS = [
 
 function themeGlyph(theme: string): string {
   return THEME_OPTIONS.find((option) => option.value === theme)?.glyph ?? '🎨';
-}
-
-interface LauncherCard {
-  label: string;
-  hint: string;
-  open: () => void;
-}
-
-function CardGrid({ cards }: { cards: LauncherCard[] }) {
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      {cards.map((c) => (
-        <button
-          key={c.label}
-          type="button"
-          onClick={c.open}
-          className="text-left rounded-lg border border-border bg-background hover:bg-accent transition-colors p-3"
-        >
-          <div className="font-medium">{c.label}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">{c.hint}</div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Progressive-disclosure launcher: the power-user surfaces, out of the default flow. Split into
- * "Avancé" (stable power-user tools) and "Labs" (dense / experimental / competitor-parity surfaces),
- * so a first-time user isn't confronted with the fleet mesh and parity strips next to Settings.
- */
-function AdvancedLauncher() {
-  const s = useAppStore();
-  const advanced: LauncherCard[] = [
-    { label: 'Réglages', hint: 'Modèles, clés, MCP, workspace', open: () => s.setShowSettings(true) },
-    { label: 'Mémoire', hint: 'Ce que Code Buddy retient', open: () => s.setShowMemoryEditor(true) },
-    { label: 'Skills', hint: 'Docs Office, charts, recherche', open: () => s.setShowSkillsManager(true) },
-    { label: 'Companion', hint: 'Voix, présence, canaux', open: () => s.setShowCompanionPanel(true) },
-    { label: 'Autonomie', hint: 'Boucle autonome, YOLO', open: () => s.setShowAutonomyPanel(true) },
-    { label: 'Recherche', hint: 'Recherche large + flow de planification', open: () => s.setShowLiveLauncher(true) },
-    { label: 'Tests', hint: 'Lancer la suite de tests', open: () => s.setShowTestRunner(true) },
-    { label: 'Insights', hint: 'Analyse de session', open: () => s.setShowSessionInsights(true) },
-  ];
-  const labs: LauncherCard[] = [
-    {
-      label: 'Deep Research',
-      hint: 'Recherche multi-sources, cité — rapport avec références',
-      open: () => {
-        s.setLiveLauncherDeepIntent(true);
-        s.setShowLiveLauncher(true);
-      },
-    },
-    { label: 'Connaissances', hint: 'Mémoire collective (CKG) + sujets de recherche', open: () => s.setShowKnowledgePanel(true) },
-    { label: 'Évolution', hint: 'Versions générées par l’auto-amélioration', open: () => s.setShowEvolutionPanel(true) },
-    { label: 'AI-Scientist', hint: 'Expériences `buddy science` (lecture seule)', open: () => s.setShowSciencePanel(true) },
-    { label: 'Fleet', hint: 'Multi-agents, pairs, routage', open: () => s.setShowFleetCommandCenter(true) },
-    { label: 'Missions', hint: 'Tableau des tâches multi-agents', open: () => s.setShowMissionBoard(true) },
-    { label: 'Workflows', hint: 'Éditeur de workflow visuel', open: () => s.setShowWorkflowProPanel(true) },
-    { label: 'Migration Claw', hint: 'Import OpenClaw / parité', open: () => s.setShowClawMigration(true) },
-  ];
-  return (
-    <div className="h-full overflow-auto p-6 space-y-6">
-      <section>
-        <h2 className="text-lg font-semibold mb-1">Avancé</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Les surfaces puissantes de Code Buddy — hors du chemin par défaut, à un clic.
-        </p>
-        <CardGrid cards={advanced} />
-      </section>
-      <section>
-        <h2 className="text-lg font-semibold mb-1">
-          Labs <span className="text-xs font-normal text-muted-foreground">· expérimental</span>
-        </h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Orchestration multi-agents et surfaces de parité — denses, pour quand tu en as besoin.
-        </p>
-        <CardGrid cards={labs} />
-      </section>
-    </div>
-  );
 }
 
 /**
@@ -237,7 +232,14 @@ function StudioView() {
       if (messages?.length && !current?.messages?.length) setMessages(activeSessionId, messages);
       if (steps?.length && !current?.traceSteps?.length) setTraceSteps(activeSessionId, steps);
     });
-  }, [activeSessionId, sessionCwd, getSessionMessages, getSessionTraceSteps, setMessages, setTraceSteps]);
+  }, [
+    activeSessionId,
+    sessionCwd,
+    getSessionMessages,
+    getSessionTraceSteps,
+    setMessages,
+    setTraceSteps,
+  ]);
 
   // Refresh the file tree as the agent writes files: the initial load happens
   // before generation, so without this the workbench stays on "les fichiers
@@ -262,10 +264,16 @@ function StudioView() {
     async (request: StudioScaffoldRequest) => {
       const prompt = buildAiGenerationPrompt(request);
       const cwd = request.targetDir?.trim() || workingDir || undefined;
-      const session = await startSession(getInitialSessionTitle(request.prompt), prompt, cwd, null, true);
+      const session = await startSession(
+        getInitialSessionTitle(request.prompt),
+        prompt,
+        cwd,
+        null,
+        true
+      );
       if (session?.id) setActiveSession(session.id);
     },
-    [startSession, setActiveSession, workingDir],
+    [startSession, setActiveSession, workingDir]
   );
 
   // "Vérifier" taps Code Buddy's web_test through the agent session (which owns
@@ -280,7 +288,7 @@ function StudioView() {
         `confirme qu'il n'y a aucune erreur console ni erreur de page et que l'interface principale s'affiche, ` +
         `puis résume le rapport (PASSED/FAILED + points clés). Corrige si tu détectes une erreur. ` +
         `Si \`web_test\` n'apparaît pas dans tes outils, appelle d'abord \`tool_search\` avec "web_test" pour le charger — ` +
-        `n'écris PAS ton propre script navigateur (le rapport web_test alimente la carte de vérification de l'interface).`,
+        `n'écris PAS ton propre script navigateur (le rapport web_test alimente la carte de vérification de l'interface).`
     );
   }, [activeSessionId, viewProps.previewUrl, continueSession]);
 
@@ -388,41 +396,57 @@ export function NewShell() {
   return (
     <div className="h-full min-h-0 flex overflow-hidden bg-background" data-testid="new-shell">
       {/* Thin rail — one calm nav, not three. */}
-      <nav className="w-16 shrink-0 border-r border-border flex flex-col items-stretch py-2 gap-1">
-        {RAIL.map((item) => {
-          const active = primaryView === item.view;
-          return (
-            <GuidedTooltip key={item.view} title={item.label} description={item.help} kicker="Espace Cowork" side="right">
-              <button
-                type="button"
-                aria-current={active ? 'page' : undefined}
-                onClick={() => setPrimaryView(item.view)}
+      <nav className="flex w-16 shrink-0 flex-col items-stretch border-r border-border py-2">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain">
+          {RAIL.map((item) => {
+            const active = primaryView === item.view;
+            return (
+              <GuidedTooltip
+                key={item.view}
                 title={item.label}
-                className={`flex flex-col items-center gap-0.5 py-2 mx-1 rounded-md text-[10px] transition-colors ${
-                  active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60'
-                }`}
+                description={item.help}
+                kicker="Espace Cowork"
+                side="right"
               >
-                <span className="text-lg leading-none">{item.glyph}</span>
-                <span>{item.label}</span>
-              </button>
-            </GuidedTooltip>
-          );
-        })}
+                <button
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => setPrimaryView(item.view)}
+                  title={item.label}
+                  className={`mx-1 flex flex-col items-center gap-0.5 rounded-md py-2 text-[10px] transition-colors ${
+                    active
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-accent/60'
+                  }`}
+                >
+                  <span className="text-lg leading-none">{item.glyph}</span>
+                  <span>{item.label}</span>
+                </button>
+              </GuidedTooltip>
+            );
+          })}
+        </div>
 
         {/* Footer: the discoverability net. ⌘K reaches every capability; "?" lists all shortcuts. */}
-        <GuidedTooltip title="Historique" description="Retrouve une session précédente, ses messages et ses preuves sans quitter ton workspace." kicker="Navigation" side="right">
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().setShowConversationHistory(true)}
-            title="Historique des conversations"
-            className="flex flex-col items-center gap-0.5 py-2 mx-1 rounded-md text-[10px] text-muted-foreground hover:bg-accent/60 transition-colors"
-            data-testid="rail-history"
+        <div className="shrink-0 border-t border-border/70 pt-1">
+          <GuidedTooltip
+            title="Historique"
+            description="Retrouve une session précédente, ses messages et ses preuves sans quitter ton workspace."
+            kicker="Navigation"
+            side="right"
           >
-            <span className="text-lg leading-none">🕘</span>
-            <span>Historique</span>
-          </button>
-        </GuidedTooltip>
-        <div className="mt-auto grid grid-cols-3 gap-0.5 px-1 pt-1">
+            <button
+              type="button"
+              onClick={() => useAppStore.getState().setShowConversationHistory(true)}
+              title="Historique des conversations"
+              className="mx-1 flex flex-col items-center gap-0.5 rounded-md py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent/60"
+              data-testid="rail-history"
+            >
+              <span className="text-base leading-none">🕘</span>
+              <span>Historique</span>
+            </button>
+          </GuidedTooltip>
+          <div className="grid grid-cols-3 gap-0.5 px-1 pt-1">
           <div className="relative">
             <button
               type="button"
@@ -499,6 +523,7 @@ export function NewShell() {
               ?
             </span>
           </button>
+          </div>
         </div>
       </nav>
 
@@ -533,8 +558,8 @@ export function NewShell() {
           {primaryView === 'capabilities' && <CapabilitiesView />}
           {primaryView === 'os' && <MissionControlView />}
           {primaryView === 'labs' && <LabsGallery />}
+          {primaryView === 'advanced' && <AdvancedCommandCenter />}
         </Suspense>
-        {primaryView === 'advanced' && <AdvancedLauncher />}
       </div>
       <ConversationHistoryDrawer />
       <OnboardingTourHost />

@@ -10,7 +10,9 @@ import { ipcMain } from 'electron';
 import { LiveLauncherBridge } from '../launcher/live-launcher-bridge';
 import type { LiveLauncherStartInput } from '../../shared/live-launcher-types';
 
-export function registerLiveLauncherIpcHandlers(bridge: LiveLauncherBridge = new LiveLauncherBridge()): void {
+export function registerLiveLauncherIpcHandlers(
+  bridge: LiveLauncherBridge = new LiveLauncherBridge(),
+): LiveLauncherBridge {
   ipcMain.handle('liveLauncher.start', async (_event, input: LiveLauncherStartInput) => bridge.start(input));
 
   ipcMain.handle('liveLauncher.cancel', async (_event, runId: string) => bridge.cancel(runId));
@@ -18,4 +20,6 @@ export function registerLiveLauncherIpcHandlers(bridge: LiveLauncherBridge = new
   ipcMain.handle('liveLauncher.status', async (_event, runId: string) => bridge.status(runId));
 
   ipcMain.handle('liveLauncher.list', async () => bridge.list());
+
+  return bridge;
 }

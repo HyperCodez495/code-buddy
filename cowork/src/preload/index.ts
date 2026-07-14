@@ -86,6 +86,7 @@ import type {
   SubTask,
 } from '../main/missions/mission-types';
 import type { VoiceBackgroundMissionInput } from '../shared/voice-background-mission';
+import type { LiveLauncherRunView, LiveLauncherStartInput } from '../shared/live-launcher-types';
 import type {
   WorkflowDryRunResult,
   WorkflowRunComparison,
@@ -873,8 +874,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(AVATAR_BIBLE_CHANNELS.update, input),
     setMaster: (input: AvatarBibleIdInput) =>
       ipcRenderer.invoke(AVATAR_BIBLE_CHANNELS.setMaster, input),
-    remove: (input: AvatarBibleIdInput) =>
-      ipcRenderer.invoke(AVATAR_BIBLE_CHANNELS.remove, input),
+    remove: (input: AvatarBibleIdInput) => ipcRenderer.invoke(AVATAR_BIBLE_CHANNELS.remove, input),
     preview: (input: AvatarBibleIdInput) =>
       ipcRenderer.invoke(AVATAR_BIBLE_CHANNELS.preview, input),
     materializeForFlow: (input: AvatarBibleIdInput) =>
@@ -906,9 +906,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         versions: Array<{ id: string; parentId: string | null; path: string; createdAt: number }>;
       };
       error?: string;
-    }> =>
-      ipcRenderer.invoke('media.editImage', request),
-    imageEditHistory: (request: { imagePath: string }): Promise<{
+    }> => ipcRenderer.invoke('media.editImage', request),
+    imageEditHistory: (request: {
+      imagePath: string;
+    }): Promise<{
       ok: boolean;
       history?: {
         chainId: string;
@@ -940,7 +941,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       provider: string;
       model: string;
     }> => ipcRenderer.invoke('media.capabilities'),
-    assembleVideo: (request: { clips: string[]; aspect?: string; name?: string }): Promise<{
+    assembleVideo: (request: {
+      clips: string[];
+      aspect?: string;
+      name?: string;
+    }): Promise<{
       ok: boolean;
       outputPath?: string;
       url?: string;
@@ -1201,9 +1206,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         intelligence?: Partial<NonNullable<Session['intelligence']>>;
       }
     ) => ipcRenderer.invoke('session.updateSettings', sessionId, updates),
-    externalList: (): Promise<Array<{ id: string; name: string; model: string; messageCount: number; lastAccessedAt: string; source: 'cli' }>> =>
-      ipcRenderer.invoke('session.externalList'),
-    externalImport: (id: string): Promise<Session> => ipcRenderer.invoke('session.externalImport', id),
+    externalList: (): Promise<
+      Array<{
+        id: string;
+        name: string;
+        model: string;
+        messageCount: number;
+        lastAccessedAt: string;
+        source: 'cli';
+      }>
+    > => ipcRenderer.invoke('session.externalList'),
+    externalImport: (id: string): Promise<Session> =>
+      ipcRenderer.invoke('session.externalImport', id),
     // Branching (Claude Cowork parity Phase 2)
     branches: (
       sessionId: string
@@ -1799,10 +1813,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: (ownerSessionId: string): Promise<BrowserOperatorRuntimeListResult> =>
       ipcRenderer.invoke(BROWSER_OPERATOR_RUNTIME_CHANNELS.list, ownerSessionId),
     onEvent: (callback: (event: BrowserOperatorRuntimeEvent) => void): (() => void) => {
-      const wrapped = (
-        _event: Electron.IpcRendererEvent,
-        event: BrowserOperatorRuntimeEvent
-      ) => callback(event);
+      const wrapped = (_event: Electron.IpcRendererEvent, event: BrowserOperatorRuntimeEvent) =>
+        callback(event);
       ipcRenderer.on(BROWSER_OPERATOR_RUNTIME_CHANNELS.event, wrapped);
       return () => ipcRenderer.removeListener(BROWSER_OPERATOR_RUNTIME_CHANNELS.event, wrapped);
     },
@@ -1814,11 +1826,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     armSharedAudio: (): MeetingLiveSharedAudioArmResult =>
       ipcRenderer.sendSync(MEETING_LIVE_CHANNELS.armSharedAudio),
     releaseSharedAudio: (
-      input: MeetingLiveSharedAudioReleaseInput,
+      input: MeetingLiveSharedAudioReleaseInput
     ): Promise<MeetingLiveSharedAudioReleaseResult> =>
       ipcRenderer.invoke(MEETING_LIVE_CHANNELS.releaseSharedAudio, input),
-    list: (): Promise<MeetingLiveListResult> =>
-      ipcRenderer.invoke(MEETING_LIVE_CHANNELS.list),
+    list: (): Promise<MeetingLiveListResult> => ipcRenderer.invoke(MEETING_LIVE_CHANNELS.list),
     start: (input: MeetingLiveStartInput): Promise<MeetingLiveResult> =>
       ipcRenderer.invoke(MEETING_LIVE_CHANNELS.start, input),
     appendSegment: (input: MeetingLiveAppendSegmentInput): Promise<MeetingLiveResult> =>
@@ -2427,7 +2438,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('workflow.preview', id),
     history: (workflowId?: string, limit?: number): Promise<WorkflowRunRecord[]> =>
       ipcRenderer.invoke('workflow.history', workflowId, limit),
-    replay: (runId: string): Promise<{
+    replay: (
+      runId: string
+    ): Promise<{
       success: boolean;
       status: string;
       duration: number;
@@ -4771,7 +4784,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         paid: boolean;
         configured: boolean;
       }>;
-      currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
+      currentChoice?: {
+        model: string;
+        baseUrl?: string;
+        tier: string;
+        paid: boolean;
+        reason: string;
+      };
     }> => ipcRenderer.invoke('autonomy.modelTier'),
     // Tail the always-on service's logs (Linux journalctl; other
     // platforms return the inspection command in `error`).
@@ -4898,48 +4917,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Research / Flow live launcher — runs the real core CLI headless;
   // progress streams as `liveLauncher.event` ServerEvents (onEvent).
   liveLauncher: {
-    start: (input: {
-      kind: 'research' | 'flow';
-      prompt: string;
-      model?: string;
-      provider?: 'ollama' | 'inherit';
-      ollamaUrl?: string;
-      wide?: boolean;
-      workers?: number;
-      maxRetries?: number;
-      timeoutMs?: number;
-    }): Promise<{ ok: boolean; error?: string; runId?: string; reportPath?: string }> =>
+    start: (
+      input: LiveLauncherStartInput
+    ): Promise<{ ok: boolean; error?: string; runId?: string; reportPath?: string }> =>
       ipcRenderer.invoke('liveLauncher.start', input),
     cancel: (runId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('liveLauncher.cancel', runId),
-    status: (
-      runId: string
-    ): Promise<{
-      runId: string;
-      kind: 'research' | 'flow';
-      prompt: string;
-      model?: string;
-      provider: 'ollama' | 'inherit';
-      status: 'running' | 'succeeded' | 'failed' | 'cancelled';
-      startedAt: number;
-      endedAt?: number;
-      exitCode?: number;
-      reportPath?: string;
-      logTail: string[];
-      result?: string;
-      error?: string;
-    } | null> => ipcRenderer.invoke('liveLauncher.status', runId),
-    list: (): Promise<
-      Array<{
-        runId: string;
-        kind: 'research' | 'flow';
-        prompt: string;
-        status: 'running' | 'succeeded' | 'failed' | 'cancelled';
-        startedAt: number;
-        endedAt?: number;
-        reportPath?: string;
-      }>
-    > => ipcRenderer.invoke('liveLauncher.list'),
+    status: (runId: string): Promise<LiveLauncherRunView | null> =>
+      ipcRenderer.invoke('liveLauncher.status', runId),
+    list: (): Promise<LiveLauncherRunView[]> => ipcRenderer.invoke('liveLauncher.list'),
   },
 
   // Knowledge base (Claude Cowork parity)
@@ -5216,7 +5202,12 @@ declare global {
           history?: {
             chainId: string;
             headVersionId: string;
-            versions: Array<{ id: string; parentId: string | null; path: string; createdAt: number }>;
+            versions: Array<{
+              id: string;
+              parentId: string | null;
+              path: string;
+              createdAt: number;
+            }>;
           };
           error?: string;
         }>;
@@ -5234,7 +5225,12 @@ declare global {
           history?: {
             chainId: string;
             headVersionId: string;
-            versions: Array<{ id: string; parentId: string | null; path: string; createdAt: number }>;
+            versions: Array<{
+              id: string;
+              parentId: string | null;
+              path: string;
+              createdAt: number;
+            }>;
           };
           error?: string;
         }>;
@@ -5820,7 +5816,16 @@ declare global {
             intelligence?: Partial<NonNullable<Session['intelligence']>>;
           }
         ) => Promise<boolean>;
-        externalList: () => Promise<Array<{ id: string; name: string; model: string; messageCount: number; lastAccessedAt: string; source: 'cli' }>>;
+        externalList: () => Promise<
+          Array<{
+            id: string;
+            name: string;
+            model: string;
+            messageCount: number;
+            lastAccessedAt: string;
+            source: 'cli';
+          }>
+        >;
         externalImport: (id: string) => Promise<Session>;
         branches: (sessionId: string) => Promise<
           Array<{
@@ -6851,10 +6856,7 @@ declare global {
           error?: string;
           runId?: string;
         }>;
-        compare: (
-          leftRunId: string,
-          rightRunId: string
-        ) => Promise<WorkflowRunComparison | null>;
+        compare: (leftRunId: string, rightRunId: string) => Promise<WorkflowRunComparison | null>;
         approve: (stepId: string, approved: boolean) => Promise<boolean>;
       };
       tools: {
@@ -8049,7 +8051,9 @@ declare global {
         intentForgeCreate: (input: OsForgeCreateInput) => Promise<OsIntentActionResult>;
         intentForgeEvaluate: (input: OsForgeEvaluateInput) => Promise<OsIntentActionResult>;
         intentForgeSelect: (input: OsForgeSelectInput) => Promise<OsIntentActionResult>;
-        intentConstitutionUpdate: (input: OsConstitutionUpdateInput) => Promise<OsIntentActionResult>;
+        intentConstitutionUpdate: (
+          input: OsConstitutionUpdateInput
+        ) => Promise<OsIntentActionResult>;
         intentExchangeBid: (input: OsExchangeBidInput) => Promise<OsIntentActionResult>;
         intentExchangeRehearse: (input: OsExchangeRehearseInput) => Promise<OsIntentActionResult>;
         intentExchangeAward: (input: OsExchangeAwardInput) => Promise<OsIntentActionResult>;
@@ -8939,7 +8943,13 @@ declare global {
             paid: boolean;
             configured: boolean;
           }>;
-          currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
+          currentChoice?: {
+            model: string;
+            baseUrl?: string;
+            tier: string;
+            paid: boolean;
+            reason: string;
+          };
         }>;
         serviceLogs: (
           lines?: number
@@ -9049,44 +9059,12 @@ declare global {
         restore: (file: string) => Promise<{ ok: boolean; error?: string; output?: string }>;
       };
       liveLauncher: {
-        start: (input: {
-          kind: 'research' | 'flow';
-          prompt: string;
-          model?: string;
-          provider?: 'ollama' | 'inherit';
-          ollamaUrl?: string;
-          wide?: boolean;
-          workers?: number;
-          maxRetries?: number;
-          timeoutMs?: number;
-        }) => Promise<{ ok: boolean; error?: string; runId?: string; reportPath?: string }>;
+        start: (
+          input: LiveLauncherStartInput
+        ) => Promise<{ ok: boolean; error?: string; runId?: string; reportPath?: string }>;
         cancel: (runId: string) => Promise<{ ok: boolean; error?: string }>;
-        status: (runId: string) => Promise<{
-          runId: string;
-          kind: 'research' | 'flow';
-          prompt: string;
-          model?: string;
-          provider: 'ollama' | 'inherit';
-          status: 'running' | 'succeeded' | 'failed' | 'cancelled';
-          startedAt: number;
-          endedAt?: number;
-          exitCode?: number;
-          reportPath?: string;
-          logTail: string[];
-          result?: string;
-          error?: string;
-        } | null>;
-        list: () => Promise<
-          Array<{
-            runId: string;
-            kind: 'research' | 'flow';
-            prompt: string;
-            status: 'running' | 'succeeded' | 'failed' | 'cancelled';
-            startedAt: number;
-            endedAt?: number;
-            reportPath?: string;
-          }>
-        >;
+        status: (runId: string) => Promise<LiveLauncherRunView | null>;
+        list: () => Promise<LiveLauncherRunView[]>;
       };
       knowledge: {
         list: (projectId?: string) => Promise<Array<Record<string, unknown>>>;

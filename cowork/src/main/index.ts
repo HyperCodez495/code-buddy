@@ -436,6 +436,7 @@ let configExportService: ConfigExportService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 let projectMemoryServiceRef: ProjectMemoryService | null = null;
 let notificationBridge: NotificationBridge | null = null;
+let liveLauncherBridge: ReturnType<typeof registerLiveLauncherIpcHandlers> | null = null;
 let icmIntegration: ICMIntegration | null = null;
 let taskDispatch: TaskDispatch | null = null;
 
@@ -2344,6 +2345,7 @@ async function cleanupSandboxResources(): Promise<void> {
   scheduledTaskManager?.stop();
   tray?.destroy();
   tray = null;
+  liveLauncherBridge?.shutdown();
 
   // 停止远程控制
   try {
@@ -2480,6 +2482,7 @@ app.on('before-quit', async (event) => {
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
       stopNavServer();
+      liveLauncherBridge?.shutdown();
       try {
         closeDatabase();
       } catch {
@@ -2620,7 +2623,7 @@ registerDesktopSnapshotIpcHandlers();
 registerMissionIpcHandlers(() => missionBridge);
 registerSpecIpcHandlers(() => projectManager, configStore);
 registerSpecNextIpcHandlers(() => projectManager);
-registerLiveLauncherIpcHandlers();
+liveLauncherBridge = registerLiveLauncherIpcHandlers();
 registerBrowserOperatorRuntimeIpcHandlers({ getProjectManager: () => projectManager });
 registerMeetingLiveIpcHandlers({ getMainWindow });
 registerProfilesIpcHandlers();

@@ -46,7 +46,13 @@ function makeApi() {
         modelTier: vi.fn().mockResolvedValue({
           ok: true,
           ladder: [],
-          currentChoice: { model: 'qwen3.6:27b', tier: 'network', paid: false, reason: 'free' },
+          currentChoice: {
+            model: 'qwen3.6:27b',
+            baseUrl: 'http://darkstar:11434/v1',
+            tier: 'network',
+            paid: false,
+            reason: 'free',
+          },
         }),
       },
       liveLauncher: {
@@ -101,6 +107,10 @@ async function pushEvent(harness: ReturnType<typeof makeApi>, event: ServerEvent
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.defineProperty(window, 'confirm', {
+    configurable: true,
+    value: vi.fn().mockReturnValue(true),
+  });
 });
 
 afterEach(() => {
@@ -111,6 +121,7 @@ afterEach(() => {
   container?.remove();
   container = null;
   delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+  vi.restoreAllMocks();
 });
 
 describe('LiveLauncherPanel', () => {
@@ -134,6 +145,7 @@ describe('LiveLauncherPanel', () => {
       prompt: 'état de l art des agents locaux',
       model: 'qwen3.6:27b',
       provider: 'ollama',
+      ollamaUrl: 'http://darkstar:11434/v1',
     });
     expect(query('live-launcher-status')?.textContent).toBe('running');
     expect(query('live-launcher-cancel')).not.toBeNull();
@@ -149,6 +161,24 @@ describe('LiveLauncherPanel', () => {
 
     expect(harness.api.liveLauncher.start).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'flow', prompt: 'corrige le bug' }),
+    );
+  });
+
+  it('confirms and acknowledges possible API cost before inheriting a provider', async () => {
+    const harness = makeApi();
+    const confirm = vi.mocked(window.confirm);
+    await renderPanel(harness.api);
+
+    await click('live-launcher-ollama');
+    await setValue('live-launcher-prompt', 'cloud research');
+    await click('live-launcher-start');
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(harness.api.liveLauncher.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'inherit',
+        confirmInheritedProvider: true,
+      }),
     );
   });
 

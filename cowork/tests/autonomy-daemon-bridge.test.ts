@@ -199,6 +199,7 @@ describe('autonomy model tier', () => {
     expect(review.ladder[2]).toMatchObject({ tier: 'escalated', model: 'grok-4', paid: true, configured: true });
     expect(review.currentChoice?.tier).toBe('local');
     expect(review.currentChoice?.paid).toBe(false);
+    expect(review.currentChoice?.baseUrl).toBe('http://localhost:11434/v1');
   });
 
   it('marks the paid rung unconfigured when no escalation model is set', async () => {
