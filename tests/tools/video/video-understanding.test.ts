@@ -407,6 +407,12 @@ describe('understandVideo source resolution', () => {
       const persisted = await readFile(result.transcriptPath, 'utf8');
       expect(persisted).toContain('intro');
       expect(persisted).toContain('method: youtube-captions');
+      expect(result.researchCardPath).toBeDefined();
+      expect(existsSync(result.researchCardPath!)).toBe(true);
+      const researchCard = await readFile(result.researchCardPath!, 'utf8');
+      expect(researchCard).toContain('# Fiche de recherche vidéo');
+      expect(researchCard).toContain('what is it about?');
+      expect(result.output).toContain('Fiche de recherche pré-structurée');
     }
     expect(downloadAudio).not.toHaveBeenCalled();
     expect(fetchCaptions).toHaveBeenCalledTimes(1);

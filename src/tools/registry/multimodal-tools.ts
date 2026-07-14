@@ -619,6 +619,7 @@ export class UnderstandVideoTool implements ITool {
         data: {
           segments: result.segments,
           transcriptPath: result.transcriptPath,
+          ...(result.researchCardPath ? { researchCardPath: result.researchCardPath } : {}),
           source: result.source,
           method: result.method,
           ...(result.cloud ? { cloud: result.cloud } : {}),

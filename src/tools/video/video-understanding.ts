@@ -40,6 +40,7 @@ import type { FrameDedupDeps } from './frame-dedup.js';
 import type { DescribeFrameDeps } from './describe-frame.js';
 import type { CloudUnderstandDeps, CloudUnderstandOutcome, CloudSourceKind } from './cloud-understand.js';
 import { ingestVideoUnderstanding, getDefaultVideoCkgBridge, type VideoCkgBridge } from './video-ckg.js';
+import { buildVideoResearchCard } from './video-research-card.js';
 
 export type UnderstandMethod = 'youtube-captions' | 'youtube-audio' | 'local-file' | 'direct-url';
 
@@ -92,6 +93,8 @@ export interface CloudResult {
 export interface UnderstandVideoSuccess {
   segments: TimedSegment[];
   transcriptPath: string;
+  /** Compact evidence-first map built from the complete transcript. */
+  researchCardPath?: string;
   source: string;
   method: UnderstandMethod;
   output: string;
@@ -560,6 +563,27 @@ export async function understandVideo(
     logger.warn(`[video] could not persist transcript to ${transcriptPath}: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // Build a compact map over the WHOLE transcript. Unlike the inline output,
+  // which is intentionally truncated for context safety, this card surfaces
+  // technology passages and claims from the beginning, middle, and end so the
+  // main agent can research the video without anchoring on its opening minutes.
+  const researchCardCandidate = join(outDir, `research-${safeSlug(source)}.md`);
+  let researchCardPath: string | undefined;
+  try {
+    const researchCard = buildVideoResearchCard({
+      source,
+      method,
+      transcriptPath,
+      segments,
+      ...(input.question ? { question: input.question } : {}),
+      ...(cloud?.answer ? { cloudAnswer: cloud.answer } : {}),
+    });
+    await writeFile(researchCardCandidate, researchCard, 'utf8');
+    researchCardPath = researchCardCandidate;
+  } catch (err) {
+    logger.warn(`[video] could not persist research card to ${researchCardCandidate}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   let output: string;
   const bodyForOutput = visualRendered ? `${rendered}\n\n## Visuel (ce qui est montré)\n${visualRendered}` : rendered;
   if (segments.length === 0 && !visualRendered) {
@@ -571,8 +595,12 @@ export async function understandVideo(
   }
   // Cloud answer (when present) leads the output — it's the richest, and carries the privacy warning.
   if (cloudRendered) output = `${cloudRendered}\n\n${output}`;
+  if (researchCardPath) {
+    output += `\n\nFiche de recherche pré-structurée (passages technologiques et affirmations couvrant toute la vidéo) : ${researchCardPath}. Pour une demande de veille, utilise cette fiche puis vérifie les noms et affirmations dans des sources primaires avant de conclure.`;
+  }
 
   const result: UnderstandVideoSuccess = { segments, transcriptPath, source, method, output };
+  if (researchCardPath) result.researchCardPath = researchCardPath;
   if (visual) result.visual = visual;
   if (cloud) result.cloud = cloud;
 
