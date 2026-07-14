@@ -561,13 +561,13 @@ export const DEVICE_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'device_manage',
-    description: 'Manage paired devices (SSH/ADB/local). List, pair, remove, screenshot, camera snap, screen record, get location, run commands.',
+    description: 'Manage paired devices (SSH/ADB/local). List, pair, remove, screenshot, camera snap, screen record, get location, read calendar events, or run commands.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'pair', 'remove', 'snap', 'screenshot', 'record', 'location', 'run'],
+          enum: ['list', 'pair', 'remove', 'snap', 'screenshot', 'record', 'location', 'calendar', 'run'],
           description: 'Device action to perform',
         },
         deviceId: { type: 'string', description: 'Device identifier' },
@@ -579,6 +579,7 @@ export const DEVICE_MANAGE_TOOL: CodeBuddyTool = {
         keyPath: { type: 'string', description: 'Path to SSH key' },
         command: { type: 'string', description: 'Command to run (for run action)' },
         duration: { type: 'number', description: 'Recording duration in seconds (for record action)' },
+        days: { type: 'number', description: 'Calendar look-ahead in days, from 1 to 31 (for calendar action)' },
       },
       required: ['action'],
     },

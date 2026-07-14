@@ -300,6 +300,44 @@ describe('ADBTransport', () => {
     expect(caps).toContain('camera');
     expect(caps).toContain('location');
   });
+
+  it('should return structured calendar instances instead of a dispatch placeholder', async () => {
+    const { ADBTransport } = await import('../../src/nodes/transports/adb-transport.js');
+    const transport = new ADBTransport({ deviceId: 'pixel-7' });
+    vi.spyOn(transport, 'execute').mockResolvedValue({
+      exitCode: 0,
+      stderr: '',
+      stdout:
+        'Row: 0 event_id=42, title=Match France Espagne, begin=1784145600000, ' +
+        'end=1784152800000, eventLocation=Stade, allDay=0',
+    });
+
+    const events = await transport.getCalendarEvents(7);
+
+    expect(events).toEqual([{
+      id: '42',
+      title: 'Match France Espagne',
+      start: new Date(1784145600000).toISOString(),
+      end: new Date(1784152800000).toISOString(),
+      allDay: false,
+      location: 'Stade',
+    }]);
+    expect(transport.execute).toHaveBeenCalledWith(
+      expect.stringContaining('content://com.android.calendar/instances/when/'),
+    );
+  });
+
+  it('should distinguish calendar read failure from an empty calendar', async () => {
+    const { ADBTransport } = await import('../../src/nodes/transports/adb-transport.js');
+    const transport = new ADBTransport({ deviceId: 'pixel-7' });
+    vi.spyOn(transport, 'execute').mockResolvedValue({
+      exitCode: 1,
+      stderr: 'Permission denial',
+      stdout: '',
+    });
+
+    expect(await transport.getCalendarEvents()).toBeNull();
+  });
 });
 
 describe('Platform Commands', () => {

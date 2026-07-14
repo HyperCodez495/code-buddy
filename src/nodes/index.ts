@@ -13,6 +13,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 
 // ============================================================================
@@ -72,11 +73,36 @@ export interface NodeInvocation {
   timeoutMs?: number;
 }
 
-export interface NodeInvocationResult {
+export interface NodeInvocationRequest extends NodeInvocation {
+  id: string;
+  requestedAt: string;
+}
+
+export interface NodeInvocationResult<T = unknown> {
   success: boolean;
-  data?: unknown;
+  data?: T;
   error?: string;
   durationMs?: number;
+}
+
+export interface CalendarListParams {
+  timeMin?: string;
+  timeMax?: string;
+  limit?: number;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end?: string;
+  allDay: boolean;
+  location?: string;
+}
+
+export interface CalendarListData {
+  events: CalendarEvent[];
+  timezone?: string;
 }
 
 export interface NodeManagerConfig {
@@ -84,6 +110,15 @@ export interface NodeManagerConfig {
   pairingTimeoutMs: number;
   heartbeatIntervalMs: number;
   maxNodes: number;
+  invocationTimeoutMs: number;
+  maxInvocationTimeoutMs: number;
+}
+
+interface PendingInvocation {
+  nodeId: string;
+  startedAt: number;
+  timer: NodeJS.Timeout;
+  resolve(result: NodeInvocationResult): void;
 }
 
 // ============================================================================
@@ -127,6 +162,7 @@ export class NodeManager extends EventEmitter {
   private nodes: Map<string, NodeInfo> = new Map();
   private pendingPairings: Map<string, NodePairingRequest> = new Map();
   private config: NodeManagerConfig;
+  private pendingInvocations = new Map<string, PendingInvocation>();
 
   constructor(config?: Partial<NodeManagerConfig>) {
     super();
@@ -135,6 +171,8 @@ export class NodeManager extends EventEmitter {
       pairingTimeoutMs: config?.pairingTimeoutMs ?? 300_000, // 5 minutes
       heartbeatIntervalMs: config?.heartbeatIntervalMs ?? 30_000,
       maxNodes: config?.maxNodes ?? 10,
+      invocationTimeoutMs: config?.invocationTimeoutMs ?? 30_000,
+      maxInvocationTimeoutMs: config?.maxInvocationTimeoutMs ?? 120_000,
     };
   }
 
@@ -146,6 +184,7 @@ export class NodeManager extends EventEmitter {
   }
 
   static resetInstance(): void {
+    NodeManager.instance?.shutdown();
     NodeManager.instance = null;
   }
 
@@ -235,6 +274,7 @@ export class NodeManager extends EventEmitter {
   removeNode(nodeId: string): boolean {
     const node = this.nodes.get(nodeId);
     if (node) {
+      this.cancelNodeInvocations(nodeId, 'Node was removed');
       this.nodes.delete(nodeId);
       logger.info(`Node removed: ${node.name} (${nodeId})`);
       this.emit('node:removed', node);
@@ -270,6 +310,7 @@ export class NodeManager extends EventEmitter {
     const node = this.nodes.get(nodeId);
     if (node) {
       node.status = 'offline';
+      this.cancelNodeInvocations(nodeId, `Node ${node.name} went offline`);
       this.emit('node:offline', node);
     }
   }
@@ -295,16 +336,83 @@ export class NodeManager extends EventEmitter {
 
     const start = Date.now();
     logger.debug(`Node invoke: ${node.name} → ${invocation.capability}`, invocation.params);
+    if (this.listenerCount('node:invoke') === 0) {
+      return {
+        success: false,
+        error: `No transport is connected for node ${node.name}`,
+        durationMs: Date.now() - start,
+      };
+    }
 
-    // In production, this would send a WS message to the node and await response.
-    // For now, return a placeholder indicating the capability was dispatched.
-    this.emit('node:invoke', { node, invocation });
-
-    return {
-      success: true,
-      data: { dispatched: true, capability: invocation.capability },
-      durationMs: Date.now() - start,
+    const request: NodeInvocationRequest = {
+      ...invocation,
+      id: randomUUID(),
+      requestedAt: new Date(start).toISOString(),
     };
+    const requestedTimeout = invocation.timeoutMs ?? this.config.invocationTimeoutMs;
+    const safeRequestedTimeout = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? requestedTimeout
+      : this.config.invocationTimeoutMs;
+    const safeMaximumTimeout = Number.isFinite(this.config.maxInvocationTimeoutMs) &&
+      this.config.maxInvocationTimeoutMs > 0
+      ? this.config.maxInvocationTimeoutMs
+      : 120_000;
+    const timeoutMs = Math.max(1, Math.min(safeMaximumTimeout, safeRequestedTimeout));
+
+    return new Promise<NodeInvocationResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingInvocations.delete(request.id);
+        resolve({
+          success: false,
+          error: `Node invocation timed out after ${timeoutMs}ms`,
+          durationMs: Date.now() - start,
+        });
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingInvocations.set(request.id, {
+        nodeId: node.id,
+        startedAt: start,
+        timer,
+        resolve,
+      });
+
+      try {
+        this.emit('node:invoke', { node: { ...node }, invocation: request });
+      } catch (error) {
+        const pending = this.pendingInvocations.get(request.id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pendingInvocations.delete(request.id);
+        resolve({
+          success: false,
+          error: `Node transport failed: ${error instanceof Error ? error.message : String(error)}`,
+          durationMs: Date.now() - start,
+        });
+      }
+    });
+  }
+
+  /** Complete a correlated invocation. The responding node must match the request owner. */
+  completeInvocation(
+    nodeId: string,
+    invocationId: string,
+    result: Omit<NodeInvocationResult, 'durationMs'>,
+  ): boolean {
+    const pending = this.pendingInvocations.get(invocationId);
+    if (!pending || pending.nodeId !== nodeId) return false;
+    clearTimeout(pending.timer);
+    this.pendingInvocations.delete(invocationId);
+    pending.resolve({
+      success: result.success,
+      ...(result.data !== undefined ? { data: result.data } : {}),
+      ...(result.error ? { error: result.error } : {}),
+      durationMs: Math.max(0, Date.now() - pending.startedAt),
+    });
+    return true;
+  }
+
+  getPendingInvocationCount(): number {
+    return this.pendingInvocations.size;
   }
 
   // --------------------------------------------------------------------------
@@ -317,6 +425,44 @@ export class NodeManager extends EventEmitter {
 
   async getLocation(nodeId: string): Promise<NodeInvocationResult> {
     return this.invoke({ nodeId, capability: 'location.get' });
+  }
+
+  async listCalendar(
+    nodeId: string,
+    params: CalendarListParams = {},
+  ): Promise<NodeInvocationResult<CalendarListData>> {
+    const invalidRange = validateCalendarRange(params);
+    if (invalidRange) return { success: false, error: invalidRange };
+    const limit = Math.max(1, Math.min(200, Math.trunc(params.limit ?? 50)));
+    const result = await this.invoke({
+      nodeId,
+      capability: 'calendar.list',
+      params: {
+        ...(params.timeMin ? { timeMin: params.timeMin } : {}),
+        ...(params.timeMax ? { timeMax: params.timeMax } : {}),
+        limit,
+      },
+    });
+    if (!result.success) {
+      return {
+        success: false,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      };
+    }
+    try {
+      return {
+        success: true,
+        data: normalizeCalendarListData(result.data, limit),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Invalid calendar.list response: ${error instanceof Error ? error.message : String(error)}`,
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      };
+    }
   }
 
   async sendNotification(
@@ -357,6 +503,100 @@ export class NodeManager extends EventEmitter {
     }
     return Array.from(this.pendingPairings.values());
   }
+
+  shutdown(): void {
+    for (const nodeId of this.nodes.keys()) {
+      this.cancelNodeInvocations(nodeId, 'Node manager shut down');
+    }
+    this.removeAllListeners();
+  }
+
+  private cancelNodeInvocations(nodeId: string, error: string): void {
+    for (const [id, pending] of this.pendingInvocations) {
+      if (pending.nodeId !== nodeId) continue;
+      clearTimeout(pending.timer);
+      this.pendingInvocations.delete(id);
+      pending.resolve({
+        success: false,
+        error,
+        durationMs: Math.max(0, Date.now() - pending.startedAt),
+      });
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isIsoInstant(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/u.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
+function isCivilDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
+}
+
+function validateCalendarRange(params: CalendarListParams): string | null {
+  if (params.timeMin && !isIsoInstant(params.timeMin)) return 'timeMin must be an ISO instant with an explicit offset';
+  if (params.timeMax && !isIsoInstant(params.timeMax)) return 'timeMax must be an ISO instant with an explicit offset';
+  if (params.timeMin && params.timeMax && Date.parse(params.timeMax) <= Date.parse(params.timeMin)) {
+    return 'timeMax must be later than timeMin';
+  }
+  if (params.limit !== undefined && (!Number.isFinite(params.limit) || params.limit < 1)) {
+    return 'limit must be a positive number';
+  }
+  return null;
+}
+
+function normalizeCalendarListData(value: unknown, limit: number): CalendarListData {
+  const root = Array.isArray(value) ? { events: value } : value;
+  if (!isRecord(root) || !Array.isArray(root.events)) throw new Error('events must be an array');
+  const timezone = nonEmptyString(root.timezone);
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    } catch {
+      throw new Error('timezone must be a valid IANA identifier');
+    }
+  }
+  const events = root.events.slice(0, limit).map((raw, index): CalendarEvent => {
+    if (!isRecord(raw)) throw new Error(`event ${index + 1} must be an object`);
+    const id = nonEmptyString(raw.id);
+    const title = nonEmptyString(raw.title) ?? nonEmptyString(raw.summary);
+    const start = nonEmptyString(raw.start);
+    const end = nonEmptyString(raw.end);
+    const allDay = raw.allDay === true || (start ? isCivilDate(start) : false);
+    if (!id) throw new Error(`event ${index + 1} has no id`);
+    if (!title) throw new Error(`event ${index + 1} has no title`);
+    if (!start || !(allDay ? isCivilDate(start) : isIsoInstant(start))) {
+      throw new Error(`event ${index + 1} has an invalid start`);
+    }
+    if (end && !(allDay ? isCivilDate(end) : isIsoInstant(end))) {
+      throw new Error(`event ${index + 1} has an invalid end`);
+    }
+    if (end && Date.parse(end) < Date.parse(start)) {
+      throw new Error(`event ${index + 1} ends before it starts`);
+    }
+    return {
+      id,
+      title,
+      start,
+      ...(end ? { end } : {}),
+      allDay,
+      ...(nonEmptyString(raw.location) ? { location: nonEmptyString(raw.location) } : {}),
+    };
+  });
+  events.sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+  return { events, ...(timezone ? { timezone } : {}) };
 }
 
 // ============================================================================

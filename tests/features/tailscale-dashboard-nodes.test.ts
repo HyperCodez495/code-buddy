@@ -24,6 +24,7 @@ const mockTransport = {
   isConnected: jest.fn().mockReturnValue(true),
   getCapabilities: jest.fn().mockResolvedValue(['system_run']),
   execute: jest.fn().mockResolvedValue({ stdout: 'stub: executed', stderr: '', exitCode: 0 }),
+  getCalendarEvents: jest.fn().mockResolvedValue([]),
 };
 
 jest.mock('../../src/nodes/transports/ssh-transport.js', () => ({
@@ -84,7 +85,12 @@ describe('TailscaleManager', () => {
     jest.resetModules();
     mockExecFile.mockReset();
     // Default: tailscale commands succeed
-    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+    mockExecFile.mockImplementation((
+      _cmd: string,
+      args: string[],
+      _opts: unknown,
+      cb: (error: Error | null, result: { stdout: string; stderr: string }) => void,
+    ) => {
       if (args[0] === 'version') {
         cb(null, { stdout: '1.62.0\n', stderr: '' });
       } else if (args[0] === 'status') {
@@ -308,6 +314,10 @@ describe('DeviceNodeManager', () => {
 
   beforeEach(async () => {
     jest.resetModules();
+    mockTransport.execute.mockReset();
+    mockTransport.execute.mockResolvedValue({ stdout: 'stub: executed', stderr: '', exitCode: 0 });
+    mockTransport.getCalendarEvents.mockReset();
+    mockTransport.getCalendarEvents.mockResolvedValue([]);
     const mod = await import('../../src/nodes/device-node.js');
     DeviceNodeManager = mod.DeviceNodeManager;
     DeviceNodeManager.resetInstance();
@@ -407,14 +417,80 @@ describe('DeviceNodeManager', () => {
   it('should get location', async () => {
     const mgr = DeviceNodeManager.getInstance();
     await pairWithCaps(mgr, 'loc1', 'Location Device', 'adb', ['location']);
+    mockTransport.execute.mockResolvedValueOnce({
+      stdout: '{"lat":48.8566,"lon":2.3522}',
+      stderr: '',
+      exitCode: 0,
+    });
     const coords = await mgr.getLocation('loc1');
-    expect(coords).not.toBeNull();
+    expect(coords).toEqual({ lat: 48.8566, lon: 2.3522 });
+  });
+
+  it('should reject an unreadable location instead of fabricating 0,0', async () => {
+    const mgr = DeviceNodeManager.getInstance();
+    await pairWithCaps(mgr, 'badloc', 'Location Device', 'adb', ['location']);
+    mockTransport.execute.mockResolvedValueOnce({
+      stdout: 'last known location unavailable',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    expect(await mgr.getLocation('badloc')).toBeNull();
+  });
+
+  it('should reject null coordinates instead of coercing them to 0,0', async () => {
+    const mgr = DeviceNodeManager.getInstance();
+    await pairWithCaps(mgr, 'nullloc', 'Location Device', 'adb', ['location']);
+    mockTransport.execute.mockResolvedValueOnce({
+      stdout: '{"lat":null,"lon":null}',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    expect(await mgr.getLocation('nullloc')).toBeNull();
+  });
+
+  it('should parse a labelled Android location response', async () => {
+    const mgr = DeviceNodeManager.getInstance();
+    await pairWithCaps(mgr, 'androidloc', 'Location Device', 'adb', ['location']);
+    mockTransport.execute.mockResolvedValueOnce({
+      stdout: 'Location[fused 48.8566,2.3522 hAcc=12.0]',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    expect(await mgr.getLocation('androidloc')).toEqual({ lat: 48.8566, lon: 2.3522 });
   });
 
   it('should return null for location without capability', async () => {
     const mgr = DeviceNodeManager.getInstance();
     await pairWithCaps(mgr, 'noloc', 'No Location', 'ssh', ['camera']);
     expect(await mgr.getLocation('noloc')).toBeNull();
+  });
+
+  it('should return structured Android calendar events', async () => {
+    const mgr = DeviceNodeManager.getInstance();
+    await pairWithCaps(mgr, 'calendar1', 'Calendar Phone', 'adb', ['calendar_events']);
+    mockTransport.getCalendarEvents.mockResolvedValueOnce([{
+      id: 'event-1',
+      title: 'Déjeuner',
+      start: '2026-07-15T10:00:00.000Z',
+      end: '2026-07-15T11:00:00.000Z',
+      allDay: false,
+    }]);
+
+    expect(await mgr.getCalendarEvents('calendar1', 3)).toEqual([
+      expect.objectContaining({ id: 'event-1', title: 'Déjeuner' }),
+    ]);
+    expect(mockTransport.getCalendarEvents).toHaveBeenCalledWith(3);
+  });
+
+  it('should reject calendar access without a detected capability', async () => {
+    const mgr = DeviceNodeManager.getInstance();
+    await pairWithCaps(mgr, 'nocalendar', 'No Calendar', 'adb', ['location']);
+
+    expect(await mgr.getCalendarEvents('nocalendar')).toBeNull();
+    expect(mockTransport.getCalendarEvents).not.toHaveBeenCalled();
   });
 
   it('should send notification', async () => {

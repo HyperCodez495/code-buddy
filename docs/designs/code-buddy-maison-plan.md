@@ -52,15 +52,22 @@ supplémentaire pour agir à l'extérieur.
    ses coordonnées et ne retient qu'un fuseau IANA fourni par cette source ; le
    décalage et le DST sont calculés pour l'instant réel. Sans source ou position
    manuelle confirmée, le service échoue fermé.
-4. Il n'existe aucun service de jours fériés ou de jours ouvrés.
-5. La capacité Android `calendar.list` ne renvoie pas encore de résultat métier
-   au planificateur ; le connecteur Google Calendar présent n'est qu'un gabarit.
+4. Corrigé : le contexte de journée et le fournisseur Etalab/DINUM distinguent
+   maintenant jour ouvré, week-end, jour férié et source indisponible, avec
+   cache et provenance explicites.
+5. Corrigé le 14 juillet 2026 : les invocations de nœuds ne renvoient plus un
+   faux succès `dispatched`. Elles attendent une réponse corrélée du bon appareil,
+   expirent, s'annulent hors ligne et valident le résultat `calendar.list` avant
+   le planificateur. Le chemin ADB expose également les instances structurées au
+   tool `device_manage` (`action: calendar`) ; une erreur de permission reste
+   distincte d'un calendrier réellement vide.
 6. Les routines apprises sont des candidats de skills, pas des occurrences
    calendaires. Leur fonction de promotion ne fait pas respecter complètement
    le statut de revue annoncé.
-7. Il n'existe aucun modèle alimentaire, garde-manger, liste de courses ou
-   moteur de recettes. `RecipeGallery` contient des missions d'agent, pas des
-   recettes de cuisine.
+7. Corrigé : `src/meals/` fournit profil alimentaire privé, inventaire,
+   normalisation et compatibilité des recettes, classement conservateur et plan
+   de repas civil dans le fuseau Maison. `buddy maison food` expose ces contrats
+   sans confondre la galerie de missions avec des recettes de cuisine.
 8. Le `UserModel` filtre volontairement les informations médicales. Le profil
    alimentaire sensible doit rester séparé ; il ne faut pas contourner cette
    protection.

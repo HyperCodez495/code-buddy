@@ -990,11 +990,11 @@ function getDeviceTool(): DeviceTool {
  */
 export class DeviceExecuteTool implements ITool {
   readonly name = 'device_manage';
-  readonly description = 'Manage paired devices (SSH/ADB/local). List, pair, remove, screenshot, camera snap, screen record, get location, run commands.';
+  readonly description = 'Manage paired devices (SSH/ADB/local). List, pair, remove, screenshot, camera snap, screen record, get location, read calendar events, or run commands.';
 
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     return await getDeviceTool().execute({
-      action: input.action as 'list' | 'pair' | 'remove' | 'snap' | 'screenshot' | 'record' | 'location' | 'run',
+      action: input.action as 'list' | 'pair' | 'remove' | 'snap' | 'screenshot' | 'record' | 'location' | 'calendar' | 'run',
       deviceId: input.deviceId as string | undefined,
       name: input.name as string | undefined,
       transport: input.transport as 'ssh' | 'adb' | 'local' | undefined,
@@ -1004,6 +1004,7 @@ export class DeviceExecuteTool implements ITool {
       keyPath: input.keyPath as string | undefined,
       command: input.command as string | undefined,
       duration: input.duration as number | undefined,
+      days: input.days as number | undefined,
     });
   }
 
@@ -1016,7 +1017,7 @@ export class DeviceExecuteTool implements ITool {
         properties: {
           action: {
             type: 'string',
-            enum: ['list', 'pair', 'remove', 'snap', 'screenshot', 'record', 'location', 'run'],
+            enum: ['list', 'pair', 'remove', 'snap', 'screenshot', 'record', 'location', 'calendar', 'run'],
             description: 'Device action to perform',
           },
           deviceId: { type: 'string', description: 'Device identifier' },
@@ -1028,6 +1029,7 @@ export class DeviceExecuteTool implements ITool {
           keyPath: { type: 'string', description: 'Path to SSH key' },
           command: { type: 'string', description: 'Command to run (for run action)' },
           duration: { type: 'number', description: 'Recording duration in seconds (for record action)' },
+          days: { type: 'number', description: 'Calendar look-ahead in days, from 1 to 31' },
         },
         required: ['action'],
       },
@@ -1050,7 +1052,7 @@ export class DeviceExecuteTool implements ITool {
       name: this.name,
       description: this.description,
       category: 'utility' as ToolCategoryType,
-      keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'screen', 'record'],
+      keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'screen', 'record', 'calendar', 'agenda'],
       priority: 4,
       requiresConfirmation: true,
       modifiesFiles: false,

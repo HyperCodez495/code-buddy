@@ -12,6 +12,7 @@ import type {
   ExecuteResult,
   ExecuteOptions,
   TransportConfig,
+  DeviceCalendarEvent,
 } from './base-transport.js';
 import { logger } from '../../utils/logger.js';
 
@@ -214,30 +215,45 @@ export class ADBTransport implements DeviceTransport {
   /**
    * Get calendar events for the next N days.
    */
-  async getCalendarEvents(days: number = 7): Promise<{ title: string; start: string; end: string }[]> {
+  async getCalendarEvents(days: number = 7): Promise<DeviceCalendarEvent[] | null> {
+    const boundedDays = Number.isFinite(days)
+      ? Math.max(1, Math.min(31, Math.trunc(days)))
+      : 7;
     const now = Date.now();
-    const end = now + days * 24 * 60 * 60 * 1000;
-    const cmd = `content query --uri content://com.android.calendar/events --projection title:dtstart:dtend --where "dtstart>=${now} AND dtend<=${end}" --sort "dtstart ASC"`;
+    const end = now + boundedDays * 24 * 60 * 60 * 1000;
+    const cmd =
+      `content query --uri content://com.android.calendar/instances/when/${now}/${end} ` +
+      '--projection event_id:title:begin:end:eventLocation:allDay --sort "begin ASC"';
 
     const result = await this.execute(cmd);
     if (result.exitCode !== 0) {
       logger.warn('Failed to get calendar events', { stderr: result.stderr });
-      return [];
+      return null;
     }
 
-    const events: { title: string; start: string; end: string }[] = [];
+    const events: DeviceCalendarEvent[] = [];
     const lines = result.stdout.split('\n').filter((l) => l.trim());
     for (const line of lines) {
-      const titleMatch = line.match(/title=([^,]+)/);
-      const startMatch = line.match(/dtstart=(\d+)/);
-      const endMatch = line.match(/dtend=(\d+)/);
-      if (titleMatch?.[1] !== undefined) {
-        events.push({
-          title: titleMatch[1].trim(),
-          start: startMatch?.[1] !== undefined ? new Date(parseInt(startMatch[1])).toISOString() : '',
-          end: endMatch?.[1] !== undefined ? new Date(parseInt(endMatch[1])).toISOString() : '',
-        });
-      }
+      if (events.length >= 200) break;
+      const id = line.match(/event_id=(\d+)/)?.[1];
+      const title = line.match(/title=([^,\n]+)/)?.[1]?.trim();
+      const startMs = Number(line.match(/begin=(\d+)/)?.[1]);
+      const endMs = Number(line.match(/(?:^|,\s*)end=(\d+)/)?.[1]);
+      const startDate = new Date(startMs);
+      const endDate = new Date(endMs);
+      if (!id || !title || !Number.isFinite(startMs) || !Number.isFinite(startDate.getTime())) continue;
+      events.push({
+        id,
+        title,
+        start: startDate.toISOString(),
+        ...(Number.isFinite(endMs) && Number.isFinite(endDate.getTime()) && endMs >= startMs
+          ? { end: endDate.toISOString() }
+          : {}),
+        allDay: line.match(/allDay=(\d+)/)?.[1] === '1',
+        ...(line.match(/eventLocation=([^,\n]+)/)?.[1]?.trim()
+          ? { location: line.match(/eventLocation=([^,\n]+)/)![1]!.trim() }
+          : {}),
+      });
     }
     return events;
   }

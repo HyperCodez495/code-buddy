@@ -11,7 +11,11 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { logger } from '../utils/logger.js';
-import type { DeviceTransport, ExecuteResult } from './transports/base-transport.js';
+import type {
+  DeviceCalendarEvent,
+  DeviceTransport,
+  ExecuteResult,
+} from './transports/base-transport.js';
 import { getPlatformCommands, type DevicePlatform } from './platform-commands.js';
 
 // ============================================================================
@@ -66,6 +70,42 @@ export interface DeviceNode {
 export interface LocationCoords {
   lat: number;
   lon: number;
+}
+
+function validCoordinates(lat: unknown, lon: unknown): LocationCoords | null {
+  const latitude = typeof lat === 'number'
+    ? lat
+    : typeof lat === 'string' && lat.trim() !== '' ? Number(lat) : Number.NaN;
+  const longitude = typeof lon === 'number'
+    ? lon
+    : typeof lon === 'string' && lon.trim() !== '' ? Number(lon) : Number.NaN;
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) return null;
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
+  return { lat: latitude, lon: longitude };
+}
+
+/** Parse only explicit, bounded coordinates; never turn an unreadable response into 0,0. */
+export function parseLocationCoordinates(output: string): LocationCoords | null {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    const jsonCoordinates = validCoordinates(
+      parsed.lat ?? parsed.latitude,
+      parsed.lon ?? parsed.lng ?? parsed.longitude,
+    );
+    if (jsonCoordinates) return jsonCoordinates;
+  } catch {
+    // Some ADB providers return a labelled dumpsys line rather than JSON.
+  }
+
+  const labelled = output.match(
+    /lat(?:itude)?\s*[=:]\s*(-?\d+(?:\.\d+)?)[\s,;]+(?:lon|lng|longitude)\s*[=:]\s*(-?\d+(?:\.\d+)?)/iu,
+  );
+  if (labelled) return validCoordinates(labelled[1], labelled[2]);
+
+  const android = output.match(
+    /\b(?:gps|fused|network)\s+(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)(?:\s|\])/iu,
+  );
+  return android ? validCoordinates(android[1], android[2]) : null;
 }
 
 interface PersistedDevices {
@@ -390,16 +430,32 @@ export class DeviceNodeManager {
 
     const result = await transport.execute(commands.getLocation());
     device.lastSeen = Date.now();
-
-    try {
-      const parsed = JSON.parse(result.stdout);
-      return { lat: parsed.lat || 0, lon: parsed.lon || 0 };
-    } catch {
-      return { lat: 0, lon: 0 };
+    if (result.exitCode !== 0) return null;
+    const coordinates = parseLocationCoordinates(result.stdout);
+    if (!coordinates) {
+      logger.warn('Device location response was invalid', { deviceId });
     }
+    return coordinates;
   }
 
-  sendNotification(deviceId: string, title: string, body: string): boolean {
+  async getCalendarEvents(deviceId: string, days = 7): Promise<DeviceCalendarEvent[] | null> {
+    const device = this.devices.get(deviceId);
+    if (!device ||
+      (!device.capabilities.includes('calendar') && !device.capabilities.includes('calendar_events'))) {
+      logger.warn(`Device ${deviceId} does not support calendar events`);
+      return null;
+    }
+    const transport = await this.getTransport(deviceId);
+    if (!transport?.getCalendarEvents) return null;
+    const boundedDays = Number.isFinite(days)
+      ? Math.max(1, Math.min(31, Math.trunc(days)))
+      : 7;
+    const events = await transport.getCalendarEvents(boundedDays);
+    if (events) device.lastSeen = Date.now();
+    return events;
+  }
+
+  sendNotification(deviceId: string, title: string, _body: string): boolean {
     const device = this.devices.get(deviceId);
     if (!device || !device.capabilities.includes('notifications')) {
       logger.warn(`Device ${deviceId} does not support notifications`);

@@ -6,14 +6,13 @@
  */
 
 import type { ToolResult } from '../types/index.js';
-import { logger } from '../utils/logger.js';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface DeviceToolInput {
-  action: 'list' | 'pair' | 'remove' | 'snap' | 'screenshot' | 'record' | 'location' | 'run';
+  action: 'list' | 'pair' | 'remove' | 'snap' | 'screenshot' | 'record' | 'location' | 'calendar' | 'run';
   deviceId?: string;
   name?: string;
   transport?: 'ssh' | 'adb' | 'local';
@@ -23,6 +22,7 @@ export interface DeviceToolInput {
   keyPath?: string;
   command?: string;
   duration?: number;
+  days?: number;
 }
 
 // ============================================================================
@@ -112,6 +112,28 @@ export class DeviceTool {
           return coords
             ? { success: true, output: `Location: lat=${coords.lat}, lon=${coords.lon}` }
             : { success: false, error: `Location unavailable for device ${input.deviceId}` };
+        }
+
+        case 'calendar': {
+          if (!input.deviceId) {
+            return { success: false, error: 'deviceId is required' };
+          }
+          const events = await manager.getCalendarEvents(input.deviceId, input.days);
+          if (events === null) {
+            return { success: false, error: `Calendar unavailable for device ${input.deviceId}` };
+          }
+          return {
+            success: true,
+            output: events.length === 0
+              ? 'No calendar events found in the requested period.'
+              : JSON.stringify({
+                  source: `device:${input.deviceId}`,
+                  periodDays: typeof input.days === 'number' && Number.isFinite(input.days)
+                    ? Math.max(1, Math.min(31, Math.trunc(input.days)))
+                    : 7,
+                  events,
+                }, null, 2),
+          };
         }
 
         case 'run': {

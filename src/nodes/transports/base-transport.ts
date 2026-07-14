@@ -41,6 +41,15 @@ export interface ExecuteOptions {
   env?: Record<string, string>;
 }
 
+export interface DeviceCalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end?: string;
+  allDay: boolean;
+  location?: string;
+}
+
 export interface TransportConfig {
   /** Device identifier */
   deviceId: string;
@@ -84,4 +93,7 @@ export interface DeviceTransport {
 
   /** Detect available capabilities on the device */
   getCapabilities(): Promise<DeviceCapability[]>;
+
+  /** Optional structured calendar reader exposed by capable transports. */
+  getCalendarEvents?(days?: number): Promise<DeviceCalendarEvent[] | null>;
 }

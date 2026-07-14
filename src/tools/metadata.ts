@@ -1118,9 +1118,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'device_manage',
     category: 'utility',
-    keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'pair'],
+    keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'pair', 'calendar', 'agenda'],
     priority: 4,
-    description: 'Manage paired devices (SSH/ADB/local)'
+    description: 'Manage paired devices (SSH/ADB/local), including read-only calendar events'
   },
   {
     name: 'spawn_parallel_agents',
