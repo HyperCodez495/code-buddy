@@ -141,10 +141,25 @@ function requiredToolsForQuery(query: string): string[] {
   // cascade and web verification. The video pipeline explicitly surfaces
   // unverified claims and ASR-damaged names; even lite model profiles must be
   // able to check those against primary sources in the same turn.
-  return /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch|shorts|embed|v)(?:[/?])|youtu\.be\/)[^\s]+/i
-    .test(query)
-    ? ['understand_video', 'web_search']
-    : [];
+  const required = new Set<string>();
+  if (/https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch|shorts|embed|v)(?:[/?])|youtu\.be\/)[^\s]+/i.test(query)) {
+    required.add('understand_video');
+    required.add('web_search');
+  }
+
+  // Short voice turns carry too little lexical context for the RAG selector.
+  // Fresh-information intents must therefore retain their deterministic tool,
+  // including on lite profiles whose alwaysInclude list is intentionally tiny.
+  if (/\b(?:m[eé]t[eé]o|weather|pr[eé]visions?\s+m[eé]t[eé]o|temp[eé]ratures?|temps\s+qu['’ ]?il\s+fait)\b/i.test(query)) {
+    required.add('weather');
+  }
+  if (/\b(?:bourse|cotation|cours\s+(?:de\s+)?(?:l['’]\s*)?action|indice\s+boursier|cac\s*40|nasdaq|s\s*&\s*p\s*500|stock\s+(?:price|quote))\b/i.test(query)) {
+    required.add('stock_quote');
+  }
+  if (/\b(?:actualit[eé]s?|gros\s+titres|derni[eè]res?\s+infos?|news)\b/i.test(query)) {
+    required.add('web_search');
+  }
+  return [...required];
 }
 
 /**

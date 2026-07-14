@@ -40,10 +40,11 @@ function cleanSentence(value: string): string {
 }
 
 const GENERIC_NEWS_TITLE =
-  /\b(actualites? (?:du jour|en direct|en temps reel|tech|videos? et infos? en direct)|intelligence artificielle actualites videos? et infos? en direct|info en continu|toute l actualite|toute l information|archives du monde|consultez tous les articles|world news|latest (?:ai )?news|leading french newspaper|infos? news actualites?|l information internationale en direct)\b/i;
+  /\b(actualites? (?:du jour|en direct|en temps reel|et infos?|tech|videos? et infos? en direct)|intelligence artificielle actualites videos? et infos? en direct|info en continu|toute l actualite|toute l information|archives du monde|consultez tous les articles|world news|latest (?:ai )?news|leading french newspaper|infos? news actualites?|l information internationale en direct)\b/i;
 const GENERIC_NEWS_SUMMARY =
   /\b(explore the latest|decrypte l actualite|analyses? des interviews|reportages exclusifs|toute l information|latest artificial intelligence news)\b/i;
 const SUMMARY_EMPHASIS = /<(?:strong|b|em)\b[^>]*>([\s\S]*?)<\/(?:strong|b|em)>/gi;
+const LOW_SIGNAL_NEWS_HOST = /(?:^|\.)(?:facebook\.com|instagram\.com|news\.google\.[a-z.]+|tiktok\.com|twitter\.com|x\.com)$/i;
 
 function foldForMatch(value: string): string {
   return value
@@ -75,6 +76,13 @@ function normalizeSummaryCandidate(value: string): string {
   return candidate.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase('fr'));
 }
 
+function hasBalancedQuotes(value: string): boolean {
+  const straightQuotes = (value.match(/"/g) ?? []).length;
+  return straightQuotes % 2 === 0
+    && (value.match(/«/g) ?? []).length === (value.match(/»/g) ?? []).length
+    && (value.match(/“/g) ?? []).length === (value.match(/”/g) ?? []).length;
+}
+
 function isConcreteSummaryCandidate(value: string): boolean {
   if (!value || value.length < 24 || value.includes('�')) return false;
   const folded = foldForMatch(value);
@@ -89,6 +97,10 @@ function isConcreteSummaryCandidate(value: string): boolean {
   const words = folded.split(' ').filter(Boolean);
   if (words.length < 5) return false;
 
+  // A cut search result can look grammatical while still ending halfway
+  // through a quotation. Never read that fragment aloud as a verified title.
+  if (!hasBalancedQuotes(value)) return false;
+
   // Search snippets often begin with a detached teaser such as
   // “Ce sera massif” : Emmanuel Macron… It names a speaker but not an event.
   // A quoted lead is only useful when the surrounding text explains it.
@@ -100,6 +112,16 @@ function isConcreteSummaryCandidate(value: string): boolean {
     }
   }
   return true;
+}
+
+function hasUsefulNewsUrl(item: NewsDigestItem): boolean {
+  try {
+    return !LOW_SIGNAL_NEWS_HOST.test(new URL(item.url).hostname.toLowerCase());
+  } catch {
+    // Some search backends return relative or synthetic references. Keep them:
+    // the title quality gates still apply and callers may resolve the citation.
+    return true;
+  }
 }
 
 function concreteSummaryTitle(rawSummary: string): string {
@@ -116,7 +138,9 @@ function concreteSummaryTitle(rawSummary: string): string {
 function concreteNewsTitle(item: NewsDigestItem): string {
   const title = cleanSentence(item.title);
   const foldedTitle = foldForMatch(title);
-  if (!GENERIC_NEWS_TITLE.test(foldedTitle) && !/^franceinfo\b/i.test(foldedTitle)) return title;
+  if (!GENERIC_NEWS_TITLE.test(foldedTitle) && !/^franceinfo\b/i.test(foldedTitle)) {
+    return hasBalancedQuotes(title) ? title : '';
+  }
   return concreteSummaryTitle(item.summary ?? '');
 }
 
@@ -145,6 +169,7 @@ export function formatNewsDigest(
   const now = options.now ?? Date.now();
   const maxItems = Math.max(1, Math.min(5, options.maxItems ?? 4));
   const candidates = digest.items
+    .filter(hasUsefulNewsUrl)
     .map((item) => {
       const spokenTitle = concreteNewsTitle(item);
       return { item, spokenTitle, likelyFrench: isProbablyFrench(spokenTitle) };

@@ -18,6 +18,7 @@ import {
   formatNewsDigest,
   type FreshContextPayload,
   type NewsDigest,
+  type NewsDigestItem,
 } from '../conversation/fresh-context.js';
 import {
   DEFAULT_NEWS_QUERY,
@@ -261,7 +262,7 @@ export function buildNewsSearchQueries(
   return lanes.map((lane) => `${lane} ${dateLabel}`);
 }
 
-function interleaveSearchResults(batches: SearchResult[][], limit = 8): SearchResult[] {
+function interleaveSearchResults(batches: SearchResult[][], limit = 12): SearchResult[] {
   const output: SearchResult[] = [];
   const seen = new Set<string>();
   const width = Math.max(0, ...batches.map((batch) => batch.length));
@@ -279,11 +280,101 @@ function interleaveSearchResults(batches: SearchResult[][], limit = 8): SearchRe
   return output;
 }
 
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/i, '$1')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, decimal: string) => String.fromCodePoint(Number.parseInt(decimal, 10)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rssTag(block: string, tag: string): string {
+  const match = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return decodeXmlText(match?.[1] ?? '');
+}
+
+/** Parse ordinary RSS 2.0 headlines into the same evidence shape as web search. Pure. */
+export function parseNewsRss(xml: string, source: string, maxItems = 6): NewsDigestItem[] {
+  const blocks = String(xml ?? '').match(/<item\b[^>]*>[\s\S]*?<\/item>/gi) ?? [];
+  const output: NewsDigestItem[] = [];
+  for (const block of blocks) {
+    const title = rssTag(block, 'title');
+    const url = rssTag(block, 'link');
+    if (!title || !/^https?:\/\//i.test(url)) continue;
+    const publishedAt = rssTag(block, 'pubDate') || rssTag(block, 'dc:date');
+    const summary = rssTag(block, 'description');
+    output.push({
+      title,
+      url,
+      source,
+      ...(publishedAt ? { publishedAt } : {}),
+      ...(summary ? { summary } : {}),
+    });
+    if (output.length >= maxItems) break;
+  }
+  return output;
+}
+
+async function defaultFetchNewsRssContext(
+  fetchedAt: number,
+  locale: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<NewsDigest | null> {
+  if (!locale.toLowerCase().startsWith('fr')) return null;
+  const configured = env.CODEBUDDY_NEWS_RSS_URLS?.trim();
+  const feeds = configured
+    ? configured.split(',').map((url) => url.trim()).filter(Boolean).map((url) => ({ url, source: new URL(url).hostname }))
+    : [
+      { url: 'https://www.franceinfo.fr/titres.rss', source: 'franceinfo' },
+      { url: 'https://www.lemonde.fr/rss/une.xml', source: 'Le Monde' },
+      { url: 'https://www.france24.com/fr/rss', source: 'France 24' },
+    ];
+  const settled = await Promise.allSettled(feeds.map(async (feed) => {
+    const response = await fetch(feed.url, {
+      headers: { Accept: 'application/rss+xml, application/xml, text/xml', 'User-Agent': 'CodeBuddy/1.8' },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return [];
+    return parseNewsRss(await response.text(), feed.source, 5);
+  }));
+  const batches = settled.map((result) => result.status === 'fulfilled' ? result.value : []);
+  const items: NewsDigestItem[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < 5 && items.length < 10; index += 1) {
+    for (const batch of batches) {
+      const item = batch[index];
+      if (!item) continue;
+      const key = item.url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+  }
+  return items.length > 0
+    ? { kind: 'news', query: feeds.map((feed) => feed.url).join(' | '), locale, fetchedAt, items }
+    : null;
+}
+
 async function defaultFetchNewsContext(query: string): Promise<NewsDigest | null> {
   try {
-    const { WebSearchTool } = await import('../tools/web-search.js');
     const fetchedAt = Date.now();
     const locale = process.env.CODEBUDDY_NEWS_LOCALE?.trim() || 'fr-FR';
+    // Editorial feeds provide concrete, timestamped headlines and avoid the
+    // generic homepages/SEO calendars frequently returned by broad web search.
+    // Search remains the resilient fallback and supports custom topic queries.
+    if (!query.trim()) {
+      const rss = await defaultFetchNewsRssContext(fetchedAt, locale);
+      if (rss) return rss;
+    }
+    const { WebSearchTool } = await import('../tools/web-search.js');
     const [language = 'fr', country = 'FR'] = locale.split('-');
     const effectiveQuery =
       query ||
@@ -299,7 +390,7 @@ async function defaultFetchNewsContext(query: string): Promise<NewsDigest | null
     for (const [index, datedQuery] of datedQueries.entries()) {
       if (index > 0) await new Promise((resolve) => setTimeout(resolve, paceMs));
       batches.push(await tool.searchStructured(datedQuery, {
-        maxResults: 5,
+        maxResults: 8,
         search_lang: language.toLowerCase(),
         country: country.toUpperCase(),
         freshness: 'pd',
@@ -309,7 +400,10 @@ async function defaultFetchNewsContext(query: string): Promise<NewsDigest | null
     const rows = interleaveSearchResults(batches);
     const items = (rows ?? [])
       .filter((row) => (row?.title ?? '').trim() && (row?.url ?? '').trim())
-      .slice(0, 5)
+      // Formatting applies stricter editorial gates than the search backend.
+      // Preserve enough candidates here so filtered social/homepage fragments
+      // can be replaced by later, concrete headlines.
+      .slice(0, 12)
       .map((row) => ({
         title: row.title.trim(),
         url: row.url.trim(),

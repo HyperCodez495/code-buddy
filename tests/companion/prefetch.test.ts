@@ -23,6 +23,7 @@ import {
   matchPrefetched,
   matchPrefetchedDetailed,
   normalizeQuery,
+  parseNewsRss,
   runPrefetchCycle,
   loadPrefetchCache,
   type PrefetchEntry,
@@ -55,6 +56,25 @@ describe('prefetch-config', () => {
     const path = tmpFile('bad.json');
     savePrefetchItems([{ kind: 'weather' }, { kind: 'nope' } as unknown as PrefetchItem], path);
     expect(loadPrefetchItems(path)).toEqual([{ kind: 'weather' }]);
+  });
+});
+
+describe('news RSS evidence', () => {
+  it('decodes RSS entities and retains concrete source metadata', () => {
+    const xml = `<?xml version="1.0"?><rss><channel><item>
+      <title>Incendies de Fontainebleau&#xA0;: les feux sont &quot;fixés&quot;</title>
+      <description><![CDATA[Le préfet confirme que les secours restent mobilisés.]]></description>
+      <pubDate>Tue, 14 Jul 2026 20:03:35 +0200</pubDate>
+      <link>https://www.franceinfo.fr/france/incendies/article.html</link>
+    </item></channel></rss>`;
+
+    expect(parseNewsRss(xml, 'franceinfo')).toEqual([{
+      title: 'Incendies de Fontainebleau : les feux sont "fixés"',
+      summary: 'Le préfet confirme que les secours restent mobilisés.',
+      publishedAt: 'Tue, 14 Jul 2026 20:03:35 +0200',
+      url: 'https://www.franceinfo.fr/france/incendies/article.html',
+      source: 'franceinfo',
+    }]);
   });
 });
 

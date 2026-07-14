@@ -146,6 +146,21 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     expect(alwaysInclude).toEqual(['web_search', 'restore_context']);
   });
 
+  it.each([
+    ['Quelle est la météo à Paris ?', 'weather'],
+    ['Donne-moi les actualités', 'web_search'],
+    ['Où en est la bourse et le CAC 40 ?', 'stock_quote'],
+  ])('force-includes the live-data tool for a short voice intent: %s', async (query, tool) => {
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    await strategy.selectToolsForQuery(query, {
+      maxTools: 5,
+      alwaysInclude: ['view_file', 'bash', 'search'],
+    });
+
+    const alwaysInclude = ragMock.getRelevantToolsMock.mock.calls[0]![1]?.alwaysInclude;
+    expect(alwaysInclude).toContain(tool);
+  });
+
   it('keeps the default 15-tool budget when no override is passed', async () => {
     const strategy = new ToolSelectionStrategy({ enableCaching: false });
     await strategy.selectToolsForQuery('hello world');

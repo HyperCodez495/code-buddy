@@ -12,6 +12,7 @@
  * @module tools/stock-quote
  */
 import axios from 'axios';
+import { createDecipheriv, createHash } from 'node:crypto';
 import type { ToolResult } from '../types/index.js';
 import type { StockWidgetData } from '../widgets/widget-types.js';
 
@@ -26,11 +27,22 @@ export interface StockQuoteToolOptions {
   nasdaqBaseUrl?: string;
   /** Stooq base (default `https://stooq.com`). */
   stooqBaseUrl?: string;
+  /** Euronext Live base (default `https://live.euronext.com`). */
+  euronextBaseUrl?: string;
   /** Finnhub base (default `https://finnhub.io`). */
   finnhubBaseUrl?: string;
   /** Finnhub API key (default env `FINNHUB_API_KEY`). When set, tried FIRST (most reliable). */
   finnhubKey?: string;
   timeoutMs?: number;
+}
+
+export interface EuronextInstrument {
+  isin: string;
+  mic: string;
+  link: string;
+  name: string;
+  symbol: string;
+  type: 'stock' | 'market';
 }
 
 function num(v: unknown): number | null {
@@ -43,6 +55,155 @@ function num(v: unknown): number | null {
 function round(v: number, digits = 2): number {
   const f = 10 ** digits;
   return Math.round(v * f) / f;
+}
+
+function marketNum(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v !== 'string') return null;
+  let text = v.replace(/[\s\u00a0€$£%]/g, '').replace(/[−–]/g, '-');
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    text = comma > dot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (comma >= 0) {
+    text = /,\d{1,4}$/.test(text) ? text.replace(',', '.') : text.replace(/,/g, '');
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function htmlText(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&#x27;|&apos;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function elementTextById(html: string, id: string): string {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = html.match(new RegExp(`<[^>]+\\bid=["']${escaped}["'][^>]*>([\\s\\S]*?)<\\/[^>]+>`, 'i'));
+  return htmlText(match?.[1] ?? '');
+}
+
+function normalizedMarketKey(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}+/gu, '').replace(/[^A-Z0-9]+/gi, '').toUpperCase();
+}
+
+/** Resolve an exact Euronext search result without accepting fuzzy lookalikes. Pure. */
+export function parseEuronextSearch(raw: unknown, symbolInput: string): EuronextInstrument | null {
+  if (!Array.isArray(raw)) return null;
+  const aliases: Record<string, { query: string; name: string; symbol: string }> = {
+    '^FCHI': { query: 'CAC40', name: 'CAC40', symbol: 'PX1' },
+  };
+  const upperInput = symbolInput.trim().toUpperCase();
+  const alias = aliases[upperInput];
+  const suffix = upperInput.match(/\.([A-Z]{2})$/)?.[1];
+  const requested = normalizedMarketKey(alias?.query ?? upperInput.replace(/\.[A-Z]{2}$/, ''));
+  const expectedMic: Record<string, string> = {
+    PA: 'XPAR', AS: 'XAMS', BR: 'XBRU', LS: 'XLIS', IR: 'XDUB', MI: 'XMIL', OL: 'XOSL',
+  };
+
+  let best: { score: number; instrument: EuronextInstrument } | null = null;
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = item as Record<string, unknown>;
+    const link = typeof candidate.link === 'string' ? candidate.link : '';
+    const product = link.match(/\/product\/(equities|indices)\/([^/?#]+)/i);
+    if (!product) continue;
+    const label = typeof candidate.label === 'string' ? candidate.label : '';
+    const symbol = htmlText(label.match(/<span[^>]+class=['"]symbol['"][^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? '');
+    const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+    const isin = typeof candidate.isin === 'string'
+      ? candidate.isin
+      : typeof candidate.value === 'string' ? candidate.value : '';
+    const mic = typeof candidate.mic === 'string' ? candidate.mic.toUpperCase() : '';
+    if (!isin || !mic || !name || !symbol) continue;
+
+    const exactSymbol = normalizedMarketKey(symbol) === requested;
+    const exactName = normalizedMarketKey(name) === requested;
+    const exactIsin = normalizedMarketKey(isin) === requested;
+    const aliasMatch = alias != null && (
+      normalizedMarketKey(name) === alias.name || normalizedMarketKey(symbol) === alias.symbol
+    );
+    if (!exactSymbol && !exactName && !exactIsin && !aliasMatch) continue;
+    let score = exactSymbol ? 10 : exactName ? 9 : exactIsin ? 8 : 7;
+    if (suffix && expectedMic[suffix] === mic) score += 4;
+    if (mic.startsWith('X')) score += 1;
+    if (!best || score > best.score) {
+      best = {
+        score,
+        instrument: {
+          isin,
+          mic,
+          link,
+          name,
+          symbol,
+          type: product[1]!.toLowerCase() === 'indices' ? 'market' : 'stock',
+        },
+      };
+    }
+  }
+  return best?.instrument ?? null;
+}
+
+/** Decrypt the CryptoJS/OpenSSL-compatible envelope returned by Euronext Live. Pure. */
+export function decryptEuronextPayload(raw: unknown, passphrase: string): string | null {
+  const envelope = raw as { ct?: unknown; iv?: unknown; s?: unknown } | null;
+  if (!envelope || typeof envelope.ct !== 'string' || typeof envelope.s !== 'string') return null;
+  if (!/^[0-9a-f]{16,64}$/i.test(envelope.s) || envelope.ct.length > 8_000_000) return null;
+  try {
+    const salt = Buffer.from(envelope.s, 'hex');
+    const password = Buffer.from(passphrase, 'utf8');
+    let derived = Buffer.alloc(0);
+    let previous = Buffer.alloc(0);
+    while (derived.length < 48) {
+      previous = createHash('md5').update(Buffer.concat([previous, password, salt])).digest();
+      derived = Buffer.concat([derived, previous]);
+    }
+    const decipher = createDecipheriv('aes-256-cbc', derived.subarray(0, 32), derived.subarray(32, 48));
+    const plaintext = decipher.update(envelope.ct, 'base64', 'utf8') + decipher.final('utf8');
+    const decoded: unknown = JSON.parse(plaintext);
+    return typeof decoded === 'string' ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse Euronext's decrypted detailed-quote HTML. Pure. */
+export function parseEuronextQuoteHtml(
+  html: string,
+  instrument: EuronextInstrument,
+): StockWidgetData | null {
+  const price = marketNum(elementTextById(html, 'header-instrument-price'));
+  if (price == null) return null;
+  const currencyMark = elementTextById(html, 'header-instrument-currency');
+  const currency = currencyMark.includes('€') ? 'EUR' : currencyMark.includes('$') ? 'USD' : currencyMark.includes('£') ? 'GBP' : undefined;
+  const previousBlock = html.match(/Since Previous Close<\/div>\s*<span[^>]*>([\s\S]*?)<\/span>\s*<span[^>]*>\s*\(?([\s\S]*?)\)?\s*<\/span>/i);
+  const change = marketNum(htmlText(previousBlock?.[1] ?? ''));
+  const changePercent = marketNum(htmlText(previousBlock?.[2] ?? ''));
+  const previousClose = change != null ? round(price - change) : undefined;
+  const time = html.match(/\b(\d{2}\/\d{2}\/\d{4}\s*-\s*\d{2}:\d{2})\b/)?.[1];
+  const name = elementTextById(html, 'header-instrument-name') || instrument.name;
+  const marketNames: Record<string, string> = {
+    XPAR: 'Euronext Paris', XAMS: 'Euronext Amsterdam', XBRU: 'Euronext Brussels',
+    XLIS: 'Euronext Lisbon', XDUB: 'Euronext Dublin', XMIL: 'Euronext Milan', XOSL: 'Euronext Oslo',
+  };
+  return {
+    type: instrument.type,
+    symbol: instrument.symbol,
+    name,
+    price,
+    ...(change != null ? { change } : {}),
+    ...(changePercent != null ? { changePercent } : {}),
+    ...(currency ? { currency } : {}),
+    ...(previousClose != null ? { previousClose } : {}),
+    market: marketNames[instrument.mic] ?? `Euronext ${instrument.mic}`,
+    ...(time ? { time } : {}),
+  };
 }
 
 function lastFinite(arr: unknown): number | null {
@@ -244,6 +405,7 @@ export class StockQuoteTool {
   private readonly yahooBaseUrl: string;
   private readonly nasdaqBaseUrl: string;
   private readonly stooqBaseUrl: string;
+  private readonly euronextBaseUrl: string;
   private readonly finnhubBaseUrl: string;
   private readonly finnhubKey: string | undefined;
   private readonly timeoutMs: number;
@@ -253,6 +415,7 @@ export class StockQuoteTool {
       options.yahooBaseUrl ?? process.env.CODEBUDDY_YAHOO_FINANCE_BASE ?? 'https://query1.finance.yahoo.com';
     this.nasdaqBaseUrl = options.nasdaqBaseUrl ?? process.env.CODEBUDDY_NASDAQ_BASE ?? 'https://api.nasdaq.com';
     this.stooqBaseUrl = options.stooqBaseUrl ?? process.env.CODEBUDDY_STOOQ_BASE ?? 'https://stooq.com';
+    this.euronextBaseUrl = options.euronextBaseUrl ?? process.env.CODEBUDDY_EURONEXT_BASE ?? 'https://live.euronext.com';
     this.finnhubBaseUrl = options.finnhubBaseUrl ?? process.env.CODEBUDDY_FINNHUB_BASE ?? 'https://finnhub.io';
     this.finnhubKey = options.finnhubKey ?? process.env.FINNHUB_API_KEY ?? undefined;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -318,6 +481,39 @@ export class StockQuoteTool {
       } catch {
         /* fall through to Stooq */
       }
+    }
+
+    // European fallback ($0): Euronext's public instrument search and official
+    // detailed quote. This covers symbols Yahoo currently rate-limits and the
+    // dead Stooq endpoint, notably MC.PA/LVMH and ^FCHI/CAC 40.
+    try {
+      const searchQuery = s.toUpperCase() === '^FCHI' ? 'CAC 40' : s.replace(/\.[A-Z]{2}$/i, '');
+      const search = await axios.get(`${this.euronextBaseUrl}/en/instrumentSearch/searchJSON`, {
+        timeout: this.timeoutMs,
+        params: { q: searchQuery },
+        headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en' },
+      });
+      const instrument = parseEuronextSearch(search.data, s);
+      if (instrument) {
+        const productPage = await axios.get(`${this.euronextBaseUrl}${instrument.link}`, {
+          timeout: this.timeoutMs,
+          headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en' },
+        });
+        const page = String(productPage.data);
+        const key = page.match(/"ajax_secure"\s*:\s*\{\s*"kye"\s*:\s*"([^"]+)"/)?.[1];
+        if (key) {
+          const productData = `${instrument.isin}-${instrument.mic}`;
+          const quote = await axios.get(`${this.euronextBaseUrl}/en/ajax/getDetailedQuote/${encodeURIComponent(productData)}`, {
+            timeout: this.timeoutMs,
+            headers: { 'User-Agent': UA, Accept: 'application/json', Referer: `${this.euronextBaseUrl}${instrument.link}` },
+          });
+          const quoteHtml = decryptEuronextPayload(quote.data, key);
+          const data = quoteHtml ? parseEuronextQuoteHtml(quoteHtml, instrument) : null;
+          if (data) return { success: true, output: formatQuoteSummary(data), data };
+        }
+      }
+    } catch {
+      /* fall through to Stooq */
     }
 
     // Fallback: Stooq CSV (basic OHLCV, no change).

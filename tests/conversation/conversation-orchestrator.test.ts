@@ -264,4 +264,41 @@ describe('conversation quality and fresh context', () => {
     expect(formatted.speech).not.toContain('Tour de France 2026 : pas de');
     expect(formatted.citations[0]?.title).toMatch(/^Flora Gorse/);
   });
+
+  it('drops social/aggregator results and headlines cut inside a quotation', () => {
+    const formatted = formatNewsDigest({
+      kind: 'news',
+      query: 'actualités France',
+      locale: 'fr-FR',
+      fetchedAt: Date.parse('2026-07-14T18:00:00Z'),
+      items: [
+        {
+          title: "Les images du défilé du 14-Juillet, le dernier d'Emmanuel",
+          url: 'https://www.facebook.com/example/posts/123',
+          source: 'Facebook',
+        },
+        {
+          title: 'Google Actualités',
+          url: 'https://news.google.com/home?hl=fr',
+          source: 'Google Actualités',
+        },
+        {
+          title: "14-Juillet : « A partir de 2027, l'enjeu est plutôt de savoir",
+          url: 'https://www.lemonde.fr/politique/article-test.html',
+          source: 'Le Monde',
+        },
+        {
+          title: 'Le Parlement adopte définitivement la nouvelle loi sur le numérique',
+          url: 'https://www.franceinfo.fr/politique/article-test.html',
+          source: 'franceinfo',
+        },
+      ],
+    });
+
+    expect(formatted.citations).toHaveLength(1);
+    expect(formatted.speech).toContain('Le Parlement adopte');
+    expect(formatted.speech).not.toContain('Facebook');
+    expect(formatted.speech).not.toContain('Google Actualités');
+    expect(formatted.speech).not.toContain('A partir de 2027');
+  });
 });

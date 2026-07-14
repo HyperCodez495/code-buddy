@@ -7,6 +7,9 @@ import {
   parseStooqCsv,
   parseFinnhubQuote,
   parseNasdaqQuote,
+  parseEuronextSearch,
+  decryptEuronextPayload,
+  parseEuronextQuoteHtml,
   formatQuoteSummary,
 } from '../../src/tools/stock-quote.js';
 
@@ -190,6 +193,49 @@ describe('parseNasdaqQuote', () => {
   it('returns null without a price', () => {
     expect(parseNasdaqQuote({ data: { primaryData: {} } }, 'x')).toBeNull();
     expect(parseNasdaqQuote({}, 'x')).toBeNull();
+  });
+});
+
+describe('Euronext fallback parsers', () => {
+  const search = [
+    {
+      value: 'FR0000121014',
+      isin: 'FR0000121014',
+      mic: 'XPAR',
+      label: "<span class='name'>LVMH</span><span class='symbol'>MC</span><span class='mic'>XPAR</span>",
+      link: '/en/product/equities/FR0000121014-XPAR',
+      name: 'LVMH',
+    },
+  ];
+
+  it('resolves an exact Paris ticker and rejects fuzzy results', () => {
+    expect(parseEuronextSearch(search, 'MC.PA')).toMatchObject({
+      isin: 'FR0000121014', symbol: 'MC', mic: 'XPAR', type: 'stock',
+    });
+    expect(parseEuronextSearch(search, 'ML.PA')).toBeNull();
+  });
+
+  it('decrypts the CryptoJS passphrase envelope used by Euronext', () => {
+    expect(decryptEuronextPayload({
+      ct: 'i6RBsxw0SlDD8+Nnn0d9A4uurNDcfdJ0g67xbmi5OA4PoUWjkO/sa+42xqedXUNvJh7quDqUMhw1OuQKOwr0sA==',
+      iv: 'df6675fa0ee3829c9d71124e37020847',
+      s: '0011223344556677',
+    }, '24ayqVo7yJma')).toBe('<span id="header-instrument-price">482.95</span>');
+  });
+
+  it('parses price, move, currency and timestamp from detailed quote HTML', () => {
+    const instrument = parseEuronextSearch(search, 'LVMH')!;
+    const html = `
+      <h1 id="header-instrument-name"><strong>LVMH</strong></h1>
+      <span id="header-instrument-currency">€</span>
+      <span id="header-instrument-price">482.95</span>
+      <div>14/07/2026 - 17:36</div>
+      <div>Since Previous Close</div><span>-8.55</span><span>(-1.74%)</span>`;
+    expect(parseEuronextQuoteHtml(html, instrument)).toMatchObject({
+      type: 'stock', symbol: 'MC', name: 'LVMH', price: 482.95,
+      change: -8.55, changePercent: -1.74, previousClose: 491.5,
+      currency: 'EUR', market: 'Euronext Paris', time: '14/07/2026 - 17:36',
+    });
   });
 });
 
