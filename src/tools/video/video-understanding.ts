@@ -40,7 +40,10 @@ import type { FrameDedupDeps } from './frame-dedup.js';
 import type { DescribeFrameDeps } from './describe-frame.js';
 import type { CloudUnderstandDeps, CloudUnderstandOutcome, CloudSourceKind } from './cloud-understand.js';
 import { ingestVideoUnderstanding, getDefaultVideoCkgBridge, type VideoCkgBridge } from './video-ckg.js';
-import { buildVideoResearchCard } from './video-research-card.js';
+import {
+  buildVideoResearchCard,
+  buildVideoResearchCardPreview,
+} from './video-research-card.js';
 
 export type UnderstandMethod = 'youtube-captions' | 'youtube-audio' | 'local-file' | 'direct-url';
 
@@ -569,15 +572,18 @@ export async function understandVideo(
   // main agent can research the video without anchoring on its opening minutes.
   const researchCardCandidate = join(outDir, `research-${safeSlug(source)}.md`);
   let researchCardPath: string | undefined;
+  let researchCardPreview = '';
   try {
-    const researchCard = buildVideoResearchCard({
+    const researchCardInput = {
       source,
       method,
       transcriptPath,
       segments,
       ...(input.question ? { question: input.question } : {}),
       ...(cloud?.answer ? { cloudAnswer: cloud.answer } : {}),
-    });
+    };
+    const researchCard = buildVideoResearchCard(researchCardInput);
+    researchCardPreview = buildVideoResearchCardPreview(researchCardInput);
     await writeFile(researchCardCandidate, researchCard, 'utf8');
     researchCardPath = researchCardCandidate;
   } catch (err) {
@@ -596,7 +602,8 @@ export async function understandVideo(
   // Cloud answer (when present) leads the output — it's the richest, and carries the privacy warning.
   if (cloudRendered) output = `${cloudRendered}\n\n${output}`;
   if (researchCardPath) {
-    output += `\n\nFiche de recherche pré-structurée (passages technologiques et affirmations couvrant toute la vidéo) : ${researchCardPath}. Pour une demande de veille, utilise cette fiche puis vérifie les noms et affirmations dans des sources primaires avant de conclure.`;
+    if (researchCardPreview) output += `\n\n${researchCardPreview}`;
+    output += `\n\nFiche de recherche pré-structurée complète : ${researchCardPath}. Pour une demande de veille approfondie, lis cette fiche puis vérifie les noms et affirmations dans des sources primaires avant de conclure.`;
   }
 
   const result: UnderstandVideoSuccess = { segments, transcriptPath, source, method, output };

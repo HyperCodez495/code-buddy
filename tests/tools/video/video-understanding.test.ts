@@ -435,6 +435,27 @@ describe('understandVideo source resolution', () => {
     expect(transcribeLongFn).toHaveBeenCalledWith('/tmp/a.wav', expect.anything());
   });
 
+  it('surfaces late research signals even when the inline transcript is truncated', async () => {
+    const longOpening = 'conversation générale '.repeat(80);
+    const fetchCaptions = vi.fn(async () => [
+      { text: longOpening, start: 0, duration: 30 },
+      { text: 'PanoWorld est un world model open source publié sur GitHub.', start: 900, duration: 10 },
+      { text: 'Le benchmark revendique un gain de 42 %.', start: 1_200, duration: 10 },
+    ]);
+    const result = await understandVideo(
+      { source: 'https://youtu.be/dQw4w9WgXcQ' },
+      { outDir, fetchCaptions, maxOutputChars: 120 },
+    );
+
+    expect(isUnderstandOk(result)).toBe(true);
+    if (isUnderstandOk(result)) {
+      expect(result.output).toContain('Transcript horodaté tronqué');
+      expect(result.output).toContain('Aperçu de recherche (transcript complet)');
+      expect(result.output).toContain('PanoWorld');
+      expect(result.output).toContain('20:00');
+    }
+  });
+
   it('local file routes through extractAudio + transcribeLong', async () => {
     const extractAudio = vi.fn(async () => ({ success: true, output: 'ok', data: { path: '/tmp/x.mp3' } }));
     const transcribeLongFn = vi.fn(async () => [{ t_start: 0, t_end: 10, said: 'local words' }]);

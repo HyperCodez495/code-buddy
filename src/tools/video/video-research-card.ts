@@ -33,6 +33,8 @@ const WINDOW_SECONDS = 30;
 const MAX_WINDOW_CHARS = 650;
 const MAX_TECH_SIGNALS = 8;
 const MAX_CLAIM_SIGNALS = 8;
+const MAX_PREVIEW_SIGNALS = 3;
+const MAX_PREVIEW_WINDOW_CHARS = 320;
 
 const TECHNOLOGY_PATTERN = /\b(?:ai|ia|llm|mod[eè]le|syst[eè]me|architecture|multi[- ]?agent|agentique|robot|avatar|world model|mod[eè]le monde|open source|github|gpu|transformer|diffusion|vision|g[eé]nom|adn|arn|rna|prot[eé]ine|logiciel|framework|api)\b/gi;
 const CLAIM_PATTERN = /(?:\d+(?:[.,]\d+)?\s*(?:%|x|fois|millions?|milliards?|tokens?|param[eè]tres?|gpu|jours?|heures?|fps|images? par seconde)|benchmark|score|plus rapide|publi[eé]|publication|nature|laboratoire|exp[eé]rimental|confirm[eé]|open source|disponible sur github)/gi;
@@ -114,10 +116,13 @@ function selectSignals(
     .map((candidate) => candidate.window);
 }
 
-function renderSignals(windows: TranscriptWindow[]): string {
+function renderSignals(
+  windows: TranscriptWindow[],
+  maxChars = MAX_WINDOW_CHARS,
+): string {
   if (windows.length === 0) return '- Aucun passage détecté automatiquement.';
   return windows
-    .map((window) => `- **${formatTimestamp(window.start)}** — ${truncate(window.text, MAX_WINDOW_CHARS)}`)
+    .map((window) => `- **${formatTimestamp(window.start)}** — ${truncate(window.text, maxChars)}`)
     .join('\n');
 }
 
@@ -196,4 +201,43 @@ export function buildVideoResearchCard(input: VideoResearchCardInput): string {
   );
 
   return sections.join('\n');
+}
+
+/**
+ * Render a bounded preview for the immediate tool observation.
+ *
+ * Long transcripts are truncated before they reach the main model. Including
+ * a few signals selected from the complete transcript prevents the model from
+ * answering only from the opening minutes while keeping the observation small.
+ */
+export function buildVideoResearchCardPreview(
+  input: VideoResearchCardInput,
+): string {
+  const windows = buildTranscriptWindows(input.segments);
+  const technologySignals = selectSignals(
+    windows,
+    TECHNOLOGY_PATTERN,
+    MAX_PREVIEW_SIGNALS,
+  );
+  const claimSignals = selectSignals(
+    windows,
+    CLAIM_PATTERN,
+    MAX_PREVIEW_SIGNALS,
+  );
+
+  if (technologySignals.length === 0 && claimSignals.length === 0) return '';
+
+  return [
+    '## Aperçu de recherche (transcript complet)',
+    '',
+    '> Indices automatiques, non vérifiés. Confirmer les noms et affirmations dans des sources primaires.',
+    '',
+    '### Technologies et projets mentionnés',
+    '',
+    renderSignals(technologySignals, MAX_PREVIEW_WINDOW_CHARS),
+    '',
+    '### Affirmations à vérifier',
+    '',
+    renderSignals(claimSignals, MAX_PREVIEW_WINDOW_CHARS),
+  ].join('\n');
 }
