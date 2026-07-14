@@ -63,6 +63,12 @@ export interface ToolSelectionConfig {
   minScore: number;
   /** Tool names that should always be included (default: core tools) */
   alwaysInclude: string[];
+  /**
+   * Optional hard model-facing allowlist. Unlike relevance filtering this is an
+   * effect boundary: schemas outside the list are removed even if they are
+   * normally always included. Used by evidence-only introspection turns.
+   */
+  allowedToolNames?: string[];
   /** Enable adaptive threshold based on success metrics (default: true) */
   useAdaptiveThreshold: boolean;
   /** Enable caching of selected tools for multi-round consistency (default: true) */
@@ -259,6 +265,10 @@ export class ToolSelectionStrategy {
     }
 
     tools = this.applyModelFacingSchemaFilter(tools, modelName);
+    if (effectiveConfig.allowedToolNames) {
+      const allowed = new Set(effectiveConfig.allowedToolNames);
+      tools = tools.filter((tool) => allowed.has(tool.function.name));
+    }
     this.cachedToolNames = tools.map(t => t.function.name);
     if (selection) {
       selection = {

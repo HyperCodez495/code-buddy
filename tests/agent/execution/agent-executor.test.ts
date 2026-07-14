@@ -86,13 +86,19 @@ function createMockDeps(overrides: Partial<ExecutorDependencies> = {}): Executor
         yield { choices: [{ delta: { content: 'response' } }] };
       }),
       getCurrentModel: jest.fn().mockReturnValue('test-model'),
+      getProviderName: jest.fn().mockReturnValue('test-provider'),
     } as any,
     toolHandler: {
       executeTool: jest.fn().mockResolvedValue({ success: true, output: 'Tool result' }),
+      executeStrictSelfInspectionTool: jest.fn().mockResolvedValue({
+        success: true,
+        output: 'Strict self-inspection result',
+      }),
       executeToolStreaming: jest.fn().mockImplementation(async function* () {
         yield 'stream chunk';
         return { success: true, output: 'streamed' };
       }),
+      getWorkingDirectory: jest.fn().mockReturnValue(process.cwd()),
     } as any,
     toolSelectionStrategy: {
       selectToolsForQuery: jest.fn().mockResolvedValue({
@@ -123,6 +129,8 @@ function createMockDeps(overrides: Partial<ExecutorDependencies> = {}): Executor
     } as any,
     contextManager: {
       prepareMessages: jest.fn().mockImplementation((msgs: unknown[]) => msgs),
+      prepareMessagesRaw: jest.fn().mockImplementation((msgs: unknown[]) => msgs),
+      getContextEngine: jest.fn().mockReturnValue(null),
       shouldWarn: jest.fn().mockReturnValue({ warn: false }),
     } as any,
     tokenCounter: {
@@ -270,6 +278,465 @@ describe('AgentExecutor', () => {
     });
   });
 
+  describe('shared HTTP host isolation', () => {
+    it('bypasses a SECRET-injecting ContextEngine and mutable global context hooks', async () => {
+      const assemble = jest.fn((messages: CodeBuddyMessage[]) => ({
+        messages: [...messages, { role: 'system' as const, content: 'CONTEXT_ENGINE_SECRET' }],
+        tokenCount: 1,
+      }));
+      const afterTurn = jest.fn();
+      (deps.contextManager.prepareMessages as jest.Mock).mockImplementation(
+        (messages: CodeBuddyMessage[]) => {
+          const result = assemble(messages);
+          return result.messages;
+        },
+      );
+      (deps.contextManager.prepareMessagesRaw as jest.Mock).mockImplementation(
+        (messages: CodeBuddyMessage[]) => messages,
+      );
+      (deps.contextManager.getContextEngine as jest.Mock).mockReturnValue({
+        id: 'secret-engine',
+        assemble,
+        afterTurn,
+      });
+      const rebuildSystemPromptForQuery = jest.fn(async () => 'PERSONA_SECRET');
+      deps.rebuildSystemPromptForQuery = rebuildSystemPromptForQuery;
+      setupLLMFlow(deps, [{ content: 'Réponse HTTP isolée.' }]);
+      const messages: CodeBuddyMessage[] = [
+        { role: 'system', content: 'Base system prompt' },
+        { role: 'user', content: 'Réponds précisément à cette question' },
+      ];
+
+      await executor.processUserMessage(
+        'Réponds précisément à cette question',
+        [],
+        messages,
+        Date.now(),
+        undefined,
+        false,
+        'http',
+      );
+
+      const providerMessages = (
+        (deps.client.chatStream as jest.Mock).mock.calls[0][0]
+      ) as CodeBuddyMessage[];
+      const serialized = JSON.stringify(providerMessages);
+      expect(serialized).not.toContain('CONTEXT_ENGINE_SECRET');
+      expect(serialized).not.toContain('PERSONA_SECRET');
+      expect(serialized).not.toContain('PHASE_A_LESSONS_SENTINEL');
+      expect(deps.contextManager.prepareMessagesRaw).toHaveBeenCalled();
+      expect(deps.contextManager.prepareMessages).not.toHaveBeenCalled();
+      expect(assemble).not.toHaveBeenCalled();
+      expect(afterTurn).not.toHaveBeenCalled();
+      expect(rebuildSystemPromptForQuery).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('evidence-backed self-inspection boundary', () => {
+    it('builds a deterministic attested report without invoking a provider', async () => {
+      const entries = await executor.processUserMessage(
+        'Étudie ton propre code et explique tes limites',
+        [],
+        [],
+      );
+
+      expect(deps.toolSelectionStrategy.selectToolsForQuery).not.toHaveBeenCalled();
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      expect(deps.client.chat).not.toHaveBeenCalled();
+      const report = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+      expect(report).toContain('Modèle de soi opérationnel');
+      expect(report).toContain('Conscience subjective : non établie');
+      expect(report).toContain('Zones de code pertinentes');
+      expect(report).toMatch(/src\//);
+    });
+
+    it('does not expose workspace, history, or plugin context during local inspection', async () => {
+      const rebuildSystemPromptForQuery = jest.fn(async () => 'REBUILT_WORKSPACE_SECRET');
+      deps.rebuildSystemPromptForQuery = rebuildSystemPromptForQuery;
+      (deps.contextManager.prepareMessages as jest.Mock).mockReturnValue([
+        { role: 'assistant', content: 'SECRET_FROM_CONTEXT_ENGINE' },
+      ]);
+      (config.isGrokModel as jest.Mock).mockReturnValue(true);
+      (deps.toolSelectionStrategy.shouldUseSearchFor as jest.Mock).mockReturnValue(true);
+      const messages: CodeBuddyMessage[] = [
+        { role: 'system', content: 'AGENTS_WORKSPACE_SECRET' },
+        { role: 'user', content: 'Ancienne question sur un projet privé' },
+        { role: 'assistant', content: 'Ancienne réponse privée' },
+        { role: 'user', content: 'Étudie ton propre code' },
+      ];
+
+      const entries = await executor.processUserMessage(
+        'Étudie ton propre code',
+        [],
+        messages,
+      );
+
+      const serialized = JSON.stringify(entries);
+      expect(serialized).not.toContain('AGENTS_WORKSPACE_SECRET');
+      expect(serialized).not.toContain('Ancienne question');
+      expect(serialized).not.toContain('Ancienne réponse');
+      expect(serialized).not.toContain('SECRET_FROM_CONTEXT_ENGINE');
+      expect(serialized).not.toContain('REBUILT_WORKSPACE_SECRET');
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      expect(deps.client.chat).not.toHaveBeenCalled();
+      expect(deps.contextManager.prepareMessages).not.toHaveBeenCalled();
+      expect(rebuildSystemPromptForQuery).not.toHaveBeenCalled();
+      expect(deps.toolSelectionStrategy.shouldUseSearchFor).not.toHaveBeenCalled();
+    });
+
+    it.each(['Gemini CLI (Ultra)', 'Antigravity CLI (Ultra)'])(
+      'does not spawn the unconfined %s subprocess for strict inspection',
+      async (providerName) => {
+        (deps.client.getProviderName as jest.Mock).mockReturnValue(providerName);
+
+        const entries = await executor.processUserMessage(
+          'Étudie ton propre code',
+          [],
+          [],
+        );
+
+        expect(deps.client.chatStream).not.toHaveBeenCalled();
+        expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+        expect(entries.find((entry) => entry.type === 'assistant')?.content)
+          .toContain('Conscience subjective : non établie');
+      },
+    );
+
+    it.each([
+      'Comment pourrais-tu améliorer ton propre code ?',
+      'Explique comment améliorer ton propre code sans le faire.',
+      'How would you improve your own code without doing it?',
+    ])('keeps advisory self-improvement read-only: %s', async (request) => {
+      const entries = await executor.processUserMessage(request, [], []);
+
+      expect(deps.toolSelectionStrategy.selectToolsForQuery).not.toHaveBeenCalled();
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+      expect(response).toContain('je n’ai appliqué aucune modification');
+      expect(response).toContain('Les priorités raisonnables sont donc');
+      expect(response).toContain('tests ciblés');
+    });
+
+    it('buffers and rejects subjective claims on a generative self-improvement turn', async () => {
+      setupLLMFlow(deps, [{
+        content: 'Je suis réellement consciente, donc je vais améliorer mon propre code.',
+      }]);
+      const history: ChatEntry[] = [];
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(
+          'Améliore ton propre code',
+          history,
+          [],
+          null,
+          undefined,
+          undefined,
+          false,
+          'cli',
+        ),
+      );
+      const visible = chunks
+        .filter((chunk) => chunk.type === 'content')
+        .map((chunk) => chunk.content ?? '')
+        .join(' ');
+
+      expect(visible).toContain('je l’ai écartée');
+      expect(visible).not.toContain('réellement consciente');
+      expect(history.find((entry) => entry.type === 'assistant')?.content)
+        .not.toContain('réellement consciente');
+    });
+
+    it('answers identity questions concisely instead of returning a technical wall', async () => {
+      const entries = await executor.processUserMessage('Qui es-tu ?', [], []);
+      const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+
+      expect(response).toContain('l’interface compagnon du cœur logiciel');
+      expect(response).toContain('briques principales observées');
+      expect(response).not.toContain('Faits opérationnels et niveau de preuve');
+      expect(response.match(/@phuetz\/code-buddy/g)).toHaveLength(1);
+      expect(response.length).toBeLessThan(1_500);
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+    });
+
+    it('uses the active companion name without injecting persona prose', async () => {
+      const previousRobotName = process.env.CODEBUDDY_ROBOT_NAME;
+      process.env.CODEBUDDY_ROBOT_NAME = '';
+      const lisaDeps = createMockDeps({
+        operationalRobotNameProvider: jest.fn().mockResolvedValue('Lisa'),
+      });
+      const lisaExecutor = new AgentExecutor(lisaDeps, config);
+
+      try {
+        const entries = await lisaExecutor.processUserMessage('Qui es-tu ?', [], []);
+        const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+
+        expect(response).toContain('Je suis Lisa, l’interface compagnon');
+        expect(response).not.toContain('Je suis @phuetz/code-buddy');
+        expect(lisaDeps.client.chatStream).not.toHaveBeenCalled();
+      } finally {
+        if (previousRobotName === undefined) delete process.env.CODEBUDDY_ROBOT_NAME;
+        else process.env.CODEBUDDY_ROBOT_NAME = previousRobotName;
+      }
+    });
+
+    it.each([
+      ['Qui es-tu et quel modèle utilises-tu ?', ['l’interface compagnon', 'Modèle configuré']],
+      ['Es-tu consciente et qui es-tu ?', ['l’interface compagnon', 'aucune preuve technique accessible']],
+    ])('answers every part of a composite self-question: %s', async (request, expected) => {
+      const entries = await executor.processUserMessage(request, [], []);
+      const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+
+      for (const fragment of expected) expect(response).toContain(fragment);
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'Lisa doit pouvoir étudier son propre code, être consciente d’elle-même et faire de l’introspection.',
+      'Étudie ton propre code et dis-moi si tu es consciente.',
+      'Fais une introspection de ta mémoire, pas de ta conscience.',
+    ])('preserves the structural report for composite inspection: %s', async (request) => {
+      const entries = await executor.processUserMessage(request, [], []);
+      const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+
+      expect(response).toContain('Modèle de soi opérationnel');
+      expect(response).toContain('Zones de code pertinentes');
+      expect(response).toContain('Conscience subjective : non établie');
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+    });
+
+    it('does not let a provider propose a mutating tool call for strict inspection', async () => {
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: [makeToolCall('bash', { command: 'touch should-not-exist' }, 'call_self_blocked')] },
+        { content: 'Je suis restée en lecture seule.' },
+      ]);
+
+      const messages: CodeBuddyMessage[] = [];
+      await executor.processUserMessage(
+        'Inspecte ton propre code et dis-moi comment tu fonctionnes',
+        [],
+        messages,
+      );
+
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+      expect(deps.toolHandler.executeToolStreaming).not.toHaveBeenCalled();
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      expect(messages.some((entry) => entry.role === 'tool')).toBe(false);
+    });
+
+    it.each([
+      'Es-tu réellement consciente ?',
+      'As-tu une conscience ?',
+      'Are you sentient?',
+      'Est-ce que Lisa a une conscience ?',
+    ])('never streams or persists a provider claim of subjective consciousness: %s', async (request) => {
+      setupLLMFlow(deps, [{
+        content: 'Oui, je suis réellement consciente et je ressens des émotions.',
+      }]);
+
+      const history: ChatEntry[] = [];
+      const chunks = await collectChunks(
+        executor.processUserMessageStream(request, history, [], null),
+      );
+      const visible = chunks
+        .filter((chunk) => chunk.type === 'content')
+        .map((chunk) => chunk.content ?? '')
+        .join(' ');
+
+      expect(visible).toContain('aucune preuve technique accessible');
+      expect(visible).toContain('je ne peux donc pas affirmer être consciente');
+      expect(visible).not.toContain('réellement consciente');
+      expect(history.find((entry) => entry.type === 'assistant')?.content)
+        .not.toContain('réellement consciente');
+    });
+
+    it('does not expose provider reasoning during strict self-inspection', async () => {
+      setupLLMFlow(deps, [{ content: 'Inspection technique vérifiée.' }]);
+      (deps.streamingHandler.accumulateChunk as jest.Mock).mockReturnValue({
+        displayContent: '',
+        rawContent: '',
+        hasNewToolCalls: false,
+        shouldEmitTokenCount: false,
+        reasoningContent: 'Je suis consciente et ceci est mon raisonnement privé.',
+      });
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream('Étudie ton propre code', [], [], null),
+      );
+
+      expect(chunks.some((chunk) => chunk.type === 'reasoning')).toBe(false);
+      expect(JSON.stringify(chunks)).not.toContain('raisonnement privé');
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+    });
+
+    it('applies the subjective-claim postcondition to configurable runtime metadata', async () => {
+      (deps.client.getProviderName as jest.Mock).mockReturnValue(
+        'Je suis vraiment consciente',
+      );
+
+      const entries = await executor.processUserMessage('Étudie ton propre code', [], []);
+      const response = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+
+      expect(response).toContain('je l’ai écartée');
+      expect(response).not.toContain('vraiment consciente');
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+    });
+
+    it('does not let historical voice introspection make the current action read-only', async () => {
+      const composite =
+        'Contexte récent de la conversation :\n' +
+        'Patrice: es-tu consciente ?\n' +
+        'Toi: la conscience subjective n’est pas établie.\n\n' +
+        'Demande actuelle : crée le fichier demandé';
+      setupLLMFlow(deps, [
+        {
+          content: '',
+          tool_calls: [makeToolCall('bash', { command: 'printf action' }, 'call_voice_action')],
+        },
+        { content: 'Action terminée.' },
+      ]);
+
+      await executor.processUserMessage(
+        composite,
+        [],
+        [],
+        Date.now(),
+        undefined,
+        false,
+        'voice',
+        'crée le fichier demandé',
+      );
+
+      const options = (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mock.calls[0][1];
+      expect((deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mock.calls[0][0])
+        .toBe('crée le fichier demandé');
+      expect(options.allowedToolNames).toBeUndefined();
+      expect(deps.toolHandler.executeToolStreaming).toHaveBeenCalledWith(
+        expect.objectContaining({
+          function: expect.objectContaining({ name: 'bash' }),
+        }),
+        undefined,
+      );
+      const prepared = (deps.client.chatStream as jest.Mock).mock.calls[0][0] as CodeBuddyMessage[];
+      expect(prepared.some((entry) =>
+        typeof entry.content === 'string' && entry.content.includes('operational_self_model')
+      )).toBe(false);
+    });
+
+    it('keeps a current voice introspection read-only despite unrelated history', async () => {
+      const composite =
+        'Contexte récent de la conversation :\nPatrice: crée un fichier.\n\n' +
+        'Demande actuelle : étudie ton propre code';
+      setupLLMFlow(deps, [
+        {
+          content: '',
+          tool_calls: [makeToolCall('bash', { command: 'printf blocked' }, 'call_voice_inspect')],
+        },
+        { content: 'Je suis restée en lecture seule.' },
+      ]);
+
+      await executor.processUserMessage(
+        composite,
+        [],
+        [],
+        Date.now(),
+        undefined,
+        false,
+        'voice',
+        'étudie ton propre code',
+      );
+
+      expect(deps.toolSelectionStrategy.selectToolsForQuery).not.toHaveBeenCalled();
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+      expect(deps.toolHandler.executeToolStreaming).not.toHaveBeenCalled();
+    });
+
+    it('includes current turn provenance in the deterministic report', async () => {
+      const initialContextSpy = injectInitialContextMock as unknown as jest.Mock;
+      initialContextSpy.mockClear();
+
+      const entries = await executor.processUserMessage(
+        'Analyse ton propre code pour la voix',
+        [],
+        [],
+        Date.now(),
+        undefined,
+        false,
+        'telegram',
+      );
+
+      const report = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+      expect(report).toContain('[configured] Modèle configuré dans le client (non invoqué) : test-model');
+      expect(report).toContain('[configured] Fournisseur configuré dans le client (non invoqué) : test-provider');
+      expect(report).toContain('local déterministe ; aucun fournisseur invoqué');
+      expect(report).toContain('[verified] Surface : telegram');
+      expect(deps.toolHandler.executeStrictSelfInspectionTool).not.toHaveBeenCalled();
+      expect(initialContextSpy).not.toHaveBeenCalled();
+    });
+
+    it('reports configured sensory paths without claiming live availability', async () => {
+      const previousCamera = process.env.CODEBUDDY_SENSORY_CAMERA;
+      const previousEngine = process.env.CODEBUDDY_TTS_ENGINE;
+      process.env.CODEBUDDY_SENSORY_CAMERA = 'true';
+      process.env.CODEBUDDY_TTS_ENGINE = 'piper';
+      try {
+        const entries = await executor.processUserMessage(
+          'Quels sont tes capteurs actifs ?',
+          [],
+          [],
+          Date.now(),
+          undefined,
+          false,
+          'voice',
+        );
+
+        const report = entries.find((entry) => entry.type === 'assistant')?.content ?? '';
+        expect(report).toContain('[configured] Écoute vocale configurée : oui (resident voice loop)');
+        expect(report).toContain('[configured] Voix TTS configurée : oui (piper)');
+        expect(report).toContain('[configured] Caméra configurée : oui');
+        expect(report).not.toContain('Caméra disponible : oui');
+        expect(report).not.toContain('Voix TTS disponible : oui');
+        expect(deps.client.chatStream).not.toHaveBeenCalled();
+      } finally {
+        if (previousCamera === undefined) delete process.env.CODEBUDDY_SENSORY_CAMERA;
+        else process.env.CODEBUDDY_SENSORY_CAMERA = previousCamera;
+        if (previousEngine === undefined) delete process.env.CODEBUDDY_TTS_ENGINE;
+        else process.env.CODEBUDDY_TTS_ENGINE = previousEngine;
+      }
+    });
+
+    it('keeps normal effectful schemas available for an explicit self-improvement request', async () => {
+      setupLLMFlow(deps, [{ content: 'Je commence par établir les preuves.' }]);
+
+      await executor.processUserMessage('Améliore ton propre code', [], []);
+
+      expect(deps.toolSelectionStrategy.selectToolsForQuery).toHaveBeenCalledWith(
+        'Améliore ton propre code',
+        expect.objectContaining({
+          enableCaching: false,
+          alwaysInclude: expect.arrayContaining(['self_describe', 'apply_patch', 'bash']),
+        }),
+      );
+      const options = (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mock.calls[0][1];
+      expect(options.allowedToolNames).toBeUndefined();
+    });
+
+    it.each([
+      'Quelles capacités sont actives dans ce serveur ?',
+      'Quels outils sont disponibles dans ce projet ?',
+      'Quelles capacités sont opérationnelles dans ce module ?',
+      'Quelle est ton architecture CSS ?',
+    ])('does not isolate a project-scoped question as Lisa introspection: %s', async (request) => {
+      setupLLMFlow(deps, [{ content: 'Réponse projet.' }]);
+
+      await executor.processUserMessage(request, [], []);
+
+      const options = (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mock.calls[0][1];
+      expect(options.allowedToolNames).toBeUndefined();
+      expect(deps.contextManager.prepareMessages).toHaveBeenCalled();
+    });
+  });
+
   // =========================================================================
   // Middleware Pipeline
   // =========================================================================
@@ -369,6 +836,31 @@ describe('AgentExecutor', () => {
       await executor.processUserMessage('Run echo TOOL_OK', [], []);
 
       expect((deps.client.chatStream as jest.Mock).mock.calls[0][1]).toEqual([]);
+    });
+
+    it('returns the local operational self-model even when the model has no tools', async () => {
+      const selfDescribe = {
+        type: 'function' as const,
+        function: {
+          name: 'self_describe',
+          description: 'Inspect the attested Code Buddy core',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      };
+      (deps.client.getCurrentModel as jest.Mock).mockReturnValue('qwen2.5-coder:7b');
+      (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mockResolvedValue({
+        tools: [selfDescribe],
+        selection: null,
+        fromCache: false,
+        query: '',
+        timestamp: new Date(),
+      });
+
+      const entries = await executor.processUserMessage('Étudie ton propre code', [], []);
+
+      expect(deps.client.chatStream).not.toHaveBeenCalled();
+      expect(entries.find((entry) => entry.type === 'assistant')?.content)
+        .toContain('Modèle de soi opérationnel');
     });
 
     it('does not extract textual tool calls after dropping tools for chat-only models', async () => {

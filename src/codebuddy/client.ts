@@ -53,6 +53,7 @@ export interface JsonSchemaProperty {
   required?: string[];
   default?: unknown;
   additionalProperties?: boolean | JsonSchemaProperty;
+  maxLength?: number;
 }
 
 export interface CodeBuddyTool {

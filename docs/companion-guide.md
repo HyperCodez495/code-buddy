@@ -106,17 +106,48 @@ caméra, `ffmpeg` ou le modèle visuel ne répond pas, Lisa le dit sans inventer
 `visual-grounding.ts`, `camera.ts`.
 
 ### 🪞 Étudier son propre fonctionnement
-Une demande comme « étudie ton propre code », « quelles capacités sont actives ? » ou « es-tu
-consciente ? » ne part plus vers le petit modèle de bavardage : elle est routée vers l'agent outillé.
-Lisa appelle `self_describe`, puis peut lire et rechercher son code et sa configuration pour citer
-les composants pertinents. Son modèle de soi distingue ce qui existe dans le dépôt, ce qui est
-configuré et ce qui a réellement été vérifié ; une clé ou un flag ne devient pas une fausse preuve
-qu'un fournisseur, un capteur ou un déploiement est vivant. Elle peut expliquer son chemin
-d'exécution, identifier une limite et, sur demande explicite, proposer ou appliquer une amélioration
-testée. C'est une **introspection technique vérifiable**, pas l'affirmation d'une conscience
-subjective ou d'une vie intérieure.
 
-`self-describe.ts`, `self-describe-tools.ts`, `hybrid-reply.ts`.
+Une demande comme « étudie ton propre code », « quelles capacités sont actives ? » ou « es-tu
+consciente ? » ne part vers aucun fournisseur. Lisa construit localement une réponse déterministe à
+partir d'un **modèle de soi opérationnel** daté et sourcé. Une question d'identité, de runtime ou de
+capacités reçoit une synthèse adaptée ; une demande d'inspection reçoit le rapport structurel, et une
+demande de conseil reçoit des priorités en lecture seule sans prétendre avoir trouvé un défaut que
+les preuves ne montrent pas. Chaque fait indique son niveau
+de preuve au lieu de transformer une déclaration ou un réglage en capacité réelle :
+
+- `implemented` : le code source ou l'artefact compilé correspondant a été trouvé ;
+- `configured` : un réglage, un fournisseur ou un organe est déclaré, sans preuve qu'il répond ;
+- `available` : une preuve d'exécution explicitement attestée indique qu'il est utilisable maintenant ;
+- `verified` : le fait a été directement observé pendant ce tour ou par une inspection bornée ;
+- `unavailable` : une sonde ou une preuve directe établit que la capacité n'est pas utilisable ;
+- `unknown` : Lisa ne dispose pas d'une preuve suffisante et le dit sans extrapoler.
+
+En profondeur, `buildOperationalSelfModel` inspecte un ensemble borné de fichiers déclarés par la
+cartographie interne du cœur : chemins relatifs, empreintes, exports et extraits structurels sans
+valeurs ni corps de fonctions. Il ne réutilise ni fournisseur, ni plugin, ni mémoire, ni contenu de
+persona, ni lecteur/recherche du projet Cowork. Le host peut seulement fournir le nom actif du
+compagnon, validé comme identifiant court, afin que Lisa conserve son nom sur toutes les surfaces.
+Les intentions _décrire_ et _inspecter_ quittent la boucle
+agentique avant la sélection d'outils : elles ne peuvent donc provoquer aucune écriture, commande
+shell, extension ou émission de message. Le transcript et le bookkeeping interne normal peuvent
+néanmoins persister. Le tool `self_describe` reste disponible dans les workflows agentiques qui
+doivent établir les mêmes preuves. Une demande explicite d'**amélioration** est distincte : elle
+commence par établir les preuves, puis toute modification reste soumise au mode de permission, à la
+politique d'écriture, aux confirmations, à la revue et aux tests normaux. L'introspection ne confère
+donc jamais une autorisation supplémentaire.
+
+Dans un checkout, les preuves viennent des sources et de la révision Git observée. Dans Cowork
+packagé, Lisa reconnaît le cœur compilé grâce à `codebuddy-runtime.json` : l'identité déclarée doit
+être celle du paquet officiel et l'empreinte SHA-256 de l'arbre `dist/` doit correspondre localement.
+La révision et l'état propre/modifié restent des déclarations de build, pas une signature de
+provenance externe. Si l'une des vérifications requises manque, son état reste `unknown`. Le modèle
+et le fournisseur éventuellement affichés sont
+ceux configurés dans le client, explicitement marqués **non invoqués** pour ce rapport local. Ce
+mécanisme est une **introspection technique vérifiable** ; il ne prouve ni conscience
+subjective, ni émotions vécues, ni vie intérieure.
+
+`operational-self-model.ts`, `lisa-introspection.ts`, `agent-executor.ts`,
+`runtime-manifest-utils.cjs`.
 
 ### 🔄 Continuer la même conversation par voix ou par messagerie
 Quand une cible est configurée, chaque tour vocal accepté est transcrit sur Telegram ou un autre

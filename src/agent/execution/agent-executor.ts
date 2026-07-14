@@ -71,6 +71,11 @@ import {
   guardRelationshipReply,
   SAFE_RELATIONSHIP_REPAIR,
 } from "../../conversation/relationship-safety.js";
+import {
+  classifyLisaIntrospection,
+  guardLisaOperationalSelfInspectionReply,
+  renderLisaOperationalSelfResponse,
+} from '../../identity/lisa-introspection.js';
 
 /**
  * Tools whose (verbose, prose/HTML) output TokenJuice may losslessly compress before it
@@ -102,6 +107,37 @@ const RELATIONSHIP_INTERACTIVE_TOOLS = new Set(['ask_human', 'ask_user_question'
 const RELATIONSHIP_BLOCK_MARKER = '__codebuddyRelationshipSafetyBlocked';
 const SAFE_INTERACTIVE_QUESTION = 'Peux-tu préciser ce que tu souhaites faire ensuite ?';
 const SAFE_TOOL_RESULT = 'Résultat traité en interne par Lisa.';
+
+function configuredSensoryRuntime(
+  surface: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const voiceConfigured = surface === 'voice' || env.CODEBUDDY_SENSORY_SPEAK === 'true';
+  const configuredTtsEngine = env.CODEBUDDY_TTS_ENGINE?.trim().toLowerCase();
+  const ttsProvider = configuredTtsEngine === 'piper' || configuredTtsEngine === 'voicebox'
+    ? configuredTtsEngine
+    : 'pocket';
+  const ttsConfigured = voiceConfigured || Boolean(
+    env.CODEBUDDY_TTS_ENGINE ||
+    env.CODEBUDDY_TTS_VOICE ||
+    env.CODEBUDDY_TTS_PIPER_MODEL ||
+    env.CODEBUDDY_POCKET_VOICE ||
+    env.CODEBUDDY_VOICEBOX_PROFILE,
+  );
+  return {
+    voice: {
+      configured: voiceConfigured,
+      ...(voiceConfigured ? { provider: 'resident voice loop' } : {}),
+    },
+    tts: {
+      configured: ttsConfigured,
+      ...(ttsConfigured ? { provider: ttsProvider } : {}),
+    },
+    camera: {
+      configured: env.CODEBUDDY_SENSORY_CAMERA === 'true',
+    },
+  };
+}
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -388,6 +424,8 @@ export interface ExecutorDependencies {
   docsContextProvider?: (message: string) => string | null;
   /** Optional: Decision memory context provider */
   decisionContextProvider?: (query: string) => Promise<string | null>;
+  /** Active companion display name; only the validated name enters self-inspection. */
+  operationalRobotNameProvider?: () => Promise<string | undefined>;
   /** Optional lane queue for serialized tool execution */
   laneQueue?: LaneQueue;
   /** Lane ID for tool execution serialization (defaults to 'default') */
@@ -508,6 +546,16 @@ export class AgentExecutor {
     return this.deps.decisionContextProvider ?? _decisionContextProvider;
   }
 
+  private async getOperationalRobotName(): Promise<string | undefined> {
+    const configured = process.env.CODEBUDDY_ROBOT_NAME?.trim();
+    if (configured) return configured;
+    try {
+      return (await this.deps.operationalRobotNameProvider?.())?.trim() || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Get or set the middleware pipeline.
    * Used by CodeBuddyAgent.enableAutoObservation() to inject middleware.
@@ -574,10 +622,13 @@ export class AgentExecutor {
    * Execute a tool call, optionally through the LaneQueue for serialization.
    * Supports LLM-controlled parallelism via `wait_for_previous` parameter.
    */
-  private executeToolViaLane(toolCall: Parameters<ToolHandler['executeTool']>[0]): ReturnType<ToolHandler['executeTool']> {
+  private executeToolViaLane(
+    toolCall: Parameters<ToolHandler['executeTool']>[0],
+    executionExtra?: Record<string, unknown>,
+  ): ReturnType<ToolHandler['executeTool']> {
     const laneQueue = this.deps.laneQueue;
     if (!laneQueue) {
-      return this.deps.toolHandler.executeTool(toolCall);
+      return this.deps.toolHandler.executeTool(toolCall, executionExtra);
     }
 
     const laneId = this.deps.laneId ?? 'default';
@@ -586,7 +637,7 @@ export class AgentExecutor {
 
     return laneQueue.enqueue(
       laneId,
-      () => this.deps.toolHandler.executeTool(toolCall),
+      () => this.deps.toolHandler.executeTool(toolCall, executionExtra),
       {
         parallel: isParallel,
         category: toolCall.function.name,
@@ -640,6 +691,13 @@ export class AgentExecutor {
     if (totalToolChars <= threshold) return preparedMessages;
 
     const compressor = getRestorableCompressor();
+    const compressorCwd = typeof this.deps.toolHandler.getWorkingDirectory === 'function'
+      ? this.deps.toolHandler.getWorkingDirectory()
+      : process.cwd();
+    const recoverySessionId =
+      typeof this.deps.toolHandler.getRecoverySessionId === 'function'
+        ? this.deps.toolHandler.getRecoverySessionId()
+        : undefined;
     // Compress oldest tool results first (front of the list)
     const result = [...preparedMessages];
     let charsToFree = totalToolChars - threshold;
@@ -649,11 +707,15 @@ export class AgentExecutor {
       if (m === undefined) continue;
       if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 500) {
         const callId = (m as { tool_call_id?: string }).tool_call_id || `tool_${i}`;
-        const compressed = compressor.compress([{
-          role: m.role,
-          content: m.content,
-          tool_call_id: callId,
-        }]);
+        const compressed = compressor.compress(
+          [{
+            role: m.role,
+            content: m.content,
+            tool_call_id: callId,
+          }],
+          compressorCwd,
+          recoverySessionId,
+        );
         if (compressed.messages[0]) {
           charsToFree -= (m.content.length - (compressed.messages[0].content?.length ?? 0));
           result[i] = { ...m, content: compressed.messages[0].content ?? m.content };
@@ -694,7 +756,14 @@ export class AgentExecutor {
   private async preprocessUserMessage(
     message: string,
     messages: CodeBuddyMessage[],
+    readOnlySelfInspection = false,
+    isolatedSharedHost = false,
   ): Promise<string> {
+    // Mentions can read arbitrary workspace files, persona selection can alter
+    // identity, and KG extraction persists project entities. None belongs in a
+    // core-only technical self-inspection turn.
+    if (readOnlySelfInspection) return message;
+
     // Avoid loading the sizeable mention parser (fs-extra, axios, child_process)
     // for the overwhelmingly common case where the message contains no mention.
     const mentionPromise = CONTEXT_MENTION_PATTERN.test(message)
@@ -705,9 +774,11 @@ export class AgentExecutor {
 
     // Persona selection affects this turn's system prompt, so keep it on the
     // critical path, but load it concurrently with explicit mention expansion.
-    const personaPromise = import('../../personas/persona-manager.js')
-      .then(({ getPersonaManager }) => getPersonaManager().autoSelectPersona({ message }))
-      .catch(() => null);
+    const personaPromise = isolatedSharedHost
+      ? Promise.resolve(null)
+      : import('../../personas/persona-manager.js')
+          .then(({ getPersonaManager }) => getPersonaManager().autoSelectPersona({ message }))
+          .catch(() => null);
 
     const [mentionResult] = await Promise.all([mentionPromise, personaPromise]);
 
@@ -727,7 +798,7 @@ export class AgentExecutor {
 
     // Entity extraction is persistence work. Defer even the module evaluation
     // until the current call stack has started response preparation.
-    if (classifyQuery(message).complexity !== 'trivial') {
+    if (!isolatedSharedHost && classifyQuery(message).complexity !== 'trivial') {
       setImmediate(() => {
         void import('../../memory/knowledge-graph.js').then(async ({ getKnowledgeGraph }) => {
           const kg = getKnowledgeGraph();
@@ -763,6 +834,8 @@ export class AgentExecutor {
     turnStartedAt: number = Date.now(),
     transientContext?: string,
     relationshipSafety = false,
+    surface?: string,
+    introspectionText?: string,
   ): Promise<ChatEntry[]> {
     const initialHistoryLength = history.length;
     for await (const _event of this.runMeasuredTurn(
@@ -773,6 +846,8 @@ export class AgentExecutor {
       turnStartedAt,
       transientContext,
       relationshipSafety,
+      surface,
+      introspectionText,
     )) {
       // Events dropped. runTurnLoop pushes ChatEntries to history directly.
     }
@@ -841,6 +916,8 @@ export class AgentExecutor {
     turnStartedAt: number = Date.now(),
     transientContext?: string,
     relationshipSafety = false,
+    surface?: string,
+    introspectionText?: string,
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     yield* this.runMeasuredTurn(
       message,
@@ -850,6 +927,8 @@ export class AgentExecutor {
       turnStartedAt,
       transientContext,
       relationshipSafety,
+      surface,
+      introspectionText,
     );
   }
 
@@ -862,6 +941,8 @@ export class AgentExecutor {
     startedAt: number,
     transientContext?: string,
     relationshipSafety = false,
+    surface?: string,
+    introspectionText?: string,
   ): AsyncGenerator<ExecutorEvent, void, unknown> {
     const operationId = getLatencyOptimizer().startOperation('assistant_turn', startedAt);
     let recordedFirstVisibleResponse = false;
@@ -874,6 +955,8 @@ export class AgentExecutor {
         abortController,
         transientContext,
         relationshipSafety,
+        surface,
+        introspectionText,
       )) {
         if (
           !recordedFirstVisibleResponse &&
@@ -909,18 +992,107 @@ export class AgentExecutor {
     abortController: AbortController | null,
     transientContext?: string,
     relationshipSafety = false,
+    surface?: string,
+    introspectionText?: string,
   ): AsyncGenerator<ExecutorEvent, void, unknown> {
     // Shared pre-processing with the sequential path (@mentions, persona
     // auto-select, knowledge graph extraction). Single source of truth in
     // preprocessUserMessage (F10).
-    message = await this.preprocessUserMessage(message, messages);
+    // Voice and other transports may wrap the current utterance in recent
+    // history. Intent must be derived from the explicit current text only: an
+    // earlier "es-tu consciente ?" must never turn a later write request into
+    // a read-only introspection turn.
+    const introspectionTextForTurn = introspectionText ?? message;
+    const introspectionIntent = classifyLisaIntrospection(introspectionTextForTurn);
+    const readOnlySelfInspection =
+      introspectionIntent === 'describe' || introspectionIntent === 'inspect';
+    const guardGenerativeSelfInspection = introspectionIntent === 'improve';
+    const isolatedSharedHost = surface === 'http';
+    message = await this.preprocessUserMessage(
+      message,
+      messages,
+      readOnlySelfInspection,
+      isolatedSharedHost,
+    );
+    // Query ranking should also follow the current utterance on transports that
+    // embed history in `message`; keep the full composite only as user context
+    // for the provider. Normal CLI turns retain the preprocessed query.
+    const turnQueryText = introspectionText ?? message;
+    const turnCwd = typeof this.deps.toolHandler.getWorkingDirectory === 'function'
+      ? this.deps.toolHandler.getWorkingDirectory()
+      : process.cwd();
+    let permissionMode: string | undefined;
+    let providerName: string | undefined;
+    let operationalRobotName: string | undefined;
+    if (introspectionIntent !== null) {
+      operationalRobotName = await this.getOperationalRobotName();
+      try {
+        const { getPermissionModeManager } = await import('../../security/permission-modes.js');
+        permissionMode = getPermissionModeManager().getMode();
+      } catch {
+        // Runtime permission evidence is optional. Never invent a value.
+      }
+      try {
+        providerName = this.deps.client.getProviderName();
+      } catch {
+        // Legacy/test clients may not expose provider metadata.
+      }
+    }
+
+    if (readOnlySelfInspection) {
+      // A provider can ignore an optional tool schema, and free-form prose
+      // cannot provide a hard postcondition against invented inner experience.
+      // Build the complete report locally from the attested, curated core on
+      // every strict describe/inspect turn. No provider, plugin or generic
+      // workspace tool participates in this path.
+      const { buildOperationalSelfModel } = await import(
+        '../../identity/operational-self-model.js'
+      );
+      const selfModel = buildOperationalSelfModel({
+        cwd: turnCwd,
+        focus: introspectionTextForTurn,
+        depth: introspectionIntent === 'describe' ? 'summary' : 'deep',
+        ...(operationalRobotName
+          ? { robotName: operationalRobotName }
+          : {}),
+        runtime: {
+          providerInvoked: false,
+          ...(this.deps.client.getCurrentModel()
+            ? { model: this.deps.client.getCurrentModel() }
+            : {}),
+          provider: providerName,
+          ...(surface ? { surface } : {}),
+          ...(permissionMode ? { permissionMode } : {}),
+          ...configuredSensoryRuntime(surface),
+        },
+      });
+      const content = sanitizeAssistantOutput(
+        guardLisaOperationalSelfInspectionReply(
+          renderLisaOperationalSelfResponse(
+            selfModel,
+            introspectionTextForTurn,
+            introspectionIntent,
+          ),
+          introspectionTextForTurn,
+        ),
+      );
+      history.push({ type: 'assistant', content, timestamp: new Date() });
+      messages.push({ role: 'assistant', content });
+      yield { type: 'content', content };
+      yield {
+        type: 'token_count',
+        tokenCount: this.deps.tokenCounter.countTokens(content),
+      };
+      yield { type: 'done' };
+      return;
+    }
 
     // Pure, per-turn tone context. Keep it out of the persisted transcript and
     // the agent identity: a changing system-prompt append would rebuild Cowork's
     // cached agent on every message. This block is added to each prepared LLM
     // request in the turn instead, including post-tool rounds.
     const emotionalPresenceContext = buildTextEmotionalPresenceContext(
-      message,
+      turnQueryText,
       messages.flatMap((turn) =>
         typeof turn.content === 'string'
           ? [{ role: turn.role, content: turn.content }]
@@ -929,11 +1101,13 @@ export class AgentExecutor {
     );
     const currentTurnContext = transientContext?.trim();
 
-    const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(message);
+    const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(turnQueryText);
     logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
 
     // Calculate input tokens
-    let inputTokens = this.deps.tokenCounter.countMessageTokens(messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]);
+    let inputTokens = this.deps.tokenCounter.countMessageTokens(
+      messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
+    );
     yield {
       type: "token_count",
       tokenCount: inputTokens,
@@ -997,7 +1171,9 @@ export class AgentExecutor {
           if (mwResult.action === 'compact') {
             // Trigger context compaction IN PLACE — prepareMessages() is pure
             // and its discarded return made this action a silent no-op.
-            compactTurnMessagesInPlace(this.deps.contextManager, messages);
+            compactTurnMessagesInPlace(this.deps.contextManager, messages, {
+              isolatedSharedHost,
+            });
             // S7: record a fork run at the compaction boundary for lineage.
             // No-op unless this session is linked to an observability run.
             const forkId = recordCompactionFork(
@@ -1020,8 +1196,10 @@ export class AgentExecutor {
         // sum of prompt building, tool selection, and context enrichment.
         const rebuildSystemPromptForQuery = this.deps.rebuildSystemPromptForQuery;
         const rebuiltSystemPromptPromise: Promise<string | null> =
-          toolRounds === 0 && rebuildSystemPromptForQuery
-            ? rebuildSystemPromptForQuery(message).catch((err) => {
+          toolRounds === 0 &&
+          rebuildSystemPromptForQuery &&
+          !isolatedSharedHost
+            ? rebuildSystemPromptForQuery(turnQueryText).catch((err) => {
                 logger.warn('[agent-executor] query-aware SP rebuild failed', { error: String(err) });
                 return null;
               })
@@ -1033,14 +1211,26 @@ export class AgentExecutor {
         const modelToolConfig = getModelToolConfig(activeModelName);
         let selectionOpts: Parameters<typeof this.deps.toolSelectionStrategy.selectToolsForQuery>[1] =
           activeModelName ? { modelName: activeModelName } : {};
-        if (modelToolConfig.promptProfile === 'lite') {
+        if (introspectionIntent === 'improve') {
+          selectionOpts = {
+            ...selectionOpts,
+            // Improvement is not silently elevated: these are only model-facing
+            // schemas. ToolHandler still applies the active permission, trust,
+            // confirmation, and WritePolicy gates to every requested effect.
+            alwaysInclude: ['self_describe', 'view_file', 'search', 'apply_patch', 'bash'],
+            enableCaching: false,
+          };
+        } else if (modelToolConfig.promptProfile === 'lite') {
           selectionOpts = {
             ...selectionOpts,
             maxTools: 5,
             alwaysInclude: ['view_file', 'bash', 'search'],
           };
         }
-        const selectionPromise = this.deps.toolSelectionStrategy.selectToolsForQuery(message, selectionOpts);
+        const selectionPromise = this.deps.toolSelectionStrategy.selectToolsForQuery(
+          turnQueryText,
+          selectionOpts,
+        );
 
         // Build context in a scratch array while the prompt and tools are being
         // prepared. It is appended only after transcript preparation so the
@@ -1048,19 +1238,35 @@ export class AgentExecutor {
         const contextBlocks: CodeBuddyMessage[] = [];
         const contextPromise = toolRounds === 0
           ? injectInitialContext(contextBlocks, {
-              message,
-              cwd: process.cwd(),
+              message: turnQueryText,
+              introspectionText: introspectionTextForTurn,
+              cwd: turnCwd,
               ctxLevel,
               loadWorkspaceContext: lazyGetWorkspaceContext,
               decisionContextProvider: this.getDecisionContextProvider(),
               icmBridgeProvider: this.getICMBridgeProvider(),
               codeGraphContextProvider: this.getCodeGraphContextProvider(),
               docsContextProvider: this.getDocsContextProvider(),
+              isolatedSharedHost,
+              ...(operationalRobotName ? { operationalRobotName } : {}),
+              ...(introspectionIntent
+                ? {
+                    operationalRuntime: {
+                      ...(activeModelName ? { model: activeModelName } : {}),
+                      ...(providerName ? { provider: providerName } : {}),
+                      ...(surface ? { surface } : {}),
+                      ...(permissionMode ? { permissionMode } : {}),
+                      ...configuredSensoryRuntime(surface),
+                    },
+                  }
+                : {}),
             })
           : injectNextRoundContext(contextBlocks, {
-              message,
-              cwd: process.cwd(),
+              message: turnQueryText,
+              introspectionText: introspectionTextForTurn,
+              cwd: turnCwd,
               queryComplexity,
+              isolatedSharedHost,
             });
 
         const [rebuiltSystemPrompt, selectionResult] = await Promise.all([
@@ -1079,7 +1285,9 @@ export class AgentExecutor {
 
         let tools = selectionResult.tools;
         let forcedChatOnlyToolRunModel: string | null = null;
-        if (toolRounds === 0) this.deps.toolSelectionStrategy.cacheTools(tools, activeModelName);
+        if (toolRounds === 0) {
+          this.deps.toolSelectionStrategy.cacheTools(tools, activeModelName);
+        }
 
         // Models explicitly marked chat-only must not see callable schemas.
         if (activeModelName && modelToolConfig.supportsToolCalls === false && tools.length > 0) {
@@ -1093,7 +1301,23 @@ export class AgentExecutor {
           }
         }
 
-        const preparedMessages = prepareTurnMessages(this.deps.contextManager, messages);
+        const turnExecutionExtra: Record<string, unknown> | undefined = introspectionIntent
+          ? {
+              ...(activeModelName ? { model: activeModelName } : {}),
+              ...(providerName ? { provider: providerName } : {}),
+              ...(surface ? { surface } : {}),
+              ...(permissionMode ? { permissionMode } : {}),
+              ...(operationalRobotName
+                ? { robotName: operationalRobotName }
+                : {}),
+              exposedToolNames: tools.map((tool) => tool.function.name),
+              introspectionIntent,
+            }
+          : undefined;
+
+        const preparedMessages = prepareTurnMessages(this.deps.contextManager, messages, {
+          isolatedSharedHost,
+        });
         preparedMessages.push(...contextBlocks);
         if (emotionalPresenceContext) {
           preparedMessages.push({
@@ -1142,7 +1366,8 @@ export class AgentExecutor {
           preparedMessages,
           tools,
           undefined,
-          this.config.isGrokModel() && this.deps.toolSelectionStrategy.shouldUseSearchFor(message)
+          this.config.isGrokModel() &&
+            this.deps.toolSelectionStrategy.shouldUseSearchFor(turnQueryText)
             ? { search_parameters: { mode: "auto" } }
             : { search_parameters: { mode: "off" } }
         );
@@ -1162,7 +1387,7 @@ export class AgentExecutor {
 
           const result = this.deps.streamingHandler.accumulateChunk(chunk as RawStreamingChunk);
 
-          if (result.reasoningContent && !relationshipSafety) {
+          if (result.reasoningContent && !relationshipSafety && !guardGenerativeSelfInspection) {
             yield { type: "reasoning", reasoning: result.reasoningContent };
           }
 
@@ -1175,7 +1400,7 @@ export class AgentExecutor {
             };
           }
 
-          if (result.displayContent && !relationshipSafety) {
+          if (result.displayContent && !relationshipSafety && !guardGenerativeSelfInspection) {
             yield { type: "content", content: result.displayContent };
           }
 
@@ -1223,7 +1448,9 @@ export class AgentExecutor {
             `Blocked: ${forcedChatOnlyToolRunModel} is configured as a chat-only local model and ` +
             'returned no structured tool call even with GROK_FORCE_TOOLS=true. ' +
             'Use a tool-capable model such as qwen3.5-ctx32k or gpt-5.6-sol for goals that need shell/tools.';
-          if (!relationshipSafety) yield { type: "content", content: `${rawStreamedContent}\n` };
+          if (!relationshipSafety && !guardGenerativeSelfInspection) {
+            yield { type: "content", content: `${rawStreamedContent}\n` };
+          }
         }
         const synthesizedToolFallback = !rawStreamedContent;
         if (!rawStreamedContent) rawStreamedContent = "Using tools to help you...";
@@ -1231,14 +1458,20 @@ export class AgentExecutor {
         const guardedContent = relationshipSafety
           ? guardRelationshipReply(sanitizedContent)
           : null;
-        const content = guardedContent?.response ?? sanitizedContent;
+        let content = guardedContent?.response ?? sanitizedContent;
+        if (guardGenerativeSelfInspection) {
+          content = guardLisaOperationalSelfInspectionReply(
+            content,
+            introspectionTextForTurn,
+          );
+        }
         if (guardedContent?.intervened) {
           logger.warn('[agent-executor] relationship safety gate rewrote persisted output', {
             issues: guardedContent.issues,
           });
         }
         if (
-          relationshipSafety &&
+          (relationshipSafety || guardGenerativeSelfInspection) &&
           content &&
           !(synthesizedToolFallback && hasToolCalls)
         ) {
@@ -1362,7 +1595,9 @@ export class AgentExecutor {
                 // IN PLACE — the discarded return used to make this a no-op,
                 // so the recomputed inputTokens never shrank and this guard
                 // re-fired on every tool call while the transcript kept growing.
-                compactTurnMessagesInPlace(this.deps.contextManager, messages);
+                compactTurnMessagesInPlace(this.deps.contextManager, messages, {
+                  isolatedSharedHost,
+                });
                 inputTokens = this.deps.tokenCounter.countMessageTokens(
                   messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
                 );
@@ -1388,7 +1623,7 @@ export class AgentExecutor {
             const _streamToolStartMs = Date.now();
             const STREAMING_TOOLS = ['bash', 'reason', 'generate_document'];
             if (STREAMING_TOOLS.includes(toolCall.function.name)) {
-              const gen = this.deps.toolHandler.executeToolStreaming(toolCall);
+              const gen = this.deps.toolHandler.executeToolStreaming(toolCall, turnExecutionExtra);
               let genResult = await gen.next();
               while (!genResult.done) {
                 // Check abort between stream chunks
@@ -1419,7 +1654,7 @@ export class AgentExecutor {
                 const tc = toolCall; // capture for closure
                 result = await streamingAdapter.wrapWithStreaming(
                   tc.function.name,
-                  () => this.executeToolViaLane(tc),
+                  () => this.executeToolViaLane(tc, turnExecutionExtra),
                   (chunk: string) => {
                     // We cannot yield from inside a callback, so we accumulate
                     // chunks and emit them after. Instead, use a buffer approach.
@@ -1441,7 +1676,7 @@ export class AgentExecutor {
                 }
                 streamChunkBuffer.length = 0;
               } else {
-                result = await this.executeToolViaLane(toolCall);
+                result = await this.executeToolViaLane(toolCall, turnExecutionExtra);
               }
             }
 
@@ -1475,7 +1710,11 @@ export class AgentExecutor {
             // --- User hooks: PostToolUse / PostToolUseFailure (streaming path) ---
             await runPostToolUseHook(process.cwd(), toolCall, result);
             // --- Per-tool metrics (streaming path, DeepWiki gap #3) ---
-            await recordToolMetric(toolCall.function.name, result.success, Date.now() - _streamToolStartMs);
+            await recordToolMetric(
+              toolCall.function.name,
+              result.success,
+              Date.now() - _streamToolStartMs,
+            );
             // Phase (d).2 — fleet broadcast on completion (opt-in).
             emitFleetToolCompleted(toolCall, result, Date.now() - _streamToolStartMs);
             // Phase (d).21 ship 3 — proactive notification on tool completion.
@@ -1506,7 +1745,7 @@ export class AgentExecutor {
             // --- Track file access for code graph context (streaming, incremental update) ---
             try {
               const fileToolsStream = new Set(['view_file', 'create_file', 'str_replace_editor', 'file_read', 'file_write']);
-              if (fileToolsStream.has(toolCall.function.name)) {
+              if (!isolatedSharedHost && fileToolsStream.has(toolCall.function.name)) {
                 const args = JSON.parse(toolCall.function.arguments || '{}');
                 const filePath = args.path || args.file_path || args.target_file || '';
                 if (filePath) {
@@ -1550,9 +1789,17 @@ export class AgentExecutor {
             const toolWorkspace = typeof this.deps.toolHandler.getWorkingDirectory === 'function'
               ? this.deps.toolHandler.getWorkingDirectory()
               : process.cwd();
+            const recoverySessionId =
+              typeof this.deps.toolHandler.getRecoverySessionId === 'function'
+                ? this.deps.toolHandler.getRecoverySessionId()
+                : undefined;
             let rawForRecovery = formatToolResultForRecovery(result);
-            if (toolCall.id) {
-              const existingRecovery = recoveryStore.restore(toolCall.id, toolWorkspace);
+            if (toolCall.id && recoveryStore) {
+              const existingRecovery = recoveryStore.restore(
+                toolCall.id,
+                toolWorkspace,
+                recoverySessionId,
+              );
               if (existingRecovery.found) {
                 rawForRecovery = existingRecovery.content;
               } else {
@@ -1560,6 +1807,7 @@ export class AgentExecutor {
                   toolCall.id,
                   rawForRecovery,
                   toolWorkspace,
+                  recoverySessionId,
                 );
               }
             }
@@ -1643,9 +1891,10 @@ export class AgentExecutor {
             };
 
             const rawStreamContent = sanitizeToolResult(rawForRecovery);
+            const sanitizedModelObservation = sanitizeToolResult(modelStreamContent);
             const variedStreamContent = applyObservationVariator(
               toolCall.function.name,
-              sanitizeToolResult(modelStreamContent),
+              sanitizedModelObservation,
             );
 
             const visibleToolResult = relationshipSafety
@@ -1823,16 +2072,21 @@ export class AgentExecutor {
           }
 
           // Fire-and-forget auto-capture on final assistant response (streaming)
-          try {
-            const { getAutoCaptureManager } = await import('../../memory/auto-capture.js');
-            const acm = getAutoCaptureManager();
-            if (acm) {
-              acm.processMessage('assistant', content || '').catch(err => logger.debug('Auto-capture failed', { error: String(err) }));
-            }
-          } catch { /* auto-capture optional */ }
+          if (!isolatedSharedHost) {
+            try {
+              const { getAutoCaptureManager } = await import('../../memory/auto-capture.js');
+              const acm = getAutoCaptureManager();
+              if (acm) {
+                acm.processMessage('assistant', content || '').catch(err => logger.debug('Auto-capture failed', { error: String(err) }));
+              }
+            } catch { /* auto-capture optional */ }
+          }
 
           // Fire-and-forget ICM episode storage (streaming path)
-          if (this.getICMBridgeProvider()) {
+          if (
+            !isolatedSharedHost &&
+            this.getICMBridgeProvider()
+          ) {
             try {
               const icm = this.getICMBridgeProvider()!();
               if (icm?.isAvailable()) {
@@ -1847,12 +2101,14 @@ export class AgentExecutor {
           }
 
           // Context engine afterTurn hook (Native Engine v2026.3.7 — streaming path)
-          try {
-            const engine = this.deps.contextManager.getContextEngine?.();
-            if (engine) {
-              engine.afterTurn(messages, { role: 'assistant' as const, content: content || '' });
-            }
-          } catch { /* afterTurn hook optional */ }
+          if (!isolatedSharedHost) {
+            try {
+              const engine = this.deps.contextManager.getContextEngine?.();
+              if (engine) {
+                engine.afterTurn(messages, { role: 'assistant' as const, content: content || '' });
+              }
+            } catch { /* afterTurn hook optional */ }
+          }
 
           break;
         }

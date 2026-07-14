@@ -468,9 +468,12 @@ describe('BashTool', () => {
     });
 
     it('should change directory with cd command', async () => {
+      const hostCwd = process.cwd();
       const result = await bashTool.execute(`cd ${tmpDir}`);
       expect(result.success).toBe(true);
       expect(result.output).toBeDefined();
+      expect(bashTool.getCurrentDirectory()).toBe(fs.realpathSync(tmpDir));
+      expect(process.cwd()).toBe(hostCwd);
     });
 
     it('should handle cd with quoted path', async () => {

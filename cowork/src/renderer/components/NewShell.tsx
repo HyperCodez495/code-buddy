@@ -32,30 +32,47 @@ import { ConversationHistoryDrawer } from './ConversationHistoryDrawer';
 import { OnboardingTour } from './onboarding/OnboardingTour';
 import { GuidedTooltip } from './Tooltip';
 import { CapabilitiesView } from './capabilities/CapabilitiesView';
+import { resolveLazyNamedExport } from '../utils/vite-preload-recovery';
 
 const AppStudioView = lazy(() =>
-  import('./studio/AppStudioView').then((module) => ({ default: module.AppStudioView })),
+  import('./studio/AppStudioView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.AppStudioView),
+  ),
 );
 const MissionControlView = lazy(() =>
-  import('./os/MissionControlView').then((module) => ({ default: module.MissionControlView })),
+  import('./os/MissionControlView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.MissionControlView),
+  ),
 );
 const LabsGallery = lazy(() =>
-  import('./labs/LabsGallery').then((module) => ({ default: module.LabsGallery })),
+  import('./labs/LabsGallery').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.LabsGallery),
+  ),
 );
 const CreationsView = lazy(() =>
-  import('./deliverables/CreationsView').then((module) => ({ default: module.CreationsView })),
+  import('./deliverables/CreationsView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.CreationsView),
+  ),
 );
 const MediaLibraryView = lazy(() =>
-  import('./deliverables/MediaLibraryView').then((module) => ({ default: module.MediaLibraryView })),
+  import('./deliverables/MediaLibraryView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.MediaLibraryView),
+  ),
 );
 const VideoStudioView = lazy(() =>
-  import('./videostudio/VideoStudioView').then((module) => ({ default: module.VideoStudioView })),
+  import('./videostudio/VideoStudioView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.VideoStudioView),
+  ),
 );
 const AssistantView = lazy(() =>
-  import('./assistant/AssistantView').then((module) => ({ default: module.AssistantView })),
+  import('./assistant/AssistantView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.AssistantView),
+  ),
 );
 const MeetingLiveView = lazy(() =>
-  import('./MeetingLiveView').then((module) => ({ default: module.MeetingLiveView })),
+  import('./MeetingLiveView').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.MeetingLiveView),
+  ),
 );
 
 interface RailItem {

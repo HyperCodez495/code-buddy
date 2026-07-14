@@ -20,6 +20,7 @@ import { writePrivateJsonFile } from './conversation-pilot-corpus.js';
 import { planConversationResponse } from './discourse-planner.js';
 import type { ConversationTurn } from './types.js';
 import { detectEmotion } from '../companion/reply-augment.js';
+import { classifyLisaIntrospection } from '../identity/lisa-introspection.js';
 
 export type CompanionRoutingSurface = 'voice' | 'telegram' | 'cowork';
 export type CompanionRoutingLane = 'fast' | 'factual' | 'deep' | 'emotional' | 'action';
@@ -852,6 +853,9 @@ function classifyCurrentCompanionRoutingLane(
   normalized = normalizeRoutingText(text)
 ): CompanionRoutingLane {
   if (!normalized) return 'fast';
+  const introspectionIntent = classifyLisaIntrospection(text);
+  if (introspectionIntent === 'improve') return 'action';
+  if (introspectionIntent === 'describe' || introspectionIntent === 'inspect') return 'deep';
   if (
     /^\//.test(text.trim()) ||
     DIRECT_ACTION_PATTERN.test(normalized) ||

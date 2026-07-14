@@ -18,6 +18,7 @@ import { spawn, ChildProcess, SpawnOptions } from 'child_process';
 import { EventEmitter } from 'events';
 import path from 'path';
 import os from 'os';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { BashTool } from '../../src/tools/bash';
 import { validateWithSchema, validateCommand as validateCommandSafety, sanitizeForShell } from '../../src/utils/input-validator';
 import { isLikelyTestOutput, parseTestOutput } from '../../src/utils/test-output-parser';
@@ -526,74 +527,63 @@ describe('BashTool', () => {
   });
 
   describe('Working Directory Changes', () => {
-    const _originalCwd = process.cwd();
-    const originalChdir = process.chdir;
+    let cwdRoot: string;
 
     beforeEach(() => {
-      process.chdir = jest.fn();
+      cwdRoot = mkdtempSync(path.join(os.tmpdir(), 'codebuddy-bash-cwd-'));
     });
 
     afterEach(() => {
-      process.chdir = originalChdir;
+      rmSync(cwdRoot, { recursive: true, force: true });
     });
 
     it('should handle cd command separately', async () => {
-      (process.chdir as jest.Mock).mockImplementation(function() {
-        // Simulate successful directory change
-      });
-
-      // Mock process.cwd to return new directory
-      const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue('/tmp');
+      const processDirectory = process.cwd();
 
       const result = await bashTool.execute('cd /tmp');
 
       expect(result.success).toBe(true);
-      expect(result.output).toContain('/tmp');
-      expect(process.chdir).toHaveBeenCalledWith('/tmp');
-
-      cwdSpy.mockRestore();
+      expect(result.output).toContain(realpathSync('/tmp'));
+      expect(bashTool.getCurrentDirectory()).toBe(realpathSync('/tmp'));
+      expect(process.cwd()).toBe(processDirectory);
     });
 
     it('should handle cd with quoted path', async () => {
-      (process.chdir as jest.Mock).mockImplementation(function() {});
-      jest.spyOn(process, 'cwd').mockReturnValue('/path with spaces');
+      const target = path.join(cwdRoot, 'path with spaces');
+      mkdirSync(target);
 
-      const result = await bashTool.execute('cd "/path with spaces"');
+      const result = await bashTool.execute(`cd "${target}"`);
 
       expect(result.success).toBe(true);
-      expect(process.chdir).toHaveBeenCalledWith('/path with spaces');
+      expect(bashTool.getCurrentDirectory()).toBe(realpathSync(target));
     });
 
     it('should handle cd with single-quoted path', async () => {
-      (process.chdir as jest.Mock).mockImplementation(function() {});
-      jest.spyOn(process, 'cwd').mockReturnValue('/another/path');
+      const target = path.join(cwdRoot, 'another path');
+      mkdirSync(target);
 
-      const result = await bashTool.execute("cd '/another/path'");
+      const result = await bashTool.execute(`cd '${target}'`);
 
       expect(result.success).toBe(true);
-      expect(process.chdir).toHaveBeenCalledWith('/another/path');
+      expect(bashTool.getCurrentDirectory()).toBe(realpathSync(target));
     });
 
     it('should return error for non-existent directory', async () => {
-      (process.chdir as jest.Mock).mockImplementation(function() {
-        throw new Error('ENOENT: no such file or directory');
-      });
+      const target = path.join(cwdRoot, 'nonexistent');
 
-      const result = await bashTool.execute('cd /nonexistent/directory');
+      const result = await bashTool.execute(`cd ${target}`);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Cannot change directory');
     });
 
     it('should track current directory', async () => {
-      const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue('/new/directory');
-      (process.chdir as jest.Mock).mockImplementation(function() {});
+      const target = path.join(cwdRoot, 'new-directory');
+      mkdirSync(target);
 
-      await bashTool.execute('cd /new/directory');
+      await bashTool.execute(`cd ${target}`);
 
-      expect(bashTool.getCurrentDirectory()).toBe('/new/directory');
-
-      cwdSpy.mockRestore();
+      expect(bashTool.getCurrentDirectory()).toBe(realpathSync(target));
     });
   });
 

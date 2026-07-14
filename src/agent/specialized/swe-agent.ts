@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import { AgentStateMachine, AgentStatus } from '../state-machine.js';
 import { TERMINATE_SIGNAL } from '../../tools/terminate-tool.js';
 import type { KnowledgeGraph } from '../../knowledge/knowledge-graph.js';
@@ -24,7 +25,11 @@ export interface SWEAgentConfig {
   /** LLM call function */
   llmCall: (messages: SWEMessage[], tools: SWETool[]) => Promise<SWELLMResponse>;
   /** Tool execution function */
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<SWEToolResult>;
+  executeTool: (
+    name: string,
+    args: Record<string, unknown>,
+    executionExtra?: Record<string, unknown>,
+  ) => Promise<SWEToolResult>;
   /** Optional code graph for file context injection */
   graph?: KnowledgeGraph;
   /** Model metadata used to allocate observation budgets. */
@@ -277,6 +282,8 @@ export class SWEAgent extends EventEmitter {
   private stateMachine: AgentStateMachine;
   private memory: SWEMessage[] = [];
   private rawToolObservations = new Map<string, string>();
+  /** Opaque scope for disk-backed observations owned by this SWE agent. */
+  private readonly recoverySessionId = `swe-${randomUUID()}`;
   private currentRequest = '';
 
   constructor(config: SWEAgentConfig) {
@@ -415,7 +422,9 @@ export class SWEAgent extends EventEmitter {
 
       const result = name === 'restore_context'
         ? this.restoreCurrentRunObservation(args)
-        : await this.config.executeTool(name, args);
+        : await this.config.executeTool(name, args, {
+            recoverySessionId: this.recoverySessionId,
+          });
 
       // Check for terminate signal
       if (result.output?.startsWith(TERMINATE_SIGNAL)) {
@@ -442,6 +451,7 @@ export class SWEAgent extends EventEmitter {
         command: commandFromToolArguments(args),
         query: this.currentRequest,
         workspaceRoot: this.config.workspaceRoot ?? process.cwd(),
+        sessionId: this.recoverySessionId,
         model: this.config.model,
         messages: this.memory,
         contextWindow: this.config.contextWindow,

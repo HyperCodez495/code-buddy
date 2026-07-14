@@ -44,6 +44,7 @@ yarn.lock
 
 # Build outputs
 dist/
+/codebuddy-runtime.json
 lib/
 build/
 *.tsbuildinfo

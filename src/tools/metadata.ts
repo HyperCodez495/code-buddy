@@ -79,7 +79,7 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'file_read',
     keywords: ['self', 'describe', 'components', 'composants', 'briques', 'bricks', 'architecture', 'de quoi es-tu fait', 'de quoi es-tu compose', 'qui es-tu', 'capabilities', 'capacites', 'capteur', 'capteurs', 'sensors', 'modules', 'buddy-sense', 'buddy-vision', 'buddy-memory', 'introspection', 'auto inspection', 'etudie', 'examine', 'inspecte', 'propre code', 'ton code', 'fonctionne', 'fonctionnes', 'fonctionnement', 'limites', 'version', 'conscient', 'consciente', 'conscience', 'consciousness', 'modele de soi'],
     priority: 50,
-    description: "Describe the robot's own components, verified source/build state, configured faculties, limits, and code self-inspection tools",
+    description: "Inspect the robot's attested core, bounded code structure, turn metadata, configured faculties, and epistemic limits without live probes",
     fleetSafe: true,
   },
 
@@ -1045,10 +1045,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'restore_context',
     category: 'utility',
-    keywords: ['restore', 'context', 'memory', 'compressed', 'retrieve', 'earlier', 'callId', 'raw', 'exact'],
+    keywords: ['restore', 'context', 'memory', 'compressed', 'retrieve', 'earlier', 'callId', 'raw', 'exact', 'workspace', 'session'],
     priority: 7,
-    description: 'Restore exact persisted tool output by callId, with legacy identifier fallback',
-    fleetSafe: true,
+    description: 'Restore exact content previously captured in the active workspace and session by callId or scoped identifier',
   },
   {
     name: 'knowledge_search',

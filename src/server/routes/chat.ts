@@ -10,35 +10,137 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { requireScope, asyncHandler, ApiServerError, validateRequired } from '../middleware/index.js';
 import type { ChatRequest, ChatResponse, ChatStreamChunk } from '../types.js';
 import {
-  createServerAgent,
   listServerModels,
   runAgentCompletion,
   streamAgentDeltas,
   type ServerAgent,
 } from '../agent-adapter.js';
-// Lazy import to avoid circular dependency through channels/index.ts
-// (channels/index.ts re-exports channel classes that import BaseChannel
-// before it's fully initialized)
-let _enqueueMessage: typeof import('../../channels/index.js').enqueueMessage;
-async function getEnqueueMessage() {
-  if (!_enqueueMessage) {
-    const mod = await import('../../channels/index.js');
-    _enqueueMessage = mod.enqueueMessage;
-  }
-  return _enqueueMessage;
-}
+import {
+  buildHttpRequestSessionKey,
+  withHttpSessionAgent,
+} from '../http-agent-sessions.js';
 
-// Lazy load the agent
-let agentInstance: ServerAgent | null = null;
-
-async function getAgent(): Promise<ServerAgent> {
-  if (!agentInstance) {
-    agentInstance = await createServerAgent();
-  }
-  return agentInstance!;
+function requestSessionKey(req: Request, sessionId: unknown): string {
+  return buildHttpRequestSessionKey(req, sessionId);
 }
 
 const router = Router();
+
+class SseClientDisconnectedError extends Error {
+  constructor() {
+    super('SSE client disconnected');
+    this.name = 'SseClientDisconnectedError';
+  }
+}
+
+interface SseConnectionGuard {
+  readonly disconnected: boolean;
+  attachAgent(agent: ServerAgent): void;
+  consume(
+    stream: AsyncIterable<string>,
+    onDelta: (delta: string) => void,
+  ): Promise<void>;
+  canWrite(): boolean;
+  throwIfDisconnected(): void;
+  cleanup(): void;
+}
+
+function createSseConnectionGuard(req: Request, res: Response): SseConnectionGuard {
+  let disconnected = false;
+  let activeAgent: ServerAgent | null = null;
+  let activeIterator: AsyncIterator<string> | null = null;
+  let iteratorReturn: Promise<void> | null = null;
+
+  const closeIterator = (): Promise<void> => {
+    if (iteratorReturn) return iteratorReturn;
+    const iterator = activeIterator;
+    if (!iterator?.return) return Promise.resolve();
+    iteratorReturn = Promise.resolve(iterator.return())
+      .then(() => undefined, () => undefined);
+    return iteratorReturn;
+  };
+
+  const disconnect = (): void => {
+    if (disconnected) return;
+    disconnected = true;
+    try {
+      activeAgent?.abortCurrentOperation();
+    } catch {
+      // The iterator close below is the remaining best-effort cancellation.
+    }
+    void closeIterator();
+  };
+  const onAborted = (): void => disconnect();
+  const onClose = (): void => {
+    if (!res.writableEnded) disconnect();
+  };
+
+  req.once('aborted', onAborted);
+  res.once('close', onClose);
+
+  return {
+    get disconnected() {
+      return disconnected;
+    },
+    attachAgent(agent: ServerAgent): void {
+      activeAgent = agent;
+      if (disconnected) {
+        try {
+          agent.abortCurrentOperation();
+        } catch {
+          // The request is already closed; the turn will be rejected below.
+        }
+      }
+    },
+    async consume(
+      stream: AsyncIterable<string>,
+      onDelta: (delta: string) => void,
+    ): Promise<void> {
+      this.throwIfDisconnected();
+      const iterator = stream[Symbol.asyncIterator]();
+      activeIterator = iterator;
+      iteratorReturn = null;
+      let completed = false;
+      try {
+        while (true) {
+          const step = await iterator.next();
+          this.throwIfDisconnected();
+          if (step.done) {
+            completed = true;
+            break;
+          }
+          onDelta(step.value);
+        }
+      } finally {
+        if (!completed) await closeIterator();
+        if (activeIterator === iterator) activeIterator = null;
+      }
+    },
+    canWrite(): boolean {
+      return !disconnected && !res.writableEnded && !res.destroyed;
+    },
+    throwIfDisconnected(): void {
+      if (disconnected) throw new SseClientDisconnectedError();
+    },
+    cleanup(): void {
+      req.off('aborted', onAborted);
+      res.off('close', onClose);
+      activeAgent = null;
+      activeIterator = null;
+    },
+  };
+}
+
+function requestMessages(body: ChatRequest): ChatCompletionMessageParam[] {
+  const messages = [...(body.messages as ChatCompletionMessageParam[])];
+  if (body.systemPrompt && messages[0]?.role !== 'system') {
+    messages.unshift({
+      role: 'system',
+      content: body.systemPrompt,
+    });
+  }
+  return messages;
+}
 
 type ProviderErrorShape = {
   status?: unknown;
@@ -120,6 +222,7 @@ function getProviderStatus(error: unknown): number | undefined {
 }
 
 function toProviderApiError(error: unknown): ApiServerError {
+  if (error instanceof ApiServerError) return error;
   const message = getErrorMessage(error, 'Unknown provider error');
   const providerStatus = getProviderStatus(error);
 
@@ -219,6 +322,8 @@ router.post(
         throw ApiServerError.badRequest('maxTokens must be an integer between 1 and 200000');
       }
     }
+    const sessionKey = requestSessionKey(req, body.sessionId);
+    const messages = requestMessages(body);
 
     // Check for streaming
     if (body.stream) {
@@ -227,46 +332,35 @@ router.post(
         throw ApiServerError.forbidden('Streaming requires chat:stream scope');
       }
 
-      return handleStreamingChat(req, res, body, startTime);
+      return handleStreamingChat(req, res, body, sessionKey, startTime);
     }
 
     // Non-streaming response
-    // Use session key from request body (or a default) for lane queue serialization
-    const sessionKey = `api:chat:${body.sessionId || 'default'}`;
-    const agent = await getAgent();
     const requestId = randomBytes(8).toString('hex');
 
     try {
-      // Enqueue through lane queue for per-session serialization
-      const enqueueMessage = await getEnqueueMessage();
-      const result = await enqueueMessage(sessionKey, async () => {
-        // Process messages
-        const messages = body.messages as ChatCompletionMessageParam[];
-
-        // Add system prompt if provided
-        if (body.systemPrompt && messages[0]?.role !== 'system') {
-          messages.unshift({
-            role: 'system',
-            content: body.systemPrompt,
-          });
-        }
-
+      const completed = await withHttpSessionAgent(sessionKey, async (agent) => {
         const lastMessage = messages[messages.length - 1];
         if (!lastMessage) {
           throw ApiServerError.badRequest('Messages must be a non-empty array');
         }
 
-        return runAgentCompletion(
+        const result = await runAgentCompletion(
           agent,
           lastMessage.content as string,
           { model: body.model }
         );
-      });
+        return {
+          result,
+          model: body.model || agent.getCurrentModel(),
+        };
+      }, messages.slice(0, -1));
+      const { result } = completed;
 
       const response: ChatResponse = {
         id: requestId,
         content: result.content || '',
-        model: body.model || agent.getCurrentModel(),
+        model: completed.model,
         finishReason: (result.finishReason as ChatResponse['finishReason']) || 'stop',
         usage: {
           promptTokens: 0,
@@ -301,9 +395,12 @@ async function handleStreamingChat(
   req: Request,
   res: Response,
   body: ChatRequest,
+  sessionKey: string,
   _startTime: number
 ): Promise<void> {
   const requestId = randomBytes(8).toString('hex');
+  const messages = requestMessages(body);
+  const connection = createSseConnectionGuard(req, res);
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -311,78 +408,62 @@ async function handleStreamingChat(
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Request-ID', requestId);
 
-  // Handle client disconnect
-  let isConnected = true;
-  req.on('aborted', () => {
-    isConnected = false;
-  });
-  res.on('close', () => {
-    if (!res.writableEnded) {
-      isConnected = false;
-    }
-  });
-
   try {
-    const agent = await getAgent();
-    const messages = body.messages as ChatCompletionMessageParam[];
+    await withHttpSessionAgent(sessionKey, async (agent) => {
+      connection.attachAgent(agent);
+      connection.throwIfDisconnected();
+      // Stream the response
+      let _totalContent = '';
+      const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-    // Add system prompt if provided
-    if (body.systemPrompt && messages[0]?.role !== 'system') {
-      messages.unshift({
-        role: 'system',
-        content: body.systemPrompt,
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage) {
+        throw ApiServerError.badRequest('Messages must be a non-empty array');
+      }
+
+      const stream = streamAgentDeltas(
+        agent,
+        lastMessage.content as string,
+        { model: body.model }
+      );
+
+      await connection.consume(stream, (delta) => {
+        _totalContent += delta;
+
+        const streamChunk: ChatStreamChunk = {
+          id: requestId,
+          delta,
+          done: false,
+        };
+
+        if (connection.canWrite()) {
+          res.write(`data: ${JSON.stringify(streamChunk)}\n\n`);
+        }
       });
-    }
+      connection.throwIfDisconnected();
 
-    // Stream the response
-    let _totalContent = '';
-    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      // Send final chunk
+      if (connection.canWrite()) {
+        const finalChunk: ChatStreamChunk = {
+          id: requestId,
+          delta: '',
+          done: true,
+          finishReason: 'stop',
+          usage: {
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+          },
+        };
 
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) {
-      throw ApiServerError.badRequest('Messages must be a non-empty array');
-    }
+        res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+        res.write('data: [DONE]\n\n');
+      }
+    }, messages.slice(0, -1));
 
-    const stream = streamAgentDeltas(
-      agent,
-      lastMessage.content as string,
-      { model: body.model }
-    );
-
-    for await (const delta of stream) {
-      if (!isConnected) break;
-
-      _totalContent += delta;
-
-      const streamChunk: ChatStreamChunk = {
-        id: requestId,
-        delta,
-        done: false,
-      };
-
-      res.write(`data: ${JSON.stringify(streamChunk)}\n\n`);
-    }
-
-    // Send final chunk
-    if (isConnected) {
-      const finalChunk: ChatStreamChunk = {
-        id: requestId,
-        delta: '',
-        done: true,
-        finishReason: 'stop',
-        usage: {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
-        },
-      };
-
-      res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
-      res.write('data: [DONE]\n\n');
-    }
-
-    res.end();
+    if (connection.canWrite()) res.end();
   } catch (error: unknown) {
+    if (connection.disconnected || error instanceof SseClientDisconnectedError) return;
     const apiError = toProviderApiError(error);
     const errorChunk = {
       id: requestId,
@@ -396,8 +477,12 @@ async function handleStreamingChat(
       },
     };
 
-    res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
-    res.end();
+    if (connection.canWrite()) {
+      res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+      res.end();
+    }
+  } finally {
+    connection.cleanup();
   }
 }
 
@@ -411,11 +496,14 @@ async function handleOpenAIStreamingChat(
   req: Request,
   res: Response,
   body: ChatRequest,
+  sessionKey: string,
   _startTime: number
 ): Promise<void> {
   const requestId = `chatcmpl-${randomBytes(12).toString('hex')}`;
   const created = Math.floor(Date.now() / 1000);
-  const modelName = body.model || (await getAgent()).getCurrentModel();
+  let modelName = body.model || 'unknown';
+  const messages = requestMessages(body);
+  const connection = createSseConnectionGuard(req, res);
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -423,94 +511,80 @@ async function handleOpenAIStreamingChat(
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Request-ID', requestId);
 
-  // Handle client disconnect
-  let isConnected = true;
-  req.on('aborted', () => {
-    isConnected = false;
-  });
-  res.on('close', () => {
-    if (!res.writableEnded) {
-      isConnected = false;
-    }
-  });
-
   try {
-    const agent = await getAgent();
-    const messages = body.messages as ChatCompletionMessageParam[];
+    await withHttpSessionAgent(sessionKey, async (agent) => {
+      connection.attachAgent(agent);
+      connection.throwIfDisconnected();
+      modelName = body.model || agent.getCurrentModel();
 
-    // Add system prompt if provided
-    if (body.systemPrompt && messages[0]?.role !== 'system') {
-      messages.unshift({
-        role: 'system',
-        content: body.systemPrompt,
+      // Estimate prompt tokens from input messages
+      const promptText = messages.map(m => (typeof m.content === 'string' ? m.content : '')).join('');
+      const promptTokens = Math.ceil(promptText.length / 4);
+      let completionTokens = 0;
+
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage) {
+        throw ApiServerError.badRequest('Messages must be a non-empty array');
+      }
+
+      const stream = streamAgentDeltas(
+        agent,
+        lastMessage.content as string,
+        { model: body.model }
+      );
+
+      await connection.consume(stream, (delta) => {
+        completionTokens += Math.ceil(delta.length / 4);
+
+        const openaiChunk = {
+          id: requestId,
+          object: 'chat.completion.chunk',
+          created,
+          model: modelName,
+          choices: [
+            {
+              index: 0,
+              delta: { content: delta },
+              finish_reason: null,
+            },
+          ],
+        };
+
+        if (connection.canWrite()) {
+          res.write(`data: ${JSON.stringify(openaiChunk)}\n\n`);
+        }
       });
-    }
+      connection.throwIfDisconnected();
 
-    // Estimate prompt tokens from input messages
-    const promptText = messages.map(m => (typeof m.content === 'string' ? m.content : '')).join('');
-    const promptTokens = Math.ceil(promptText.length / 4);
-    let completionTokens = 0;
-
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) {
-      throw ApiServerError.badRequest('Messages must be a non-empty array');
-    }
-
-    const stream = streamAgentDeltas(
-      agent,
-      lastMessage.content as string,
-      { model: body.model }
-    );
-
-    for await (const delta of stream) {
-      if (!isConnected) break;
-
-      completionTokens += Math.ceil(delta.length / 4);
-
-      const openaiChunk = {
-        id: requestId,
-        object: 'chat.completion.chunk',
-        created,
-        model: modelName,
-        choices: [
-          {
-            index: 0,
-            delta: { content: delta },
-            finish_reason: null,
+      // Send final chunk with finish_reason and usage
+      if (connection.canWrite()) {
+        const finalChunk = {
+          id: requestId,
+          object: 'chat.completion.chunk',
+          created,
+          model: modelName,
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
           },
-        ],
-      };
+        };
 
-      res.write(`data: ${JSON.stringify(openaiChunk)}\n\n`);
-    }
+        res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+        res.write('data: [DONE]\n\n');
+      }
+    }, messages.slice(0, -1));
 
-    // Send final chunk with finish_reason and usage
-    if (isConnected) {
-      const finalChunk = {
-        id: requestId,
-        object: 'chat.completion.chunk',
-        created,
-        model: modelName,
-        choices: [
-          {
-            index: 0,
-            delta: {},
-            finish_reason: 'stop',
-          },
-        ],
-        usage: {
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
-          total_tokens: promptTokens + completionTokens,
-        },
-      };
-
-      res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
-      res.write('data: [DONE]\n\n');
-    }
-
-    res.end();
+    if (connection.canWrite()) res.end();
   } catch (error: unknown) {
+    if (connection.disconnected || error instanceof SseClientDisconnectedError) return;
     const apiError = toProviderApiError(error);
     const errorChunk = {
       id: requestId,
@@ -527,17 +601,21 @@ async function handleOpenAIStreamingChat(
     };
 
     // Send error as a final chunk then an error event
-    res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
-    res.write(`data: ${JSON.stringify({
-      error: {
-        message: apiError.message,
-        type: openAIErrorType(apiError),
-        code: apiError.code,
-        status: apiError.status,
-        details: apiError.details,
-      },
-    })}\n\n`);
-    res.end();
+    if (connection.canWrite()) {
+      res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        error: {
+          message: apiError.message,
+          type: openAIErrorType(apiError),
+          code: apiError.code,
+          status: apiError.status,
+          details: apiError.details,
+        },
+      })}\n\n`);
+      res.end();
+    }
+  } finally {
+    connection.cleanup();
   }
 }
 
@@ -577,28 +655,36 @@ router.post(
       temperature: body.temperature,
       maxTokens: body.max_tokens,
       stream: body.stream,
+      sessionId: body.sessionId ?? body.session_id,
     };
+    const sessionKey = requestSessionKey(req, chatRequest.sessionId);
 
     if (body.stream) {
       // Use OpenAI-compatible streaming format for /completions
-      return handleOpenAIStreamingChat(req, res, chatRequest, startTime);
+      return handleOpenAIStreamingChat(req, res, chatRequest, sessionKey, startTime);
     }
 
     try {
-      const agent = await getAgent();
       const requestId = `chatcmpl-${randomBytes(12).toString('hex')}`;
 
-      const messages = body.messages as ChatCompletionMessageParam[];
+      const messages = requestMessages(chatRequest);
       const lastMessage = messages[messages.length - 1];
       if (!lastMessage) {
         throw ApiServerError.badRequest('Messages must be a non-empty array');
       }
 
-      const result = await runAgentCompletion(
-        agent,
-        lastMessage.content as string,
-        { model: body.model }
-      );
+      const completed = await withHttpSessionAgent(sessionKey, async (agent) => {
+        const result = await runAgentCompletion(
+          agent,
+          lastMessage.content as string,
+          { model: body.model }
+        );
+        return {
+          result,
+          model: body.model || agent.getCurrentModel(),
+        };
+      }, messages.slice(0, -1));
+      const { result } = completed;
 
       // Estimate token counts when the provider doesn't return them
       const promptText = messages.map(m => (typeof m.content === 'string' ? m.content : '')).join('');
@@ -611,7 +697,7 @@ router.post(
         id: requestId,
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
-        model: body.model || agent.getCurrentModel(),
+        model: completed.model,
         choices: [
           {
             index: 0,

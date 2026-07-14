@@ -93,7 +93,11 @@ function findNewHostHistoryMessages(
 interface GoalStreamingAgent {
   processUserMessageStream(
     prompt: string,
-    options?: { transientContext?: string; relationshipSafety?: boolean },
+    options?: {
+      transientContext?: string;
+      relationshipSafety?: boolean;
+      surface?: string;
+    },
   ): AsyncIterable<StreamingChunk>;
   getClient?: () => CodeBuddyClient;
 }
@@ -292,6 +296,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         sessionId,
         workingDirectory: config.workingDirectory ?? '(undefined)',
       });
+      agent.setRecoverySessionId?.(sessionId);
       agent.setWorkingDirectory(config.workingDirectory);
       agent.setSystemPromptAppend(config.systemPromptAppend);
 
@@ -387,12 +392,11 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         // into a premature "done" by an assistant that narrates success after a
         // write/patch/command actually failed (Hermes-style mutation verifier).
         const toolFailures: string[] = [];
-        const streamOptions = transientContext || config.relationshipSafety
-          ? {
-              ...(transientContext ? { transientContext } : {}),
-              ...(config.relationshipSafety ? { relationshipSafety: true } : {}),
-            }
-          : undefined;
+        const streamOptions = {
+          surface: 'cowork',
+          ...(transientContext ? { transientContext } : {}),
+          ...(config.relationshipSafety ? { relationshipSafety: true } : {}),
+        };
         const stream = streamingAgent.processUserMessageStream(prompt, streamOptions);
 
         for await (const chunk of stream) {

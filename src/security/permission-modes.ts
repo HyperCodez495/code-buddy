@@ -42,6 +42,10 @@ const READ_ONLY_TOOLS = new Set([
   'git_log',
   'git_status',
   'git_diff',
+  // Session-scoped recovery of an already observed tool result. This remains
+  // deliberately separate from `fleetSafe`: peers must not restore local
+  // session transcripts.
+  'restore_context',
 ]);
 
 // The registry's `fleetSafe: true` flag is the MAINTAINED read-only source of

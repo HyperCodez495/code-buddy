@@ -37,6 +37,7 @@ import { resetConfigWatcher } from "../config/hot-reload/watcher.js";
 import { resetPersonaManager } from "../personas/persona-manager.js";
 import { resetEnhancedMemory } from "../memory/enhanced-memory.js";
 import { resetPluginMarketplace } from "../plugins/marketplace.js";
+import { classifyLisaIntrospection } from '../identity/lisa-introspection.js';
 
 // Re-export types for backwards compatibility
 export type { ChatEntry, StreamingChunk } from "./types.js";
@@ -275,6 +276,12 @@ export class CodeBuddyAgent extends BaseAgent {
       laneQueue: getLaneQueue(),
       laneId: 'agent-tools',
       messageQueue: this.messageQueue,
+      operationalRobotNameProvider: async () => {
+        const { getActivePersonaVoiceAsync } = await import(
+          '../personas/persona-manager.js'
+        );
+        return (await getActivePersonaVoiceAsync()).robotName;
+      },
       // Phase d.22 — query-aware system prompt rebuild. Called by the
       // executor on toolRounds === 0 so trivial queries on `lite`-profile
       // models (Ollama qwen, llama, deepseek) get a minimal SP (~9 KB)
@@ -606,6 +613,11 @@ Look at the screenshot and find the element matching the user's intent. Output o
     this.toolHandler.setBotId(botId);
   }
 
+  /** Scope raw tool-result recovery to an embedding host's conversation. */
+  public setRecoverySessionId(sessionId: string | undefined): void {
+    this.toolHandler.setRecoverySessionId(sessionId);
+  }
+
   private async initializeAgentSystemPrompt(
     systemPromptId: string | undefined,
     modelName: string,
@@ -761,8 +773,8 @@ Look at the screenshot and find the element matching the user's intent. Output o
             tool_calls: msg?.tool_calls ?? [],
           };
         },
-        executeTool: async (name, args) => {
-          const r = await this.executeToolByName(name, args);
+        executeTool: async (name, args, executionExtra) => {
+          const r = await this.executeToolByName(name, args, executionExtra);
           return { success: r.success, output: r.output, error: r.error };
         },
       }));
@@ -1138,21 +1150,33 @@ Look at the screenshot and find the element matching the user's intent. Output o
 
   async processUserMessage(
     message: string,
-    options: { transientContext?: string; relationshipSafety?: boolean } = {},
+    options: {
+      transientContext?: string;
+      relationshipSafety?: boolean;
+      surface?: string;
+      /** Exact current user utterance when `message` contains a transport preamble. */
+      introspectionText?: string;
+    } = {},
   ): Promise<ChatEntry[]> {
     const turnStartedAt = Date.now();
+    const introspectionIntent = classifyLisaIntrospection(
+      options.introspectionText ?? message,
+    );
+    const readOnlySelfInspection =
+      introspectionIntent === 'describe' || introspectionIntent === 'inspect';
     // See processUserMessageStream — the system prompt builds async and a
     // first turn must not race it (embedded hosts don't await it themselves).
     await this.systemPromptReady;
 
-    // Lazy-wire decision memory provider on first call
-    this.ensureDecisionMemoryProvider();
-
-    // Reset cached tools for new conversation turn
-    this.toolSelectionStrategy.clearCache();
+    if (!readOnlySelfInspection) {
+      // These global/context services are irrelevant to the deterministic,
+      // root-confined self-report and must not observe or influence that turn.
+      this.ensureDecisionMemoryProvider();
+      this.toolSelectionStrategy.clearCache();
+    }
 
     // Match user query against skill registry
-    this.applySkillMatching(message);
+    if (!readOnlySelfInspection) this.applySkillMatching(message);
 
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -1173,10 +1197,12 @@ Look at the screenshot and find the element matching the user's intent. Output o
       turnStartedAt,
       options.transientContext,
       options.relationshipSafety === true,
+      options.surface,
+      options.introspectionText,
     );
 
     // Fire-and-forget Hermes-style post-session learning review (interactive only).
-    void this.maybeRunBackgroundReview();
+    if (!readOnlySelfInspection) void this.maybeRunBackgroundReview();
 
     return [userEntry, ...newEntries];
   }
@@ -1211,9 +1237,20 @@ Look at the screenshot and find the element matching the user's intent. Output o
 
   async *processUserMessageStream(
     message: string,
-    options: { transientContext?: string; relationshipSafety?: boolean } = {},
+    options: {
+      transientContext?: string;
+      relationshipSafety?: boolean;
+      surface?: string;
+      /** Exact current user utterance when `message` contains a transport preamble. */
+      introspectionText?: string;
+    } = {},
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     const turnStartedAt = Date.now();
+    const introspectionIntent = classifyLisaIntrospection(
+      options.introspectionText ?? message,
+    );
+    const readOnlySelfInspection =
+      introspectionIntent === 'describe' || introspectionIntent === 'inspect';
     // The system prompt is built ASYNC at construction. The CLI awaits
     // systemPromptReady before its first turn, but embedded hosts (Cowork's
     // engine adapter) did not — a turn fired right after agent creation went
@@ -1222,17 +1259,18 @@ Look at the screenshot and find the element matching the user's intent. Output o
     // Await here so every host is covered; resolved-promise cost is ~zero.
     await this.systemPromptReady;
 
-    // Lazy-wire decision memory provider on first call
-    this.ensureDecisionMemoryProvider();
+    if (!readOnlySelfInspection) {
+      // Keep mutable decision/tool context out of deterministic self-reports.
+      this.ensureDecisionMemoryProvider();
+    }
 
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
-    // Reset cached tools for new conversation turn
-    this.toolSelectionStrategy.clearCache();
+    if (!readOnlySelfInspection) this.toolSelectionStrategy.clearCache();
 
     // Match user query against skill registry
-    this.applySkillMatching(message);
+    if (!readOnlySelfInspection) this.applySkillMatching(message);
 
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -1246,30 +1284,33 @@ Look at the screenshot and find the element matching the user's intent. Output o
     // Trim history to prevent memory bloat
     this.trimHistory();
 
-    // Cost prediction before execution
-    const currentModel = this.codebuddyClient.getCurrentModel();
-    const prediction = this.costPredictor.predict(
-      this.messages as Array<{ role: string; content: string }>,
-      currentModel
-    );
-    logger.debug('Cost prediction', {
-      model: prediction.model,
-      estimatedCost: `$${prediction.estimatedCost.toFixed(6)}`,
-      estimatedInputTokens: prediction.estimatedInputTokens,
-      estimatedOutputTokens: prediction.estimatedOutputTokens,
-      confidence: prediction.confidence,
-    });
+    if (!readOnlySelfInspection) {
+      // A local deterministic report makes no provider request, so predicting
+      // or warning about provider cost would be both wasteful and false.
+      const currentModel = this.codebuddyClient.getCurrentModel();
+      const prediction = this.costPredictor.predict(
+        this.messages as Array<{ role: string; content: string }>,
+        currentModel
+      );
+      logger.debug('Cost prediction', {
+        model: prediction.model,
+        estimatedCost: `$${prediction.estimatedCost.toFixed(6)}`,
+        estimatedInputTokens: prediction.estimatedInputTokens,
+        estimatedOutputTokens: prediction.estimatedOutputTokens,
+        confidence: prediction.confidence,
+      });
 
-    // Warn if predicted cost would exceed remaining budget
-    const remainingBudget = this.sessionCostLimit - this.sessionCost;
-    if (
-      this.sessionCostLimit !== Infinity &&
-      prediction.estimatedCost > remainingBudget
-    ) {
-      yield {
-        type: 'content',
-        content: `\nWarning: Estimated cost ($${prediction.estimatedCost.toFixed(4)}) may exceed remaining budget ($${remainingBudget.toFixed(4)}).\n`,
-      };
+      // Warn if predicted cost would exceed remaining budget
+      const remainingBudget = this.sessionCostLimit - this.sessionCost;
+      if (
+        this.sessionCostLimit !== Infinity &&
+        prediction.estimatedCost > remainingBudget
+      ) {
+        yield {
+          type: 'content',
+          content: `\nWarning: Estimated cost ($${prediction.estimatedCost.toFixed(4)}) may exceed remaining budget ($${remainingBudget.toFixed(4)}).\n`,
+        };
+      }
     }
 
     // Model routing - select optimal model based on task complexity.
@@ -1277,7 +1318,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
     // if multiple streams run concurrently.
     let originalModel: string | null = null;
     let routingDecision: typeof this.lastRoutingDecision = null;
-    if (this.useModelRouting) {
+    if (!readOnlySelfInspection && this.useModelRouting) {
       const conversationContext = this.chatHistory
         .slice(-5)
         .map(e => e.content)
@@ -1307,6 +1348,8 @@ Look at the screenshot and find the element matching the user's intent. Output o
         turnStartedAt,
         options.transientContext,
         options.relationshipSafety === true,
+        options.surface,
+        options.introspectionText,
       );
     } finally {
       // Restore original model if it was changed by routing.
@@ -1334,7 +1377,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
     }
 
     // Fire-and-forget Hermes-style post-session learning review (interactive only).
-    void this.maybeRunBackgroundReview();
+    if (!readOnlySelfInspection) void this.maybeRunBackgroundReview();
   }
 
   protected async executeTool(toolCall: CodeBuddyToolCall): Promise<ToolResult> {
@@ -1362,6 +1405,44 @@ Look at the screenshot and find the element matching the user's intent. Output o
     return super.getChatHistory();
   }
 
+  /** Snapshot only mutable conversation state for HTTP session swapping. */
+  exportConversationState(): {
+    messages: CodeBuddyMessage[];
+    chatHistory: ChatEntry[];
+    sessionCost: number;
+    routingSessionCost: number;
+    contextManagerState: import('../context/context-manager-v2.js').ContextManagerConversationState;
+    workingDirectory: string;
+  } {
+    return structuredClone({
+      messages: this.historyManager.getMessages(),
+      chatHistory: this.historyManager.getChatHistory(),
+      sessionCost: this.sessionCost,
+      routingSessionCost: this.routingFacade.getSessionCost(),
+      contextManagerState: this.contextManager.exportConversationState(),
+      workingDirectory: this.toolHandler.getWorkingDirectory(),
+    });
+  }
+
+  /** Restore a snapshot while the HTTP session mutex is held. */
+  importConversationState(state: {
+    messages: CodeBuddyMessage[];
+    chatHistory: ChatEntry[];
+    sessionCost: number;
+    routingSessionCost: number;
+    contextManagerState: import('../context/context-manager-v2.js').ContextManagerConversationState;
+    workingDirectory: string;
+  }): void {
+    const cloned = structuredClone(state);
+    this.historyManager.setMessages(cloned.messages);
+    this.historyManager.setChatHistory(cloned.chatHistory);
+    this.sessionCost = cloned.sessionCost;
+    this.routingFacade.setSessionCost(cloned.routingSessionCost);
+    this.contextManager.importConversationState(cloned.contextManagerState);
+    this.toolHandler.restoreWorkingDirectory(cloned.workingDirectory);
+    this.promptBuilder.updateConfig({ cwd: cloned.workingDirectory });
+  }
+
   getCurrentDirectory(): string {
     return this.toolHandler.bash.getCurrentDirectory();
   }
@@ -1386,7 +1467,11 @@ Look at the screenshot and find the element matching the user's intent. Output o
     return await this.toolHandler.bash.execute(command);
   }
 
-  async executeToolByName(name: string, parameters: Record<string, unknown> = {}): Promise<ToolResult> {
+  async executeToolByName(
+    name: string,
+    parameters: Record<string, unknown> = {},
+    executionExtra?: Record<string, unknown>,
+  ): Promise<ToolResult> {
     return await this.toolHandler.executeTool({
       id: `server_tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       type: 'function',
@@ -1394,7 +1479,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
         name,
         arguments: JSON.stringify(parameters),
       },
-    });
+    }, executionExtra);
   }
 
   getCurrentModel(): string {

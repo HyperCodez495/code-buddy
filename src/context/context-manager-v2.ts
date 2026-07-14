@@ -13,6 +13,7 @@
  * - Key Information Preservation
  */
 
+import { createHash } from 'node:crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CodeBuddyMessage } from '../codebuddy/client.js';
@@ -136,6 +137,30 @@ export interface ContextMemoryMetrics {
   warningsTriggered: number;
 }
 
+/** Mutable, conversation-owned state needed when one host agent serves many sessions. */
+export interface ContextManagerConversationState {
+  summaries: Array<{
+    content: string;
+    tokenCount: number;
+    originalMessageCount: number;
+    timestamp: Date;
+  }>;
+  systemMessage: CodeBuddyMessage | null;
+  triggeredWarnings: number[];
+  lastTokenCount: number;
+  lastEnhancedResult: EnhancedCompressionResult | null;
+  sessionId: string;
+  peakMessageCount: number;
+  compressionCount: number;
+  totalTokensSaved: number;
+  lastCompressionTime: Date | null;
+  snapshotCount: number;
+  enhancedCompression: {
+    archives: ContextArchive[];
+    archiveIdCounter: number;
+  } | null;
+}
+
 /**
  * Advanced Context Manager with multiple compression strategies
  */
@@ -177,7 +202,7 @@ export class ContextManagerV2 {
    * when messages were mutated in place (common: tool results populated,
    * assistant content sanitized, tool_calls appended). Now we compute a
    * cheap O(N) fingerprint over the array: length + sum of content char
-   * counts + total tool_calls count. Any mutation of content or tool_calls
+   * counts + serialized tool-call size. Any mutation of content or tool_calls
    * invalidates the cache. The scan is microseconds vs ~20–50 ms for a
    * full tiktoken recount.
    */
@@ -303,24 +328,15 @@ export class ContextManagerV2 {
   }
 
   /**
-   * Compute a cheap fingerprint of the messages array for cache invalidation.
-   * Covers additions, in-place content mutation, and tool_call changes.
+   * Compute a content fingerprint of the messages array for cache invalidation.
+   * Length-only keys collide for different text/token distributions (and for
+   * different tool arguments of equal size), so hash the complete serialized
+   * provider transcript before reusing a token count.
    */
   private computeStatsFingerprint(messages: CodeBuddyMessage[]): string {
-    let contentLen = 0;
-    let toolCallsCount = 0;
-    for (const msg of messages) {
-      if (typeof msg.content === 'string') {
-        contentLen += msg.content.length;
-      } else if (Array.isArray(msg.content)) {
-        // Multimodal content: count JSON length as a rough signal
-        contentLen += JSON.stringify(msg.content).length;
-      }
-      if ('tool_calls' in msg && Array.isArray(msg.tool_calls)) {
-        toolCallsCount += msg.tool_calls.length;
-      }
-    }
-    return `${messages.length}:${contentLen}:${toolCallsCount}`;
+    const serialized = JSON.stringify(messages);
+    const digest = createHash('sha256').update(serialized).digest('base64url');
+    return `${messages.length}:${serialized.length}:${digest}`;
   }
 
   /**
@@ -933,6 +949,52 @@ export class ContextManagerV2 {
    */
   resetWarnings(): void {
     this.triggeredWarnings.clear();
+  }
+
+  /**
+   * Export conversation-owned caches and compression recovery state.
+   * Configuration, tokenizer instances, and the pluggable engine stay on the
+   * host agent; mutable data that could reveal another session does not.
+   */
+  exportConversationState(): ContextManagerConversationState {
+    return structuredClone({
+      summaries: this.summaries,
+      systemMessage: this.systemMessage,
+      triggeredWarnings: [...this.triggeredWarnings],
+      lastTokenCount: this.lastTokenCount,
+      lastEnhancedResult: this.lastEnhancedResult,
+      sessionId: this.sessionId,
+      peakMessageCount: this.peakMessageCount,
+      compressionCount: this.compressionCount,
+      totalTokensSaved: this.totalTokensSaved,
+      lastCompressionTime: this.lastCompressionTime,
+      snapshotCount: this.snapshotCount,
+      enhancedCompression: this.enhancedCompressor?.exportConversationState() ?? null,
+    });
+  }
+
+  /** Restore a logical conversation and always invalidate derived token stats. */
+  importConversationState(state: ContextManagerConversationState): void {
+    const cloned = structuredClone(state);
+    this.summaries = cloned.summaries;
+    this.systemMessage = cloned.systemMessage;
+    this.triggeredWarnings = new Set(cloned.triggeredWarnings);
+    this.lastTokenCount = cloned.lastTokenCount;
+    this.lastEnhancedResult = cloned.lastEnhancedResult;
+    this.sessionId = cloned.sessionId;
+    this.peakMessageCount = cloned.peakMessageCount;
+    this.compressionCount = cloned.compressionCount;
+    this.totalTokensSaved = cloned.totalTokensSaved;
+    this.lastCompressionTime = cloned.lastCompressionTime;
+    this.snapshotCount = cloned.snapshotCount;
+    this._cachedStatsFingerprint = '';
+    this._cachedStatsTokenCount = 0;
+
+    if (this.enhancedCompressor && cloned.enhancedCompression) {
+      this.enhancedCompressor.importConversationState(cloned.enhancedCompression);
+    } else {
+      this.enhancedCompressor?.clearArchives();
+    }
   }
 
   /**

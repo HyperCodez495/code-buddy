@@ -58,14 +58,24 @@ once it reaches `1.0.0`.
 ## [Unreleased]
 
 ### Added
-- **Lisa peut regarder sur demande et examiner son propre fonctionnement.** Une phrase vocale
+
+- **Lisa peut regarder sur demande ce que Patrice lui montre.** Une phrase vocale
   explicite comme « tu vois le hamburger que j'ai préparé ? » déclenche une capture webcam unique,
   privée (`0700`/`0600`), hors historique et supprimée avant l'attente du modèle multimodal
   configuré, avec annulation, sérialisation caméra, délai d'analyse et HTTPS distant par défaut,
-  sans repli fournisseur. Les demandes sur son code, sa version, ses capacités ou sa
-  conscience passent désormais par l'agent outillé : `self_describe` et les lecteurs de code
-  produisent un modèle opérationnel vérifiable qui sépare implémenté, configuré et réellement
-  constaté, sans transformer cette introspection technique en revendication de conscience subjective.
+  sans repli fournisseur.
+- **Lisa dispose d'une introspection technique fondée sur des preuves.** Son modèle de soi
+  opérationnel distingue `implemented`, `configured`, `available`, `verified`, `unavailable` et `unknown`, avec
+  source et date d'observation. Décrire ou inspecter son code produit désormais localement une
+  réponse déterministe adaptée (identité, runtime, capacités, rapport ou conseil) : aucun
+  fournisseur, plugin, contexte Cowork ni outil générique n'est invoqué. Les extraits structurels
+  bornés viennent uniquement du cœur dont l’identité et l’intégrité locales ont été contrôlées ;
+  le transcript interne peut persister. Une
+  demande explicite d'amélioration conserve les permissions, confirmations,
+  revues et tests normaux. Les mêmes preuves fonctionnent depuis les sources et dans Cowork packagé
+  grâce à une identité déclarée et une empreinte SHA-256 du cœur compilé vérifiée localement. Ces
+  métadonnées de build ne sont pas une signature de provenance, et Lisa ne revendique aucune
+  conscience subjective.
 - **Lisa conserve un même état relationnel provisoire sur la voix, Telegram et Cowork.** Un reducer
   déterministe dérive récence, surfaces, besoin de soutien avec TTL et phase argumentative sans
   exposer transcript, sujet, identifiant ni empreinte. Cowork reçoit ce contexte au tour courant et
@@ -191,6 +201,13 @@ once it reaches `1.0.0`.
 - MCP deferred-schema threshold is configurable via `CODEBUDDY_MCP_DEFER_THRESHOLD` (deferred param-less stubs were skipped by some models).
 
 ### Fixed
+- **Cowork Media Library no longer crashes on a stale Vite chunk.** Every named lazy import now
+  tolerates the one `undefined` resolution produced while `vite:preloadError` triggers its bounded
+  renderer reload, preventing `Cannot read properties of undefined (reading 'MediaLibraryView')`.
+- **HTTP and WebSocket turns now abort and isolate cleanly.** Anonymous HTTP requests no longer
+  pollute the session LRU or disk recovery, failed turns roll back and invalidate the shared agent,
+  cwd and mutable context are session-confined, and HTTP/desktop WebSocket stop/close/error events
+  abort the active provider iterator without emitting a late partial answer.
 - **MCP init no longer hangs on one unresponsive server** — `ensureServersInitialized` wraps each server in a per-server timeout (`CODEBUDDY_MCP_INIT_TIMEOUT_MS`, default 15s); previously a single hung server blocked *all* MCP tools from loading.
 - Telegram channel starts from `channels.json` / server intake (correct `token` field); the channel agent is provider-agnostic + context-adaptive (minimal prompt + RAG tools) instead of the legacy ~73KB prompt.
 

@@ -23,6 +23,7 @@ export interface FeatureArea {
 
 /** The legible base map. Hand-maintained (~one entry per real subsystem). */
 export const CURATED_FEATURES: FeatureArea[] = [
+  { id: 'operational-self-model', name: 'Operational self-model', description: 'Evidence-backed, read-only inspection of Code Buddy identity, implementation, runtime capabilities, limits, and subjective-consciousness boundary.', paths: ['src/identity/operational-self-model.ts', 'src/identity/lisa-introspection.ts', 'src/codebuddy/tool-definitions/self-describe-tools.ts', 'src/tools/self-describe.ts'] },
   { id: 'voice-loop', name: 'Voice loop', description: 'Spoken companion loop: speech-to-text, response gating, text-to-speech, turn-taking, barge-in, echo suppression.', paths: ['src/sensory/voice-loop.ts', 'src/sensory/speech-reaction.ts', 'src/sensory/respond-decider.ts'] },
   { id: 'vision-sensory', name: 'Vision & sensory perception', description: 'Camera presence detection, motion, face landmarks, drowsiness, keyframe description; brain-inspired sensory bus.', paths: ['src/sensory/vision-reaction.ts', 'src/sensory/semantic-vision-reaction.ts', 'buddy-sense/'] },
   { id: 'collective-memory-ckg', name: 'Collective knowledge graph (CKG)', description: 'Shared multi-agent memory as a knowledge graph with vector embeddings, hybrid semantic+keyword retrieval, cross-agent corroboration, supports/contradicts relations.', paths: ['src/memory/collective-knowledge-graph.ts', 'src/embeddings/embedding-provider.ts'] },

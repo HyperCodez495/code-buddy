@@ -205,26 +205,38 @@ jest.mock('../../src/utils/autonomy-manager.js', () => ({
 }));
 
 jest.mock('../../src/context/context-manager-v2.js', () => ({
-  createContextManager: jest.fn().mockReturnValue({
-    getStats: jest.fn().mockReturnValue({
-      totalTokens: 1000,
-      maxTokens: 100000,
-      usagePercent: 1,
-    }),
-    addMessage: jest.fn(),
-    getMessages: jest.fn().mockReturnValue([]),
-    dispose: jest.fn(),
-    updateConfig: jest.fn(),
-    prepareMessages: jest.fn().mockImplementation((msgs: unknown[]) => msgs),
-    shouldWarn: jest.fn().mockReturnValue({ warn: false }),
-    forceCleanup: jest.fn().mockReturnValue({ summariesRemoved: 0, tokensFreed: 0 }),
-    getMemoryMetrics: jest.fn().mockReturnValue({
-      summaryCount: 0,
-      summaryTokens: 0,
-      peakMessageCount: 0,
-      compressionCount: 0,
-      totalTokensSaved: 0,
-    }),
+  createContextManager: jest.fn().mockImplementation(() => {
+    let conversationState: import('../../src/context/context-manager-v2.js').ContextManagerConversationState = {
+      summaries: [], systemMessage: null, triggeredWarnings: [], lastTokenCount: 0,
+      lastEnhancedResult: null, sessionId: 'mock-context-session', peakMessageCount: 0,
+      compressionCount: 0, totalTokensSaved: 0, lastCompressionTime: null,
+      snapshotCount: 0, enhancedCompression: null,
+    };
+    return {
+      getStats: jest.fn().mockReturnValue({
+        totalTokens: 1000,
+        maxTokens: 100000,
+        usagePercent: 1,
+      }),
+      addMessage: jest.fn(),
+      getMessages: jest.fn().mockReturnValue([]),
+      dispose: jest.fn(),
+      updateConfig: jest.fn(),
+      prepareMessages: jest.fn().mockImplementation((msgs: unknown[]) => msgs),
+      shouldWarn: jest.fn().mockReturnValue({ warn: false }),
+      forceCleanup: jest.fn().mockReturnValue({ summariesRemoved: 0, tokensFreed: 0 }),
+      getMemoryMetrics: jest.fn().mockReturnValue({
+        summaryCount: 0,
+        summaryTokens: 0,
+        peakMessageCount: 0,
+        compressionCount: 0,
+        totalTokensSaved: 0,
+      }),
+      exportConversationState: jest.fn(() => structuredClone(conversationState)),
+      importConversationState: jest.fn((state: import('../../src/context/context-manager-v2.js').ContextManagerConversationState) => {
+        conversationState = structuredClone(state);
+      }),
+    };
   }),
   ContextManagerV2: jest.fn(),
 }));
@@ -799,7 +811,10 @@ describe('CodeBuddyAgent', () => {
         .spyOn(agent as any, 'maybeRunBackgroundReview')
         .mockResolvedValue(undefined);
 
-      const entries = await agent.processUserMessage('Test message');
+      const entries = await agent.processUserMessage('Test message', {
+        surface: 'telegram',
+        introspectionText: 'Test message',
+      });
 
       expect((agent as any).executor.processUserMessage).toHaveBeenCalledWith(
         'Test message',
@@ -808,6 +823,8 @@ describe('CodeBuddyAgent', () => {
         expect.any(Number),
         undefined,
         false,
+        'telegram',
+        'Test message',
       );
       expect(entries).toEqual([
         expect.objectContaining({ type: 'user', content: 'Test message' }),
@@ -899,23 +916,78 @@ describe('CodeBuddyAgent', () => {
     it('should trigger the background review hook after streaming finishes', async () => {
       agent = new CodeBuddyAgent('test-api-key');
       await agent.systemPromptReady;
+      const processUserMessageStream = jest.fn().mockImplementation(async function* () {
+        yield { type: 'content', content: 'ok' } satisfies StreamingChunk;
+        yield { type: 'done' } satisfies StreamingChunk;
+      });
       (agent as any).executor = {
-        processUserMessageStream: async function* () {
-          yield { type: 'content', content: 'ok' } satisfies StreamingChunk;
-          yield { type: 'done' } satisfies StreamingChunk;
-        },
+        processUserMessageStream,
       };
       const review = jest
         .spyOn(agent as any, 'maybeRunBackgroundReview')
         .mockResolvedValue(undefined);
 
       const chunks: StreamingChunk[] = [];
-      for await (const chunk of agent.processUserMessageStream('Stream test')) {
+      for await (const chunk of agent.processUserMessageStream('Stream test', {
+        surface: 'voice',
+        introspectionText: 'Stream test',
+      })) {
         chunks.push(chunk);
       }
 
       expect(chunks.map(chunk => chunk.type)).toEqual(['content', 'done']);
+      expect(processUserMessageStream).toHaveBeenCalledWith(
+        'Stream test',
+        expect.any(Array),
+        expect.any(Array),
+        expect.any(AbortController),
+        expect.any(Number),
+        undefined,
+        false,
+        'voice',
+        'Stream test',
+      );
       expect(review).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not route, predict, or record provider cost for local self-inspection', async () => {
+      agent = new CodeBuddyAgent('test-api-key');
+      await agent.systemPromptReady;
+      mockSetModel.mockClear();
+      const processUserMessageStream = jest.fn().mockImplementation(async function* () {
+        yield { type: 'content', content: 'rapport local' } satisfies StreamingChunk;
+        yield { type: 'done' } satisfies StreamingChunk;
+      });
+      (agent as any).executor = { processUserMessageStream };
+      (agent as any).useModelRouting = true;
+      (agent as any).sessionCostLimit = 0;
+
+      const predict = jest.spyOn((agent as any).costPredictor, 'predict');
+      const route = jest.spyOn((agent as any).modelRouter, 'route');
+      const recordUsage = jest.spyOn((agent as any).modelRouter, 'recordUsage');
+      const clearCache = jest.spyOn((agent as any).toolSelectionStrategy, 'clearCache');
+      const decisionMemory = jest.spyOn(agent as any, 'ensureDecisionMemoryProvider');
+      const applySkillMatching = jest.spyOn(agent as any, 'applySkillMatching');
+      const streamTokenCount = jest.spyOn((agent as any).streamingHandler, 'getTokenCount');
+
+      const chunks: StreamingChunk[] = [];
+      for await (const chunk of agent.processUserMessageStream('Étudie ton propre code')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toEqual([
+        { type: 'content', content: 'rapport local' },
+        { type: 'done' },
+      ]);
+      expect(chunks.some((chunk) => chunk.content?.includes('Estimated cost'))).toBe(false);
+      expect(predict).not.toHaveBeenCalled();
+      expect(route).not.toHaveBeenCalled();
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(clearCache).not.toHaveBeenCalled();
+      expect(decisionMemory).not.toHaveBeenCalled();
+      expect(applySkillMatching).not.toHaveBeenCalled();
+      expect(streamTokenCount).not.toHaveBeenCalled();
+      expect(mockSetModel).not.toHaveBeenCalled();
     });
 
     it('should handle abort during streaming', async () => {
@@ -1384,6 +1456,25 @@ describe('CodeBuddyAgent', () => {
   // =========================================================================
 
   describe('History Management', () => {
+    it('round-trips HTTP conversation costs and context-manager state', () => {
+      agent = new CodeBuddyAgent('test-api-key');
+      const state = agent.exportConversationState();
+      state.sessionCost = 2.5;
+      state.routingSessionCost = 2.75;
+      state.contextManagerState.sessionId = 'opaque-http-session';
+      state.contextManagerState.triggeredWarnings = [50, 75];
+      state.workingDirectory = '/tmp/opaque-http-workspace';
+
+      agent.importConversationState(state);
+      const restored = agent.exportConversationState();
+
+      expect(restored.sessionCost).toBe(2.5);
+      expect(restored.routingSessionCost).toBe(2.75);
+      expect(restored.contextManagerState.sessionId).toBe('opaque-http-session');
+      expect(restored.contextManagerState.triggeredWarnings).toEqual([50, 75]);
+      expect(restored.workingDirectory).toBe('/tmp/opaque-http-workspace');
+    });
+
     it('should start with empty chat history', () => {
       agent = new CodeBuddyAgent('test-api-key');
       expect(agent.getChatHistory()).toEqual([]);

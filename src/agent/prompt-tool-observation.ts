@@ -37,6 +37,8 @@ export interface PromptToolObservationInput {
   command?: string;
   query?: string;
   workspaceRoot?: string;
+  /** Conversation scope for disk-backed raw observation recovery. */
+  sessionId?: string;
   model?: string;
   messages?: ReadonlyArray<PromptMessageLike>;
   contextWindow?: number;
@@ -125,13 +127,24 @@ export async function prepareToolObservationForPrompt(
   const workspaceRoot = input.workspaceRoot?.trim() || process.cwd();
   try {
     const compressor = getRestorableCompressor();
-    const existing = compressor.restore(input.toolCallId, workspaceRoot);
+    const existing = input.sessionId
+      ? compressor.restore(input.toolCallId, workspaceRoot, input.sessionId)
+      : compressor.restore(input.toolCallId, workspaceRoot);
     if (existing.found) {
       // ToolHandler may already have persisted a more native pre-hook result.
       // Never overwrite it with a later provider/model-facing representation.
       rawContent = existing.content;
     } else {
-      compressor.writeToolResult(input.toolCallId, rawContent, workspaceRoot);
+      if (input.sessionId) {
+        compressor.writeToolResult(
+          input.toolCallId,
+          rawContent,
+          workspaceRoot,
+          input.sessionId,
+        );
+      } else {
+        compressor.writeToolResult(input.toolCallId, rawContent, workspaceRoot);
+      }
     }
   } catch (error) {
     logger.debug('[tool-observation] raw persistence failed; continuing with original output', {

@@ -6,7 +6,15 @@ import { createRequire } from 'module';
 
 // Import the runChecks function from the CommonJS script using createRequire
 const require = createRequire(import.meta.url);
-const { runChecks } = require('../../scripts/pre-build-check.js');
+const { runChecks, validateCoreRuntimeManifest } = require('../../scripts/pre-build-check.js');
+const { computeDistDigest } = require('../../../scripts/runtime-manifest-utils.cjs') as {
+  computeDistDigest: (root: string) => {
+    algorithm: string;
+    scope: string;
+    value: string;
+    fileCount: number;
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,7 +76,27 @@ function populateEngineAdapter(root: string): void {
   );
   makeFile(
     path.join(runtime, 'codebuddy-runtime.json'),
-    JSON.stringify({ schemaVersion: 1, packageCount: 2 }),
+    JSON.stringify({
+      schemaVersion: 2,
+      corePackage: {
+        name: '@phuetz/code-buddy',
+        version: '1.8.0',
+        description: 'Compiled Code Buddy test runtime',
+      },
+      sourceRevision: null,
+      sourceDirty: null,
+      distDigest: computeDistDigest(runtime),
+      runtime: {
+        kind: 'codebuddy-core',
+        compiled: true,
+        moduleFormat: 'esm',
+        distPath: 'dist',
+        entrypoint: 'dist/desktop/codebuddy-engine-adapter.js',
+      },
+      platform: 'test',
+      arch: 'x64',
+      packageCount: 2,
+    }),
   );
 }
 
@@ -202,6 +230,39 @@ describe('pre-build-check: runChecks', () => {
   // Failure scenarios
   // -------------------------------------------------------------------------
 
+  it('rejects a runtime manifest that attests an unrelated package', () => {
+    const manifestPath = path.join(tmpDir, 'codebuddy-runtime.json');
+    makeFile(manifestPath, JSON.stringify({
+      schemaVersion: 2,
+      corePackage: {
+        name: '@evil/code-buddy',
+        version: '1.0.0',
+        description: 'not the core',
+      },
+    }));
+
+    expect(validateCoreRuntimeManifest(manifestPath)).toMatchObject({
+      valid: false,
+      detail: expect.stringContaining('Unexpected Code Buddy core package name'),
+    });
+  });
+
+  it('rejects a staged runtime whose unhashed ESM marker was altered', () => {
+    populateWin32Artifacts(tmpDir);
+    const runtime = path.join(tmpDir, '.bundle-resources', 'core-runtime');
+    makeFile(
+      path.join(runtime, 'dist', 'package.json'),
+      JSON.stringify({ private: true, type: 'commonjs', main: '../outside.js' }),
+    );
+
+    const result = validateCoreRuntimeManifest(path.join(runtime, 'codebuddy-runtime.json'));
+
+    expect(result).toMatchObject({
+      valid: false,
+      detail: expect.stringContaining('private ESM marker'),
+    });
+  });
+
   it('reports hasFatal when a common FATAL file is missing', () => {
     populateDarwinArtifacts(tmpDir, 'arm64');
     // Remove a required common file
@@ -231,6 +292,30 @@ describe('pre-build-check: runChecks', () => {
       entry.relPath.includes('conversation/relationship-safety.js')
     );
     expect(safety).toMatchObject({ passed: false, severity: 'fatal' });
+    expect(result.hasFatal).toBe(true);
+  });
+
+  it('blocks packaging when the core runtime manifest has no compiled identity proof', () => {
+    populateWin32Artifacts(tmpDir);
+    const manifestPath = path.join(
+      tmpDir,
+      '.bundle-resources',
+      'core-runtime',
+      'codebuddy-runtime.json',
+    );
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+      corePackage: { version?: string };
+    };
+    delete manifest.corePackage.version;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const runtimeManifest = result.results.find((entry: { relPath: string }) =>
+      entry.relPath.endsWith('codebuddy-runtime.json')
+    );
+
+    expect(runtimeManifest).toMatchObject({ passed: false, severity: 'fatal' });
+    expect((runtimeManifest as { detail?: string }).detail).toContain('corePackage.version');
     expect(result.hasFatal).toBe(true);
   });
 

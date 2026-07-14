@@ -726,11 +726,12 @@ describe('Singleton functions', () => {
       expect(instance).toBeInstanceOf(EnhancedSearch);
     });
 
-    it('should update workdir on existing instance', () => {
+    it('should isolate instances by workdir', () => {
       const instance1 = getEnhancedSearch('/path1');
       const instance2 = getEnhancedSearch('/path2');
 
-      expect(instance1).toBe(instance2);
+      expect(instance1).not.toBe(instance2);
+      expect(getEnhancedSearch('/path1')).toBe(instance1);
     });
   });
 

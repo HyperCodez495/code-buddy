@@ -833,16 +833,113 @@ function createApp(config: ServerConfig): Application {
           get: { summary: 'Historical metrics data', tags: ['Metrics'] },
         },
         '/api/chat': {
-          post: { summary: 'Send chat message', tags: ['Chat'] },
+          post: {
+            summary: 'Send chat message',
+            tags: ['Chat'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['messages'],
+                    properties: {
+                      messages: { type: 'array', items: { type: 'object' } },
+                      sessionId: {
+                        type: 'string',
+                        maxLength: 512,
+                        description: 'Logical conversation shared by REST chat and tool calls.',
+                      },
+                      stream: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         '/api/chat/completions': {
-          post: { summary: 'OpenAI-compatible chat completions', tags: ['Chat'] },
+          post: {
+            summary: 'OpenAI-compatible chat completions',
+            tags: ['Chat'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['messages'],
+                    properties: {
+                      messages: { type: 'array', items: { type: 'object' } },
+                      session_id: {
+                        type: 'string',
+                        maxLength: 512,
+                        description: 'OpenAI-style logical conversation identifier.',
+                      },
+                      sessionId: {
+                        type: 'string',
+                        maxLength: 512,
+                        description: 'Code Buddy alias for session_id.',
+                      },
+                      stream: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         '/api/tools': {
           get: { summary: 'List available tools', tags: ['Tools'] },
         },
         '/api/tools/{name}/execute': {
-          post: { summary: 'Execute a tool', tags: ['Tools'] },
+          post: {
+            summary: 'Execute a tool',
+            tags: ['Tools'],
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      parameters: { type: 'object' },
+                      confirmed: { type: 'boolean' },
+                      sessionId: {
+                        type: 'string',
+                        maxLength: 512,
+                        description: 'Logical conversation shared with REST chat.',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        '/api/tools/batch': {
+          post: {
+            summary: 'Execute a sequence of tools in one logical conversation',
+            tags: ['Tools'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['tools'],
+                    properties: {
+                      tools: { type: 'array', maxItems: 10, items: { type: 'object' } },
+                      sessionId: {
+                        type: 'string',
+                        maxLength: 512,
+                        description: 'Logical conversation shared with REST chat.',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         '/api/sessions': {
           get: { summary: 'List sessions', tags: ['Sessions'] },
@@ -1284,9 +1381,11 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               // permission posture. Default off → today's chatty companion reply.
               // Both paths use the hybrid for conversational MEMORY + persona warmth + phatic
               // short-circuit. With ACT on, a real question/command escalates to a GROUNDED agent
-              // turn (reads/searches under the posture); with ACT off, everything stays a fast warm
-              // reply (no heavy agent) — the same memory, none of the latency.
-              const { makeHybridReply } = await import('../sensory/hybrid-reply.js');
+              // turn (reads/searches under the posture). With ACT off, ordinary dialogue stays on
+              // the fast warm lane while Lisa can still inspect herself in read-only plan mode.
+              const { makeHybridReply, classifyLisaIntrospection } = await import(
+                '../sensory/hybrid-reply.js'
+              );
               const { getCrossChannelConversationBridge } = await import(
                 '../conversation/cross-channel-bridge.js'
               );
@@ -1314,10 +1413,16 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   },
                 });
               } else {
+                const { sayNow } = await import('../sensory/voice-loop.js');
+                const speakCwd = process.env.CODEBUDDY_SENSORY_SPEAK_CWD;
                 replyFn = makeHybridReply({
-                  classify: () => false,
-                  agentReply: async () => '',
+                  permissionMode: 'plan',
+                  ...(speakCwd ? { cwd: speakCwd } : {}),
+                  classify: (heard) => classifyLisaIntrospection(heard) !== null,
                   ...(sharedHistory ? { sharedHistory } : {}),
+                  ack: async (_transcript, opts) => {
+                    await sayNow("D'accord, je regarde ça.", { signal: opts?.signal });
+                  },
                 });
               }
               let latestVoiceTiming: import('../sensory/voice-loop.js').VoiceReplyTiming | undefined;
@@ -1483,7 +1588,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               logger.info(
                 `Sensory speech reaction: Enabled (speech_end → STT → ${
                   gateLabel
-                } → ${readiness.act ? `agent[${readiness.permissionMode}]` : `think[${readiness.model}]`} → speak` +
+                } → ${readiness.act ? `agent[${readiness.permissionMode}]` : `think[${readiness.model}]+introspection[plan]`} → speak` +
                   `${readiness.speakReady ? `[${readiness.voice}]` : ' — SILENT until CODEBUDDY_TTS_VOICE is set'})`,
               );
               if (conversationBridge.isActive() && conversationBridge.config.target) {

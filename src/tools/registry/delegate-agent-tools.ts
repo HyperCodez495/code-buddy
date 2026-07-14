@@ -29,7 +29,14 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type {
+  ITool,
+  IToolExecutionContext,
+  ToolSchema,
+  IToolMetadata,
+  IValidationResult,
+  ToolCategoryType,
+} from './types.js';
 import type {
   SWEMessage,
   SWETool,
@@ -40,7 +47,11 @@ import type {
 /** LLM bridge an LLM-driven specialized agent reasons through (SWE agent shape). */
 export type DelegateLlmCall = (messages: SWEMessage[], tools: SWETool[]) => Promise<SWELLMResponse>;
 /** Tool executor an LLM-driven specialized agent drives. */
-export type DelegateExecuteTool = (name: string, args: Record<string, unknown>) => Promise<SWEToolResult>;
+export type DelegateExecuteTool = (
+  name: string,
+  args: Record<string, unknown>,
+  executionExtra?: Record<string, unknown>,
+) => Promise<SWEToolResult>;
 
 /**
  * The callable bridge the host injects so `delegate_agent` can run LLM-driven
@@ -101,7 +112,10 @@ export class DelegateAgentTool implements ITool {
     'sql (query/schema/import/export databases), archive (list/extract/create zip/tar/7z), ' +
     'or swe (autonomous code edit/debug/refactor). Use for domain work an existing single tool does not cover.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const alias = typeof input.agent === 'string' ? input.agent.trim().toLowerCase() : '';
     const agentId = AGENT_ID_BY_ALIAS[alias];
     if (!agentId) {
@@ -152,6 +166,7 @@ export class DelegateAgentTool implements ITool {
         params: {
           ...userParams,
           ...(instruction ? { instruction } : {}),
+          ...(context?.cwd ? { workspaceRoot: context.cwd } : {}),
           // Injected bridge is harmless for deterministic agents (they read
           // their own action-specific params) and required for LLM-driven ones.
           ...(bridge ? { llmCall: bridge.llmCall, executeTool: bridge.executeTool } : {}),

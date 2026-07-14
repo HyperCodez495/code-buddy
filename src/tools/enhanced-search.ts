@@ -16,6 +16,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { rgPath } from '@vscode/ripgrep';
 import { logger } from '../utils/logger.js';
+import * as path from 'node:path';
 
 // ============================================================================
 // Types
@@ -209,7 +210,7 @@ export class EnhancedSearch extends EventEmitter {
 
   constructor(workdir: string = process.cwd()) {
     super();
-    this.workdir = workdir;
+    this.workdir = path.resolve(workdir);
     this.cache = new LRUCache(100, 60000); // 100 entries, 1 min TTL
     this.symbolCache = new LRUCache(50, 120000); // 50 entries, 2 min TTL
   }
@@ -218,7 +219,11 @@ export class EnhancedSearch extends EventEmitter {
    * Set working directory
    */
   setWorkdir(dir: string): void {
-    this.workdir = dir;
+    const next = path.resolve(dir);
+    if (next === this.workdir) return;
+    this.cancelAll();
+    this.clearCache();
+    this.workdir = next;
   }
 
   /**
@@ -852,24 +857,35 @@ export class EnhancedSearch extends EventEmitter {
 }
 
 // ============================================================================
-// Singleton instance
+// Workspace-scoped instances
 // ============================================================================
 
-let enhancedSearchInstance: EnhancedSearch | null = null;
+const enhancedSearchInstances = new Map<string, EnhancedSearch>();
+const MAX_WORKSPACE_SEARCH_INSTANCES = 32;
 
 export function getEnhancedSearch(workdir?: string): EnhancedSearch {
-  if (!enhancedSearchInstance) {
-    enhancedSearchInstance = new EnhancedSearch(workdir);
-  } else if (workdir) {
-    enhancedSearchInstance.setWorkdir(workdir);
+  const resolvedWorkdir = path.resolve(workdir ?? process.cwd());
+  let instance = enhancedSearchInstances.get(resolvedWorkdir);
+  if (!instance) {
+    if (enhancedSearchInstances.size >= MAX_WORKSPACE_SEARCH_INSTANCES) {
+      const oldestWorkdir = enhancedSearchInstances.keys().next().value;
+      if (oldestWorkdir !== undefined) {
+        const oldest = enhancedSearchInstances.get(oldestWorkdir);
+        oldest?.cancelAll();
+        oldest?.clearCache();
+        enhancedSearchInstances.delete(oldestWorkdir);
+      }
+    }
+    instance = new EnhancedSearch(resolvedWorkdir);
+    enhancedSearchInstances.set(resolvedWorkdir, instance);
   }
-  return enhancedSearchInstance;
+  return instance;
 }
 
 export function resetEnhancedSearch(): void {
-  if (enhancedSearchInstance) {
-    enhancedSearchInstance.cancelAll();
-    enhancedSearchInstance.clearCache();
+  for (const instance of enhancedSearchInstances.values()) {
+    instance.cancelAll();
+    instance.clearCache();
   }
-  enhancedSearchInstance = null;
+  enhancedSearchInstances.clear();
 }

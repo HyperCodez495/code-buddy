@@ -370,6 +370,7 @@ export function createAcpAgenticRunner(
           command: commandFromToolArguments(args),
           query: userText,
           workspaceRoot: ctx.cwd,
+          sessionId: ctx.sessionId,
           model: options.model,
           messages,
           contextWindow: options.contextWindow,

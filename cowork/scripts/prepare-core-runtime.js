@@ -28,9 +28,141 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const {
+  validateRuntimeManifest,
+} = require('../../scripts/runtime-manifest-utils.cjs');
 
-const RUNTIME_SCHEMA_VERSION = 1;
+const RUNTIME_SCHEMA_VERSION = 2;
 const CORE_RUNTIME_RELATIVE_PATH = path.join('.bundle-resources', 'core-runtime');
+const CORE_RUNTIME_ENTRYPOINT = 'dist/desktop/codebuddy-engine-adapter.js';
+const CODE_BUDDY_PACKAGE_NAME = /^@phuetz\/code-buddy$/;
+const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i;
+const MAX_NPM_PACKAGE_NAME_LENGTH = 214;
+
+function isWithinRoot(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function assertDependencyName(dependencyName) {
+  if (
+    typeof dependencyName !== 'string' ||
+    dependencyName.length === 0 ||
+    dependencyName.length > MAX_NPM_PACKAGE_NAME_LENGTH ||
+    !NPM_PACKAGE_NAME.test(dependencyName)
+  ) {
+    throw new Error(`Invalid installed dependency name: ${String(dependencyName)}`);
+  }
+}
+
+function assertConfinedPath(boundary, candidate, label) {
+  if (!isWithinRoot(boundary, candidate)) {
+    throw new Error(`${label} escapes its allowed root: ${candidate}`);
+  }
+}
+
+function requiredPackageString(packageJson, field, packagePath) {
+  const value = packageJson[field];
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Code Buddy package manifest has no valid ${field}: ${packagePath}`);
+  }
+  return value.trim();
+}
+
+function readCorePackageIdentity(coreRoot) {
+  const packagePath = path.join(coreRoot, 'package.json');
+  if (!fs.existsSync(packagePath)) {
+    throw new Error(`Code Buddy package manifest is missing: ${packagePath}`);
+  }
+  let packageJson;
+  try {
+    packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Code Buddy package manifest is invalid: ${packagePath} (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  const identity = {
+    name: requiredPackageString(packageJson, 'name', packagePath),
+    version: requiredPackageString(packageJson, 'version', packagePath),
+    description: requiredPackageString(packageJson, 'description', packagePath),
+  };
+  if (!CODE_BUDDY_PACKAGE_NAME.test(identity.name)) {
+    throw new Error(`Unexpected Code Buddy package name ${identity.name}: ${packagePath}`);
+  }
+  return identity;
+}
+
+function normalizeSourceRevision(value) {
+  if (typeof value !== 'string') return null;
+  const revision = value.trim();
+  return /^[0-9a-f]{7,64}$/i.test(revision) ? revision.toLowerCase() : null;
+}
+
+function normalizeSourceDirty(value) {
+  if (value === true || value === 'true' || value === '1') return true;
+  if (value === false || value === 'false' || value === '0') return false;
+  return null;
+}
+
+/**
+ * Resolve the exact source revision without making a Git checkout a packaging
+ * requirement. Explicit/CI metadata wins; a best-effort local `git rev-parse`
+ * is the fallback. A source archive or machine without Git simply returns null.
+ */
+function resolveSourceRevision(coreRoot, options = {}) {
+  const env = options.env ?? process.env;
+  const envCandidates = [
+    ['CODEBUDDY_SOURCE_REVISION', env.CODEBUDDY_SOURCE_REVISION],
+    ['GITHUB_SHA', env.GITHUB_SHA],
+    ['CI_COMMIT_SHA', env.CI_COMMIT_SHA],
+    ['VERCEL_GIT_COMMIT_SHA', env.VERCEL_GIT_COMMIT_SHA],
+    ['SOURCE_VERSION', env.SOURCE_VERSION],
+  ];
+  for (const [name, value] of envCandidates) {
+    const revision = normalizeSourceRevision(value);
+    if (revision) {
+      return {
+        revision,
+        origin: `env:${name}`,
+        dirty: normalizeSourceDirty(env.CODEBUDDY_SOURCE_DIRTY),
+      };
+    }
+  }
+
+  const run = options.spawnSync ?? spawnSync;
+  try {
+    const result = run('git', ['rev-parse', '--verify', 'HEAD'], {
+      cwd: coreRoot,
+      encoding: 'utf8',
+      timeout: 2_000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const revision = result.status === 0 && !result.error
+      ? normalizeSourceRevision(result.stdout)
+      : null;
+    if (!revision) return null;
+    const status = run('git', ['status', '--porcelain=v1', '--untracked-files=normal'], {
+      cwd: coreRoot,
+      encoding: 'utf8',
+      timeout: 2_000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const dirty = status.status === 0 && !status.error
+      ? Boolean(String(status.stdout ?? '').trim())
+      : null;
+    return { revision, origin: 'git', dirty };
+  } catch {
+    return null;
+  }
+}
 
 function configuredTargetArch(platform) {
   if (platform === 'darwin') return 'arm64';
@@ -55,12 +187,15 @@ function supportsCurrentTarget(entry, platform, arch) {
 }
 
 function resolveInstalledDependencyPath(coreRoot, fromPackagePath, dependencyName) {
+  assertDependencyName(dependencyName);
   let cursor = fromPackagePath;
   while (true) {
     const candidate = cursor
       ? `${cursor}/node_modules/${dependencyName}`
       : `node_modules/${dependencyName}`;
-    if (fs.existsSync(path.join(coreRoot, candidate, 'package.json'))) return candidate;
+    const absoluteCandidate = path.resolve(coreRoot, candidate);
+    assertConfinedPath(coreRoot, absoluteCandidate, 'Installed dependency path');
+    if (fs.existsSync(path.join(absoluteCandidate, 'package.json'))) return candidate;
     if (!cursor) return null;
     const parent = packageParent(cursor);
     if (parent === cursor) return null;
@@ -132,26 +267,48 @@ function collectInstalledRuntimePackagePaths(coreRoot, options = {}) {
   });
 }
 
-function copyTreeWithHardlinks(source, destination, options = {}) {
+function copyTreeWithHardlinks(source, destination, options = {}, traversalState) {
+  const resolvedSource = fs.realpathSync(source);
+  const state = traversalState ?? {
+    sourceBoundary: fs.realpathSync(options.sourceBoundary ?? source),
+    destinationBoundary: path.resolve(options.destinationBoundary ?? destination),
+    activeDirectories: new Set(),
+  };
+  assertConfinedPath(state.sourceBoundary, resolvedSource, 'Runtime copy source');
+  assertConfinedPath(
+    state.destinationBoundary,
+    path.resolve(destination),
+    'Runtime copy destination',
+  );
+
   const sourceStat = fs.lstatSync(source);
   if (sourceStat.isSymbolicLink()) {
-    // Dereference install-time links. Absolute links back into the developer's
-    // node_modules would be broken after packaging, and creating symlinks often
-    // requires elevated privileges on Windows.
-    copyTreeWithHardlinks(fs.realpathSync(source), destination, options);
+    // A top-level installed package may itself be a workspace/pnpm link. Its
+    // resolved directory becomes the package boundary above. Nested links are
+    // dereferenced only when their target remains inside that same package.
+    copyTreeWithHardlinks(resolvedSource, destination, options, state);
     return;
   }
   if (sourceStat.isDirectory()) {
+    if (state.activeDirectories.has(resolvedSource)) {
+      throw new Error(`Circular symlink in runtime package: ${source}`);
+    }
+    state.activeDirectories.add(resolvedSource);
     fs.mkdirSync(destination, { recursive: true });
-    for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-      if (options.excludeNestedNodeModules && entry.isDirectory() && entry.name === 'node_modules') {
-        continue;
+    try {
+      for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+        if (options.excludeNestedNodeModules && entry.name === 'node_modules') {
+          continue;
+        }
+        copyTreeWithHardlinks(
+          path.join(source, entry.name),
+          path.join(destination, entry.name),
+          options,
+          state,
+        );
       }
-      copyTreeWithHardlinks(
-        path.join(source, entry.name),
-        path.join(destination, entry.name),
-        options,
-      );
+    } finally {
+      state.activeDirectories.delete(resolvedSource);
     }
     return;
   }
@@ -200,6 +357,22 @@ function prepareCoreRuntime(options = {}) {
   if (!fs.existsSync(path.join(coreDist, 'desktop', 'codebuddy-engine-adapter.js'))) {
     throw new Error(`Code Buddy core is not built: ${coreDist} (run npm run build at repo root)`);
   }
+  const corePackage = readCorePackageIdentity(coreRoot);
+  const sourceManifestPath = path.join(coreRoot, 'codebuddy-runtime.json');
+  if (!fs.existsSync(sourceManifestPath)) {
+    throw new Error(
+      `Code Buddy build-time runtime manifest is missing: ${sourceManifestPath} (run npm run build)`,
+    );
+  }
+  const sourceManifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
+  validateRuntimeManifest(coreRoot, sourceManifest);
+  for (const field of ['name', 'version', 'description']) {
+    if (sourceManifest.corePackage?.[field] !== corePackage[field]) {
+      throw new Error(
+        `Code Buddy runtime manifest corePackage.${field} does not match package.json; run npm run build`,
+      );
+    }
+  }
   const packagePaths = collectInstalledRuntimePackagePaths(coreRoot, {
     platform,
     arch,
@@ -208,19 +381,34 @@ function prepareCoreRuntime(options = {}) {
 
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.mkdirSync(runtimeRoot, { recursive: true });
-  copyTreeWithHardlinks(coreDist, path.join(runtimeRoot, 'dist'));
+  copyTreeWithHardlinks(coreDist, path.join(runtimeRoot, 'dist'), {
+    sourceBoundary: coreRoot,
+    destinationBoundary: runtimeRoot,
+  });
   fs.writeFileSync(
     path.join(runtimeRoot, 'dist', 'package.json'),
     `${JSON.stringify({ private: true, type: 'module' }, null, 2)}\n`,
   );
 
   for (const packagePath of packagePaths) {
-    const source = path.join(coreRoot, packagePath);
+    const source = path.resolve(coreRoot, packagePath);
+    const destination = path.resolve(runtimeRoot, packagePath);
+    assertConfinedPath(
+      path.join(coreRoot, 'node_modules'),
+      source,
+      'Installed dependency source',
+    );
+    assertConfinedPath(
+      path.join(runtimeRoot, 'node_modules'),
+      destination,
+      'Staged dependency destination',
+    );
     if (!fs.existsSync(source)) {
       throw new Error(`Installed production dependency is missing: ${source} (run npm install)`);
     }
-    copyTreeWithHardlinks(source, path.join(runtimeRoot, packagePath), {
+    copyTreeWithHardlinks(source, destination, {
       excludeNestedNodeModules: true,
+      destinationBoundary: runtimeRoot,
     });
   }
 
@@ -239,7 +427,7 @@ function prepareCoreRuntime(options = {}) {
   }
 
   const manifest = {
-    schemaVersion: RUNTIME_SCHEMA_VERSION,
+    ...sourceManifest,
     platform,
     arch,
     includeRootOptional,
@@ -253,6 +441,7 @@ function prepareCoreRuntime(options = {}) {
     path.join(runtimeRoot, 'codebuddy-runtime.json'),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
+  validateRuntimeManifest(runtimeRoot, manifest);
   return { runtimeRoot, packagePaths, manifest };
 }
 
@@ -270,9 +459,12 @@ function main() {
 
 module.exports = {
   CORE_RUNTIME_RELATIVE_PATH,
+  CORE_RUNTIME_ENTRYPOINT,
   collectInstalledRuntimePackagePaths,
   copyTreeWithHardlinks,
   prepareCoreRuntime,
+  readCorePackageIdentity,
+  resolveSourceRevision,
 };
 
 if (require.main === module) main();

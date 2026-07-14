@@ -218,7 +218,9 @@ function ChatInterfaceWithAgent({
 
         try {
           let streamingEntry: ChatEntry | null = null;
-          for await (const chunk of agent.processUserMessageStream(initialMessage)) {
+          for await (const chunk of agent.processUserMessageStream(initialMessage, {
+            surface: 'cli',
+          })) {
             switch (chunk.type) {
               case "reasoning":
                 setCurrentActivity('Reasoning...');

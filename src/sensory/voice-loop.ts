@@ -83,6 +83,8 @@ import {
 export interface VoiceStepOptions {
   /** Abort the in-flight step (barge-in / cancellation). */
   signal?: AbortSignal;
+  /** Exact current utterance when the grounded agent input also carries history. */
+  introspectionText?: string;
 }
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */

@@ -1,5 +1,6 @@
 import { CodeBuddyClient, CodeBuddyMessage, CodeBuddyToolCall } from "../codebuddy/client.js";
 import { EventEmitter } from "events";
+import { randomUUID } from "crypto";
 import { ToolResult, getErrorMessage } from "../types/index.js";
 import { formatToolResultForRecovery } from "../context/restorable-compression.js";
 import {
@@ -75,6 +76,11 @@ export interface SubagentResult {
   rounds: number;
   duration: number;
 }
+
+export type SubagentToolExecutor = (
+  toolCall: CodeBuddyToolCall,
+  executionExtra?: Record<string, unknown>,
+) => Promise<ToolResult>;
 
 // Predefined subagent configurations
 export const PREDEFINED_SUBAGENTS: Record<string, SubagentConfig> = {
@@ -255,7 +261,7 @@ export class Subagent extends EventEmitter {
     task: string,
     context?: string,
     tools?: import("../codebuddy/client.js").CodeBuddyTool[],
-    executeTool?: (toolCall: CodeBuddyToolCall) => Promise<ToolResult>,
+    executeTool?: SubagentToolExecutor,
     options?: {
       progressCallback?: (round: number, maxRounds: number) => void;
       sharedContext?: Map<string, string>;
@@ -266,6 +272,7 @@ export class Subagent extends EventEmitter {
     this.isRunning = true;
     this.startTime = Date.now();
     const toolsUsed: string[] = [];
+    const recoverySessionId = `subagent-${randomUUID()}`;
     let rounds = 0;
 
     this.emit("subagent:start", {
@@ -370,7 +377,7 @@ export class Subagent extends EventEmitter {
             });
 
             if (executeTool) {
-              const result = await executeTool(toolCall);
+              const result = await executeTool(toolCall, { recoverySessionId });
               const rawContent = formatToolResultForRecovery(result);
               const observation = await prepareToolObservationForPrompt({
                 toolName: toolCall.function.name,
@@ -382,6 +389,7 @@ export class Subagent extends EventEmitter {
                 command: commandFromToolArguments(toolCall.function.arguments),
                 query: task,
                 workspaceRoot: options?.workspaceRoot ?? process.cwd(),
+                sessionId: recoverySessionId,
                 model: this.config.model ?? "grok-code-fast-1",
                 messages,
                 allowOptimization: Boolean(
@@ -503,7 +511,7 @@ export class SubagentManager {
     options: {
       context?: string;
       tools?: import("../codebuddy/client.js").CodeBuddyTool[];
-      executeTool?: (toolCall: CodeBuddyToolCall) => Promise<ToolResult>;
+      executeTool?: SubagentToolExecutor;
       workspaceRoot?: string;
     } = {}
   ): Promise<SubagentResult> {
@@ -605,7 +613,7 @@ export class ParallelSubagentRunner extends EventEmitter {
     options: ParallelExecutionOptions = {},
     sharedOptions: {
       tools?: import("../codebuddy/client.js").CodeBuddyTool[];
-      executeTool?: (toolCall: CodeBuddyToolCall) => Promise<ToolResult>;
+      executeTool?: SubagentToolExecutor;
       workspaceRoot?: string;
     } = {}
   ): Promise<ParallelExecutionResult> {
@@ -732,7 +740,7 @@ export class ParallelSubagentRunner extends EventEmitter {
     options: ParallelExecutionOptions = {},
     sharedOptions: {
       tools?: import("../codebuddy/client.js").CodeBuddyTool[];
-      executeTool?: (toolCall: CodeBuddyToolCall) => Promise<ToolResult>;
+      executeTool?: SubagentToolExecutor;
       workspaceRoot?: string;
     } = {}
   ): Promise<ParallelExecutionResult> {

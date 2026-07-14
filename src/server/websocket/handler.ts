@@ -17,7 +17,6 @@ import { gatewayServerVersion, GATEWAY_PROTOCOL_VERSION } from '../../gateway/pr
 import { TIMEOUT_CONFIG, SERVER_CONFIG } from '../../config/constants.js';
 import {
   createServerAgent,
-  runAgentCompletion,
   streamAgentDeltas,
   type ServerAgent,
 } from '../agent-adapter.js';
@@ -54,6 +53,8 @@ interface ConnectionState {
   lastActivity: number;
   agent?: ServerAgent;
   agentInitializing?: Promise<void>;
+  /** The in-flight chat turn, including non-streaming requests. */
+  activeTurn?: ConnectionTurn;
   streaming: boolean;
   // Rate limiting
   authAttempts: number;
@@ -66,6 +67,11 @@ interface ConnectionState {
   // because its ws.bufferedAmount exceeded SERVER_CONFIG.WS_BROADCAST_BUFFER_LIMIT.
   // Reset only on disconnect; surfaced via getConnectionStats().totalBroadcastsDropped.
   droppedBroadcasts: number;
+}
+
+interface ConnectionTurn {
+  cancelled: boolean;
+  abortDelivered: boolean;
 }
 
 // Active connections
@@ -82,6 +88,31 @@ type MessageHandler = (
 ) => Promise<void>;
 
 const messageHandlers = new Map<string, MessageHandler>();
+
+/**
+ * Cancel the current turn without throwing from a socket lifecycle callback.
+ * The per-turn flag is authoritative for suppressing any late provider delta
+ * or terminal response after the abort signal has been delivered.
+ */
+function abortActiveTurn(state: ConnectionState): boolean {
+  const turn = state.activeTurn;
+  if (!turn || turn.cancelled) return false;
+
+  turn.cancelled = true;
+  state.streaming = false;
+  if (state.agent) {
+    turn.abortDelivered = true;
+    try {
+      state.agent.abortCurrentOperation();
+    } catch (error) {
+      logger.debug('[ws] agent abort failed', {
+        connectionId: state.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return true;
+}
 
 // Payload interfaces for type-safe access
 interface AuthPayload {
@@ -361,6 +392,9 @@ messageHandlers.set('chat', async (ws, state, payload) => {
     }
   }
 
+  const turn: ConnectionTurn = { cancelled: false, abortDelivered: false };
+  state.activeTurn = turn;
+
   try {
     // Lazy load agent (with mutex to prevent duplicate creation)
     if (!state.agent) {
@@ -368,6 +402,7 @@ messageHandlers.set('chat', async (ws, state, payload) => {
         state.agentInitializing = (async () => {
           try {
             state.agent = await createServerAgent();
+            state.agent.setRecoverySessionId?.(state.id);
           } catch (err) {
             state.agentInitializing = undefined;
             throw err;
@@ -379,6 +414,16 @@ messageHandlers.set('chat', async (ws, state, payload) => {
     const agent = state.agent;
     if (!agent) {
       throw new Error('Agent initialization failed');
+    }
+    // A stop/close can arrive while the lazy agent is being constructed. In
+    // that case deliver the abort as soon as the agent exists and never start
+    // a provider turn.
+    if (turn.cancelled) {
+      if (!turn.abortDelivered) {
+        turn.abortDelivered = true;
+        agent.abortCurrentOperation();
+      }
+      return;
     }
 
     if (stream) {
@@ -392,10 +437,10 @@ messageHandlers.set('chat', async (ws, state, payload) => {
         timestamp: new Date().toISOString(),
       });
 
-      const streamGen = streamAgentDeltas(agent, message, { model });
+      const streamGen = streamAgentDeltas(agent, message, { model, surface: 'websocket' });
 
       for await (const delta of streamGen) {
-        if (!state.streaming) break;
+        if (turn.cancelled || !state.streaming) break;
 
         if (delta) {
           send(ws, {
@@ -407,30 +452,53 @@ messageHandlers.set('chat', async (ws, state, payload) => {
         }
       }
 
-      // Send stream end
-      send(ws, {
-        type: 'stream_end',
-        id: messageId,
-        timestamp: new Date().toISOString(),
-      });
+      if (!turn.cancelled) {
+        // Only a naturally-completed stream receives stream_end. An explicit
+        // cancellation is represented by stream_stopped from the stop handler.
+        send(ws, {
+          type: 'stream_end',
+          id: messageId,
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       state.streaming = false;
     } else {
-      // Non-streaming response
-      const result = await runAgentCompletion(agent, message, { model });
+      // Use the streaming agent path internally even when the wire response is
+      // non-streaming. CodeBuddyAgent's sequential collector has no abort
+      // controller, while processUserMessageStream does; buffering its deltas
+      // preserves the single chat_response protocol and makes stop/close/error
+      // capable of releasing a blocked provider and the per-connection lane.
+      let content = '';
+      for await (const delta of streamAgentDeltas(agent, message, {
+        model,
+        surface: 'websocket',
+      })) {
+        if (turn.cancelled) break;
+        content += delta;
+      }
 
-      send(ws, {
-        type: 'chat_response',
-        payload: {
-          content: result.content,
-          finishReason: result.finishReason,
-        },
-        timestamp: new Date().toISOString(),
-      });
+      if (!turn.cancelled) {
+        send(ws, {
+          type: 'chat_response',
+          payload: {
+            content,
+            finishReason: 'stop',
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
   } catch (error) {
     state.streaming = false;
-    sendError(ws, 'CHAT_ERROR', error instanceof Error ? error.message : String(error));
+    if (!turn.cancelled) {
+      sendError(ws, 'CHAT_ERROR', error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    state.streaming = false;
+    if (state.activeTurn === turn) {
+      state.activeTurn = undefined;
+    }
   }
 });
 
@@ -438,8 +506,7 @@ messageHandlers.set('chat', async (ws, state, payload) => {
  * Handle stop streaming
  */
 messageHandlers.set('stop', async (ws, state, _payload) => {
-  if (state.streaming) {
-    state.streaming = false;
+  if (abortActiveTurn(state)) {
     send(ws, {
       type: 'stream_stopped',
       timestamp: new Date().toISOString(),
@@ -501,6 +568,7 @@ messageHandlers.set('execute_tool', async (ws, state, payload) => {
         state.agentInitializing = (async () => {
           try {
             state.agent = await createServerAgent();
+            state.agent.setRecoverySessionId?.(state.id);
           } catch (err) {
             state.agentInitializing = undefined;
             throw err;
@@ -764,6 +832,17 @@ async function processMessage(ws: WebSocket, state: ConnectionState, data: RawDa
     return;
   }
 
+  // Cancellation must not wait behind the active chat turn in the per-socket
+  // lane queue; otherwise a blocked provider can never receive its abort.
+  if (type === 'stop') {
+    try {
+      await handler(ws, state, payload || {});
+    } catch (error) {
+      sendError(ws, 'HANDLER_ERROR', error instanceof Error ? error.message : String(error), id);
+    }
+    return;
+  }
+
   // Use the connection ID as the session key for lane queue serialization.
   // This ensures messages from the same WebSocket connection are processed
   // serially while different connections run in parallel.
@@ -854,12 +933,14 @@ export async function setupWebSocket(
     });
 
     ws.on('close', () => {
+      abortActiveTurn(state);
       connections.delete(ws);
       getAvatarRendererRegistry().disconnectConnection(state.id);
     });
 
     ws.on('error', (error) => {
       logger.error(`WebSocket error [${state.id}]:`, error);
+      abortActiveTurn(state);
       connections.delete(ws);
       getAvatarRendererRegistry().disconnectConnection(state.id);
     });
@@ -871,6 +952,7 @@ export async function setupWebSocket(
 
     for (const [ws, state] of connections.entries()) {
       if (now - state.lastActivity > TIMEOUT_CONFIG.WS_IDLE_TIMEOUT) {
+        abortActiveTurn(state);
         ws.terminate();
         connections.delete(ws);
       } else {
@@ -972,7 +1054,8 @@ export function broadcast(message: WebSocketResponse, scopeFilter?: string): voi
  * Close all connections
  */
 export function closeAllConnections(): void {
-  for (const ws of connections.keys()) {
+  for (const [ws, state] of connections.entries()) {
+    abortActiveTurn(state);
     ws.close(1001, 'Server shutting down');
   }
   connections.clear();

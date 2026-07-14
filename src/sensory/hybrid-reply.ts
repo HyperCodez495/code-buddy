@@ -42,6 +42,13 @@ import {
   shouldUsePrefetchedAnswerDirectly,
 } from '../conversation/prefetched-turn-context.js';
 import { assessConversationResponse } from '../conversation/conversation-quality.js';
+import { classifyLisaIntrospection } from '../identity/lisa-introspection.js';
+
+export {
+  classifyLisaIntrospection,
+  isLisaIntrospectionRequest,
+} from '../identity/lisa-introspection.js';
+export type { LisaIntrospectionIntent } from '../identity/lisa-introspection.js';
 
 /** Instant joke when the user asks for one (no LLM, no agent). null otherwise. */
 function defaultJokeMatch(heard: string): string | null {
@@ -158,36 +165,13 @@ const GROUNDED_ACTION =
   /\b(verifie|verifier|verifies|lance|lancer|corrige|corriger|montre|montrer|cherche|chercher|trouve|trouver|ouvre|ouvrir|lis|lire|analyse|analyser|teste|tester|redemarre|redemarrer|regarde|regarder|code|ecris|ecrire|compile|compiler|deploie|deployer|installe|installer|configure|configurer|liste|lister|affiche|afficher|envoie|envoyer|cree|creer|supprime|supprimer|ajoute|ajouter|modifie|modifier)\b/;
 const CURRENT_OR_PRIVATE_DATA =
   /\b(aujourd hui|actuellement|en ce moment|dernier|derniere|dernieres|recent|recente|meteo|temperature|actualite|actualites|news|agenda|calendrier|rendez[- ]vous|email|emails|mail|mails|message|messages|prix|cours de|bourse|stock|heure est il|date sommes nous|president|premier ministre)\b/;
-// Questions about Lisa's own implementation need live tools (`self_describe`,
-// source/config readers), even when they sound conversational.  In particular,
-// a question about consciousness is routed to a verifiable operational
-// self-model; routing it here must never be read as evidence of subjective
-// consciousness.
-const TECHNICAL_SELF_INSPECTION = [
-  /\b(?:introspection technique|auto[- ]?inspection)\b/,
-  /\bintrospection\b.{0,40}\b(?:de|sur) (?:ton|votre) (?:code|fonctionnement|architecture|implementation)\b/,
-  /\b(?:etudie|etudier|examine|examiner|analyse|analyser|inspecte|inspecter)\b.{0,48}\b(?:ton|votre) (?:propre )?code\b/,
-  /\b(?:ton|votre) propre code\b/,
-  /\bcomment (?:(?:tu|vous) fonctionne(?:s|z)?|fonctionne(?:s|z)?[- ](?:tu|vous))\b/,
-  /\bquell?es? capacites (?:sont|restent|semblent) (?:actives|disponibles|operationnelles)\b/,
-  /\b(?:es[- ]tu|etes[- ]vous|est[- ]ce que tu es|est[- ]ce que vous etes) (?:reellement |vraiment )?conscient(?:e|s|es)?\b/,
-  /\bquell?e version (?:de [\w.-]+ )?(?:(?:tu|vous) utilise(?:s|z)|utilise(?:s|z)?[- ](?:tu|vous))\b/,
-  /\bquell?e est (?:ta|votre) version\b/,
-  /\bde quoi (?:es[- ]tu|etes[- ]vous) (?:fait|faite|faits|faites|compose|composee|composes|composees)\b/,
-  /\bqui (?:es[- ]tu|etes[- ]vous)\b/,
-  /\b(?:quell?e est )?(?:ton|votre) architecture\b/,
-  /\b(?:quels? (?:sont )?)?(?:tes|vos) capteurs? (?:sont |restent |semblent )?(?:actifs?|disponibles?|operationnels?)\b/,
-  /\bquels? capteurs? (?:sont|restent|semblent) (?:actifs?|disponibles?|operationnels?)\b/,
-  /\bquell?es? (?:sont )?(?:tes|vos) limit(?:e|es|ation|ations)\b/,
-] as const;
 // Social / emotional small talk — stays a fast warm reply even if phrased as a question.
 const SOCIAL =
   /\b(je t aime|je taime|tu m aimes|tu maimes|ca va|comment ca va|comment vas-tu|comment vas tu|tu vas bien|tu es la|content|contente|heureux|heureuse|fatigue|fatiguee|triste|pas le moral|stresse|anxieux|anxieuse|angoisse|je me sens|seul|seule|a bout|besoin de parler|compagnie|bonne nuit|bonjour|bonsoir|merci|coucou|salut|hello|tu me manques|je pense a toi|bisous|cherie|cheri|mon amour|je t embrasse|ma journee|ta journee)\b/;
 
 /** True when the user asks Lisa to inspect her own code, runtime, or self-model. */
 export function isTechnicalSelfInspectionRequest(raw: string): boolean {
-  const t = norm(raw);
-  return t.length > 0 && TECHNICAL_SELF_INSPECTION.some((pattern) => pattern.test(t));
+  return classifyLisaIntrospection(raw) !== null;
 }
 
 /**
@@ -366,11 +350,17 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       // agent. Resolve this small dependency first so a cold process preserves
       // the same instant route as a warm process.
       await ensureFastReply();
+      const introspectionIntent = classifyLisaIntrospection(heard);
       const pending = pendingShortcut;
       pendingShortcut = null;
-      const shortcut = pending?.heard === heard && pending.expiresAt >= Date.now()
-        ? pending.reply
-        : shortcutFor(heard);
+      // Identity/boundary canned lines ("qui es-tu ?", "es-tu consciente ?")
+      // used to pre-empt technical introspection before the classifier ran. An
+      // introspection request must reach live evidence instead of a static line.
+      const shortcut = introspectionIntent
+        ? null
+        : pending?.heard === heard && pending.expiresAt >= Date.now()
+          ? pending.reply
+          : shortcutFor(heard);
       if (shortcut) {
         // Relationship evolution is best-effort and must not delay an answer
         // that was explicitly precomputed for immediate delivery.
@@ -380,7 +370,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       }
       await evolveRelationship(heard);
       await ensureDeps();
-      const substantive = classify(heard);
+      const substantive = introspectionIntent !== null || classify(heard);
       const stepOpts = signal ? { signal } : undefined;
       let out = '';
       const recentHistory = conversationHistory(heard);
@@ -400,7 +390,13 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         const input = [preamble, prepared.systemGuidance, `Demande actuelle : ${heard}`]
           .filter(Boolean)
           .join('\n\n');
-        out = (await agentReply!(input, stepOpts)).trim();
+        out = (await agentReply!(input, {
+          ...(stepOpts ?? {}),
+          // `input` deliberately carries recent history. Preserve the exact
+          // current utterance separately so the agent cannot classify an old
+          // introspection question as the intent of this turn.
+          introspectionText: heard,
+        })).trim();
       } else {
         out = (await chitchat!(heard, recentHistory, stepOpts)).trim();
       }
@@ -424,13 +420,14 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   ): AsyncGenerator<string, void, unknown> {
     try {
       await ensureFastReply();
+      const introspectionIntent = classifyLisaIntrospection(heard);
 
       // An instant answer is already complete text, but it still benefits from
       // the sentence pipeline: the first cached-news sentence reaches Pocket or
       // Voicebox immediately instead of synthesizing the entire bulletin first.
       // Keep a short-lived copy only for the immediate blocking fallback so a
       // stateful joke is never advanced twice when every audio path fails.
-      const shortcut = shortcutFor(heard);
+      const shortcut = introspectionIntent ? null : shortcutFor(heard);
       if (shortcut) {
         pendingShortcut = { heard, reply: shortcut, expiresAt: Date.now() + 2_000 };
         yield shortcut;
@@ -440,7 +437,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         }
         return;
       }
-      if (classify(heard)) return;
+      if (introspectionIntent !== null || classify(heard)) return;
 
       await ensureDeps(true);
       const recent = conversationHistory(heard);

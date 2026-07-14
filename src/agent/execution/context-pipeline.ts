@@ -25,6 +25,8 @@ import { getTodoTracker } from '../todo-tracker.js';
 import { getUserModel } from '../../memory/user-model.js';
 import { isFeatureEnabled } from '../../config/feature-flags.js';
 import type { ContextInjectionLevel, QueryComplexity } from './query-classifier.js';
+import { classifyLisaIntrospection } from '../../identity/lisa-introspection.js';
+import type { CompanionRuntimeEvidence } from '../../identity/operational-self-model.js';
 
 /** Minimal shape of the ICM bridge that this pipeline consumes. */
 interface ICMBridgeLike {
@@ -62,9 +64,24 @@ async function buildOptionalContextBlock(
  */
 export function prepareTurnMessages(
   contextManager: ContextManagerV2,
-  messages: CodeBuddyMessage[]
+  messages: CodeBuddyMessage[],
+  options: { isolatedSharedHost?: boolean } = {},
 ): CodeBuddyMessage[] {
-  return repairToolCallPairs(contextManager.prepareMessages(messages));
+  const prepared = options.isolatedSharedHost
+    ? contextManager.prepareMessagesRaw(messages)
+    : contextManager.prepareMessages(messages);
+  return repairToolCallPairs(prepared);
+}
+
+/**
+ * Repair only the explicitly supplied turn, bypassing ContextManager and any
+ * plugin ContextEngine. Used by core-only self-inspection where even a local
+ * plugin must not inject workspace, memory, or cross-session content.
+ */
+export function prepareIsolatedTurnMessages(
+  messages: CodeBuddyMessage[],
+): CodeBuddyMessage[] {
+  return repairToolCallPairs(messages);
 }
 
 /**
@@ -78,9 +95,10 @@ export function prepareTurnMessages(
  */
 export function compactTurnMessagesInPlace(
   contextManager: ContextManagerV2,
-  messages: CodeBuddyMessage[]
+  messages: CodeBuddyMessage[],
+  options: { isolatedSharedHost?: boolean } = {},
 ): boolean {
-  const compacted = prepareTurnMessages(contextManager, messages);
+  const compacted = prepareTurnMessages(contextManager, messages, options);
   if (compacted === messages) return false;
   const changed =
     compacted.length !== messages.length || compacted.some((m, i) => m !== messages[i]);
@@ -91,6 +109,8 @@ export function compactTurnMessagesInPlace(
 
 export interface InitialContextDeps {
   message: string;
+  /** Exact current utterance when `message` also contains transport history. */
+  introspectionText?: string;
   cwd: string;
   ctxLevel: ContextInjectionLevel;
   loadWorkspaceContext: (cwd: string) => Promise<string>;
@@ -98,6 +118,12 @@ export interface InitialContextDeps {
   icmBridgeProvider: (() => ICMBridgeLike | null) | null;
   codeGraphContextProvider: ((msg: string) => string | null) | null;
   docsContextProvider?: ((msg: string) => string | null) | null;
+  /** Verified metadata for the active turn; omitted values remain unknown. */
+  operationalRuntime?: CompanionRuntimeEvidence;
+  /** Validated active companion display name, if the host has one. */
+  operationalRobotName?: string;
+  /** Exclude process-global mutable memories on a shared HTTP host. */
+  isolatedSharedHost?: boolean;
 }
 
 /**
@@ -109,17 +135,58 @@ export async function injectInitialContext(
   preparedMessages: CodeBuddyMessage[],
   deps: InitialContextDeps
 ): Promise<void> {
+  const introspectionIntent = classifyLisaIntrospection(
+    deps.introspectionText ?? deps.message
+  );
+  const readOnlySelfInspection =
+    introspectionIntent === 'describe' || introspectionIntent === 'inspect';
+  const allowMutableSharedContext =
+    !readOnlySelfInspection && deps.isolatedSharedHost !== true;
   // Every provider below is independent. Start them together so a slow workspace,
   // memory, or graph lookup contributes at most its own latency instead of making
   // time-to-first-token the sum of all provider latencies. Promise.all preserves
   // this array order, keeping the model-facing context deterministic.
   const blocks = await Promise.all([
-    buildOptionalContextBlock(deps.ctxLevel.workspace, async () => {
+    buildOptionalContextBlock(!readOnlySelfInspection && deps.ctxLevel.workspace, async () => {
       const wsCtx = await deps.loadWorkspaceContext(deps.cwd);
       return wsCtx ? { role: 'system', content: wsCtx } : null;
     }),
 
-    buildOptionalContextBlock(deps.ctxLevel.lessons, () => {
+    // Lisa's self-model is an evidence contract, not a prompt-only persona
+    // claim. Inject a compact source snapshot on every introspection surface so
+    // even a chat-only provider can distinguish implemented/configured/live.
+    // Tool-capable providers still receive the root-confined self_describe
+    // reader and can deepen the inspection in the normal agent loop.
+    buildOptionalContextBlock(introspectionIntent !== null, async () => {
+      const { buildOperationalSelfModel } = await import(
+        '../../identity/operational-self-model.js'
+      );
+      const model = buildOperationalSelfModel({
+        cwd: deps.cwd,
+        focus: deps.introspectionText ?? deps.message,
+        depth: introspectionIntent === 'describe' ? 'summary' : 'deep',
+        ...(deps.operationalRobotName?.trim()
+          ? { robotName: deps.operationalRobotName.trim() }
+          : process.env.CODEBUDDY_ROBOT_NAME?.trim()
+            ? { robotName: process.env.CODEBUDDY_ROBOT_NAME.trim() }
+          : {}),
+        runtime: deps.operationalRuntime,
+      });
+      const effectContract = introspectionIntent === 'improve'
+        ? 'Inspect and establish source evidence before proposing a change. Mutations remain subject to the active permission/write gates and must be tested.'
+        : 'The model-invoked inspection tool surface is strictly read-only: no code/file modification, command execution, or outbound messaging tool is available. Internal transcript, recovery, metrics, and policy bookkeeping may still be persisted.';
+      return {
+        role: 'system',
+        content:
+          `<context type="operational_self_model" intent="${introspectionIntent}" ephemeral="true">\n` +
+          `${model.text}\n\n` +
+          `${effectContract}\n` +
+          'Ground the answer in the relative source paths above. State what was observed, what remains unknown, and never present this operational model as proof of subjective consciousness.\n' +
+          '</context>',
+      };
+    }),
+
+    buildOptionalContextBlock(allowMutableSharedContext && deps.ctxLevel.lessons, () => {
       // Budgeted + ranked against the current message (BM25) — the block used
       // to inject EVERY lesson unconditionally on every turn.
       const lessonsBlock = getLessonsTracker(deps.cwd).buildContextBlock({ query: deps.message });
@@ -129,15 +196,18 @@ export async function injectInitialContext(
       } : null;
     }),
 
-    buildOptionalContextBlock(isFeatureEnabled('USER_MODEL_INJECTION'), () => {
+    buildOptionalContextBlock(
+      allowMutableSharedContext && isFeatureEnabled('USER_MODEL_INJECTION'),
+      () => {
       const userModelSummary = getUserModel(deps.cwd).summarize();
       return userModelSummary ? {
         role: 'system',
         content: `<user_model_context>\n${userModelSummary}\n</user_model_context>`,
       } : null;
-    }),
+      }
+    ),
 
-    buildOptionalContextBlock(deps.ctxLevel.knowledgeGraph, async () => {
+    buildOptionalContextBlock(allowMutableSharedContext && deps.ctxLevel.knowledgeGraph, async () => {
       const { getKnowledgeGraph } = await import('../../memory/knowledge-graph.js');
       const kg = getKnowledgeGraph();
       await kg.load();
@@ -147,7 +217,9 @@ export async function injectInitialContext(
 
     // Collective Knowledge Graph — shared cross-agent memory (opt-in).
     buildOptionalContextBlock(
-      deps.ctxLevel.collectiveGraph && process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true',
+      allowMutableSharedContext &&
+        deps.ctxLevel.collectiveGraph &&
+        process.env.CODEBUDDY_COLLECTIVE_MEMORY === 'true',
       async () => {
         const { getCollectiveKnowledgeGraph } = await import('../../memory/collective-knowledge-graph.js');
         const ckgBlock = await getCollectiveKnowledgeGraph().formatCollectiveContext(deps.message, 600);
@@ -156,7 +228,9 @@ export async function injectInitialContext(
     ),
 
     buildOptionalContextBlock(
-      deps.ctxLevel.decisionMemory && deps.decisionContextProvider !== null,
+      allowMutableSharedContext &&
+        deps.ctxLevel.decisionMemory &&
+        deps.decisionContextProvider !== null,
       async () => {
         const decisionsBlock = await withTimeout(
           deps.decisionContextProvider!(deps.message),
@@ -171,7 +245,9 @@ export async function injectInitialContext(
     ),
 
     buildOptionalContextBlock(
-      deps.ctxLevel.icmMemory && deps.icmBridgeProvider !== null,
+      allowMutableSharedContext &&
+        deps.ctxLevel.icmMemory &&
+        deps.icmBridgeProvider !== null,
       async () => {
         const icm = deps.icmBridgeProvider!();
         if (icm?.isAvailable()) {
@@ -193,7 +269,9 @@ export async function injectInitialContext(
     ),
 
     buildOptionalContextBlock(
-      deps.ctxLevel.codeGraph && deps.codeGraphContextProvider !== null,
+      allowMutableSharedContext &&
+        deps.ctxLevel.codeGraph &&
+        deps.codeGraphContextProvider !== null,
       () => {
         const graphCtx = deps.codeGraphContextProvider!(deps.message);
         return graphCtx ? {
@@ -204,7 +282,7 @@ export async function injectInitialContext(
     ),
 
     buildOptionalContextBlock(
-      deps.ctxLevel.docs && deps.docsContextProvider != null,
+      allowMutableSharedContext && deps.ctxLevel.docs && deps.docsContextProvider != null,
       () => {
         const docsCtx = deps.docsContextProvider!(deps.message);
         return docsCtx ? {
@@ -214,7 +292,7 @@ export async function injectInitialContext(
       }
     ),
 
-    buildOptionalContextBlock(deps.ctxLevel.todo, () => {
+    buildOptionalContextBlock(allowMutableSharedContext && deps.ctxLevel.todo, () => {
       const todoSuffix = getTodoTracker(deps.cwd).buildContextSuffix();
       return todoSuffix ? {
         role: 'system',
@@ -230,8 +308,12 @@ export async function injectInitialContext(
 
 export interface NextRoundContextDeps {
   message: string;
+  /** Exact utterance when the transport embeds prior conversation text. */
+  introspectionText?: string;
   cwd: string;
   queryComplexity: QueryComplexity;
+  /** Exclude process-global mutable memories on a shared HTTP host. */
+  isolatedSharedHost?: boolean;
 }
 
 /**
@@ -243,6 +325,26 @@ export async function injectNextRoundContext(
   preparedMessages: CodeBuddyMessage[],
   deps: NextRoundContextDeps
 ): Promise<void> {
+  const introspectionIntent = classifyLisaIntrospection(
+    deps.introspectionText ?? deps.message
+  );
+  if (introspectionIntent === 'describe' || introspectionIntent === 'inspect') {
+    // The attested self-model was injected on round 0 and the following round
+    // receives the root-confined tool observation. Do not re-open unrelated
+    // workspace, lesson, user-model, KG, ICM, code-graph, docs, or todo sources.
+    preparedMessages.push({
+      role: 'system',
+      content:
+        '<context type="operational_self_inspection_contract" ephemeral="true">\n' +
+        'Use only the attested operational self-model and this turn\'s root-confined tool observations. ' +
+        'Do not infer subjective consciousness; it remains not established.\n' +
+        '</context>',
+    });
+    return;
+  }
+  if (deps.isolatedSharedHost) {
+    return;
+  }
   // Always re-inject lessons on rounds >0 — they're stable rules/patterns
   // that remain relevant regardless of complexity. Pre-fix: only `complex`
   // queries kept lessons mid-conversation, so trivial multi-round tasks

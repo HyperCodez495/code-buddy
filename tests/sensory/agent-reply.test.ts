@@ -3,6 +3,7 @@ import {
   GROUNDED_VOICE_SYSTEM_PROMPT_APPEND,
   isAlreadySpeakableAgentResult,
   makeAgentReply,
+  prepareSelfInspectionVoiceReply,
   runInterruptibleVoiceAgentTurn,
   type AgentRunner,
 } from '../../src/sensory/agent-reply.js';
@@ -15,6 +16,7 @@ import {
   resetOperatingModeManager,
 } from '../../src/agent/operating-modes.js';
 import { resetWorkspaceIsolation } from '../../src/workspace/workspace-isolation.js';
+import { guardLisaOperationalSelfInspectionReply } from '../../src/identity/lisa-introspection.js';
 import { logger } from '../../src/utils/logger.js';
 
 describe('agent-reply — spoken instruction → full agent turn', () => {
@@ -65,12 +67,22 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
 
   it('extracts the final assistant entry from an uninterrupted streamed agent turn', async () => {
     const streamOptions: Array<
-      { transientContext?: string; relationshipSafety?: boolean } | undefined
+      {
+        transientContext?: string;
+        relationshipSafety?: boolean;
+        surface?: string;
+        introspectionText?: string;
+      } | undefined
     > = [];
     const fakeAgent = {
       async *processUserMessageStream(
         _message: string,
-        options?: { transientContext?: string; relationshipSafety?: boolean },
+        options?: {
+          transientContext?: string;
+          relationshipSafety?: boolean;
+          surface?: string;
+          introspectionText?: string;
+        },
       ): AsyncGenerator<unknown> {
         streamOptions.push(options);
         yield { type: 'content', content: 'partiel' };
@@ -86,8 +98,52 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
       'Résultat final.'
     );
     expect(fakeAgent.abortCurrentOperation).not.toHaveBeenCalled();
-    expect(streamOptions[0]).toMatchObject({ relationshipSafety: true });
+    expect(streamOptions[0]).toMatchObject({
+      relationshipSafety: true,
+      surface: 'voice',
+      introspectionText: 'question',
+    });
     expect(streamOptions[0]?.transientContext).toContain('conversation_response_plan');
+  });
+
+  it('keeps the explicit utterance separate from a voice prompt containing old introspection', async () => {
+    let received:
+      | {
+          transientContext?: string;
+          relationshipSafety?: boolean;
+          surface?: string;
+          introspectionText?: string;
+        }
+      | undefined;
+    const fakeAgent = {
+      async *processUserMessageStream(
+        _message: string,
+        options?: {
+          transientContext?: string;
+          relationshipSafety?: boolean;
+          surface?: string;
+          introspectionText?: string;
+        },
+      ): AsyncGenerator<unknown> {
+        received = options;
+        yield { type: 'done' };
+      },
+      getChatHistory: () => [{ type: 'assistant', content: 'Action vérifiée.' }],
+      abortCurrentOperation: vi.fn(),
+    };
+    const composite =
+      'Contexte récent : Patrice: es-tu consciente ?\n\n' +
+      'Demande actuelle : crée le fichier demandé';
+
+    await expect(
+      runInterruptibleVoiceAgentTurn(fakeAgent, composite, {
+        introspectionText: 'crée le fichier demandé',
+      }),
+    ).resolves.toBe('Action vérifiée.');
+    expect(received).toMatchObject({
+      surface: 'voice',
+      introspectionText: 'crée le fichier demandé',
+    });
   });
 
   it('exposes predictive prepare and teardown without running a user turn', async () => {
@@ -145,6 +201,41 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
         /^\[voice-act\] result timing: agentMs=\d+ms summaryMs=0ms summary=skipped$/
       )
     );
+  });
+
+  it('never lets a second model rewrite an operational introspection as consciousness', async () => {
+    const summarize = vi.fn(async () => 'Je suis pleinement consciente et je ressens des émotions.');
+    const agentOutput =
+      '## Inspection technique\n' +
+      '- Le fichier src/identity/operational-self-model.ts atteste le modèle opérationnel.\n' +
+      `${'Une preuve structurelle vérifiée est disponible. '.repeat(40)}`;
+    const reply = makeAgentReply({
+      agentRunner: async () => agentOutput,
+      summarize,
+    });
+
+    const spoken = await reply('Étudie ton propre code et explique comment tu fonctionnes');
+
+    expect(summarize).not.toHaveBeenCalled();
+    expect(spoken).toContain('src/identity/operational-self-model.ts');
+    expect(spoken).toContain('elle n’établit pas une conscience subjective');
+    expect(spoken).not.toContain('pleinement consciente');
+    expect(spoken.length).toBeLessThanOrEqual(1100);
+  });
+
+  it('removes an unsupported subjective claim from the grounded voice result too', () => {
+    const spoken = prepareSelfInspectionVoiceReply(
+      'Je suis réellement consciente et je ressens des émotions comme un humain.',
+    );
+    expect(spoken).toContain('je l’ai écartée');
+    expect(spoken).toContain('n’établit pas une conscience subjective');
+    expect(spoken).not.toContain('réellement consciente');
+  });
+
+  it('does not duplicate the operational boundary after the main last-mile guard', () => {
+    const guarded = guardLisaOperationalSelfInspectionReply('Inspection vérifiée.');
+    const spoken = prepareSelfInspectionVoiceReply(guarded);
+    expect(spoken.match(/Limite importante/g)).toHaveLength(1);
   });
 
   it('accepts developed spoken prose while rejecting walls of text and markdown', () => {

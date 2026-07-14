@@ -10,16 +10,50 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type {
+  ITool,
+  ToolSchema,
+  IToolMetadata,
+  IValidationResult,
+  ToolCategoryType,
+  IToolExecutionContext,
+} from './types.js';
 import { buildSelfDescription } from '../self-describe.js';
+import {
+  buildOperationalSelfModel,
+  resolveCodeBuddyCoreRoot,
+  type CompanionRuntimeEvidence,
+  type OperationalSelfDepth,
+} from '../../identity/operational-self-model.js';
+
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const name = entry.trim();
+    if (!name) continue;
+    names.add(name);
+    if (names.size >= 500) break;
+  }
+  return [...names];
+}
+
+function contextString(context: IToolExecutionContext | undefined, key: string): string | undefined {
+  const value = context?.extra?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
 
 export class SelfDescribeTool implements ITool {
   readonly name = 'self_describe';
   readonly description =
-    "Describe what THIS robot/agent is made of: its constituent bricks (buddy-sense = ears/nervous system, buddy-vision = eyes, buddy-memory = memory), verified source/build status, configured faculties, and available code self-inspection tools. Use it for technical introspection, capabilities, limits, version, and 'de quoi es-tu composé'. It reports a verifiable operational self-model, never subjective consciousness. Read-only, auto-approved.";
+    "Inspect what THIS robot/agent is made of and what is evidenced on the current turn: constituent bricks, source/build revision, relevant curated code areas, model/provider/surface, registered versus exposed tools, configuration-only faculties, and limits. Hardware/service availability is omitted unless the host supplied an attestation; this tool performs no live probes. Use it for technical introspection, capabilities, version, and 'de quoi es-tu composé'. It reports a verifiable operational self-model, never subjective consciousness. Read-only, auto-approved.";
 
-  async execute(_input: Record<string, unknown>): Promise<ToolResult> {
-      // Resolve registered/configured faculties best-effort — a failure just omits that detail.
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
+    // Resolve registered/configured faculties best-effort — a failure just omits that detail.
     let toolNames: string[] | undefined;
     try {
       const { getFormalToolRegistry } = await import('./tool-registry.js');
@@ -28,27 +62,89 @@ export class SelfDescribeTool implements ITool {
       toolNames = undefined;
     }
 
-    let personaRobotName: string | undefined;
-    try {
-      const { getActivePersonaVoiceAsync } = await import('../../personas/persona-manager.js');
-      personaRobotName = (await getActivePersonaVoiceAsync()).robotName;
-    } catch {
-      personaRobotName = undefined;
-    }
+    // Never initialise the global PersonaManager from an auto-approved read.
+    // Its constructor creates directories and a filesystem watcher. A host may
+    // transport an already-attested name (or configure it in the process
+    // environment); otherwise identity remains omitted.
+    const personaRobotName =
+      contextString(context, 'robotName') ?? process.env.CODEBUDDY_ROBOT_NAME?.trim();
+    const exposedToolNames = stringList(context?.extra?.exposedToolNames);
+    const runtime: CompanionRuntimeEvidence = {
+      ...(contextString(context, 'model') ? { model: contextString(context, 'model') } : {}),
+      ...(contextString(context, 'provider') ? { provider: contextString(context, 'provider') } : {}),
+      ...(contextString(context, 'surface') ? { surface: contextString(context, 'surface') } : {}),
+      ...(contextString(context, 'permissionMode')
+        ? { permissionMode: contextString(context, 'permissionMode') }
+        : {}),
+      ...(toolNames ? { registeredToolNames: toolNames } : {}),
+      ...(exposedToolNames ? { exposedToolNames } : {}),
+    };
 
-    const description = buildSelfDescription({ toolNames, personaRobotName });
-    return { success: true, output: description.text, data: description as unknown as Record<string, unknown> };
+    const focus = typeof input.focus === 'string' ? input.focus : 'fonctionnement général';
+    const depth: OperationalSelfDepth = input.depth === 'deep' ? 'deep' : 'summary';
+    const core = resolveCodeBuddyCoreRoot(context?.cwd);
+    const description = buildSelfDescription({
+      coreResolution: core,
+      toolNames,
+      exposedToolNames,
+      personaRobotName,
+    });
+    const operational = buildOperationalSelfModel({
+      coreResolution: core,
+      focus,
+      depth,
+      robotName: personaRobotName,
+      runtime,
+    });
+    return {
+      success: true,
+      output: `${description.text}\n\n${operational.text}`,
+      data: {
+        description: description as unknown as Record<string, unknown>,
+        operational: operational as unknown as Record<string, unknown>,
+      },
+    };
   }
 
   getSchema(): ToolSchema {
     return {
       name: this.name,
       description: this.description,
-      parameters: { type: 'object', properties: {}, required: [] },
+      parameters: {
+        type: 'object',
+        properties: {
+          focus: {
+            type: 'string',
+            maxLength: 320,
+            description: 'Aspect of this agent to inspect (voice, memory, routing, architecture, limitation).',
+          },
+          depth: {
+            type: 'string',
+            enum: ['summary', 'deep'],
+            description: 'Depth of the curated code inspection.',
+          },
+        },
+        required: [],
+        additionalProperties: false,
+      },
     };
   }
 
-  validate(_input: unknown): IValidationResult {
+  validate(input: unknown): IValidationResult {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return { valid: false, errors: ['input must be an object'] };
+    }
+    const value = input as Record<string, unknown>;
+    if (value.focus !== undefined && (typeof value.focus !== 'string' || value.focus.length > 320)) {
+      return { valid: false, errors: ['focus must be a string of at most 320 characters'] };
+    }
+    if (value.depth !== undefined && value.depth !== 'summary' && value.depth !== 'deep') {
+      return { valid: false, errors: ['depth must be summary or deep'] };
+    }
+    const unknown = Object.keys(value).filter((key) => key !== 'focus' && key !== 'depth');
+    if (unknown.length > 0) {
+      return { valid: false, errors: [`unknown input field(s): ${unknown.join(', ')}`] };
+    }
     return { valid: true };
   }
 

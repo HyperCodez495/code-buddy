@@ -55,7 +55,7 @@ export async function processPromptHeadless(
     confirmationService.setSessionFlag('allOperations', true);
 
     // Process the user message
-    const chatEntries = await agent.processUserMessage(prompt);
+    const chatEntries = await agent.processUserMessage(prompt, { surface: 'cli' });
 
     // Convert chat entries to OpenAI compatible message objects
     const messages: ChatCompletionMessageParam[] = [];
@@ -178,7 +178,7 @@ Respond with ONLY the commit message, no additional text.`;
 
     console.log('Generating commit message...');
 
-    const commitMessageEntries = await agent.processUserMessage(commitPrompt);
+    const commitMessageEntries = await agent.processUserMessage(commitPrompt, { surface: 'cli' });
     let commitMessage = '';
 
     // Extract the commit message from the AI response

@@ -35,6 +35,19 @@ describe('RestorableCompressor (gap coverage)', () => {
     return { role: 'assistant', content: padded };
   }
 
+  function onlySessionRecoveryDir(workspace: string): string {
+    const recoveryRoot = path.join(workspace, '.codebuddy', 'tool-results');
+    const entries = fs
+      .readdirSync(recoveryRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^session-[a-f0-9]{64}$/.test(entry.name));
+    expect(entries).toHaveLength(1);
+    return path.join(recoveryRoot, entries[0]!.name);
+  }
+
+  function sessionRecoveryFile(workspace: string, callId: string): string {
+    return path.join(onlySessionRecoveryDir(workspace), `${callId}.txt`);
+  }
+
   describe('formatToolResultForRecovery()', () => {
     it('preserves output and error when a tool returns both channels', () => {
       expect(formatToolResultForRecovery({
@@ -155,6 +168,24 @@ describe('RestorableCompressor (gap coverage)', () => {
       const result = compressor.compress([msg]);
       expect(result.messages[0].content).not.toContain('[Content compressed');
     });
+
+    it('isolates identical compressed identifiers between sessions in one workspace', () => {
+      const compressor = new RestorableCompressor();
+      const first = longMsg('Session A evidence from src/shared.ts ' + 'a'.repeat(240));
+      const second = longMsg('Session B evidence from src/shared.ts ' + 'b'.repeat(240));
+
+      compressor.compress([first], tmpDir, 'session-a');
+      compressor.compress([second], tmpDir, 'session-b');
+
+      expect(compressor.restore('src/shared.ts', tmpDir, 'session-a')).toMatchObject({
+        found: true,
+        content: expect.stringContaining('Session A evidence'),
+      });
+      expect(compressor.restore('src/shared.ts', tmpDir, 'session-b')).toMatchObject({
+        found: true,
+        content: expect.stringContaining('Session B evidence'),
+      });
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -165,8 +196,8 @@ describe('RestorableCompressor (gap coverage)', () => {
     it('should restore from in-memory store', () => {
       const compressor = new RestorableCompressor();
       const msg = longMsg('Content about src/main.ts with important implementation');
-      compressor.compress([msg]);
-      const result = compressor.restore('src/main.ts');
+      compressor.compress([msg], tmpDir);
+      const result = compressor.restore('src/main.ts', tmpDir);
       // May or may not find it depending on regex extraction — check found
       if (result.found) {
         expect(result.content).toContain('Content about src/main.ts');
@@ -175,30 +206,130 @@ describe('RestorableCompressor (gap coverage)', () => {
 
     it('should restore tool call ID from disk when not in memory', () => {
       const compressor = new RestorableCompressor();
-      // Write to disk — this also sets workDir internally
+      // Persist in the explicitly selected workspace.
       compressor.writeToolResult('call_disktest', 'Disk content here', tmpDir);
-      // Clear memory store to force disk fallback
-      (compressor as any).store.clear();
-      const result = compressor.restore('call_disktest');
+      // A fresh instance proves the content comes from the guarded disk path,
+      // not from either in-memory cache.
+      const result = new RestorableCompressor().restore('call_disktest', tmpDir);
       expect(result.found).toBe(true);
       expect(result.content).toBe('Disk content here');
     });
 
-    it('should restore file path by reading file from disk', () => {
+    it('never restores another session with the same workspace and call ID', () => {
       const compressor = new RestorableCompressor();
-      // Note: restore() uses identifier.split(':')[0] to strip line ranges,
-      // which breaks Windows absolute paths (C:\...). Use relative path instead.
-      const dir = path.join(tmpDir, 'src');
-      fs.mkdirSync(dir, { recursive: true });
-      const absPath = path.join(dir, 'test-file.ts');
-      fs.writeFileSync(absPath, 'export const x = 1;');
+      compressor.writeToolResult('call_reused', 'session A secret', tmpDir, 'session-a');
 
-      // Manually store and restore to test the in-memory → found path
-      (compressor as any).store.set(absPath, 'export const x = 1;');
-      const result = compressor.restore(absPath);
-      expect(result.found).toBe(true);
-      expect(result.content).toContain('export const x = 1');
+      expect(compressor.restore('call_reused', tmpDir, 'session-b')).toMatchObject({
+        found: false,
+      });
+      expect(new RestorableCompressor().restore('call_reused', tmpDir, 'session-b')).toMatchObject({
+        found: false,
+      });
+      expect(new RestorableCompressor().restore('call_reused', tmpDir, 'session-a')).toMatchObject({
+        found: true,
+        content: 'session A secret',
+      });
     });
+
+    it('does not fall back to a legacy unscoped recovery file for a session', () => {
+      const recovery = path.join(tmpDir, '.codebuddy', 'tool-results');
+      fs.mkdirSync(recovery, { recursive: true });
+      fs.writeFileSync(path.join(recovery, 'call_legacy.txt'), 'legacy cross-session content');
+
+      const result = new RestorableCompressor().restore(
+        'call_legacy',
+        tmpDir,
+        'current-session',
+      );
+
+      expect(result.found).toBe(false);
+      expect(result.content).not.toContain('legacy cross-session content');
+    });
+
+    it('never reads an uncaptured absolute path outside the active workspace', () => {
+      const compressor = new RestorableCompressor();
+      const workspace = path.join(tmpDir, 'workspace');
+      const outside = path.join(tmpDir, 'outside-secret.txt');
+      fs.mkdirSync(workspace);
+      fs.writeFileSync(outside, 'absolute-secret-must-not-leak');
+
+      const result = compressor.restore(outside, workspace);
+      expect(result.found).toBe(false);
+      expect(result.content).not.toContain('absolute-secret-must-not-leak');
+      expect(result.content).toContain('active session restoration store');
+    });
+
+    it('never resolves an uncaptured ../ traversal relative to the active workspace', () => {
+      const compressor = new RestorableCompressor();
+      const workspace = path.join(tmpDir, 'workspace');
+      const outside = path.join(tmpDir, 'outside-secret.txt');
+      fs.mkdirSync(workspace);
+      fs.writeFileSync(outside, 'traversal-secret-must-not-leak');
+
+      const result = compressor.restore('../outside-secret.txt', workspace);
+      expect(result.found).toBe(false);
+      expect(result.content).not.toContain('traversal-secret-must-not-leak');
+    });
+
+    it.runIf(process.platform !== 'win32')(
+      'never follows a workspace recovery-directory symlink outside the workspace',
+      () => {
+        const compressor = new RestorableCompressor();
+        const workspace = path.join(tmpDir, 'workspace');
+        const outsideRecovery = path.join(tmpDir, 'outside-recovery');
+        fs.mkdirSync(path.join(workspace, '.codebuddy'), { recursive: true });
+        fs.mkdirSync(outsideRecovery);
+        fs.writeFileSync(path.join(outsideRecovery, 'call_symlink.txt'), 'symlink-secret');
+        fs.symlinkSync(outsideRecovery, path.join(workspace, '.codebuddy', 'tool-results'));
+
+        const result = compressor.restore('call_symlink', workspace);
+        expect(result.found).toBe(false);
+        expect(result.content).not.toContain('symlink-secret');
+      },
+    );
+
+    it.runIf(process.platform !== 'win32')(
+      'never follows a recovery-file symlink outside the workspace',
+      () => {
+        const workspace = path.join(tmpDir, 'file-symlink-workspace');
+        const outside = path.join(tmpDir, 'outside-file-secret.txt');
+        fs.mkdirSync(workspace);
+        fs.writeFileSync(outside, 'file-symlink-secret');
+        const compressor = new RestorableCompressor();
+        compressor.writeToolResult('seed', 'seed', workspace);
+        const recovery = onlySessionRecoveryDir(workspace);
+        fs.removeSync(path.join(recovery, 'seed.txt'));
+        fs.symlinkSync(
+          outside,
+          path.join(recovery, 'call_file_symlink.txt')
+        );
+
+        const result = compressor.restore('call_file_symlink', workspace);
+
+        expect(result.found).toBe(false);
+        expect(result.content).not.toContain('file-symlink-secret');
+      }
+    );
+
+    it.runIf(process.platform !== 'win32')(
+      'never reads a hard-linked recovery file',
+      () => {
+        const workspace = path.join(tmpDir, 'hardlink-read-workspace');
+        const outside = path.join(tmpDir, 'outside-hardlink-read.txt');
+        fs.mkdirSync(workspace);
+        fs.writeFileSync(outside, 'hardlink-secret');
+        const compressor = new RestorableCompressor();
+        compressor.writeToolResult('seed', 'seed', workspace);
+        const recovery = onlySessionRecoveryDir(workspace);
+        fs.removeSync(path.join(recovery, 'seed.txt'));
+        fs.linkSync(outside, path.join(recovery, 'call_hardlink_read.txt'));
+
+        const result = compressor.restore('call_hardlink_read', workspace);
+
+        expect(result.found).toBe(false);
+        expect(result.content).not.toContain('hardlink-secret');
+      }
+    );
 
     it('should return URL hint for http identifiers not in store', () => {
       const compressor = new RestorableCompressor();
@@ -220,10 +351,10 @@ describe('RestorableCompressor (gap coverage)', () => {
   // --------------------------------------------------------------------------
 
   describe('writeToolResult()', () => {
-    it('should write to .codebuddy/tool-results/<callId>.txt', () => {
+    it('should write to an opaque session directory under .codebuddy/tool-results', () => {
       const compressor = new RestorableCompressor();
       compressor.writeToolResult('call_write1', 'Tool output', tmpDir);
-      const filePath = path.join(tmpDir, '.codebuddy', 'tool-results', 'call_write1.txt');
+      const filePath = sessionRecoveryFile(tmpDir, 'call_write1');
       expect(fs.existsSync(filePath)).toBe(true);
       expect(fs.readFileSync(filePath, 'utf-8')).toBe('Tool output');
     });
@@ -233,7 +364,7 @@ describe('RestorableCompressor (gap coverage)', () => {
       const subDir = path.join(tmpDir, 'sub');
       fs.mkdirSync(subDir);
       compressor.writeToolResult('call_mkdir', 'Content', subDir);
-      expect(fs.existsSync(path.join(subDir, '.codebuddy', 'tool-results', 'call_mkdir.txt'))).toBe(true);
+      expect(fs.existsSync(sessionRecoveryFile(subDir, 'call_mkdir'))).toBe(true);
     });
 
     it('should store in memory for fast access', () => {
@@ -251,10 +382,11 @@ describe('RestorableCompressor (gap coverage)', () => {
 
       compressor.writeToolResult('call_workspace_a', 'from A', first);
       compressor.writeToolResult('call_workspace_b', 'from B', second);
-      // Force the disk-backed path to exercise the per-call workspace index.
-      (compressor as any).store.delete('call_workspace_a');
+      // A fresh compressor has no memory fallback and must use the requested
+      // workspace's disk-backed result.
+      const fresh = new RestorableCompressor();
 
-      expect(compressor.restore('call_workspace_a', first)).toMatchObject({
+      expect(fresh.restore('call_workspace_a', first)).toMatchObject({
         found: true,
         content: 'from A',
       });
@@ -270,8 +402,40 @@ describe('RestorableCompressor (gap coverage)', () => {
       compressor.writeToolResult('call_reused', 'workspace A secret', first);
       compressor.writeToolResult('call_reused', 'workspace B secret', second);
 
+      // Remove A's disk/memory-path copy so restore() must use its identifier
+      // store. The historical global store returned B here after the collision.
+      const firstRecoveryFile = sessionRecoveryFile(first, 'call_reused');
+      fs.removeSync(firstRecoveryFile);
+      (compressor as any).toolResultMemory.delete(firstRecoveryFile);
+
       expect(compressor.restore('call_reused', first).content).toBe('workspace A secret');
       expect(compressor.restore('call_reused', second).content).toBe('workspace B secret');
+    });
+
+    it('isolates identical provider call IDs across sessions in the same workspace on disk', () => {
+      const compressor = new RestorableCompressor();
+      const unsafeSessionA = '../../telegram/chat:alice';
+      const unsafeSessionB = '../../telegram/chat:bob';
+
+      compressor.writeToolResult('call_reused', 'Alice result', tmpDir, unsafeSessionA);
+      compressor.writeToolResult('call_reused', 'Bob result', tmpDir, unsafeSessionB);
+
+      const fresh = new RestorableCompressor();
+      expect(fresh.restore('call_reused', tmpDir, unsafeSessionA)).toMatchObject({
+        found: true,
+        content: 'Alice result',
+      });
+      expect(fresh.restore('call_reused', tmpDir, unsafeSessionB)).toMatchObject({
+        found: true,
+        content: 'Bob result',
+      });
+
+      const recoveryRoot = path.join(tmpDir, '.codebuddy', 'tool-results');
+      const entries = fs.readdirSync(recoveryRoot);
+      expect(entries).toHaveLength(2);
+      expect(entries.every((entry) => /^session-[a-f0-9]{64}$/.test(entry))).toBe(true);
+      expect(entries.join('\n')).not.toContain('telegram');
+      expect(fs.existsSync(path.join(tmpDir, 'telegram'))).toBe(false);
     });
 
     it('never uses an untrusted call ID as a path', () => {
@@ -279,32 +443,77 @@ describe('RestorableCompressor (gap coverage)', () => {
       compressor.writeToolResult('../../outside', 'private', tmpDir);
 
       expect(fs.existsSync(path.join(tmpDir, 'outside.txt'))).toBe(false);
-      expect(compressor.restore('../../outside')).toMatchObject({
+      expect(compressor.restore('../../outside', tmpDir)).toMatchObject({
         found: true,
         content: 'private',
       });
     });
 
+    it.runIf(process.platform !== 'win32')(
+      'never overwrites a recovery-file symlink',
+      () => {
+        const workspace = path.join(tmpDir, 'file-symlink-write-workspace');
+        const outside = path.join(tmpDir, 'outside-file-sentinel.txt');
+        fs.mkdirSync(workspace);
+        fs.writeFileSync(outside, 'outside-sentinel');
+        const compressor = new RestorableCompressor();
+        compressor.writeToolResult('seed', 'seed', workspace);
+        const recovery = onlySessionRecoveryDir(workspace);
+        fs.removeSync(path.join(recovery, 'seed.txt'));
+        fs.symlinkSync(outside, path.join(recovery, 'call_file_symlink_write.txt'));
+
+        compressor.writeToolResult(
+          'call_file_symlink_write',
+          'must-not-overwrite',
+          workspace
+        );
+
+        expect(fs.readFileSync(outside, 'utf-8')).toBe('outside-sentinel');
+      }
+    );
+
+    it.runIf(process.platform !== 'win32')(
+      'never overwrites a hard-linked recovery file',
+      () => {
+        const workspace = path.join(tmpDir, 'hardlink-write-workspace');
+        const outside = path.join(tmpDir, 'outside-hardlink-write.txt');
+        fs.mkdirSync(workspace);
+        fs.writeFileSync(outside, 'outside-hardlink-sentinel');
+        const compressor = new RestorableCompressor();
+        compressor.writeToolResult('seed', 'seed', workspace);
+        const recovery = onlySessionRecoveryDir(workspace);
+        fs.removeSync(path.join(recovery, 'seed.txt'));
+        fs.linkSync(outside, path.join(recovery, 'call_hardlink_write.txt'));
+
+        compressor.writeToolResult(
+          'call_hardlink_write',
+          'must-not-overwrite',
+          workspace
+        );
+
+        expect(fs.readFileSync(outside, 'utf-8')).toBe('outside-hardlink-sentinel');
+      }
+    );
+
     it.runIf(process.platform !== 'win32')('creates private recovery directories and files', () => {
       const compressor = new RestorableCompressor();
       compressor.writeToolResult('call_private', 'sensitive output', tmpDir);
       const dir = path.join(tmpDir, '.codebuddy', 'tool-results');
-      const file = path.join(dir, 'call_private.txt');
+      const sessionDir = onlySessionRecoveryDir(tmpDir);
+      const file = path.join(sessionDir, 'call_private.txt');
 
       expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(sessionDir).mode & 0o777).toBe(0o700);
       expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     });
 
     it('should auto-evict oldest when store exceeds 500 entries', () => {
       const compressor = new RestorableCompressor();
-      // Fill store to 501 entries
-      for (let i = 0; i < 501; i++) {
-        (compressor as any).store.set(`key_${i}`, 'value');
-      }
-      // Trigger auto-eviction via writeToolResult
-      compressor.writeToolResult('call_trigger', 'trigger', tmpDir);
-      // After eviction, store should be smaller than 502
-      expect(compressor.listIdentifiers().length).toBeLessThan(502);
+      const messages = Array.from({ length: 501 }, (_, i) =>
+        longMsg(`Read file_${i}.ts for the implementation`)
+      );
+      compressor.compress(messages, tmpDir);
+      expect(compressor.listIdentifiers(tmpDir).length).toBeLessThan(501);
     });
 
     it('should not throw on write failure', () => {
@@ -325,11 +534,11 @@ describe('RestorableCompressor (gap coverage)', () => {
       const compressor = new RestorableCompressor();
       // Add entries totaling ~500 bytes
       for (let i = 0; i < 10; i++) {
-        (compressor as any).store.set(`k${i}`, 'x'.repeat(50));
+        compressor.writeToolResult(`k${i}`, 'x'.repeat(50), tmpDir);
       }
-      expect(compressor.storeSize()).toBe(500);
+      expect(compressor.storeSize(tmpDir)).toBe(500);
       compressor.evict(200);
-      expect(compressor.storeSize()).toBeLessThanOrEqual(200);
+      expect(compressor.storeSize(tmpDir)).toBeLessThanOrEqual(200);
     });
 
     it('should stop when store is empty', () => {
@@ -339,11 +548,11 @@ describe('RestorableCompressor (gap coverage)', () => {
 
     it('should remove oldest entries first (Map insertion order)', () => {
       const compressor = new RestorableCompressor();
-      (compressor as any).store.set('first', 'aaa');
-      (compressor as any).store.set('second', 'bbb');
-      (compressor as any).store.set('third', 'ccc');
+      compressor.writeToolResult('first', 'aaa', tmpDir);
+      compressor.writeToolResult('second', 'bbb', tmpDir);
+      compressor.writeToolResult('third', 'ccc', tmpDir);
       compressor.evict(6); // keep only ~2 entries
-      const remaining = compressor.listIdentifiers();
+      const remaining = compressor.listIdentifiers(tmpDir);
       expect(remaining).not.toContain('first');
       expect(remaining).toContain('third');
     });
@@ -356,16 +565,16 @@ describe('RestorableCompressor (gap coverage)', () => {
   describe('listIdentifiers / storeSize', () => {
     it('should list all stored keys', () => {
       const compressor = new RestorableCompressor();
-      (compressor as any).store.set('a', 'val1');
-      (compressor as any).store.set('b', 'val2');
-      expect(compressor.listIdentifiers()).toEqual(['a', 'b']);
+      compressor.writeToolResult('a', 'val1', tmpDir);
+      compressor.writeToolResult('b', 'val2', tmpDir);
+      expect(compressor.listIdentifiers(tmpDir)).toEqual(['a', 'b']);
     });
 
     it('should return total bytes of all stored values', () => {
       const compressor = new RestorableCompressor();
-      (compressor as any).store.set('x', 'hello'); // 5
-      (compressor as any).store.set('y', 'world!'); // 6
-      expect(compressor.storeSize()).toBe(11);
+      compressor.writeToolResult('x', 'hello', tmpDir); // 5
+      compressor.writeToolResult('y', 'world!', tmpDir); // 6
+      expect(compressor.storeSize(tmpDir)).toBe(11);
     });
   });
 

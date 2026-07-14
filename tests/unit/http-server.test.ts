@@ -338,7 +338,7 @@ describe('HttpServer', () => {
       // Wait for async processing
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('Hello');
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('Hello', { surface: 'http' });
       expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
       expect(res.end).toHaveBeenCalledWith(
         expect.stringContaining('"entries"')
@@ -674,7 +674,10 @@ describe('HttpServer', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('Test message with special chars: <>&"');
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith(
+        'Test message with special chars: <>&"',
+        { surface: 'http' },
+      );
     });
 
     it('should handle unicode in JSON body', async () => {
@@ -689,7 +692,10 @@ describe('HttpServer', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('Hello \u4E16\u754C \u{1F600}');
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith(
+        'Hello \u4E16\u754C \u{1F600}',
+        { surface: 'http' },
+      );
     });
 
     it('should handle empty body', async () => {
@@ -728,7 +734,7 @@ describe('HttpServer', () => {
 
       await new Promise(resolve => setTimeout(resolve, 20));
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('chunked');
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('chunked', { surface: 'http' });
     });
 
     it('should handle body read errors', async () => {
@@ -908,7 +914,7 @@ describe('HttpServer', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith(longMessage);
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith(longMessage, { surface: 'http' });
     });
 
     it('should handle non-Error exceptions', async () => {

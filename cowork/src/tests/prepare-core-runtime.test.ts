@@ -6,13 +6,36 @@ import { pathToFileURL } from 'url';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { collectInstalledRuntimePackagePaths, prepareCoreRuntime } = require(
+const { computeDistDigest } = require('../../../scripts/runtime-manifest-utils.cjs') as {
+  computeDistDigest: (root: string) => {
+    algorithm: string;
+    scope: string;
+    value: string;
+    fileCount: number;
+  };
+};
+const {
+  collectInstalledRuntimePackagePaths,
+  copyTreeWithHardlinks,
+  prepareCoreRuntime,
+  readCorePackageIdentity,
+  resolveSourceRevision,
+} = require(
   '../../scripts/prepare-core-runtime.js',
 ) as {
   collectInstalledRuntimePackagePaths: (
     coreRoot: string,
     options?: { platform?: string; arch?: string; includeRootOptional?: boolean },
   ) => string[];
+  copyTreeWithHardlinks: (
+    source: string,
+    destination: string,
+    options?: {
+      excludeNestedNodeModules?: boolean;
+      sourceBoundary?: string;
+      destinationBoundary?: string;
+    },
+  ) => void;
   prepareCoreRuntime: (options: {
     coreRoot: string;
     coworkRoot: string;
@@ -21,10 +44,52 @@ const { collectInstalledRuntimePackagePaths, prepareCoreRuntime } = require(
     arch?: string;
     includeRootOptional?: boolean;
     useCoworkNativeOverrides?: boolean;
+    env?: Record<string, string | undefined>;
+    spawnSync?: (...args: unknown[]) => {
+      status: number | null;
+      stdout?: string;
+      error?: Error;
+    };
   }) => {
     runtimeRoot: string;
     packagePaths: string[];
-    manifest: { nativeOverrides: string[] };
+    manifest: {
+      schemaVersion: number;
+      corePackage: { name: string; version: string; description: string };
+      sourceRevision: string | null;
+      sourceRevisionOrigin?: string;
+      sourceDirty: boolean | null;
+      distDigest: {
+        algorithm: string;
+        scope: string;
+        value: string;
+        fileCount: number;
+      };
+      runtime: {
+        kind: string;
+        compiled: boolean;
+        moduleFormat: string;
+        distPath: string;
+        entrypoint: string;
+      };
+      nativeOverrides: string[];
+    };
+  };
+  resolveSourceRevision: (
+    coreRoot: string,
+    options?: {
+      env?: Record<string, string | undefined>;
+      spawnSync?: (...args: unknown[]) => {
+        status: number | null;
+        stdout?: string;
+        error?: Error;
+      };
+    },
+  ) => { revision: string; origin: string; dirty: boolean | null } | null;
+  readCorePackageIdentity: (coreRoot: string) => {
+    name: string;
+    version: string;
+    description: string;
   };
 };
 
@@ -44,6 +109,29 @@ function writeFile(filePath: string, content: string): void {
 function writePackage(root: string, packagePath: string, packageJson: object, index = ''): void {
   writeFile(path.join(root, packagePath, 'package.json'), JSON.stringify(packageJson));
   if (index) writeFile(path.join(root, packagePath, 'index.js'), index);
+}
+
+function writeCoreRuntimeManifest(
+  coreRoot: string,
+  corePackage: { name: string; version: string; description: string },
+): void {
+  writeFile(
+    path.join(coreRoot, 'codebuddy-runtime.json'),
+    JSON.stringify({
+      schemaVersion: 2,
+      corePackage,
+      sourceRevision: null,
+      sourceDirty: null,
+      distDigest: computeDistDigest(coreRoot),
+      runtime: {
+        kind: 'codebuddy-core',
+        compiled: true,
+        moduleFormat: 'esm',
+        distPath: 'dist',
+        entrypoint: 'dist/desktop/codebuddy-engine-adapter.js',
+      },
+    }),
+  );
 }
 
 afterEach(() => {
@@ -101,9 +189,105 @@ describe('collectInstalledRuntimePackagePaths', () => {
       'node_modules/fixture-root-optional',
     ]);
   });
+
+  it('rejects dependency names that could escape node_modules', () => {
+    const parent = temporaryRoot();
+    const coreRoot = path.join(parent, 'core');
+    writeFile(
+      path.join(coreRoot, 'package.json'),
+      JSON.stringify({ dependencies: { '../../outside-dep': '1.0.0' } }),
+    );
+    writePackage(parent, 'outside-dep', { name: 'outside-dep', version: '1.0.0' });
+
+    expect(() => collectInstalledRuntimePackagePaths(coreRoot)).toThrow(
+      /Invalid installed dependency name/,
+    );
+  });
+});
+
+describe('copyTreeWithHardlinks confinement', () => {
+  it.runIf(process.platform !== 'win32')(
+    'refuses a nested package symlink that escapes the package root',
+    () => {
+      const parent = temporaryRoot();
+      const source = path.join(parent, 'package');
+      const outside = path.join(parent, 'private-host-directory');
+      const destination = path.join(parent, 'staged-package');
+      writeFile(path.join(source, 'index.js'), 'export const safe = true;\n');
+      writeFile(path.join(outside, 'secret.txt'), 'PRIVATE_HOST_SECRET');
+      fs.symlinkSync(outside, path.join(source, 'escape'), 'dir');
+
+      expect(() => copyTreeWithHardlinks(source, destination)).toThrow(
+        /Runtime copy source escapes its allowed root/,
+      );
+      expect(fs.existsSync(path.join(destination, 'escape', 'secret.txt'))).toBe(false);
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'allows an installed package root link but still confines its nested links',
+    () => {
+      const parent = temporaryRoot();
+      const workspacePackage = path.join(parent, 'workspace-package');
+      const installedLink = path.join(parent, 'node_modules', 'fixture-package');
+      const destination = path.join(parent, 'staged-package');
+      writeFile(path.join(workspacePackage, 'index.js'), 'export const linked = true;\n');
+      fs.mkdirSync(path.dirname(installedLink), { recursive: true });
+      fs.symlinkSync(workspacePackage, installedLink, 'dir');
+
+      copyTreeWithHardlinks(installedLink, destination);
+
+      expect(fs.readFileSync(path.join(destination, 'index.js'), 'utf8')).toContain('linked');
+    },
+  );
 });
 
 describe('prepareCoreRuntime', () => {
+  it('rejects an unrelated package masquerading as the core runtime', () => {
+    const root = temporaryRoot();
+    writeFile(path.join(root, 'package.json'), JSON.stringify({
+      name: '@evil/code-buddy',
+      version: '1.0.0',
+      description: 'not Code Buddy',
+    }));
+
+    expect(() => readCorePackageIdentity(root)).toThrow(/Unexpected Code Buddy package name/);
+  });
+
+  it('resolves source provenance from CI metadata or Git and degrades outside Git', () => {
+    const envRevision = 'A'.repeat(40);
+    expect(
+      resolveSourceRevision('/source/archive', {
+        env: { CODEBUDDY_SOURCE_REVISION: envRevision },
+        spawnSync: () => {
+          throw new Error('Git should not run when explicit provenance exists');
+        },
+      }),
+    ).toEqual({
+      revision: envRevision.toLowerCase(),
+      origin: 'env:CODEBUDDY_SOURCE_REVISION',
+      dirty: null,
+    });
+
+    const gitRevision = 'b'.repeat(40);
+    expect(
+      resolveSourceRevision('/source/checkout', {
+        env: {},
+        spawnSync: (_command: unknown, args: unknown) =>
+          Array.isArray(args) && args[0] === 'rev-parse'
+            ? { status: 0, stdout: `${gitRevision}\n` }
+            : { status: 0, stdout: '' },
+      }),
+    ).toEqual({ revision: gitRevision, origin: 'git', dirty: false });
+
+    expect(
+      resolveSourceRevision('/source/archive', {
+        env: {},
+        spawnSync: () => ({ status: 128, stdout: '' }),
+      }),
+    ).toBeNull();
+  });
+
   it('fails closed instead of packaging host-native bindings for another architecture', () => {
     const root = temporaryRoot();
     const targetArch = process.arch === 'x64' ? 'arm64' : 'x64';
@@ -127,7 +311,12 @@ describe('prepareCoreRuntime', () => {
 
     writeFile(
       path.join(coreRoot, 'package.json'),
-      JSON.stringify({ dependencies: { 'fixture-a': '1.0.0' } }),
+      JSON.stringify({
+        name: '@phuetz/code-buddy',
+        version: '9.8.7',
+        description: 'Compiled Code Buddy fixture',
+        dependencies: { 'fixture-a': '1.0.0' },
+      }),
     );
     writeFile(
       path.join(coreRoot, 'dist', 'desktop', 'codebuddy-engine-adapter.js'),
@@ -145,6 +334,11 @@ describe('prepareCoreRuntime', () => {
       { type: 'module', exports: './index.js' },
       'export default 41;',
     );
+    writeCoreRuntimeManifest(coreRoot, {
+      name: '@phuetz/code-buddy',
+      version: '9.8.7',
+      description: 'Compiled Code Buddy fixture',
+    });
 
     const result = prepareCoreRuntime({
       coreRoot,
@@ -153,6 +347,8 @@ describe('prepareCoreRuntime', () => {
       platform: 'linux',
       arch: 'x64',
       useCoworkNativeOverrides: false,
+      env: {},
+      spawnSync: () => ({ status: 128, stdout: '' }),
     });
 
     expect(result.packagePaths).toEqual([
@@ -162,6 +358,27 @@ describe('prepareCoreRuntime', () => {
     expect(
       JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'dist', 'package.json'), 'utf8')),
     ).toMatchObject({ type: 'module' });
+    expect(result.manifest).toMatchObject({
+      schemaVersion: 2,
+      corePackage: {
+        name: '@phuetz/code-buddy',
+        version: '9.8.7',
+        description: 'Compiled Code Buddy fixture',
+      },
+      sourceRevision: null,
+      sourceDirty: null,
+      distDigest: expect.objectContaining({ algorithm: 'sha256' }),
+      runtime: {
+        kind: 'codebuddy-core',
+        compiled: true,
+        moduleFormat: 'esm',
+        distPath: 'dist',
+        entrypoint: 'dist/desktop/codebuddy-engine-adapter.js',
+      },
+    });
+    expect(
+      JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'codebuddy-runtime.json'), 'utf8')),
+    ).toEqual(result.manifest);
     await expect(
       import(
         `${pathToFileURL(
@@ -178,7 +395,12 @@ describe('prepareCoreRuntime', () => {
     const runtimeRoot = path.join(coworkRoot, '.bundle-resources', 'core-runtime');
     writeFile(
       path.join(coreRoot, 'package.json'),
-      JSON.stringify({ dependencies: { 'better-sqlite3': '1.0.0' } }),
+      JSON.stringify({
+        name: '@phuetz/code-buddy',
+        version: '1.0.0',
+        description: 'SQLite runtime fixture',
+        dependencies: { 'better-sqlite3': '1.0.0' },
+      }),
     );
     writeFile(
       path.join(coreRoot, 'dist', 'desktop', 'codebuddy-engine-adapter.js'),
@@ -208,6 +430,11 @@ describe('prepareCoreRuntime', () => {
       ),
       'electron-abi',
     );
+    writeCoreRuntimeManifest(coreRoot, {
+      name: '@phuetz/code-buddy',
+      version: '1.0.0',
+      description: 'SQLite runtime fixture',
+    });
 
     const result = prepareCoreRuntime({ coreRoot, coworkRoot, runtimeRoot });
 

@@ -12,6 +12,14 @@ interface RecordedMessage {
 
 let constructorCount = 0;
 let observedModelTurns: RecordedMessage[][] = [];
+let observedRecoverySessions: Array<string | undefined> = [];
+let observedStreamOptions: Array<
+  {
+    transientContext?: string;
+    relationshipSafety?: boolean;
+    surface?: string;
+  } | undefined
+> = [];
 
 class FakeCodeBuddyAgent {
   private history: RecordedMessage[] = [];
@@ -26,14 +34,23 @@ class FakeCodeBuddyAgent {
 
   setWorkingDirectory(): void {}
 
+  setRecoverySessionId(sessionId: string | undefined): void {
+    observedRecoverySessions.push(sessionId);
+  }
+
   setSystemPromptAppend(): void {}
 
   dispose(): void {}
 
   async *processUserMessageStream(
     prompt: string,
-    options?: { transientContext?: string },
+    options?: {
+      transientContext?: string;
+      relationshipSafety?: boolean;
+      surface?: string;
+    },
   ) {
+    observedStreamOptions.push(options);
     this.history.push({ role: 'user', content: prompt });
     const modelTurn = this.history.map((message) => ({ ...message }));
     if (options?.transientContext) {
@@ -74,6 +91,8 @@ describe('CodeBuddyEngineAdapter warm-session continuity', () => {
   beforeEach(() => {
     constructorCount = 0;
     observedModelTurns = [];
+    observedRecoverySessions = [];
+    observedStreamOptions = [];
   });
 
   it('injects newly arrived channel context once without recreating the agent', async () => {
@@ -108,6 +127,12 @@ describe('CodeBuddyEngineAdapter warm-session continuity', () => {
 
     expect(constructorCount).toBe(1);
     expect(observedModelTurns).toHaveLength(2);
+    expect(observedStreamOptions).toHaveLength(2);
+    expect(observedStreamOptions.every((options) => options?.surface === 'cowork')).toBe(true);
+    expect(observedRecoverySessions).toEqual([
+      'companion-session',
+      'companion-session',
+    ]);
 
     const secondTurn = observedModelTurns[1] ?? [];
     expect(secondTurn.some((message) => message.content === telegramContext)).toBe(true);

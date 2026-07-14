@@ -127,7 +127,10 @@ describe('headless mode', () => {
 
       await processPromptHeadless('my test prompt', defaultOptions);
 
-      expect(mockAgent.processUserMessage).toHaveBeenCalledWith('my test prompt');
+      expect(mockAgent.processUserMessage).toHaveBeenCalledWith(
+        'my test prompt',
+        { surface: 'cli' },
+      );
     });
 
     it('should output user messages as JSON', async () => {
@@ -377,7 +380,8 @@ describe('headless mode', () => {
       ).rejects.toThrow('process.exit called');
 
       expect(mockAgent.processUserMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Generate a concise, professional git commit message')
+        expect.stringContaining('Generate a concise, professional git commit message'),
+        { surface: 'cli' },
       );
     });
 

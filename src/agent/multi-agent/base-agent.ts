@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from "events";
+import { randomUUID } from "crypto";
 import { CodeBuddyClient, CodeBuddyMessage, CodeBuddyTool } from "../../codebuddy/client.js";
 import { formatToolResultForRecovery } from "../../context/restorable-compression.js";
 import { getErrorMessage } from "../../types/index.js";
@@ -39,6 +40,8 @@ export abstract class BaseAgent extends EventEmitter {
   protected toolsUsed: string[] = [];
   protected rounds: number = 0;
   protected startTime: number = 0;
+  /** Conversation-private scope for lossless tool-observation recovery. */
+  private readonly recoverySessionId = `multi-agent-${randomUUID()}`;
 
   constructor(
     config: AgentConfig,
@@ -299,7 +302,9 @@ ${context.decisions.slice(-5).map(d => `- ${d.description} (by ${d.madeBy})`).jo
             tool: toolCall.function.name,
           });
 
-          const result = await executeTool(toolCall);
+          const result = await executeTool(toolCall, {
+            recoverySessionId: this.recoverySessionId,
+          });
           const rawContent = formatToolResultForRecovery(result);
           const observation = await prepareToolObservationForPrompt({
             toolName: toolCall.function.name,
@@ -311,6 +316,7 @@ ${context.decisions.slice(-5).map(d => `- ${d.description} (by ${d.madeBy})`).jo
             command: commandFromToolArguments(toolCall.function.arguments),
             query: observationContext.query,
             workspaceRoot: observationContext.workspaceRoot,
+            sessionId: this.recoverySessionId,
             model: this.config.providerOverride?.model ?? this.config.model ?? "grok-3-latest",
             messages: this.messages,
             allowOptimization: tools.some((tool) => tool.function.name === "restore_context"),

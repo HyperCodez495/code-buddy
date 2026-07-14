@@ -613,7 +613,7 @@ export function useInputHandler({
       setIsStreaming(true);
       let streamingEntry: ChatEntry | null = null;
 
-      for await (const chunk of agent.processUserMessageStream(userInput)) {
+      for await (const chunk of agent.processUserMessageStream(userInput, { surface: 'cli' })) {
         switch (chunk.type) {
           case "content":
             if (chunk.content) {

@@ -14,6 +14,8 @@
  */
 
 import { spawn, SpawnOptions, ChildProcess } from 'child_process';
+import { realpathSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ToolResult } from '../../types/index.js';
 import { ConfirmationService } from '../../utils/confirmation-service.js';
 import { getSandboxManager } from '../../security/sandbox.js';
@@ -320,8 +322,14 @@ export class BashTool implements Disposable {
         const newDir = command.substring(3).trim();
         const cleanDir = newDir.replace(/^["']|["']$/g, '');
         try {
-          process.chdir(cleanDir);
-          this.currentDirectory = process.cwd();
+          const candidate = resolve(effectiveCwd, cleanDir);
+          if (!statSync(candidate).isDirectory()) {
+            return {
+              success: false,
+              error: `Cannot change directory: not a directory: ${candidate}`,
+            };
+          }
+          this.currentDirectory = realpathSync(candidate);
           return {
             success: true,
             output: `Changed directory to: ${this.currentDirectory}`,

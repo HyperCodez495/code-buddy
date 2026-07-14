@@ -7,9 +7,12 @@
  */
 import { lazy, Suspense } from 'react';
 import { ImageIcon, Loader2 } from 'lucide-react';
+import { resolveLazyNamedExport } from '../../utils/vite-preload-recovery.js';
 
 const MediaLibraryPanel = lazy(() =>
-  import('./MediaLibraryPanel.js').then((m) => ({ default: m.MediaLibraryPanel })),
+  import('./MediaLibraryPanel.js').then((module) =>
+    resolveLazyNamedExport(module, (loaded) => loaded.MediaLibraryPanel),
+  ),
 );
 
 export function MediaLibraryView() {

@@ -204,7 +204,10 @@ export class MultiAgentSystem extends EventEmitter {
    * Default tool executor backed by the formal tool registry.
    * This keeps the multi-agent system usable even when no external executor is injected.
    */
-  private async defaultToolExecutor(toolCall: CodeBuddyToolCall): Promise<ToolResult> {
+  private async defaultToolExecutor(
+    toolCall: CodeBuddyToolCall,
+    executionExtra?: Record<string, unknown>,
+  ): Promise<ToolResult> {
     let args: Record<string, unknown>;
 
     try {
@@ -223,6 +226,7 @@ export class MultiAgentSystem extends EventEmitter {
       {
         cwd: process.cwd(),
         extra: {
+          ...(executionExtra ?? {}),
           source: "multi-agent-system",
           toolCallId: toolCall.id,
         },

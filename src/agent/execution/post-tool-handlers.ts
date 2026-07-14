@@ -21,9 +21,14 @@ import { getObservationVariator } from '../../context/observation-variator.js';
  * Call-id-keyed; allows later restoration of compacted tool results.
  * No-op when toolCallId is empty.
  */
-export function persistToolResult(toolCallId: string | undefined, rawContent: string): void {
+export function persistToolResult(
+  toolCallId: string | undefined,
+  rawContent: string,
+  workDir = process.cwd(),
+  sessionId?: string,
+): void {
   if (toolCallId) {
-    getRestorableCompressor().writeToolResult(toolCallId, rawContent);
+    getRestorableCompressor().writeToolResult(toolCallId, rawContent, workDir, sessionId);
   }
 }
 

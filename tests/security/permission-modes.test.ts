@@ -24,6 +24,7 @@ import {
   getPermissionModeManager,
   resetPermissionModeManager,
 } from '../../src/security/permission-modes.js';
+import { LISA_OPERATIONAL_INSPECTION_TOOLS } from '../../src/identity/lisa-introspection.js';
 
 describe('PermissionModeManager — Phase T1', () => {
   beforeEach(() => {
@@ -195,6 +196,17 @@ describe('PermissionModeManager — Phase T1', () => {
       const d = m.checkPermission('any', 'grep');
       expect(d.allowed).toBe(true);
       expect(d.prompted).toBe(false);
+    });
+
+    it('allows session-scoped introspection recovery without making it fleet-safe', () => {
+      const d = m.checkPermission('restore_context', 'restore_context');
+      expect(d).toMatchObject({ allowed: true, prompted: false });
+    });
+
+    it('allows every tool exposed by the strict Lisa introspection boundary', () => {
+      for (const toolName of LISA_OPERATIONAL_INSPECTION_TOOLS) {
+        expect(m.checkPermission(toolName, toolName).allowed, toolName).toBe(true);
+      }
     });
 
     it('blocks edit + destructive + unknown tools (allowed=false)', () => {

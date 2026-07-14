@@ -1,9 +1,10 @@
 import fs from "fs-extra";
 import * as path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
+import { rgPath } from "@vscode/ripgrep";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface FileInfo {
   path: string;
@@ -158,12 +159,16 @@ export class CodebaseMapper {
   }
 
   private async getAllFiles(): Promise<string[]> {
-    const ignoreDirsArg = IGNORED_DIRS.map((d) => `--glob '!${d}'`).join(" ");
-
     try {
-      const { stdout } = await execAsync(
-        `rg --files ${ignoreDirsArg} "${this.rootDir}"`,
-        { maxBuffer: 10 * 1024 * 1024 }
+      const ignoreArgs = IGNORED_DIRS.flatMap((directory) => [
+        "--glob",
+        `!**/${directory}/**`,
+      ]);
+      const rgBinary = rgPath.replace(/\.asar([\\/])/, ".asar.unpacked$1");
+      const { stdout } = await execFileAsync(
+        rgBinary,
+        ["--files", ...ignoreArgs, "--", this.rootDir],
+        { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 }
       );
       return stdout.trim().split("\n").filter(Boolean);
     } catch (_error) {

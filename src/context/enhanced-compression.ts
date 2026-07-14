@@ -799,6 +799,27 @@ export class EnhancedContextCompressor {
     this.archiveIdCounter = 0;
   }
 
+  /** Snapshot only conversation-owned recovery data for host session swapping. */
+  exportConversationState(): {
+    archives: ContextArchive[];
+    archiveIdCounter: number;
+  } {
+    return structuredClone({
+      archives: this.archives,
+      archiveIdCounter: this.archiveIdCounter,
+    });
+  }
+
+  /** Restore a session snapshot without retaining archives from another host. */
+  importConversationState(state: {
+    archives: ContextArchive[];
+    archiveIdCounter: number;
+  }): void {
+    const cloned = structuredClone(state);
+    this.archives = cloned.archives;
+    this.archiveIdCounter = cloned.archiveIdCounter;
+  }
+
   /**
    * Get current configuration.
    */

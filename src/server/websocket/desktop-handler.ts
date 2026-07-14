@@ -207,10 +207,44 @@ interface DesktopSessionRuntime {
   agentInitializing?: Promise<void>;
   /** Set false to break the active stream loop on `session.stop`. */
   running: boolean;
+  activeTurn?: DesktopTurn;
+}
+
+interface DesktopTurn {
+  cancelled: boolean;
+  abortDelivered: boolean;
+  idleStatusSent: boolean;
 }
 
 /** Active desktop connections (separate map from the `/ws` handler). */
 const desktopConnections = new Map<WebSocket, DesktopConnectionState>();
+
+/** Abort one active Cowork runtime and suppress its late final message. */
+function abortRuntime(runtime: DesktopSessionRuntime): DesktopTurn | null {
+  const turn = runtime.activeTurn;
+  if (!runtime.running || !turn || turn.cancelled) return null;
+
+  turn.cancelled = true;
+  runtime.running = false;
+  if (runtime.agent) {
+    turn.abortDelivered = true;
+    try {
+      runtime.agent.abortCurrentOperation();
+    } catch (error) {
+      logger.debug('[desktop-ws] agent abort failed', {
+        sessionId: runtime.session.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return turn;
+}
+
+function abortActiveRuntimes(state: DesktopConnectionState): void {
+  for (const runtime of state.sessions.values()) {
+    abortRuntime(runtime);
+  }
+}
 
 type UpgradeListener = (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
 
@@ -318,6 +352,7 @@ async function ensureAgent(runtime: DesktopSessionRuntime): Promise<ServerAgent>
     runtime.agentInitializing = (async () => {
       try {
         runtime.agent = await createServerAgent();
+        runtime.agent.setRecoverySessionId?.(runtime.session.id);
       } catch (err) {
         runtime.agentInitializing = undefined;
         throw err;
@@ -352,6 +387,23 @@ async function runTurn(
   prompt: string
 ): Promise<void> {
   const sessionId = runtime.session.id;
+  // A CodeBuddyAgent owns a single abort controller. Starting another turn on
+  // the same runtime would overwrite that controller and make the older
+  // provider impossible to cancel reliably. Keep one authoritative turn until
+  // its generator has fully finalized (activeTurn is cleared in finally).
+  if (runtime.running || runtime.activeTurn) {
+    sendEvent(ws, {
+      type: 'error',
+      payload: { message: `session is busy: ${sessionId}`, sessionId },
+    });
+    return;
+  }
+  const turn: DesktopTurn = {
+    cancelled: false,
+    abortDelivered: false,
+    idleStatusSent: false,
+  };
+  runtime.activeTurn = turn;
   runtime.running = true;
 
   sendEvent(ws, { type: 'session.status', payload: { sessionId, status: 'running' } });
@@ -362,9 +414,23 @@ async function runTurn(
 
   try {
     const agent = await ensureAgent(runtime);
+    // `session.stop` may race lazy initialization. Deliver the abort once the
+    // newly-created agent is available, then leave without emitting a final
+    // assistant message for the cancelled turn.
+    if (turn.cancelled) {
+      if (!turn.abortDelivered) {
+        turn.abortDelivered = true;
+        agent.abortCurrentOperation();
+      }
+      return;
+    }
 
-    for await (const chunk of agent.processUserMessageStream(prompt)) {
-      if (!runtime.running) break;
+    for await (const chunk of agent.processUserMessageStream(prompt, {
+      // The provenance names the user-facing surface. WebSocket is only the
+      // transport used by Cowork and must not split continuity metrics.
+      surface: 'cowork',
+    })) {
+      if (turn.cancelled || !runtime.running) break;
 
       switch (chunk.type) {
         case 'content':
@@ -456,6 +522,8 @@ async function runTurn(
       }
     }
 
+    if (turn.cancelled) return;
+
     if (runtimeError && !fullContent && contentBlocks.length === 0) {
       fullContent = `**Error**: ${runtimeError}`;
     }
@@ -477,14 +545,21 @@ async function runTurn(
     sendEvent(ws, { type: 'stream.message', payload: { sessionId, message: assistantMessage } });
     sendEvent(ws, { type: 'stream.done', payload: { sessionId } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('[desktop-ws] turn error', { sessionId, error: message });
-    sendEvent(ws, { type: 'error', payload: { message, sessionId } });
+    if (!turn.cancelled) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[desktop-ws] turn error', { sessionId, error: message });
+      sendEvent(ws, { type: 'error', payload: { message, sessionId } });
+    }
   } finally {
-    runtime.running = false;
+    if (runtime.activeTurn === turn) {
+      runtime.running = false;
+      runtime.activeTurn = undefined;
+    }
     runtime.session.updatedAt = Date.now();
     // Terminal state: reproduce the reference engine-runner (idle, not "done").
-    sendEvent(ws, { type: 'session.status', payload: { sessionId, status: 'idle' } });
+    if (!turn.idleStatusSent) {
+      sendEvent(ws, { type: 'session.status', payload: { sessionId, status: 'idle' } });
+    }
   }
 }
 
@@ -575,7 +650,10 @@ function handleSessionStop(
   }
   const runtime = state.sessions.get(sessionId);
   if (runtime) {
-    runtime.running = false;
+    const turn = abortRuntime(runtime);
+    if (turn) {
+      turn.idleStatusSent = true;
+    }
     sendEvent(ws, { type: 'session.status', payload: { sessionId, status: 'idle' } });
   }
 }
@@ -757,14 +835,13 @@ export async function setupDesktopWebSocket(
     });
 
     ws.on('close', () => {
-      for (const runtime of state.sessions.values()) {
-        runtime.running = false;
-      }
+      abortActiveRuntimes(state);
       desktopConnections.delete(ws);
     });
 
     ws.on('error', (error) => {
       logger.error(`[desktop-ws] socket error [${state.id}]`, error);
+      abortActiveRuntimes(state);
       desktopConnections.delete(ws);
     });
   });
@@ -774,8 +851,8 @@ export async function setupDesktopWebSocket(
 
 /** Close all desktop connections and detach the upgrade listener. */
 export function closeDesktopWebSocket(): void {
-  for (const runtime of [...desktopConnections.values()].flatMap((s) => [...s.sessions.values()])) {
-    runtime.running = false;
+  for (const state of desktopConnections.values()) {
+    abortActiveRuntimes(state);
   }
   for (const ws of desktopConnections.keys()) {
     try {

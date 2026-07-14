@@ -2,9 +2,16 @@
  * Tests for SWE Agent (OpenManus-compatible)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { SWEAgent, createSWEAgent, type SWELLMResponse, type SWEToolResult } from '../../src/agent/specialized/swe-agent.js';
 import { AgentStatus } from '../../src/agent/state-machine.js';
 import { TERMINATE_SIGNAL } from '../../src/tools/terminate-tool.js';
+import {
+  getRestorableCompressor,
+  resetRestorableCompressor,
+} from '../../src/context/restorable-compression.js';
 
 describe('SWEAgent', () => {
   let mockLLM: ReturnType<typeof vi.fn>;
@@ -175,6 +182,93 @@ describe('SWEAgent', () => {
     const toolResult = memory.find((m) => m.role === 'tool');
     expect(toolResult?.content?.length).toBeLessThan(largeOutput.length);
     expect(toolResult?.content).toContain('truncated');
+  });
+
+  it('isolates identical call IDs across concurrent SWE recovery scopes', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'swe-recovery-sessions-'));
+    resetRestorableCompressor();
+    const recoveryScopes = new Map<string, string>();
+
+    const executeTool = vi.fn(async (
+      name: string,
+      args: Record<string, unknown>,
+      executionExtra?: Record<string, unknown>,
+    ): Promise<SWEToolResult> => {
+      expect(name).toBe('bash');
+      const command = String(args.command ?? '');
+      const recoverySessionId = executionExtra?.recoverySessionId;
+      expect(typeof recoverySessionId).toBe('string');
+      recoveryScopes.set(command, String(recoverySessionId));
+      return { success: true, output: `${command}-private-output` };
+    });
+
+    const buildAgent = (command: string) => {
+      let round = 0;
+      const llmCall = vi.fn(async (): Promise<SWELLMResponse> => {
+        round += 1;
+        if (round === 1) {
+          return {
+            content: '',
+            tool_calls: [{
+              id: 'call_shared',
+              type: 'function',
+              function: { name: 'bash', arguments: JSON.stringify({ command }) },
+            }],
+          };
+        }
+        if (round === 2) {
+          return {
+            content: '',
+            tool_calls: [{
+              id: 'call_restore',
+              type: 'function',
+              function: {
+                name: 'restore_context',
+                arguments: '{"identifier":"call_shared"}',
+              },
+            }],
+          };
+        }
+        return { content: `done ${command}`, tool_calls: [] };
+      });
+      return createSWEAgent({
+        maxSteps: 5,
+        maxObserve: 5_000,
+        llmCall,
+        executeTool,
+        workspaceRoot: workspace,
+      });
+    };
+
+    try {
+      const alpha = buildAgent('alpha');
+      const beta = buildAgent('beta');
+      await Promise.all([
+        alpha.run('alpha task'),
+        beta.run('beta task'),
+      ]);
+
+      const alphaScope = recoveryScopes.get('alpha');
+      const betaScope = recoveryScopes.get('beta');
+      expect(alphaScope).toEqual(expect.any(String));
+      expect(betaScope).toEqual(expect.any(String));
+      expect(alphaScope).not.toBe(betaScope);
+      expect(executeTool).toHaveBeenCalledTimes(2);
+
+      expect(alpha.getMemory().find((message) => message.name === 'restore_context')?.content)
+        .toBe('alpha-private-output');
+      expect(beta.getMemory().find((message) => message.name === 'restore_context')?.content)
+        .toBe('beta-private-output');
+
+      const compressor = getRestorableCompressor();
+      expect(compressor.restore('call_shared', workspace, alphaScope).content)
+        .toBe('alpha-private-output');
+      expect(compressor.restore('call_shared', workspace, betaScope).content)
+        .toBe('beta-private-output');
+    } finally {
+      resetRestorableCompressor();
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
   });
 
   it('emits lifecycle events', async () => {

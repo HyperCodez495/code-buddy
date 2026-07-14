@@ -135,7 +135,7 @@ export class HttpServer {
       const body = await this.readBody(req);
       const { message } = JSON.parse(body);
 
-      const entries = await this.agent.processUserMessage(message);
+      const entries = await this.agent.processUserMessage(message, { surface: 'http' });
       this.chatHistory.push(...entries);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -172,7 +172,7 @@ export class HttpServer {
       res.write(`data: ${JSON.stringify({ type: 'user', entry: userEntry })}\n\n`);
 
       // Stream the response
-      for await (const chunk of this.agent.processUserMessageStream(message)) {
+      for await (const chunk of this.agent.processUserMessageStream(message, { surface: 'http' })) {
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 
         if (chunk.type === 'content' && chunk.content) {

@@ -1,4 +1,6 @@
 import type { ChatEntry, StreamingChunk } from '../agent/types.js';
+import type { CodeBuddyMessage } from '../codebuddy/client.js';
+import type { ContextManagerConversationState } from '../context/context-manager-v2.js';
 import type { ToolResult } from '../types/index.js';
 import { detectProviderFromEnv } from '../utils/provider-detector.js';
 
@@ -15,13 +17,39 @@ export interface ServerModelInfo {
   owned_by: string;
 }
 
+export interface ServerConversationState {
+  messages: CodeBuddyMessage[];
+  chatHistory: ChatEntry[];
+  /** Cost accumulated by BaseAgent for this logical HTTP conversation. */
+  sessionCost: number;
+  /** Mirrored cost used by ModelRoutingFacade budget decisions. */
+  routingSessionCost: number;
+  /** Compression archives, warning state, and derived context caches. */
+  contextManagerState: ContextManagerConversationState;
+  /** Tool workspace owned by this logical HTTP conversation. */
+  workingDirectory: string;
+}
+
 export interface ServerAgent {
-  processUserMessage(message: string): Promise<ChatEntry[]>;
-  processUserMessageStream(message: string): AsyncIterable<StreamingChunk>;
+  processUserMessage(message: string, options?: { surface?: string }): Promise<ChatEntry[]>;
+  processUserMessageStream(
+    message: string,
+    options?: { surface?: string }
+  ): AsyncIterable<StreamingChunk>;
   getChatHistory(): ChatEntry[];
   getCurrentModel(): string;
   setModel(model: string): void;
-  executeToolByName(name: string, parameters?: Record<string, unknown>): Promise<ToolResult>;
+  setRecoverySessionId?(sessionId: string | undefined): void;
+  addToHistory?(message: { role: 'user' | 'assistant' | 'system'; content: string }): void;
+  exportConversationState?(): ServerConversationState;
+  importConversationState?(state: ServerConversationState): void;
+  abortCurrentOperation(): void;
+  executeToolByName(
+    name: string,
+    parameters?: Record<string, unknown>,
+    executionExtra?: Record<string, unknown>,
+  ): Promise<ToolResult>;
+  dispose?(): void;
   systemPromptReady?: Promise<void>;
 }
 
@@ -40,6 +68,8 @@ export interface ServerAgentCompletion {
 
 export interface ServerAgentRequestOptions {
   model?: string;
+  /** Transport that originated this turn; defaults to HTTP for route callers. */
+  surface?: string;
 }
 
 export function resolveServerAgentConfig(): ServerAgentConfig {
@@ -154,7 +184,7 @@ export async function runAgentCompletion(
 ): Promise<ServerAgentCompletion> {
   return withRequestModel(agent, options.model, async () => {
     await agent.systemPromptReady;
-    const entries = await agent.processUserMessage(input);
+    const entries = await agent.processUserMessage(input, { surface: options.surface ?? 'http' });
     const content = entries
       .filter((entry) => entry.type === 'assistant' && entry.content.trim().length > 0)
       .map((entry) => entry.content)
@@ -197,7 +227,9 @@ export async function* streamAgentDeltas(
     const historyStart = agent.getChatHistory().length;
     let emittedContent = false;
 
-    for await (const chunk of agent.processUserMessageStream(input)) {
+    for await (const chunk of agent.processUserMessageStream(input, {
+      surface: options.surface ?? 'http',
+    })) {
       if (chunk.type === 'content' && chunk.content) {
         if (isInternalUsageContent(chunk.content)) {
           continue;

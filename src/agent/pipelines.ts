@@ -1,7 +1,11 @@
 import { EventEmitter } from "events";
-import { SubagentManager, SubagentResult, getSubagentManager } from "./subagents.js";
-import { CodeBuddyToolCall } from "../codebuddy/client.js";
-import { ToolResult, getErrorMessage } from "../types/index.js";
+import {
+  SubagentManager,
+  SubagentResult,
+  getSubagentManager,
+  type SubagentToolExecutor,
+} from "./subagents.js";
+import { getErrorMessage } from "../types/index.js";
 
 export interface PipelineStage {
   name: string;
@@ -232,7 +236,7 @@ export class PipelineRunner extends EventEmitter {
     task: string,
     options: {
       tools?: import("../codebuddy/client.js").CodeBuddyTool[];
-      executeTool?: (toolCall: CodeBuddyToolCall) => Promise<ToolResult>;
+      executeTool?: SubagentToolExecutor;
       initialVariables?: Record<string, string>;
     } = {}
   ): Promise<PipelineResult> {

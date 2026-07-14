@@ -295,6 +295,8 @@ jest.mock("../../src/tools/index.js", () => ({
     updateTodoList: jest.fn().mockResolvedValue({ success: true, output: "Todo updated" }),
   }; }),
   SearchTool: jest.fn().mockImplementation(function() { return {
+    setCurrentDirectory: jest.fn(),
+    clearCaches: jest.fn(),
     search: mockSearchTool,
     findSymbols: jest.fn().mockResolvedValue({ success: true, output: "symbols" }),
     findReferences: jest.fn().mockResolvedValue({ success: true, output: "references" }),

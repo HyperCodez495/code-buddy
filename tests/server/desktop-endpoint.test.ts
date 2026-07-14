@@ -23,32 +23,42 @@ import WebSocket from 'ws';
 import { resetDatabaseManager } from '../../src/database/database-manager.js';
 import { generateToken } from '../../src/server/auth/jwt.js';
 
-// Mock ONLY the LLM-backed agent. The agent's processUserMessageStream emits a
-// scripted set of StreamingChunks so no provider is hit. Everything else
-// (WS server, mapping, validation) is the real code under test.
-vi.mock('../../src/server/agent-adapter.js', async () => {
-  const processUserMessageStream = vi.fn(async function* (_input: string) {
+const { desktopProcessUserMessageStream } = vi.hoisted(() => ({
+  desktopProcessUserMessageStream: vi.fn(async function* (_input: string) {
     yield { type: 'content', content: 'Hello ' };
     yield { type: 'reasoning', reasoning: 'thinking about it' };
     yield { type: 'content', content: 'world' };
     yield {
       type: 'tool_calls',
       toolCalls: [
-        { id: 'call_1', type: 'function', function: { name: 'view_file', arguments: '{"path":"a.ts"}' } },
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'view_file', arguments: '{"path":"a.ts"}' },
+        },
       ],
     };
     yield {
       type: 'tool_result',
-      toolCall: { id: 'call_1', type: 'function', function: { name: 'view_file', arguments: '{}' } },
+      toolCall: {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'view_file', arguments: '{}' },
+      },
       toolResult: { success: true, output: 'file contents' },
     };
     yield { type: 'done' };
-  });
+  }),
+}));
 
+// Mock ONLY the LLM-backed agent. The agent's processUserMessageStream emits a
+// scripted set of StreamingChunks so no provider is hit. Everything else
+// (WS server, mapping, validation) is the real code under test.
+vi.mock('../../src/server/agent-adapter.js', async () => {
   return {
     createServerAgent: vi.fn(async () => ({
       processUserMessage: vi.fn(async () => []),
-      processUserMessageStream,
+      processUserMessageStream: desktopProcessUserMessageStream,
       getChatHistory: () => [],
       getCurrentModel: () => 'mock-model',
       setModel: vi.fn(),
@@ -78,6 +88,7 @@ describe('desktop WebSocket endpoint (/desktop)', () => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-desktop-ws-'));
     process.env.CODEBUDDY_HOME = tmpHome;
     process.env.JWT_SECRET = JWT_SECRET;
+    desktopProcessUserMessageStream.mockClear();
     resetDatabaseManager();
   });
 
@@ -216,6 +227,9 @@ describe('desktop WebSocket endpoint (/desktop)', () => {
     const doneIdx = types.indexOf('stream.done');
     expect(doneIdx).toBeGreaterThanOrEqual(0);
     expect(doneIdx).toBeLessThan(idleIdx);
+    expect(desktopProcessUserMessageStream).toHaveBeenCalledWith('hi there', {
+      surface: 'cowork',
+    });
   }, 20_000);
 
   it('rejects the upgrade with 401 when no token is presented', async () => {

@@ -334,6 +334,63 @@ describe('ContextManagerV2 (gap coverage)', () => {
   // --------------------------------------------------------------------------
 
   describe('updateConfig() stats cache', () => {
+    it('does not collide when tool-call arguments have different sizes', () => {
+      const mgr = createManager({ autoCompactThreshold: 999999 });
+      const short = [{
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_short',
+          type: 'function',
+          function: { name: 'probe', arguments: '{}' },
+        }],
+      }] as CodeBuddyMessage[];
+      const long = [{
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_long',
+          type: 'function',
+          function: { name: 'probe', arguments: JSON.stringify({ value: 'x'.repeat(4_000) }) },
+        }],
+      }] as CodeBuddyMessage[];
+
+      const shortTokens = mgr.getStats(short).totalTokens;
+      const longTokens = mgr.getStats(long).totalTokens;
+      const fresh = createManager({ autoCompactThreshold: 999999 });
+
+      expect(longTokens).toBeGreaterThan(shortTokens);
+      expect(longTokens).toBe(fresh.getStats(long).totalTokens);
+      mgr.dispose();
+      fresh.dispose();
+    });
+
+    it('does not collide when tool-call arguments have equal sizes but different tokens', () => {
+      const mgr = createManager({ autoCompactThreshold: 999999 });
+      const message = (value: string): CodeBuddyMessage[] => [{
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_equal_size',
+          type: 'function',
+          function: { name: 'probe', arguments: JSON.stringify({ value }) },
+        }],
+      }];
+      const ascii = message('a'.repeat(800));
+      const emoji = message('😀'.repeat(400));
+      expect(JSON.stringify(ascii).length).toBe(JSON.stringify(emoji).length);
+
+      const asciiTokens = mgr.getStats(ascii).totalTokens;
+      const emojiTokens = mgr.getStats(emoji).totalTokens;
+      const fresh = createManager({ autoCompactThreshold: 999999 });
+      const freshEmojiTokens = fresh.getStats(emoji).totalTokens;
+
+      expect(emojiTokens).not.toBe(asciiTokens);
+      expect(emojiTokens).toBe(freshEmojiTokens);
+      mgr.dispose();
+      fresh.dispose();
+    });
+
     it('invalidates the token-count cache when the model changes', () => {
       const mgr = createManager({ autoCompactThreshold: 999999 });
       const msgs = makeMessages(20, 100);

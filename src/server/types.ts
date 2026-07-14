@@ -294,6 +294,8 @@ export interface ToolExecutionRequest {
   confirmed?: boolean;
   /** Execution timeout (ms) */
   timeout?: number;
+  /** Conversation scope shared with chat and other REST tool calls. */
+  sessionId?: string;
 }
 
 export interface ToolExecutionResponse {

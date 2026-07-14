@@ -31,6 +31,10 @@ import type { ReplyFn, VoiceStepOptions } from './voice-loop.js';
 import type { PermissionMode } from '../security/permission-modes.js';
 import { conversationFailureReply, prepareConversationTurn } from '../conversation/conversation-orchestrator.js';
 import { conversationTokenBudget } from '../conversation/discourse-planner.js';
+import {
+  classifyLisaIntrospection,
+  guardLisaOperationalSelfInspectionReply,
+} from '../identity/lisa-introspection.js';
 
 /** Run a full agent turn for the transcript, return the assistant's final text.
  *  `opts.signal` (optional) lets a barge-in abort the turn's LLM calls. */
@@ -73,7 +77,12 @@ export interface AgentReplyHandler extends ReplyFn {
 export interface InterruptibleVoiceAgent {
   processUserMessageStream(
     message: string,
-    options?: { transientContext?: string; relationshipSafety?: boolean },
+    options?: {
+      transientContext?: string;
+      relationshipSafety?: boolean;
+      surface?: string;
+      introspectionText?: string;
+    },
   ): AsyncIterable<unknown>;
   getChatHistory(): Array<{ type?: string; content?: unknown }>;
   abortCurrentOperation(): void;
@@ -116,6 +125,44 @@ export function isAlreadySpeakableAgentResult(output: string): boolean {
   }
   const sentences = text.match(/[.!?…]+(?:\s|$)/g)?.length ?? 0;
   return sentences >= 1 && sentences <= 10;
+}
+
+/**
+ * Voice introspection must not pass through a second generative model: a
+ * summarizer can erase evidence status or manufacture a consciousness claim.
+ * Flatten the already-grounded answer deterministically and finish with the
+ * non-subjective boundary every time.
+ */
+export function prepareSelfInspectionVoiceReply(
+  output: string,
+  request = '',
+): string {
+  const flattened = output
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/^\s*(?:#{1,6}|[-*+]|\d+[.)]|>)\s*/gm, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let body = flattened;
+
+  const maxBodyChars = 900;
+  if (body.length > maxBodyChars) {
+    const candidate = body.slice(0, maxBodyChars + 1);
+    const sentenceEnd = Math.max(
+      candidate.lastIndexOf('. '),
+      candidate.lastIndexOf('! '),
+      candidate.lastIndexOf('? '),
+      candidate.lastIndexOf('… '),
+    );
+    body = (sentenceEnd >= 240 ? candidate.slice(0, sentenceEnd + 1) : candidate.slice(0, maxBodyChars))
+      .trim();
+  }
+
+  return guardLisaOperationalSelfInspectionReply(body, request)
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 type SummaryPath = 'skipped' | 'fallback';
@@ -221,6 +268,8 @@ export async function runInterruptibleVoiceAgentTurn(
     for await (const _event of agent.processUserMessageStream(transcript, {
       transientContext,
       relationshipSafety: true,
+      surface: 'voice',
+      introspectionText: opts?.introspectionText ?? transcript,
     })) {
       if (signal?.aborted) abort();
     }
@@ -411,8 +460,17 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
       const agentStartedAt = Date.now();
       const turnPromise = (async (): Promise<string> => {
         try {
+          const hasExplicitIntrospectionText = replyOpts?.introspectionText !== undefined;
+          const agentOptions = signal || hasExplicitIntrospectionText
+            ? {
+                ...(signal ? { signal } : {}),
+                ...(hasExplicitIntrospectionText
+                  ? { introspectionText: replyOpts.introspectionText }
+                  : {}),
+              }
+            : undefined;
           return await runInVoiceTurn(() =>
-            agentRunner(heard, signal ? { signal } : undefined)
+            agentRunner(heard, agentOptions)
           );
         } finally {
           agentMs = Date.now() - agentStartedAt;
@@ -449,6 +507,16 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
         return mode === 'dontAsk' || mode === 'bypassPermissions' || mode === 'acceptEdits'
           ? DEFAULT_DONE
           : DEFAULT_PLAN_NOANSWER;
+      }
+      const introspectionIntent = classifyLisaIntrospection(
+        replyOpts?.introspectionText ?? heard,
+      );
+      if (introspectionIntent === 'describe' || introspectionIntent === 'inspect') {
+        logSpeechResultTiming(agentMs, 0, 'skipped');
+        return prepareSelfInspectionVoiceReply(
+          output,
+          replyOpts?.introspectionText ?? heard,
+        );
       }
       if (isAlreadySpeakableAgentResult(output)) {
         logSpeechResultTiming(agentMs, 0, 'skipped');

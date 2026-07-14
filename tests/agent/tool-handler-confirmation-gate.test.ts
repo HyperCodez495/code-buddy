@@ -124,4 +124,25 @@ describe('ToolHandler central confirmation gate', () => {
     expect(prompts).toBe(2);
     expect(executed).not.toHaveBeenCalled();
   });
+
+  it('executes strict self-inspection without lifecycle or plugin hook dispatch', async () => {
+    const lifecycleHook = vi.fn().mockResolvedValue([{ abort: true }]);
+    const handler = makeHandler(lifecycleHook);
+
+    const result = await handler.executeStrictSelfInspectionTool({
+      id: 'call-strict-self',
+      type: 'function',
+      function: {
+        name: 'self_describe',
+        arguments: JSON.stringify({ focus: 'architecture', depth: 'summary' }),
+      },
+    }, {
+      exposedToolNames: ['self_describe'],
+      provider: 'test-provider',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('Conscience subjective : non établie');
+    expect(lifecycleHook).not.toHaveBeenCalled();
+  });
 });

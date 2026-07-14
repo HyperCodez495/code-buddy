@@ -3,6 +3,7 @@ import {
   isSubstantiveQuery,
   requiresGroundedAgentQuery,
   isTechnicalSelfInspectionRequest,
+  classifyLisaIntrospection,
   buildContextPreamble,
   makeHybridReply,
   type HybridTurn,
@@ -12,14 +13,21 @@ const TECHNICAL_SELF_INSPECTION_REQUESTS = [
   'étudie ton propre code',
   'fais une introspection technique',
   'comment fonctionnes-tu réellement ?',
-  'quelles capacités sont actives ?',
+  'quelles sont tes capacités actives ?',
   'es-tu consciente ?',
   'quelle version utilises-tu ?',
   'de quoi es-tu faite ?',
   'qui es-tu ?',
   'quelle est ton architecture ?',
-  'quels capteurs sont actifs ?',
+  'quels sont tes capteurs actifs ?',
   'quelles sont tes limites ?',
+  'améliore-toi',
+  'améliore ton propre code',
+  'As-tu conscience de toi-même ?',
+  'Peux-tu faire une introspection ?',
+  'Auto-analyse-toi.',
+  'Do you know your own code?',
+  'Can you introspect?',
 ] as const;
 
 const PERSONAL_INTROSPECTION_REQUESTS = [
@@ -93,6 +101,12 @@ describe('hybrid reply — intent classifier (isSubstantiveQuery)', () => {
       expect(isTechnicalSelfInspectionRequest(request), request).toBe(true);
       expect(isSubstantiveQuery(request), request).toBe(true);
     }
+  });
+
+  it('re-exports the shared three-way Lisa introspection classifier', () => {
+    expect(classifyLisaIntrospection('comment fonctionnes-tu ?')).toBe('describe');
+    expect(classifyLisaIntrospection('étudie ton propre code')).toBe('inspect');
+    expect(classifyLisaIntrospection('améliore-toi')).toBe('improve');
   });
 
   it('does not confuse the user\'s personal introspection with Lisa inspecting herself', () => {
@@ -236,6 +250,29 @@ describe('hybrid reply — routing & memory', () => {
     }
   });
 
+  it('bypasses canned identity replies so ACT-off introspection can use a plan-mode agent', async () => {
+    const calls: string[] = [];
+    const reply = makeHybridReply({
+      fastReply: () => 'Je suis une réponse statique.',
+      prefetch: () => null,
+      jokes: () => null,
+      classify: (request) => classifyLisaIntrospection(request) !== null,
+      chitchat: async (request) => {
+        calls.push(`chitchat:${request}`);
+        return 'Réponse chaleureuse.';
+      },
+      agentReply: async (request) => {
+        calls.push(`agent:${request}`);
+        return 'Je l’ai vérifié en lecture seule.';
+      },
+    });
+
+    expect(await reply('qui es-tu ?')).toContain('lecture seule');
+    expect(await reply('améliore-toi')).toContain('lecture seule');
+    expect(calls.filter((call) => call.startsWith('agent:'))).toHaveLength(2);
+    expect(calls.some((call) => call.startsWith('chitchat:'))).toBe(false);
+  });
+
   it('feeds prior exchanges back: chitchat gets history, the agent gets a context preamble', async () => {
     const { reply, calls } = harness();
     await reply('je t’aime'); // records one exchange
@@ -273,6 +310,32 @@ describe('hybrid reply — routing & memory', () => {
     expect(groundedInput).toContain('Sur Telegram, nous parlions de conscience.');
     expect(groundedInput).toContain('Je distinguais conscience et mémoire.');
     expect(groundedInput.match(/Et la réciprocité \?/g)).toHaveLength(1);
+  });
+
+  it('transports only the current utterance for introspection classification', async () => {
+    const observed: Array<{ input: string; introspectionText?: string }> = [];
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => true,
+      chitchat: async () => 'unused',
+      agentReply: async (input, options) => {
+        observed.push({ input, introspectionText: options?.introspectionText });
+        return 'Tour traité.';
+      },
+      sharedHistory: () => [
+        { role: 'user', content: 'Es-tu consciente ?' },
+        { role: 'assistant', content: 'La conscience subjective n’est pas établie.' },
+      ],
+    });
+
+    await reply('Crée le fichier demandé');
+    await reply('Étudie ton propre code');
+
+    expect(observed[0]?.input).toContain('Es-tu consciente ?');
+    expect(observed[0]?.introspectionText).toBe('Crée le fichier demandé');
+    expect(observed[1]?.introspectionText).toBe('Étudie ton propre code');
   });
 
   it('never-throws: an agent failure becomes an honest non-empty recovery', async () => {

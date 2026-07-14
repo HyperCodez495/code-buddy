@@ -25,6 +25,11 @@ import type {
 } from '../../src/agent/multi-agent/types.js';
 import { Subagent } from '../../src/agent/subagents.js';
 import { createSWEAgent, type SWELLMResponse } from '../../src/agent/specialized/swe-agent.js';
+import {
+  DelegateAgentTool,
+  resetDelegateAgentProvider,
+  setDelegateAgentProvider,
+} from '../../src/tools/registry/delegate-agent-tools.js';
 import { createAcpAgenticRunner } from '../../src/protocols/acp/acp-agentic-runner.js';
 import type { AcpPromptContext } from '../../src/protocols/acp/acp-stdio-server.js';
 import type { CodeBuddyMessage, CodeBuddyTool } from '../../src/codebuddy/client.js';
@@ -64,6 +69,7 @@ function snapshot(messages: ReadonlyArray<CodeBuddyMessage>): CodeBuddyMessage[]
 describe('secondary LLM tool-observation boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetDelegateAgentProvider();
     boundaryMocks.command.mockReturnValue('npm test');
     boundaryMocks.prepare.mockImplementation(async (input: { content: string }) => ({
       content: `compact:${input.content}`,
@@ -134,15 +140,16 @@ describe('secondary LLM tool-observation boundaries', () => {
     };
 
     const agent = new TestBaseAgent(config, 'key');
+    const executeTool = vi.fn().mockResolvedValue({
+      success: false,
+      output: 'PARTIAL BASE STDOUT',
+      error: 'LATE BASE ERROR',
+    });
     const result = await agent.execute(
       task,
       context,
       [BASH_TOOL, RESTORE_TOOL],
-      vi.fn().mockResolvedValue({
-        success: false,
-        output: 'PARTIAL BASE STDOUT',
-        error: 'LATE BASE ERROR',
-      }),
+      executeTool,
     );
 
     expect(result.success).toBe(true);
@@ -156,7 +163,12 @@ describe('secondary LLM tool-observation boundaries', () => {
       workspaceRoot: '/workspace/base',
       model: 'model-base',
       allowOptimization: true,
+      sessionId: expect.any(String),
     }));
+    const baseRecoverySession = boundaryMocks.prepare.mock.calls[0]?.[0]?.sessionId;
+    expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ id: 'call_base' }), {
+      recoverySessionId: baseRecoverySession,
+    });
     expect((boundaryMocks.chat.mock.calls[0]?.[1] as CodeBuddyTool[])
       .map((tool) => tool.function.name)).toContain('restore_context');
   });
@@ -187,11 +199,12 @@ describe('secondary LLM tool-observation boundaries', () => {
       tools: ['bash'],
       model: 'model-sub',
     });
+    const executeTool = vi.fn().mockResolvedValue({ success: true, output: 'RAW SUB' });
     const result = await agent.run(
       'Inspect tests',
       undefined,
       [BASH_TOOL, RESTORE_TOOL],
-      vi.fn().mockResolvedValue({ success: true, output: 'RAW SUB' }),
+      executeTool,
       { workspaceRoot: '/workspace/sub' },
     );
 
@@ -202,7 +215,12 @@ describe('secondary LLM tool-observation boundaries', () => {
       workspaceRoot: '/workspace/sub',
       model: 'model-sub',
       allowOptimization: true,
+      sessionId: expect.any(String),
     }));
+    const subagentRecoverySession = boundaryMocks.prepare.mock.calls[0]?.[0]?.sessionId;
+    expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ id: 'call_sub' }), {
+      recoverySessionId: subagentRecoverySession,
+    });
   });
 
   it('feeds optimized SWE observations to the next LLM call', async () => {
@@ -247,7 +265,61 @@ describe('secondary LLM tool-observation boundaries', () => {
       workspaceRoot: '/workspace/swe',
       model: 'model-swe',
       allowOptimization: true,
+      sessionId: expect.any(String),
     }));
+  });
+
+  it('keeps the caller workspace through delegate_agent into SWE observations', async () => {
+    const seen: Array<ReadonlyArray<{ role: string; content: string }>> = [];
+    const llmCall = vi.fn(async (messages): Promise<SWELLMResponse> => {
+      seen.push(structuredClone(messages));
+      if (seen.length === 1) {
+        return {
+          content: '',
+          tool_calls: [{
+            id: 'call_delegated_swe',
+            type: 'function',
+            function: { name: 'bash', arguments: '{"command":"npm test"}' },
+          }],
+        };
+      }
+      return { content: 'delegated done', tool_calls: [] };
+    });
+    const executeTool = vi.fn().mockResolvedValue({
+      success: false,
+      output: 'DELEGATED PARTIAL OUTPUT',
+      error: 'DELEGATED LATE ERROR',
+    });
+    setDelegateAgentProvider(() => ({ llmCall, executeTool }));
+
+    const result = await new DelegateAgentTool().execute({
+      agent: 'swe',
+      instruction: 'Repair delegated tests',
+      params: {
+        maxSteps: 3,
+        model: 'model-delegated-swe',
+        workspaceRoot: '/workspace/untrusted-param',
+      },
+    }, {
+      cwd: '/workspace/from-tool-context',
+    });
+
+    expect(result.success).toBe(true);
+    const recovery = '[tool output]\nDELEGATED PARTIAL OUTPUT\n\n' +
+      '[tool error]\nDELEGATED LATE ERROR';
+    expect(seen[1]?.find((message) => message.role === 'tool')?.content)
+      .toBe(`compact:${recovery}`);
+    expect(boundaryMocks.prepare).toHaveBeenCalledWith(expect.objectContaining({
+      toolCallId: 'call_delegated_swe',
+      content: recovery,
+      workspaceRoot: '/workspace/from-tool-context',
+      model: 'model-delegated-swe',
+      sessionId: expect.any(String),
+    }));
+    const recoverySessionId = boundaryMocks.prepare.mock.calls[0]?.[0]?.sessionId;
+    expect(executeTool).toHaveBeenCalledWith('bash', { command: 'npm test' }, {
+      recoverySessionId,
+    });
   });
 
   it('keeps SWE callId recovery scoped to the native boundary copy', async () => {
@@ -378,6 +450,7 @@ describe('secondary LLM tool-observation boundaries', () => {
       fallbackContent: expect.stringContaining('restore_context(identifier="call_acp")'),
       query: 'Read big.ts',
       workspaceRoot: process.cwd(),
+      sessionId: 'session-1',
       model: 'model-acp',
       signal: controller.signal,
     }));

@@ -576,6 +576,27 @@ describe('evidence-backed companion model routing', () => {
     expect(classifyCompanionRoutingLane(text)).toBe('action');
   });
 
+  it.each([
+    'comment fonctionnes-tu réellement ?',
+    'étudie ton propre code',
+    'fais une introspection technique',
+    'es-tu consciente ?',
+  ])('routes read-only Lisa introspection to the deep lane: %s', (text) => {
+    expect(classifyCompanionRoutingLane(text)).toBe('deep');
+  });
+
+  it.each([
+    'améliore-toi',
+    'améliore ton propre code',
+    'fais évoluer ton architecture',
+  ])('routes Lisa self-improvement requests to the action lane: %s', (text) => {
+    expect(classifyCompanionRoutingLane(text)).toBe('action');
+  });
+
+  it('keeps user-project improvement outside Lisa self-introspection', () => {
+    expect(classifyCompanionRoutingLane('améliore mon code')).toBe('fast');
+  });
+
   it("recognizes apostrophized French factual questions", () => {
     expect(classifyCompanionRoutingLane("Qu'est-ce que MCP ?")).toBe('factual');
   });

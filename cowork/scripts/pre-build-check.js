@@ -13,18 +13,129 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { pathToFileURL } = require('url');
+const { validateRuntimeManifest } = require('../../scripts/runtime-manifest-utils.cjs');
 
 // ANSI color codes
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
 const RED = '\x1b[31m';
 const RESET = '\x1b[0m';
+const CODE_BUDDY_PACKAGE_NAME = /^@phuetz\/code-buddy$/;
 
 /**
  * @typedef {'fatal' | 'warn'} Severity
- * @typedef {{ label: string; relPath: string; type: 'file' | 'dir' | 'esm-import'; severity: Severity }} CheckSpec
+ * @typedef {{ label: string; relPath: string; type: 'file' | 'dir' | 'esm-import' | 'runtime-manifest'; severity: Severity }} CheckSpec
  * @typedef {{ label: string; relPath: string; passed: boolean; severity: Severity; detail?: string }} CheckResult
  */
+
+function validateCoreRuntimeManifest(manifestPath) {
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    return {
+      valid: false,
+      detail: `Invalid Code Buddy runtime manifest JSON: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    return { valid: false, detail: 'Code Buddy runtime manifest must be a JSON object' };
+  }
+  if (manifest.schemaVersion !== 2) {
+    return {
+      valid: false,
+      detail: `Unsupported Code Buddy runtime manifest schema: ${String(manifest.schemaVersion)}`,
+    };
+  }
+
+  const corePackage = manifest.corePackage;
+  for (const field of ['name', 'version', 'description']) {
+    if (typeof corePackage?.[field] !== 'string' || !corePackage[field].trim()) {
+      return { valid: false, detail: `Code Buddy runtime manifest is missing corePackage.${field}` };
+    }
+  }
+  if (!CODE_BUDDY_PACKAGE_NAME.test(corePackage.name)) {
+    return { valid: false, detail: `Unexpected Code Buddy core package name: ${corePackage.name}` };
+  }
+
+  const runtime = manifest.runtime;
+  if (
+    runtime?.kind !== 'codebuddy-core' ||
+    runtime?.compiled !== true ||
+    runtime?.moduleFormat !== 'esm' ||
+    runtime?.distPath !== 'dist' ||
+    runtime?.entrypoint !== 'dist/desktop/codebuddy-engine-adapter.js'
+  ) {
+    return {
+      valid: false,
+      detail: 'Code Buddy runtime manifest does not identify the compiled ESM core entrypoint',
+    };
+  }
+
+  const entrypointPath = path.join(path.dirname(manifestPath), runtime.entrypoint);
+  try {
+    if (!fs.statSync(entrypointPath).isFile()) {
+      return { valid: false, detail: `Code Buddy runtime entrypoint is not a file: ${runtime.entrypoint}` };
+    }
+  } catch {
+    return { valid: false, detail: `Code Buddy runtime entrypoint is missing: ${runtime.entrypoint}` };
+  }
+
+  const distPackagePath = path.join(path.dirname(manifestPath), 'dist', 'package.json');
+  try {
+    const distPackage = JSON.parse(fs.readFileSync(distPackagePath, 'utf8'));
+    const keys = distPackage && typeof distPackage === 'object' && !Array.isArray(distPackage)
+      ? Object.keys(distPackage).sort()
+      : [];
+    if (
+      distPackage?.private !== true ||
+      distPackage?.type !== 'module' ||
+      keys.join(',') !== 'private,type'
+    ) {
+      return {
+        valid: false,
+        detail: 'Code Buddy dist/package.json must be exactly the staged private ESM marker',
+      };
+    }
+  } catch {
+    return {
+      valid: false,
+      detail: 'Code Buddy dist/package.json is missing or invalid',
+    };
+  }
+
+  if (
+    manifest.sourceRevision !== null &&
+    (typeof manifest.sourceRevision !== 'string' || !/^[0-9a-f]{7,64}$/i.test(manifest.sourceRevision))
+  ) {
+    return { valid: false, detail: 'Code Buddy runtime manifest has an invalid sourceRevision' };
+  }
+  if (
+    manifest.sourceRevision !== null &&
+    (typeof manifest.sourceRevisionOrigin !== 'string' || !manifest.sourceRevisionOrigin.trim())
+  ) {
+    return { valid: false, detail: 'Code Buddy runtime manifest has no sourceRevisionOrigin' };
+  }
+  if (
+    manifest.sourceDirty !== undefined &&
+    manifest.sourceDirty !== null &&
+    typeof manifest.sourceDirty !== 'boolean'
+  ) {
+    return { valid: false, detail: 'Code Buddy runtime manifest has an invalid sourceDirty' };
+  }
+
+  try {
+    validateRuntimeManifest(path.dirname(manifestPath), manifest);
+  } catch (error) {
+    return {
+      valid: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  return { valid: true };
+}
 
 /**
  * Build the list of checks for the given platform and arch.
@@ -125,7 +236,7 @@ function buildCheckList(platform, arch) {
     {
       label: 'Code Buddy runtime manifest',
       relPath: '.bundle-resources/core-runtime/codebuddy-runtime.json',
-      type: 'file',
+      type: 'runtime-manifest',
       severity: 'fatal',
     },
   ];
@@ -233,6 +344,11 @@ function runChecks(rootDir, platform, arch) {
             .slice(0, 2_000);
         }
       }
+      if (exists && check.type === 'runtime-manifest') {
+        const validation = validateCoreRuntimeManifest(absolutePath);
+        exists = validation.valid;
+        if (!validation.valid) detail = validation.detail;
+      }
     } catch {
       exists = false;
     }
@@ -289,7 +405,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { runChecks, buildCheckList };
+module.exports = { runChecks, buildCheckList, validateCoreRuntimeManifest };
 
 if (require.main === module) {
   main();

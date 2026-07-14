@@ -12,7 +12,10 @@ import {
   ApiServerError,
 } from '../middleware/index.js';
 import type { ToolExecutionRequest, ToolExecutionResponse, ToolInfo } from '../types.js';
-import { createServerAgent, type ServerAgent } from '../agent-adapter.js';
+import {
+  buildHttpRequestSessionKey,
+  withHttpSessionAgent,
+} from '../http-agent-sessions.js';
 import { WRITE_TOOL_NAMES } from '../../security/write-policy.js';
 import { getPolicyManager } from '../../security/tool-policy/policy-manager.js';
 import { getToolGroups } from '../../security/tool-policy/tool-groups.js';
@@ -73,13 +76,8 @@ async function getToolRegistry(): Promise<ToolRegistryAPI> {
   return toolRegistryInstance!;
 }
 
-// Lazy load the agent for tool execution
-let agentInstance: ServerAgent | null = null;
-async function getAgent(): Promise<ServerAgent> {
-  if (!agentInstance) {
-    agentInstance = await createServerAgent();
-  }
-  return agentInstance!;
+function requestSessionKey(req: Request, sessionId: unknown): string {
+  return buildHttpRequestSessionKey(req, sessionId);
 }
 
 const router = Router();
@@ -190,9 +188,12 @@ router.post(
       return;
     }
 
+    const sessionKey = requestSessionKey(req, body.sessionId);
     try {
-      const agent = await getAgent();
-      const result = await agent.executeToolByName(name, body.parameters || {});
+      const result = await withHttpSessionAgent(
+        sessionKey,
+        (agent) => agent.executeToolByName(name, body.parameters || {}),
+      );
 
       const response: ToolExecutionResponse = {
         toolName: name,
@@ -226,7 +227,10 @@ router.post(
   requireScope('tools:execute'),
   asyncHandler(async (req: Request, res: Response) => {
     const startTime = Date.now();
-    const { tools } = req.body as { tools: Array<{ name: string; parameters: Record<string, unknown> }> };
+    const { tools, sessionId } = req.body as {
+      tools: Array<{ name: string; parameters: Record<string, unknown> }>;
+      sessionId?: string;
+    };
 
     if (!Array.isArray(tools) || tools.length === 0) {
       throw ApiServerError.badRequest('Tools must be a non-empty array');
@@ -237,54 +241,58 @@ router.post(
     }
 
     const registry = await getToolRegistry();
-    const agent = await getAgent();
-    const results: ToolExecutionResponse[] = [];
+    const sessionKey = requestSessionKey(req, sessionId);
+    const results = await withHttpSessionAgent(sessionKey, async (agent) => {
+      const batchResults: ToolExecutionResponse[] = [];
 
-    for (const toolRequest of tools) {
-      const toolStartTime = Date.now();
+      for (const toolRequest of tools) {
+        const toolStartTime = Date.now();
 
-      const tool = enabledTool(registry, toolRequest.name);
-      if (!tool) {
-        results.push({
-          toolName: toolRequest.name,
-          success: false,
-          error: `Tool '${toolRequest.name}' not found`,
-          executionTime: Date.now() - toolStartTime,
-        });
-        continue;
+        const tool = enabledTool(registry, toolRequest.name);
+        if (!tool) {
+          batchResults.push({
+            toolName: toolRequest.name,
+            success: false,
+            error: `Tool '${toolRequest.name}' not found`,
+            executionTime: Date.now() - toolStartTime,
+          });
+          continue;
+        }
+
+        // Batch cannot present an interactive confirmation prompt.
+        if (toToolInfo(tool).requiresConfirmation) {
+          batchResults.push({
+            toolName: toolRequest.name,
+            success: false,
+            error: 'Tool requires confirmation and cannot be executed in batch mode',
+            requiresConfirmation: true,
+            executionTime: Date.now() - toolStartTime,
+          });
+          continue;
+        }
+
+        try {
+          const result = await agent.executeToolByName(toolRequest.name, toolRequest.parameters || {});
+          batchResults.push({
+            toolName: toolRequest.name,
+            success: result.success,
+            output: result.output,
+            error: result.error,
+            executionTime: Date.now() - toolStartTime,
+          });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          batchResults.push({
+            toolName: toolRequest.name,
+            success: false,
+            error: message,
+            executionTime: Date.now() - toolStartTime,
+          });
+        }
       }
 
-      // Batch cannot present an interactive confirmation prompt.
-      if (toToolInfo(tool).requiresConfirmation) {
-        results.push({
-          toolName: toolRequest.name,
-          success: false,
-          error: 'Tool requires confirmation and cannot be executed in batch mode',
-          requiresConfirmation: true,
-          executionTime: Date.now() - toolStartTime,
-        });
-        continue;
-      }
-
-      try {
-        const result = await agent.executeToolByName(toolRequest.name, toolRequest.parameters || {});
-        results.push({
-          toolName: toolRequest.name,
-          success: result.success,
-          output: result.output,
-          error: result.error,
-          executionTime: Date.now() - toolStartTime,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        results.push({
-          toolName: toolRequest.name,
-          success: false,
-          error: message,
-          executionTime: Date.now() - toolStartTime,
-        });
-      }
-    }
+      return batchResults;
+    });
 
     res.json({
       results,

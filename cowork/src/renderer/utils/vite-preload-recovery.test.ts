@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installVitePreloadRecovery } from './vite-preload-recovery';
+import {
+  installVitePreloadRecovery,
+  resolveLazyNamedExport,
+} from './vite-preload-recovery';
 
 function createStorage() {
   const values = new Map<string, string>();
@@ -58,5 +61,27 @@ describe('installVitePreloadRecovery', () => {
     expect(repeated.defaultPrevented).toBe(false);
     expect(harness.reload).toHaveBeenCalledOnce();
     expect(onEvent).toHaveBeenLastCalledWith('cooldown', expect.any(Error));
+  });
+});
+
+describe('resolveLazyNamedExport', () => {
+  it('wraps a named export for React.lazy', () => {
+    const MediaLibraryView = () => null;
+
+    expect(
+      resolveLazyNamedExport({ MediaLibraryView }, (module) => module.MediaLibraryView),
+    ).toEqual({ default: MediaLibraryView });
+  });
+
+  it('keeps Suspense pending when Vite consumed a failed dynamic import', async () => {
+    const select = vi.fn();
+    const result = resolveLazyNamedExport(undefined, select);
+    const state = await Promise.race([
+      result instanceof Promise ? result.then(() => 'settled') : Promise.resolve('settled'),
+      Promise.resolve('pending'),
+    ]);
+
+    expect(state).toBe('pending');
+    expect(select).not.toHaveBeenCalled();
   });
 });

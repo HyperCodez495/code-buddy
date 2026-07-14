@@ -27,6 +27,7 @@ const hoisted = vi.hoisted(() => {
     resumeSession: vi.fn(),
     convertMessagesToChatEntries: vi.fn(),
     setChannelBotId: vi.fn(),
+    setRecoverySessionId: vi.fn(),
     getChatHistory: vi.fn(),
     replaceLastAssistantResponse: vi.fn(),
     constructorCalls: [] as any[][],
@@ -74,6 +75,7 @@ vi.mock('../../src/agent/codebuddy-agent.js', () => {
     processUserMessage = hoisted.processUserMessage;
     replaceLastAssistantResponse = hoisted.replaceLastAssistantResponse;
     setChannelBotId = hoisted.setChannelBotId;
+    setRecoverySessionId = hoisted.setRecoverySessionId;
     getChatHistory = hoisted.getChatHistory;
   }
   return { CodeBuddyAgent };
@@ -186,10 +188,12 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
     const send = makeSuccessfulSend();
     const msg = makeMessage('What is 2 + 2?');
-    await manager.emit(msg, { send });
+    await manager.emit(msg, { type: 'slack', send });
 
     // Agent ran the inbound content…
-    expect(hoisted.processUserMessage).toHaveBeenCalledWith('What is 2 + 2?');
+    expect(hoisted.processUserMessage).toHaveBeenCalledWith('What is 2 + 2?', {
+      surface: 'slack',
+    });
     // …and the reply went back over the same channel, threaded to the message.
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith({
@@ -220,9 +224,9 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const send = makeSuccessfulSend();
 
     // First inbound message creates and persists the session.
-    await manager.emit(makeMessage('first', 'sess-shared'), { send });
+    await manager.emit(makeMessage('first', 'sess-shared'), { type: 'telegram', send });
     // Follow-up on the same sessionKey must reuse the cached agent, not re-create it.
-    await manager.emit(makeMessage('follow-up', 'sess-shared'), { send });
+    await manager.emit(makeMessage('follow-up', 'sess-shared'), { type: 'telegram', send });
 
     expect(hoisted.loadSession).toHaveBeenCalledTimes(3);
     expect(hoisted.loadSession).toHaveBeenNthCalledWith(1, 'sess-shared');
@@ -231,8 +235,14 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     // The cached agent handles both turns, and each completed turn is persisted.
     expect(hoisted.saveSession).toHaveBeenCalledTimes(2);
     expect(hoisted.resumeSession).not.toHaveBeenCalled();
-    expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(1, 'first');
-    expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(2, 'follow-up');
+    expect(hoisted.setRecoverySessionId).toHaveBeenCalledTimes(1);
+    expect(hoisted.setRecoverySessionId).toHaveBeenCalledWith('sess-shared');
+    expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(1, 'first', {
+      surface: 'telegram',
+    });
+    expect(hoisted.processUserMessage).toHaveBeenNthCalledWith(2, 'follow-up', {
+      surface: 'telegram',
+    });
   });
 
   it('continues a resident voice thread on Telegram and stores the Telegram reply for voice', async () => {
@@ -253,6 +263,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
 
     const agentCall = hoisted.processUserMessage.mock.calls.at(-1);
     expect(agentCall?.[0]).toBe('Et la responsabilité ?');
+    expect(agentCall?.[1]?.surface).toBe('telegram');
     const transientContext = String(agentCall?.[1]?.transientContext ?? '');
     expect(agentCall?.[1]?.relationshipSafety).toBe(true);
     expect(transientContext).toContain('<shared_relationship_context');
@@ -441,7 +452,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     await registerAIMessageHandler(manager as any);
 
     const send = makeSuccessfulSend();
-    await manager.emit(makeMessage('next', 'sess-resume'), { send });
+    await manager.emit(makeMessage('next', 'sess-resume'), { type: 'telegram', send });
 
     // Session is restored before the turn and persisted again after the reply.
     expect(hoisted.saveSession).toHaveBeenCalledTimes(1);
@@ -451,7 +462,9 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       { role: 'user', content: 'earlier question' },
       { role: 'assistant', content: 'earlier answer' },
     ]);
-    expect(hoisted.processUserMessage).toHaveBeenCalledWith('next');
+    expect(hoisted.processUserMessage).toHaveBeenCalledWith('next', {
+      surface: 'telegram',
+    });
   });
 
   // -------------------------------------------------------------------------

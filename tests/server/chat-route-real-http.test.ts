@@ -19,19 +19,47 @@ vi.mock('../../src/server/agent-adapter.js', async () => {
     yield { type: 'content', content: input };
   });
 
+  function createConversationState() {
+    return {
+      messages: [],
+      chatHistory: [],
+      sessionCost: 0,
+      routingSessionCost: 0,
+      workingDirectory: process.cwd(),
+      contextManagerState: {
+        summaries: [], systemMessage: null, triggeredWarnings: [], lastTokenCount: 0,
+        lastEnhancedResult: null, sessionId: 'real-http-neutral', peakMessageCount: 0,
+        compressionCount: 0, totalTokensSaved: 0, lastCompressionTime: null,
+        snapshotCount: 0, enhancedCompression: null,
+      },
+    };
+  }
+
   return {
     ...actual,
-    createServerAgent: vi.fn(async () => ({
-      processUserMessage,
-      processUserMessageStream,
-      getChatHistory: () => [],
-      getCurrentModel: () => currentModel,
-      setModel: (model: string) => {
-        currentModel = model;
-      },
-      executeToolByName: vi.fn(),
-      systemPromptReady: Promise.resolve(),
-    })),
+    createServerAgent: vi.fn(async () => {
+      let state = createConversationState();
+      return {
+        processUserMessage,
+        processUserMessageStream,
+        getChatHistory: () => [],
+        getCurrentModel: () => currentModel,
+        setModel: (model: string) => {
+          currentModel = model;
+        },
+        setRecoverySessionId: vi.fn(),
+        abortCurrentOperation: vi.fn(),
+        addToHistory: (message: { role: string; content: string }) => {
+          state.messages.push(message as never);
+        },
+        exportConversationState: () => structuredClone(state),
+        importConversationState: (next: ReturnType<typeof createConversationState>) => {
+          state = structuredClone(next);
+        },
+        executeToolByName: vi.fn(),
+        systemPromptReady: Promise.resolve(),
+      };
+    }),
     listServerModels: vi.fn(() => [
       {
         id: currentModel,

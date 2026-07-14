@@ -165,6 +165,22 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     expect(result.selection?.selectedTools.map(tool => tool.function.name)).toEqual(['view_file']);
   });
 
+  it('applies a hard allowlist after relevance selection', async () => {
+    ragMock.getRelevantToolsMock.mockResolvedValueOnce(
+      makeSelection(['self_describe', 'view_file', 'bash', 'web_search', 'code_explorer_ask']),
+    );
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    const result = await strategy.selectToolsForQuery('inspect your own code', {
+      allowedToolNames: ['self_describe', 'view_file'],
+    });
+
+    expect(result.tools.map(tool => tool.function.name)).toEqual(['self_describe', 'view_file']);
+    expect(result.selection?.selectedTools.map(tool => tool.function.name)).toEqual([
+      'self_describe',
+      'view_file',
+    ]);
+  });
+
   it('drops all model-facing schemas for chat-only model configs', async () => {
     ragMock.getRelevantToolsMock.mockResolvedValueOnce(
       makeSelection(['view_file', 'bash']),

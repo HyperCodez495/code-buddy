@@ -69,6 +69,8 @@ import {
   attachCodeExecRuntime,
   createCodeExecToolCallId,
 } from '../tools/code-exec-tool.js';
+import { realpathSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * Dependencies required to initialize the ToolHandler
@@ -250,6 +252,8 @@ export class ToolHandler {
    */
   private currentWorkingDirectory: string | undefined;
   private currentBotId: string | undefined;
+  /** Host-provided conversation scope for raw tool-result recovery. */
+  private currentRecoverySessionId: string | undefined;
   /** Keeps code_exec stores and executors isolated between agent instances. */
   private readonly codeExecAgentScopeId: string;
 
@@ -312,9 +316,69 @@ export class ToolHandler {
     }
   }
 
+  /** Restore a session-owned cwd without re-registering workspace-authored tools. */
+  restoreWorkingDirectory(dir: string): void {
+    this.currentWorkingDirectory = dir;
+  }
+
   /** Workspace currently used by tool execution and recovery storage. */
   getWorkingDirectory(): string {
     return this.currentWorkingDirectory ?? process.cwd();
+  }
+
+  /** Handle the stateful `cd` builtin without ever mutating process.cwd(). */
+  private changeSessionDirectory(command: string, baseCwd: string): ToolResult | null {
+    if (!command.startsWith('cd ')) return null;
+    const requested = command.substring(3).trim().replace(/^["']|["']$/g, '');
+    try {
+      const candidate = resolve(baseCwd, requested);
+      if (!statSync(candidate).isDirectory()) {
+        return { success: false, error: `Cannot change directory: not a directory: ${candidate}` };
+      }
+      this.currentWorkingDirectory = realpathSync(candidate);
+      return {
+        success: true,
+        output: `Changed directory to: ${this.currentWorkingDirectory}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Cannot change directory: ${getErrorMessage(error)}`,
+      };
+    }
+  }
+
+  /**
+   * Set an embedding host's stable conversation ID (Cowork/channel session).
+   * RestorableCompressor hashes this value before disk use. Undefined falls
+   * back to SessionStore and finally to this agent instance's private scope.
+   */
+  setRecoverySessionId(sessionId: string | undefined): void {
+    this.currentRecoverySessionId = sessionId && sessionId.length > 0
+      ? sessionId
+      : undefined;
+  }
+
+  /** Return a stable, non-empty recovery scope without exposing it on disk. */
+  getRecoverySessionId(): string {
+    if (this.currentRecoverySessionId) return this.currentRecoverySessionId;
+    try {
+      const persisted = this.deps.sessionIdProvider?.();
+      if (persisted) return persisted;
+    } catch {
+      // A host session provider is best-effort; the per-agent scope remains safe.
+    }
+    return this.codeExecAgentScopeId;
+  }
+
+  /** Allow an internal nested-agent executor to preserve its own recovery scope. */
+  private recoverySessionIdForExecution(
+    executionExtra?: Record<string, unknown>,
+  ): string {
+    const nestedScope = executionExtra?.recoverySessionId;
+    return typeof nestedScope === 'string' && nestedScope.length > 0
+      ? nestedScope
+      : this.getRecoverySessionId();
   }
 
   /**
@@ -412,7 +476,70 @@ export class ToolHandler {
    * @param toolCall - Tool call structure from the LLM response
    * @returns Tool execution result with success status and output/error
    */
-  public async executeTool(toolCall: CodeBuddyToolCall): Promise<ToolResult> {
+  /**
+   * Execute the two vetted operational self-inspection tools without any user,
+   * plugin, lifecycle, analytics, registry-event, or confirmation hooks. This
+   * is intentionally separate from executeTool(): an arbitrary hook can run a
+   * command or network request even around an otherwise read-only tool.
+   */
+  public async executeStrictSelfInspectionTool(
+    toolCall: CodeBuddyToolCall,
+    executionExtra?: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const toolName = toolCall.function.name;
+    let args: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(toolCall.function.arguments || '{}') as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { success: false, error: 'Self-inspection tool arguments must be an object' };
+      }
+      args = parsed as Record<string, unknown>;
+    } catch {
+      return { success: false, error: 'Self-inspection tool arguments must be valid JSON' };
+    }
+
+    const contextExtra = {
+      ...(executionExtra ?? {}),
+      ...(toolName === 'restore_context'
+        ? { recoverySessionId: this.recoverySessionIdForExecution(executionExtra) }
+        : {}),
+    };
+    const sessionId = this.deps.sessionIdProvider?.() ?? this.currentRunId;
+    const context: IToolExecutionContext = {
+      cwd: this.currentWorkingDirectory ?? process.cwd(),
+      botId: this.currentBotId,
+      ...(sessionId ? { sessionId } : {}),
+      ...(Object.keys(contextExtra).length > 0 ? { extra: contextExtra } : {}),
+    };
+
+    if (toolName === 'self_describe') {
+      const { SelfDescribeTool } = await import('../tools/registry/self-describe-tools.js');
+      const tool = new SelfDescribeTool();
+      const validation = tool.validate(args);
+      if (!validation.valid) {
+        return { success: false, error: `Validation failed: ${validation.errors?.join(', ')}` };
+      }
+      return tool.execute(args, context);
+    }
+    if (toolName === 'restore_context') {
+      const { RestoreContextTool } = await import('../tools/registry/attention-tools.js');
+      const tool = new RestoreContextTool();
+      const validation = tool.validate(args);
+      if (!validation.valid) {
+        return { success: false, error: `Validation failed: ${validation.errors?.join(', ')}` };
+      }
+      return tool.execute(args, context);
+    }
+    return {
+      success: false,
+      error: `Tool "${toolName}" is not available in strict self-inspection`,
+    };
+  }
+
+  public async executeTool(
+    toolCall: CodeBuddyToolCall,
+    executionExtra?: Record<string, unknown>,
+  ): Promise<ToolResult> {
     const startTime = Date.now();
     const hooksManager = getToolHooksManager();
 
@@ -559,7 +686,7 @@ export class ToolHandler {
         }
       } else if (this.registry.has(toolName)) {
         // Dispatch through registry for all other tools
-        result = await this.executeRegistryTool(toolName, finalArgs);
+        result = await this.executeRegistryTool(toolName, finalArgs, executionExtra);
       } else {
         // Suggest common alternatives for hallucinated tool names
         const suggestions: Record<string, string> = {
@@ -603,6 +730,7 @@ export class ToolHandler {
           toolCall.id,
           formatToolResultForRecovery(result),
           this.currentWorkingDirectory ?? process.cwd(),
+          this.recoverySessionIdForExecution(executionExtra),
         );
       }
 
@@ -1025,7 +1153,8 @@ export class ToolHandler {
    */
   private async executeRegistryTool(
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    executionExtra?: Record<string, unknown>,
   ): Promise<ToolResult> {
     const registeredTool = this.registry.get(toolName);
     if (!registeredTool) {
@@ -1037,10 +1166,20 @@ export class ToolHandler {
 
     const metadata = registeredTool.metadata;
     const sessionId = this.deps.sessionIdProvider?.() ?? this.currentRunId;
+    const recoverySessionId = this.recoverySessionIdForExecution(executionExtra);
+    const contextExtra = {
+      ...(executionExtra ?? {}),
+      ...(
+        toolName === 'restore_context' || toolName === 'context_restore'
+          ? { recoverySessionId }
+          : {}
+      ),
+    };
     let context: IToolExecutionContext = {
       cwd: this.currentWorkingDirectory ?? process.cwd(),
       botId: this.currentBotId,
       ...(sessionId ? { sessionId } : {}),
+      ...(Object.keys(contextExtra).length > 0 ? { extra: contextExtra } : {}),
     };
 
     if (toolName === 'code_exec') {
@@ -1051,7 +1190,10 @@ export class ToolHandler {
       ]))
         .filter((name) => name !== 'code_exec' && name !== 'exec' && isToolNameAllowed(name))
         .sort();
-      const stateSessionId = sessionId || 'sessionless';
+      // HTTP uses one host agent and swaps logical conversations under a
+      // mutex. Its SessionStore ID therefore cannot isolate code_exec state;
+      // the opaque recovery scope is the authoritative logical session.
+      const stateSessionId = recoverySessionId || sessionId || 'sessionless';
       const stateAgentId = this.currentBotId
         ? `${this.codeExecAgentScopeId}:bot:${this.currentBotId}`
         : this.codeExecAgentScopeId;
@@ -1086,6 +1228,9 @@ export class ToolHandler {
               name: nestedToolName,
               arguments: serializedArgs,
             },
+          }, {
+            ...(executionExtra ?? {}),
+            recoverySessionId,
           });
         },
       });
@@ -1186,8 +1331,10 @@ export class ToolHandler {
       });
     }
 
-    // Execute bash through registry
-    let bashResult = await this.registry.execute("bash", args, context);
+    const directoryChange = this.changeSessionDirectory(command, context.cwd);
+    // Execute bash through registry unless the stateful cd builtin was handled
+    // locally; both paths still receive the normal post-bash lifecycle hook.
+    let bashResult = directoryChange ?? await this.registry.execute("bash", args, context);
 
     // Auto-repair on failure
     if (!bashResult.success && bashResult.error && this.deps.repairCoordinator.isRepairEnabled()) {
@@ -1233,7 +1380,8 @@ export class ToolHandler {
    * Yields string deltas for real-time output.
    */
   public async *executeToolStreaming(
-    toolCall: CodeBuddyToolCall
+    toolCall: CodeBuddyToolCall,
+    executionExtra?: Record<string, unknown>,
   ): AsyncGenerator<string, ToolResult, undefined> {
     const startTime = Date.now();
     const toolName = toolCall.function.name;
@@ -1259,6 +1407,12 @@ export class ToolHandler {
               'bash: missing a non-empty "command" string argument. Put the shell command to run in the "command" field.',
           };
         }
+
+        const directoryChange = this.changeSessionDirectory(
+          command,
+          this.currentWorkingDirectory ?? process.cwd(),
+        );
+        if (directoryChange) return directoryChange;
 
         // Session cwd override — the streaming path is what embedded hosts
         // (Cowork) actually exercise; without it, streamed bash ran in the
@@ -1383,7 +1537,7 @@ export class ToolHandler {
     }
 
     // Fallback: non-streaming execution
-    return await this.executeTool(toolCall);
+    return await this.executeTool(toolCall, executionExtra);
   }
 
   private async executeMCPTool(toolCall: CodeBuddyToolCall): Promise<ToolResult> {

@@ -694,6 +694,7 @@ async function getOrCreateChannelAgent(
     process.cwd(),
     channelSystemPromptAppend, // systemPromptAppend — persona + (opt-in) Code Explorer nudge
   );
+  agent.setRecoverySessionId?.(sessionKey);
   // Scope per-bot state (memory/lessons) to this bot so bots don't share facts.
   agent.setChannelBotId(botId);
   // Persistence: reload prior conversation from disk on a cold agent (after a
@@ -1056,12 +1057,15 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         }).systemGuidance;
       }
 
-      const entries = transientConversationContext
-        ? await agent.processUserMessage(agentInput, {
-            transientContext: transientConversationContext,
-            relationshipSafety: companionConversation,
-          })
-        : await agent.processUserMessage(agentInput);
+      const entries = await agent.processUserMessage(agentInput, {
+        surface: channel.type,
+        ...(transientConversationContext
+          ? {
+              transientContext: transientConversationContext,
+              relationshipSafety: companionConversation,
+            }
+          : {}),
+      });
       const lastEntry = entries[entries.length - 1];
       let response = lastEntry ? String(lastEntry.content) : '';
       let shouldPersistChannelSession = true;

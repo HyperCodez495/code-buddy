@@ -93,6 +93,29 @@ describe('prompt tool observation boundary', () => {
     }));
   });
 
+  it('uses the same explicit session scope for recovery lookup and persistence', async () => {
+    await prepareToolObservationForPrompt({
+      toolName: 'search',
+      toolCallId: 'call_scoped',
+      content: 'session-private result',
+      workspaceRoot: '/workspace/project',
+      sessionId: '../../telegram/alice',
+      allowOptimization: false,
+    });
+
+    expect(mocks.restore).toHaveBeenCalledWith(
+      'call_scoped',
+      '/workspace/project',
+      '../../telegram/alice',
+    );
+    expect(mocks.writeToolResult).toHaveBeenCalledWith(
+      'call_scoped',
+      'session-private result',
+      '/workspace/project',
+      '../../telegram/alice',
+    );
+  });
+
   it('never overwrites a more native copy already persisted by ToolHandler', async () => {
     mocks.restore.mockReturnValueOnce({
       found: true,

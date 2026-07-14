@@ -21,6 +21,23 @@ interface VitePreloadErrorEvent extends Event {
   payload?: unknown;
 }
 
+// Vite resolves a failed dynamic import to `undefined` when the
+// `vite:preloadError` event is consumed with preventDefault(). That is useful
+// while this module reloads a stale renderer, but named-export selectors such
+// as `module.MediaLibraryView` would otherwise throw a misleading TypeError
+// before the navigation completes. Keep React Suspense pending for that brief
+// transition; a repeated failure is not consumed and still reaches the error
+// boundary with the original import error.
+const pendingRendererReload = new Promise<never>(() => undefined);
+
+export function resolveLazyNamedExport<TModule, TExport>(
+  module: TModule | null | undefined,
+  select: (loadedModule: TModule) => TExport,
+): { default: TExport } | Promise<never> {
+  if (module == null) return pendingRendererReload;
+  return { default: select(module) };
+}
+
 function parseTimestamp(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);

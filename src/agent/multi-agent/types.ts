@@ -332,7 +332,10 @@ export interface Decision {
 /**
  * Tool executor function type
  */
-export type ToolExecutor = (toolCall: CodeBuddyToolCall) => Promise<ToolResult>;
+export type ToolExecutor = (
+  toolCall: CodeBuddyToolCall,
+  executionExtra?: Record<string, unknown>,
+) => Promise<ToolResult>;
 
 /**
  * Event emitter types for the multi-agent system

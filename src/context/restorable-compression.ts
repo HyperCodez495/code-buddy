@@ -112,11 +112,9 @@ function extractIdentifiers(text: string): string[] {
 // ============================================================================
 
 export class RestorableCompressor {
-  /** identifier → original content */
+  /** canonical workspace + opaque session scope + identifier → original content */
   private store = new Map<string, string>();
-  /** Last workspace is retained only as a compatibility fallback. */
-  private workDir: string = process.cwd();
-  /** Absolute recovery path -> content, so identical call IDs stay workspace-scoped. */
+  /** Absolute recovery path -> content; the path includes an opaque session directory. */
   private toolResultMemory = new Map<string, string>();
   /** Maximum store entries before auto-eviction */
   private static readonly MAX_STORE_ENTRIES = 500;
@@ -150,7 +148,11 @@ export class RestorableCompressor {
    * stored. The message content is replaced with a compact stub listing
    * the available identifiers.
    */
-  compress(messages: CompressibleMessage[]): CompressionResult {
+  compress(
+    messages: CompressibleMessage[],
+    workDir = process.cwd(),
+    sessionId?: string,
+  ): CompressionResult {
     const compressed: CompressibleMessage[] = [];
     const allIdentifiers: string[] = [];
     let tokensSaved = 0;
@@ -173,8 +175,9 @@ export class RestorableCompressor {
 
       // Store original content indexed by each identifier
       for (const id of ids) {
-        if (!this.store.has(id)) {
-          this.store.set(id, content);
+        const key = this.scopedStoreKey(id, workDir, sessionId);
+        if (!this.store.has(key)) {
+          this.store.set(key, content);
         }
       }
 
@@ -206,39 +209,31 @@ export class RestorableCompressor {
   /**
    * Restore the original content for an identifier.
    *
-   * For file path identifiers, attempts to read from disk as a fallback.
-   * For URLs, returns a hint to use web_fetch.
+   * Only content already captured in the same canonical workspace is eligible.
+   * Uncached URLs return a hint to use web_fetch; uncached file paths are never
+   * read here and must go through the normal guarded file tools.
    */
-  restore(identifier: string, workDir = this.workDir): RestoreResult {
-    // 1. Check the workspace-scoped disk/memory store first. Provider call IDs
-    // are not guaranteed globally unique across concurrent Cowork sessions.
-    const diskContent = this.readToolResultFromDisk(identifier, workDir);
+  restore(identifier: string, workDir = process.cwd(), sessionId?: string): RestoreResult {
+    // 1. Check the workspace-and-session-scoped disk/memory store first.
+    // Provider call IDs are not guaranteed globally unique across concurrent
+    // Cowork/channel sessions in the same project.
+    const diskContent = this.readToolResultFromDisk(identifier, workDir, sessionId);
     if (diskContent !== null) {
       return { found: true, content: diskContent, identifier };
     }
 
-    // 2. Check the legacy identifier store used by message compaction.
-    const stored = this.store.get(identifier);
+    // 2. Check the identifier store used by message compaction, scoped to the
+    // exact same canonical workspace and opaque session. Never fall back to a
+    // workspace-only or another session's entry when a provider reuses a call ID.
+    const stored = this.store.get(this.scopedStoreKey(identifier, workDir, sessionId));
     if (stored) {
       return { found: true, content: stored, identifier };
     }
 
-    // 3. File path fallback — try reading from disk
-    if (!identifier.startsWith('http') && !identifier.startsWith('call_') && !identifier.startsWith('toolu_')) {
-      try {
-        // Strip line range if present (file.ts:10-50 → file.ts)
-        const filePath = identifier.split(':')[0];
-        if (filePath !== undefined && fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          this.store.set(identifier, content); // cache for future
-          return { found: true, content, identifier };
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    // 3. URL hint
+    // 3. URL hint. File paths are intentionally NOT read from disk here:
+    // restore_context may only recover content that was previously captured in
+    // this workspace. Fresh file reads must go through view_file, which owns
+    // workspace/trust/symlink enforcement.
     if (identifier.startsWith('http')) {
       return {
         found: false,
@@ -249,41 +244,78 @@ export class RestorableCompressor {
 
     return {
       found: false,
-      content: `Identifier "${identifier}" not found in restoration store.`,
+      content:
+        `Identifier "${identifier}" not found in the active session restoration store. ` +
+        'Only content previously captured in this workspace and session can be restored.',
       identifier,
     };
   }
 
   /**
-   * Persist a tool result to disk under `.codebuddy/tool-results/<callId>.txt`.
+   * Persist a tool result under
+   * `.codebuddy/tool-results/session-<sha256>/<callId>.txt`.
    * This gives the restore_context tool a reliable disk-backed source and enables
    * the compact/full dual-representation pattern (Manus AI #19).
    *
    * @param callId  - Tool call ID (e.g. call_abc123 or toolu_xyz)
    * @param content - Full tool output
    * @param workDir - Working directory (defaults to process.cwd())
+   * @param sessionId - Untrusted conversation/session identifier. It is hashed
+   *                    before being used on disk and never appears in a path.
    */
-  writeToolResult(callId: string, content: string, workDir = process.cwd()): void {
+  writeToolResult(
+    callId: string,
+    content: string,
+    workDir = process.cwd(),
+    sessionId?: string,
+  ): void {
     if (!callId) return;
-    // Capture working directory for later restore() calls
-    this.workDir = path.resolve(workDir);
+    // HTTP requests without an explicit session ID intentionally have no
+    // continuity. Persisting their unique api:request scopes would create one
+    // recovery directory per request with no legitimate future reader.
+    if (sessionId?.startsWith('api:request:')) return;
     try {
-      const dir = path.join(this.workDir, '.codebuddy', 'tool-results');
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      }
+      const workspaceRoot = this.resolveWorkspaceRoot(workDir);
+      const dir = this.resolveRecoveryDirectory(workspaceRoot, true, sessionId);
+      if (!dir) return;
       // Existing directories may have inherited a permissive umask.
       // Recovery files can contain source code, credentials printed by a tool,
       // or personal data, so keep them private on POSIX systems.
-      if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+      if (!this.hardenRecoveryTree(workspaceRoot, dir)) return;
 
-      const filePath = path.join(dir, `${this.safeCallIdFilename(callId)}.txt`);
-      fs.writeFileSync(filePath, content, { encoding: 'utf-8', mode: 0o600 });
-      if (process.platform !== 'win32') fs.chmodSync(filePath, 0o600);
-      this.toolResultMemory.set(filePath, content);
+      const safeCallId = this.safeCallIdFilename(callId);
+      const filePath = path.join(dir, `${safeCallId}.txt`);
+      const opened = this.openVerifiedRecoveryFile(
+        workspaceRoot,
+        dir,
+        filePath,
+        fs.constants.O_WRONLY | fs.constants.O_CREAT,
+        0o600
+      );
+      if (!opened) return;
+      let written = false;
+      try {
+        if (process.platform !== 'win32') fs.fchmodSync(opened.descriptor, 0o600);
+        // Truncate only after O_NOFOLLOW + regular-file + inode + confinement
+        // checks. All writes stay attached to the verified descriptor even if
+        // the pathname is swapped immediately afterwards.
+        fs.ftruncateSync(opened.descriptor, 0);
+        fs.writeFileSync(opened.descriptor, content, { encoding: 'utf-8' });
+        fs.fsyncSync(opened.descriptor);
+        const after = fs.fstatSync(opened.descriptor);
+        written =
+          after.isFile() &&
+          after.nlink === 1 &&
+          after.dev === opened.initialStat.dev &&
+          after.ino === opened.initialStat.ino;
+      } finally {
+        fs.closeSync(opened.descriptor);
+      }
+      if (!written) return;
+      this.toolResultMemory.set(opened.canonicalPath, content);
       // Also store in memory for fast access; enforce capacity to prevent
       // memory leak in long sessions (shared helper with compress()).
-      this.store.set(callId, content);
+      this.store.set(this.scopedStoreKey(callId, workspaceRoot, sessionId), content);
       this.ensureCapacity();
     } catch (err) {
       // Non-critical: disk write failure should not break tool execution
@@ -291,31 +323,143 @@ export class RestorableCompressor {
     }
   }
 
-  /**
-   * Read a tool result from disk (`.codebuddy/tool-results/<callId>.txt`).
-   * Used by restore_context when the in-memory store has been evicted.
-   */
-  private readToolResultFromDisk(callId: string, workDir = process.cwd()): string | null {
+  /** Read a tool result from the current session's opaque disk directory. */
+  private readToolResultFromDisk(
+    callId: string,
+    workDir = process.cwd(),
+    sessionId?: string,
+  ): string | null {
     try {
-      const filePath = path.join(
-        path.resolve(workDir),
-        '.codebuddy',
-        'tool-results',
-        `${this.safeCallIdFilename(callId)}.txt`,
+      const workspaceRoot = this.resolveWorkspaceRoot(workDir);
+      const dir = this.resolveRecoveryDirectory(workspaceRoot, false, sessionId);
+      if (!dir) return null;
+      const filePath = path.join(dir, `${this.safeCallIdFilename(callId)}.txt`);
+      const opened = this.openVerifiedRecoveryFile(
+        workspaceRoot,
+        dir,
+        filePath,
+        fs.constants.O_RDONLY
       );
-      const cached = this.toolResultMemory.get(filePath);
-      if (cached !== undefined) return cached;
-      if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        this.store.set(callId, content); // legacy compatibility/listing
-        this.toolResultMemory.set(filePath, content);
-        this.ensureCapacity();
-        return content;
+      if (!opened) return null;
+      const cached = this.toolResultMemory.get(opened.canonicalPath);
+      if (cached !== undefined) {
+        fs.closeSync(opened.descriptor);
+        return cached;
       }
+      let content: string;
+      let unchanged = false;
+      try {
+        content = fs.readFileSync(opened.descriptor, 'utf-8');
+        const after = fs.fstatSync(opened.descriptor);
+        unchanged =
+          after.isFile() &&
+          after.nlink === 1 &&
+          after.dev === opened.initialStat.dev &&
+          after.ino === opened.initialStat.ino &&
+          after.size === opened.initialStat.size &&
+          after.mtimeMs === opened.initialStat.mtimeMs &&
+          after.ctimeMs === opened.initialStat.ctimeMs;
+      } finally {
+        fs.closeSync(opened.descriptor);
+      }
+      if (!unchanged) return null;
+      this.store.set(this.scopedStoreKey(callId, workspaceRoot, sessionId), content);
+      this.toolResultMemory.set(opened.canonicalPath, content);
+      this.ensureCapacity();
+      return content;
     } catch {
       // ignore
     }
     return null;
+  }
+
+  /**
+   * Open a recovery file without following symlinks, then bind the pathname,
+   * canonical location and opened inode before any read, truncate, or write.
+   */
+  private openVerifiedRecoveryFile(
+    workspaceRoot: string,
+    recoveryDirectory: string,
+    filePath: string,
+    flags: number,
+    mode?: number
+  ): { descriptor: number; canonicalPath: string; initialStat: fs.Stats } | null {
+    let descriptor: number | null = null;
+    try {
+      descriptor = fs.openSync(
+        filePath,
+        flags |
+          (fs.constants.O_NOFOLLOW ?? 0) |
+          (fs.constants.O_NONBLOCK ?? 0),
+        mode
+      );
+      const opened = fs.fstatSync(descriptor);
+      const canonicalPath = fs.realpathSync(filePath);
+      const current = fs.statSync(canonicalPath);
+      if (
+        !opened.isFile() ||
+        opened.nlink !== 1 ||
+        !current.isFile() ||
+        current.dev !== opened.dev ||
+        current.ino !== opened.ino ||
+        path.dirname(canonicalPath) !== recoveryDirectory ||
+        !this.isWithinWorkspace(workspaceRoot, canonicalPath)
+      ) {
+        fs.closeSync(descriptor);
+        return null;
+      }
+      return { descriptor, canonicalPath, initialStat: opened };
+    } catch {
+      if (descriptor !== null) fs.closeSync(descriptor);
+      return null;
+    }
+  }
+
+  /** Apply private POSIX permissions through a verified directory descriptor. */
+  private hardenRecoveryDirectory(workspaceRoot: string, directory: string): boolean {
+    if (process.platform === 'win32') return true;
+    let descriptor: number | null = null;
+    try {
+      descriptor = fs.openSync(
+        directory,
+        fs.constants.O_RDONLY |
+          (fs.constants.O_DIRECTORY ?? 0) |
+          (fs.constants.O_NOFOLLOW ?? 0) |
+          (fs.constants.O_NONBLOCK ?? 0)
+      );
+      const opened = fs.fstatSync(descriptor);
+      const canonicalDirectory = fs.realpathSync(directory);
+      const current = fs.statSync(canonicalDirectory);
+      if (
+        !opened.isDirectory() ||
+        !current.isDirectory() ||
+        opened.dev !== current.dev ||
+        opened.ino !== current.ino ||
+        canonicalDirectory !== directory ||
+        !this.isWithinWorkspace(workspaceRoot, canonicalDirectory)
+      ) {
+        return false;
+      }
+      fs.fchmodSync(descriptor, 0o700);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (descriptor !== null) fs.closeSync(descriptor);
+    }
+  }
+
+  /** Keep every directory in the private recovery path non-world-readable. */
+  private hardenRecoveryTree(workspaceRoot: string, sessionDirectory: string): boolean {
+    if (process.platform === 'win32') return true;
+    const directories = [
+      path.join(workspaceRoot, '.codebuddy'),
+      path.join(workspaceRoot, '.codebuddy', 'tool-results'),
+      sessionDirectory,
+    ];
+    return directories.every((directory) =>
+      this.hardenRecoveryDirectory(workspaceRoot, directory)
+    );
   }
 
   /**
@@ -328,15 +472,113 @@ export class RestorableCompressor {
     return `call_${createHash('sha256').update(callId).digest('hex')}`;
   }
 
+  /** Canonicalize workspace aliases so symlinked and lexical paths share a scope. */
+  private resolveWorkspaceRoot(workDir: string): string {
+    const resolved = path.resolve(workDir);
+    try {
+      const canonical = fs.realpathSync(resolved);
+      return fs.statSync(canonical).isDirectory() ? canonical : resolved;
+    } catch {
+      return resolved;
+    }
+  }
+
+  /**
+   * Resolve the private recovery directory without following workspace-owned
+   * symlinks. This keeps both reads and writes beneath the canonical root.
+   */
+  private resolveRecoveryDirectory(
+    workspaceRoot: string,
+    create: boolean,
+    sessionId?: string,
+  ): string | null {
+    const directories = [
+      path.join(workspaceRoot, '.codebuddy'),
+      path.join(workspaceRoot, '.codebuddy', 'tool-results'),
+      path.join(
+        workspaceRoot,
+        '.codebuddy',
+        'tool-results',
+        this.safeSessionDirectoryName(sessionId),
+      ),
+    ];
+
+    for (const directory of directories) {
+      if (!fs.existsSync(directory)) {
+        if (!create) return null;
+        fs.mkdirSync(directory, { mode: 0o700 });
+      }
+      const stats = fs.lstatSync(directory);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) return null;
+    }
+
+    const recoveryDirectory = directories[directories.length - 1];
+    if (!recoveryDirectory) return null;
+    const canonicalDirectory = fs.realpathSync(recoveryDirectory);
+    return this.isWithinWorkspace(workspaceRoot, canonicalDirectory)
+      ? canonicalDirectory
+      : null;
+  }
+
+  /**
+   * Session IDs originate in HTTP clients, channels and desktop hosts. Hash the
+   * complete untrusted value with a domain separator so it cannot traverse
+   * directories or leak user identifiers through filenames. The explicit
+   * sessionless scope is distinct from every non-empty supplied identifier.
+   */
+  private sessionScopeKey(sessionId?: string): string {
+    const hash = createHash('sha256');
+    hash.update('codebuddy-restorable-session-v1\0');
+    if (typeof sessionId === 'string' && sessionId.length > 0) {
+      hash.update('id\0');
+      hash.update(sessionId);
+    } else {
+      hash.update('sessionless');
+    }
+    return hash.digest('hex');
+  }
+
+  private safeSessionDirectoryName(sessionId?: string): string {
+    return `session-${this.sessionScopeKey(sessionId)}`;
+  }
+
+  private isWithinWorkspace(workspaceRoot: string, candidate: string): boolean {
+    const relative = path.relative(workspaceRoot, candidate);
+    return relative === '' || (
+      relative !== '..' &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative)
+    );
+  }
+
+  private scopedStoreKey(identifier: string, workDir: string, sessionId?: string): string {
+    return (
+      `${this.resolveWorkspaceRoot(workDir)}\u0000` +
+      `${this.sessionScopeKey(sessionId)}\u0000${identifier}`
+    );
+  }
+
+  private identifierFromScopedKey(key: string): string {
+    const separator = key.lastIndexOf('\u0000');
+    return separator >= 0 ? key.slice(separator + 1) : key;
+  }
+
   /** List all stored identifiers */
-  listIdentifiers(): string[] {
-    return [...this.store.keys()];
+  listIdentifiers(workDir?: string): string[] {
+    const prefix = workDir ? `${this.resolveWorkspaceRoot(workDir)}\u0000` : null;
+    const keys = prefix
+      ? [...this.store.keys()].filter((key) => key.startsWith(prefix))
+      : [...this.store.keys()];
+    return [...new Set(keys.map((key) => this.identifierFromScopedKey(key)))];
   }
 
   /** Total number of bytes stored */
-  storeSize(): number {
+  storeSize(workDir?: string): number {
     let total = 0;
-    for (const v of this.store.values()) total += v.length;
+    const prefix = workDir ? `${this.resolveWorkspaceRoot(workDir)}\u0000` : null;
+    for (const [key, value] of this.store) {
+      if (!prefix || key.startsWith(prefix)) total += value.length;
+    }
     return total;
   }
 

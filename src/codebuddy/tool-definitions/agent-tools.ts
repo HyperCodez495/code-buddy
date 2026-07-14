@@ -66,13 +66,13 @@ export const RESTORE_CONTEXT_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'restore_context',
-    description: 'Restore context removed from the model-facing observation. Pass the exact originating tool call ID (call_… or toolu_…) to retrieve the raw output persisted before optimization. Preserved file-path and URL identifiers remain supported.',
+    description: 'Restore context removed from the model-facing observation. Pass the exact originating tool call ID (call_… or toolu_…) to retrieve raw output previously captured in the active workspace and conversation session. Other identifiers work only for content already captured in that same workspace and session; this tool never performs a fresh file read.',
     parameters: {
       type: 'object',
       properties: {
         identifier: {
           type: 'string',
-          description: 'Exact tool call ID (preferred), or a preserved file path/URL identifier',
+          description: 'Exact tool call ID (preferred), or an identifier whose content was already captured in the active workspace and session',
         },
       },
       required: ['identifier'],

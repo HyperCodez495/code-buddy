@@ -7,27 +7,47 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import * as path from 'node:path';
+import type {
+  ITool,
+  ToolSchema,
+  IToolMetadata,
+  IValidationResult,
+  ToolCategoryType,
+  IToolExecutionContext,
+} from './types.js';
 import { SearchTool } from '../index.js';
 
 // ============================================================================
-// Shared SearchTool Instance
+// Workspace-scoped SearchTool Instances
 // ============================================================================
 
-let searchInstance: SearchTool | null = null;
+const searchInstances = new Map<string, SearchTool>();
+const MAX_WORKSPACE_SEARCH_INSTANCES = 32;
 
-function getSearch(): SearchTool {
-  if (!searchInstance) {
-    searchInstance = new SearchTool();
+function getSearch(cwd?: string): SearchTool {
+  const workspace = path.resolve(cwd ?? process.cwd());
+  let search = searchInstances.get(workspace);
+  if (!search) {
+    if (searchInstances.size >= MAX_WORKSPACE_SEARCH_INSTANCES) {
+      const oldestWorkspace = searchInstances.keys().next().value;
+      if (oldestWorkspace !== undefined) {
+        searchInstances.get(oldestWorkspace)?.clearCaches();
+        searchInstances.delete(oldestWorkspace);
+      }
+    }
+    search = new SearchTool();
+    search.setCurrentDirectory(workspace);
+    searchInstances.set(workspace, search);
   }
-  return searchInstance;
+  return search;
 }
 
 /**
  * Reset the shared SearchTool instance (for testing)
  */
 export function resetSearchInstance(): void {
-  searchInstance = null;
+  searchInstances.clear();
 }
 
 // ============================================================================
@@ -41,7 +61,10 @@ export class UnifiedSearchTool implements ITool {
   readonly name = 'search';
   readonly description = 'Search for text content or find files using pattern matching';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const query = input.query as string;
     const options = {
       searchType: input.search_type as 'text' | 'files' | 'both' | undefined,
@@ -55,7 +78,7 @@ export class UnifiedSearchTool implements ITool {
       includeHidden: input.include_hidden as boolean | undefined,
     };
 
-    return await getSearch().search(query, options);
+    return await getSearch(context?.cwd).search(query, options);
   }
 
   getSchema(): ToolSchema {
@@ -155,14 +178,17 @@ export class FindSymbolsTool implements ITool {
   readonly name = 'find_symbols';
   readonly description = 'Find functions, classes, interfaces, and other code symbols';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const name = input.name as string;
     const options = {
       types: input.types as ('function' | 'class' | 'interface' | 'type' | 'const' | 'variable' | 'method')[] | undefined,
       exportedOnly: input.exported_only as boolean | undefined,
     };
 
-    return await getSearch().findSymbols(name, options);
+    return await getSearch(context?.cwd).findSymbols(name, options);
   }
 
   getSchema(): ToolSchema {
@@ -236,11 +262,14 @@ export class FindReferencesTool implements ITool {
   readonly name = 'find_references';
   readonly description = 'Find all references to a symbol in the codebase';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const symbolName = input.symbol_name as string;
     const contextLines = (input.context_lines as number) ?? 2;
 
-    return await getSearch().findReferences(symbolName, contextLines);
+    return await getSearch(context?.cwd).findReferences(symbolName, contextLines);
   }
 
   getSchema(): ToolSchema {
@@ -307,10 +336,13 @@ export class FindDefinitionTool implements ITool {
   readonly name = 'find_definition';
   readonly description = 'Find the definition of a symbol';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const symbolName = input.symbol_name as string;
 
-    return await getSearch().findDefinition(symbolName);
+    return await getSearch(context?.cwd).findDefinition(symbolName);
   }
 
   getSchema(): ToolSchema {
@@ -372,11 +404,14 @@ export class SearchMultipleTool implements ITool {
   readonly name = 'search_multi';
   readonly description = 'Search for multiple patterns with OR/AND logic';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult> {
     const patterns = input.patterns as string[];
     const operator = (input.operator as 'OR' | 'AND') ?? 'OR';
 
-    return await getSearch().searchMultiple(patterns, operator);
+    return await getSearch(context?.cwd).searchMultiple(patterns, operator);
   }
 
   getSchema(): ToolSchema {

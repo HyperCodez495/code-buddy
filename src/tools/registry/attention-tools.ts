@@ -187,8 +187,8 @@ export class RestoreContextTool implements ITool {
   readonly name = 'restore_context';
   readonly description = [
     'Restore context that was compacted out of the model-facing observation.',
-    'For tool results, pass the exact originating tool call ID (for example call_abc123 or toolu_xyz) to retrieve the raw output persisted before optimization.',
-    'Legacy file-path and URL identifiers produced by restorable compression remain supported.',
+    'For tool results, pass the exact originating tool call ID (for example call_abc123 or toolu_xyz) to retrieve raw output previously captured in the active workspace and conversation session.',
+    'Other identifiers are restored only when their content was already captured in that same workspace and session; this tool never performs a fresh file read.',
   ].join(' ');
 
   async execute(
@@ -199,7 +199,16 @@ export class RestoreContextTool implements ITool {
     if (!identifier) return { success: false, error: 'identifier is required' };
 
     const compressor = getRestorableCompressor();
-    const result = compressor.restore(identifier, context?.cwd ?? process.cwd());
+    const recoverySessionId =
+      typeof context?.extra?.recoverySessionId === 'string' &&
+      context.extra.recoverySessionId.length > 0
+        ? context.extra.recoverySessionId
+        : context?.sessionId;
+    const result = compressor.restore(
+      identifier,
+      context?.cwd ?? process.cwd(),
+      recoverySessionId,
+    );
 
     if (result.found) {
       return {
@@ -223,7 +232,7 @@ export class RestoreContextTool implements ITool {
         properties: {
           identifier: {
             type: 'string',
-            description: 'Exact tool call ID (preferred), or a preserved file path/URL identifier',
+            description: 'Exact tool call ID (preferred), or an identifier whose content was already captured in the active workspace and session',
           },
         },
         required: ['identifier'],
@@ -247,6 +256,7 @@ export class RestoreContextTool implements ITool {
       category: 'context' as ToolCategoryType,
       keywords: ['context', 'memory', 'compression', 'restore', 'callId', 'raw output', 'exact'],
       priority: 70,
+      requiresConfirmation: true,
     };
   }
 

@@ -734,7 +734,7 @@ Respond with ONLY the commit message, no additional text.`;
 
     cli.info("🤖 Generating commit message...");
 
-    const commitMessageEntries = await agent.processUserMessage(commitPrompt);
+    const commitMessageEntries = await agent.processUserMessage(commitPrompt, { surface: 'cli' });
     let commitMessage = "";
 
     // Extract the commit message from the AI response
@@ -1046,7 +1046,7 @@ async function processPromptHeadless(
     } catch (e) { logger.debug('Failed to initialize headless interaction logger', { error: String(e) }); }
 
     // Process the user message
-    const chatEntries = await agent.processUserMessage(prompt);
+    const chatEntries = await agent.processUserMessage(prompt, { surface: 'cli' });
 
     // WS3-T1 — session-end flush (handoff + lesson candidates). Awaited with
     // a hard cap so headless runs keep their continuity write without ever
