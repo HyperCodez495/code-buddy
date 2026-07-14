@@ -17,7 +17,7 @@ describe('CodeBuddyAvatar plugin bundle', () => {
     );
     expect(JSON.parse(raw)).toMatchObject({
       ok: true,
-      bundleId: 'metahuman-split-a.5',
+      bundleId: 'metahuman-split-a.6',
       files: 11,
     });
   });

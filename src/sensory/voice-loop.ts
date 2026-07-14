@@ -1872,7 +1872,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let avatarSpeechStartedAt: number | undefined;
     let avatarFinalText = '';
     const avatarTurnId = createAvatarTurnId();
-    const avatarCue = planAvatarPerformance(heard);
+    const avatarCue = planAvatarPerformance(heard, delivery);
     const avatarEnabled = options.avatarEnabled ?? (
       process.env.CODEBUDDY_AVATAR_BRIDGE !== 'false' || Boolean(options.onAvatarEvent)
     );

@@ -1,4 +1,4 @@
-# CodeBuddyAvatar — Split A v5
+# CodeBuddyAvatar — Split A v6
 
 Plugin Runtime Win64 pour relier `D:\DEV\AvatarStudio` au Gateway Code Buddy sans déplacer le
 raisonnement ni la mémoire de Lisa dans Unreal. Cette version est un **fork reproductible** : elle ne
@@ -14,7 +14,8 @@ remplace jamais automatiquement un plugin présent et ne modifie pas le projet v
   plafond 48 Kio par chunk et 16 Mio par WAV ;
 - lecture avec `USoundWaveProcedural` seulement après `avatar.speech.started`, coupure immédiate sur
   interruption ;
-- événements Blueprint pour affect, intensité, geste, regard, texte de performance et WAV préparé ;
+- événements Blueprint pour affect, intensité, geste, regard, rythme vocal, texte de performance et
+  WAV préparé ;
 - état réel renvoyé à Code Buddy : phase, FPS, tampon audio, latence bouche/audio et chunks perdus.
 
 Le plugin ne prétend pas créer le visage Lisa ni activer silencieusement MetaHuman Animator. La
@@ -26,14 +27,14 @@ capacité `audioDrivenAnimation` reste fausse tant qu'un sujet MetaHuman Audio L
 Depuis le dépôt Code Buddy copié sur Darkstar :
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\unreal\Invoke-CodeBuddyAvatarV5.ps1 `
+powershell -ExecutionPolicy Bypass -File scripts\unreal\Invoke-CodeBuddyAvatarV6.ps1 `
   -Mode Stage -ProjectRoot D:\DEV\AvatarStudio
 ```
 
 Le bundle est copié dans :
 
 ```text
-D:\DEV\AvatarStudio\.codebuddy\metahuman-splits\split-a.5\CodeBuddyAvatar
+D:\DEV\AvatarStudio\.codebuddy\metahuman-splits\split-a.6\CodeBuddyAvatar
 ```
 
 La promotion vers `Plugins\CodeBuddyAvatar` est une opération distincte. Elle refuse de s'exécuter
@@ -46,7 +47,10 @@ explicitement fourni.
 2. Dans le Blueprint du niveau ou du MetaHuman, récupérer le Game Instance Subsystem
    `CodeBuddyAvatarSubsystem`.
 3. Relier `On Performance Cue` à une couche sobre de regard, posture et montages courts. Les chaînes
-   attendues sont celles du contrat V1 (`small_nod`, `thinking_glance`, `user`, etc.).
+   attendues sont celles du contrat V1 (`small_nod`, `thinking_glance`, `user`, etc.). Utiliser
+   `DeliveryPace`, `PauseStyle`, `ResponseShape`, `TargetWpm` et `SentencePauseMs` pour régler
+   l'énergie corporelle et le temps de stabilisation entre phrases. Ces indications ne doivent pas
+   étirer l'audio : celui-ci reste la vérité pour les lèvres.
 4. Relier `On Speech State(false)` à l'arrêt du solveur, des montages et des lèvres.
 5. Créer une **MetaHuman Audio Live Link Source** officielle et affecter son sujet au Blueprint du
    MetaHuman (`Use Live Link`). Le son lu par le plugin doit alimenter la même source audio — sur
@@ -73,7 +77,7 @@ sans authentification, le Gateway doit lui-même être lié uniquement à `127.0
 ## Validation Unreal
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\unreal\Invoke-CodeBuddyAvatarV5.ps1 `
+powershell -ExecutionPolicy Bypass -File scripts\unreal\Invoke-CodeBuddyAvatarV6.ps1 `
   -Mode Validate -ProjectRoot D:\DEV\AvatarStudio -EngineRoot D:\Epic\UE_5.8
 ```
 

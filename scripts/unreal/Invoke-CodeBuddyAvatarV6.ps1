@@ -17,7 +17,7 @@ if (-not $SourceRoot) {
 }
 $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
 $ProjectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
-$SplitRoot = Join-Path $ProjectRoot '.codebuddy\metahuman-splits\split-a.5'
+$SplitRoot = Join-Path $ProjectRoot '.codebuddy\metahuman-splits\split-a.6'
 $StageRoot = Join-Path $SplitRoot 'CodeBuddyAvatar'
 $EvidenceRoot = Join-Path $SplitRoot 'evidence'
 $ManifestPath = Join-Path $SourceRoot 'bundle-manifest.json'
@@ -42,7 +42,7 @@ function Test-Bundle([string]$Root) {
     throw "Missing bundle manifest: $manifestFile"
   }
   $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
-  if ($manifest.bundleId -ne 'metahuman-split-a.5' -or $manifest.protocolVersion -ne 1) {
+  if ($manifest.bundleId -ne 'metahuman-split-a.6' -or $manifest.protocolVersion -ne 1) {
     throw 'Unexpected bundle identity or protocol version.'
   }
   $actual = Get-RelativeFileMap -Root $Root -ExcludeManifest

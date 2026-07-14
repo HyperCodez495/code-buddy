@@ -20,6 +20,26 @@ describe('avatar performance protocol', () => {
     expect(philosophy.speakingStyle).toBe('deliberative');
   });
 
+  it('adds bounded acoustic direction without weakening deliberative performance', () => {
+    const cue = planAvatarPerformance("Penses-tu qu'une IA peut aimer ?", {
+      pace: 'slow',
+      pauseStyle: 'reflective',
+      responseShape: 'expanded',
+      confidence: 'high',
+      targetWpm: 999,
+    });
+
+    expect(cue.speakingStyle).toBe('deliberative');
+    expect(cue.delivery).toEqual({
+      pace: 'slow',
+      pauseStyle: 'reflective',
+      responseShape: 'expanded',
+      confidence: 'high',
+      targetWpm: 195,
+      sentencePauseMs: 360,
+    });
+  });
+
   it('keeps ordered lifecycle state and ignores a late completion after interruption', () => {
     const bus = new AvatarEventBus();
     const state = new AvatarPlaybackStateMachine();

@@ -137,6 +137,7 @@ ni audio, ni secret.
 | `turn.started` | Oriente doucement le regard, prépare l'expression sans bouger les lèvres. |
 | `affect` + `intensity` | Mélange une pose faciale sobre ; borne l'intensité pour éviter le surjeu. |
 | `gesture` | Déclenche au plus un montage court (`small_nod`, `head_tilt`, `open_palm`, etc.). |
+| `delivery` | Ajuste l'énergie corporelle et les pauses avec `pace`, `targetWpm` et `sentencePauseMs`, sans modifier l'audio. |
 | `audio.started…ended` | Reconstruit et valide le WAV du `streamId`. |
 | `speech.started` | Joue le WAV et démarre Audio Driven Animation sur la même horloge. |
 | `speech.interrupted` | Coupe immédiatement audio, solveur facial et montage ; répond `interrupted`. |
@@ -156,8 +157,8 @@ Avant le branchement MetaHuman, le client Unreal est accepté quand il peut : se
 parole fantôme, reconstruire un WAV de plusieurs chunks à l'octet près, abandonner un stream troué,
 couper sur barge-in et publier un heartbeat stable sans perdre de chunk.
 
-L'implémentation de référence Split A v5 se trouve dans
+L'implémentation de référence Split A v6 se trouve dans
 `integrations/unreal/CodeBuddyAvatar`. Elle peut être vérifiée localement avec
 `npm run verify:avatar-unreal`, puis préparée, compilée et testée sur Darkstar avec
-`scripts/unreal/Invoke-CodeBuddyAvatarV5.ps1`. La promotion dans `AvatarStudio/Plugins` reste une
+`scripts/unreal/Invoke-CodeBuddyAvatarV6.ps1`. La promotion dans `AvatarStudio/Plugins` reste une
 opération explicite et refuse de s'exécuter pendant qu'Unreal Editor est ouvert.

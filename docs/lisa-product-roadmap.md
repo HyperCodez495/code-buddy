@@ -201,7 +201,13 @@ Le simulateur exécutable `src/avatar/avatar-renderer-simulator.ts` vérifie ce 
 et [`avatar-metahuman-protocol.md`](avatar-metahuman-protocol.md) constitue le guide d'implémentation
 côté Unreal.
 
-Le bundle Runtime Win64 Split A v5 est désormais versionné dans
+Le profil vocal borné accompagne désormais l'intention de jeu dans le champ additif `cue.delivery` :
+débit cible, style de pause, forme de réponse, confiance et durée de stabilisation entre phrases.
+Un ancien renderer V1 peut ignorer ce champ. Le plugin Unreal le valide avant de l'exposer aux
+Blueprints ; il sert à synchroniser l'énergie corporelle et les gestes, jamais à étirer l'audio ni à
+affaiblir une réponse délibérative. Aucun verbatim ni débit humain brut ne quitte le cerveau.
+
+Le bundle Runtime Win64 Split A v6 est désormais versionné dans
 `integrations/unreal/CodeBuddyAvatar` avec un manifeste SHA-256 et un script séparant strictement
 préparation, validation Unreal et promotion. Ce jalon fournit le transport authentifié, la file WAV
 multi-segment, l'interruption et les événements Blueprint. Il ne vaut pas encore validation du rendu

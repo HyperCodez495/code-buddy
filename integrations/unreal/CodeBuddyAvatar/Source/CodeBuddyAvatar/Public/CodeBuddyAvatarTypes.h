@@ -33,6 +33,24 @@ struct CODEBUDDYAVATAR_API FCodeBuddyAvatarCue
 
     UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
     FString SpeakingStyle = TEXT("conversational");
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    FString DeliveryPace = TEXT("balanced");
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    FString PauseStyle = TEXT("natural");
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    FString ResponseShape = TEXT("balanced");
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    FString DeliveryConfidence = TEXT("low");
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    int32 TargetWpm = 155;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Code Buddy|Avatar")
+    int32 SentencePauseMs = 240;
 };
 
 USTRUCT(BlueprintType)

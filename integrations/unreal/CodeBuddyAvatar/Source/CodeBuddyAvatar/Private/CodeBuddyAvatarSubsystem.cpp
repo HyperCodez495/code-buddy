@@ -991,6 +991,50 @@ FCodeBuddyAvatarCue UCodeBuddyAvatarSubsystem::ParseCue(
     {
         Result.Intensity = FMath::Clamp(static_cast<float>(Intensity), 0.0f, 1.0f);
     }
+    const TSharedPtr<FJsonObject> Delivery = ObjectField(Cue, TEXT("delivery"));
+    if (Delivery.IsValid())
+    {
+        const FString Pace = StringField(Delivery, TEXT("pace"));
+        const FString PauseStyle = StringField(Delivery, TEXT("pauseStyle"));
+        const FString ResponseShape = StringField(Delivery, TEXT("responseShape"));
+        const FString Confidence = StringField(Delivery, TEXT("confidence"));
+        if (Pace == TEXT("slow") || Pace == TEXT("balanced") || Pace == TEXT("brisk"))
+        {
+            Result.DeliveryPace = Pace;
+        }
+        if (PauseStyle == TEXT("reflective") ||
+            PauseStyle == TEXT("natural") ||
+            PauseStyle == TEXT("light"))
+        {
+            Result.PauseStyle = PauseStyle;
+        }
+        if (ResponseShape == TEXT("compact") ||
+            ResponseShape == TEXT("balanced") ||
+            ResponseShape == TEXT("expanded"))
+        {
+            Result.ResponseShape = ResponseShape;
+        }
+        if (Confidence == TEXT("low") ||
+            Confidence == TEXT("medium") ||
+            Confidence == TEXT("high"))
+        {
+            Result.DeliveryConfidence = Confidence;
+        }
+        double TargetWpm = 0.0;
+        if (Delivery->TryGetNumberField(TEXT("targetWpm"), TargetWpm) && FMath::IsFinite(TargetWpm))
+        {
+            Result.TargetWpm = FMath::Clamp(FMath::RoundToInt(TargetWpm), 105, 195);
+        }
+        double SentencePauseMs = 0.0;
+        if (Delivery->TryGetNumberField(TEXT("sentencePauseMs"), SentencePauseMs) &&
+            FMath::IsFinite(SentencePauseMs))
+        {
+            Result.SentencePauseMs = FMath::Clamp(
+                FMath::RoundToInt(SentencePauseMs),
+                80,
+                1000);
+        }
+    }
     return Result;
 }
 

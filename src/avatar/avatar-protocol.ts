@@ -23,6 +23,20 @@ export type AvatarGesture =
 
 export type AvatarGaze = 'user' | 'camera' | 'thinking_away';
 
+export interface AvatarDeliveryInput {
+  pace: 'slow' | 'balanced' | 'brisk';
+  pauseStyle: 'reflective' | 'natural' | 'light';
+  responseShape: 'compact' | 'balanced' | 'expanded';
+  confidence: 'low' | 'medium' | 'high';
+  targetWpm: number;
+}
+
+/** Raw-free acoustic direction consumed by Unreal/MetaHuman. */
+export interface AvatarDeliveryCue extends AvatarDeliveryInput {
+  /** Suggested body/gesture settling time between spoken sentences. */
+  sentencePauseMs: number;
+}
+
 export const AVATAR_PROTOCOL_VERSION = 1;
 /** Keep one base64 event comfortably below the Gateway backpressure ceiling. */
 export const MAX_AVATAR_AUDIO_CHUNK_BYTES = 48 * 1024;
@@ -33,6 +47,8 @@ export interface AvatarPerformanceCue {
   gesture: AvatarGesture;
   gaze: AvatarGaze;
   speakingStyle: 'brief' | 'conversational' | 'reflective' | 'deliberative';
+  /** Additive V1 field. Older renderers safely ignore it. */
+  delivery?: AvatarDeliveryCue;
 }
 
 interface AvatarEventMetadata {
@@ -145,6 +161,33 @@ function clampIntensity(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function avatarDeliveryCue(delivery: AvatarDeliveryInput | undefined): AvatarDeliveryCue | undefined {
+  if (!delivery) return undefined;
+  const pace = ['slow', 'balanced', 'brisk'].includes(delivery.pace)
+    ? delivery.pace
+    : 'balanced';
+  const pauseStyle = ['reflective', 'natural', 'light'].includes(delivery.pauseStyle)
+    ? delivery.pauseStyle
+    : 'natural';
+  const responseShape = ['compact', 'balanced', 'expanded'].includes(delivery.responseShape)
+    ? delivery.responseShape
+    : 'balanced';
+  const confidence = ['low', 'medium', 'high'].includes(delivery.confidence)
+    ? delivery.confidence
+    : 'low';
+  const targetWpm = Number.isFinite(delivery.targetWpm)
+    ? Math.round(Math.max(105, Math.min(195, delivery.targetWpm)))
+    : 155;
+  return {
+    pace,
+    pauseStyle,
+    responseShape,
+    confidence,
+    targetWpm,
+    sentencePauseMs: pace === 'slow' ? 360 : pace === 'brisk' ? 140 : 240,
+  };
+}
+
 export function createAvatarTurnId(): string {
   return randomUUID();
 }
@@ -164,7 +207,10 @@ export function splitAvatarAudioChunk(
 }
 
 /** Map a conversational turn to restrained performance direction for MetaHuman. */
-export function planAvatarPerformance(heard: string): AvatarPerformanceCue {
+export function planAvatarPerformance(
+  heard: string,
+  delivery?: AvatarDeliveryInput,
+): AvatarPerformanceCue {
   const emotion = detectEmotion(heard);
   const conversation = planConversationResponse(heard);
   let affect = AFFECT_BY_EMOTION[emotion.emotion];
@@ -188,6 +234,7 @@ export function planAvatarPerformance(heard: string): AvatarPerformanceCue {
         : conversation.depth === 'developed'
           ? 'reflective'
           : 'conversational';
+  const deliveryCue = avatarDeliveryCue(delivery);
 
   return {
     affect,
@@ -197,6 +244,7 @@ export function planAvatarPerformance(heard: string): AvatarPerformanceCue {
     gesture,
     gaze: gesture === 'thinking_glance' ? 'thinking_away' : 'user',
     speakingStyle,
+    ...(deliveryCue ? { delivery: deliveryCue } : {}),
   };
 }
 
@@ -292,7 +340,16 @@ export class AvatarPlaybackStateMachine {
   snapshot(): AvatarPlaybackState {
     return {
       ...this.state,
-      ...(this.state.cue ? { cue: { ...this.state.cue } } : {}),
+      ...(this.state.cue
+        ? {
+            cue: {
+              ...this.state.cue,
+              ...(this.state.cue.delivery
+                ? { delivery: { ...this.state.cue.delivery } }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 }

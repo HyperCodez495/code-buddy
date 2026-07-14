@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "bundleId": "metahuman-split-a.5",
+  "bundleId": "metahuman-split-a.6",
   "protocolVersion": 1,
-  "pluginVersion": "0.5.0-split-a.5",
+  "pluginVersion": "0.6.0-split-a.6",
   "files": [
     {
       "path": "CodeBuddyAvatar.uplugin",
       "size": 501,
-      "sha256": "f89f730e99c06b30874049efbff0b6f359e0fcbe4f2f90c707cb2673493aaef6"
+      "sha256": "f0ae145160dbcf4aca52b545d75e5b793f50682fad8c17bf073a9fdbd5114765"
     },
     {
       "path": "Config/DefaultCodeBuddyAvatar.ini",
@@ -16,8 +16,8 @@
     },
     {
       "path": "README.md",
-      "size": 4726,
-      "sha256": "f8192b410702c88a40da406a0dd09dccf08f06871e4695cbd8b440554cf0817b"
+      "size": 5013,
+      "sha256": "0ba8c7444b96c3894510ae75b1d2cfb3ea062357487b972b77942c00241d5ae0"
     },
     {
       "path": "Source/CodeBuddyAvatar/CodeBuddyAvatar.Build.cs",
@@ -31,8 +31,8 @@
     },
     {
       "path": "Source/CodeBuddyAvatar/Private/CodeBuddyAvatarSubsystem.cpp",
-      "size": 33229,
-      "sha256": "b4ed21b55884ab0295ffae2fc6605d6fba6ff44c8f5eccdf80d7c0417f361de9"
+      "size": 34985,
+      "sha256": "42c5661c441d4b58c71fd7d5f52226a896d64a02698bbfa3c217fdadccec70aa"
     },
     {
       "path": "Source/CodeBuddyAvatar/Private/CodeBuddyWavParser.cpp",
@@ -51,8 +51,8 @@
     },
     {
       "path": "Source/CodeBuddyAvatar/Public/CodeBuddyAvatarTypes.h",
-      "size": 2378,
-      "sha256": "94e0c8145dcec10611b3272b3131e963061d75ce125250b3280fb4c0869913e9"
+      "size": 3013,
+      "sha256": "10bb5958dbd0a097acf10404be1690851a60bd94ffd4171f00f62a366a323215"
     },
     {
       "path": "Source/CodeBuddyAvatar/Public/CodeBuddyWavParser.h",

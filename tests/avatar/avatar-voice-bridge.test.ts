@@ -34,6 +34,33 @@ describe('voice to avatar lifecycle', () => {
     expect(events.every((event) => event.turnId === events[0]?.turnId)).toBe(true);
   });
 
+  it('sends MetaHuman a raw-free delivery profile derived from the vocal turn', async () => {
+    const events: AvatarEvent[] = [];
+    const heard = 'on avance vite maintenant donne moi les trois points essentiels';
+    const handler = makeVoiceReply({
+      replyFn: async () => 'Voici les trois points.',
+      synth: async () => '/tmp/avatar-delivery-test.wav',
+      play: async () => undefined,
+      onAvatarEvent: (event) => events.push(event),
+    });
+
+    await handler(heard, { audioMs: 3000 });
+
+    expect(events[0]).toMatchObject({
+      type: 'avatar.turn.started',
+      cue: {
+        delivery: {
+          pace: 'brisk',
+          pauseStyle: 'light',
+          targetWpm: 184,
+          sentencePauseMs: 140,
+        },
+      },
+    });
+    expect(JSON.stringify(events[0])).not.toContain('humanWpm');
+    expect(JSON.stringify(events[0])).not.toContain(heard);
+  });
+
   it('ends the avatar performance immediately when speech is interrupted', async () => {
     const events: AvatarEvent[] = [];
     let playbackStarted!: () => void;
@@ -113,7 +140,6 @@ describe('voice to avatar lifecycle', () => {
       jokes: () => null,
       classify: () => true,
       chitchat: async () => '',
-      // eslint-disable-next-line require-yield -- prefetch must bypass the model stream
       chitchatStream: async function* () {},
       agentReply: async () => '',
     });

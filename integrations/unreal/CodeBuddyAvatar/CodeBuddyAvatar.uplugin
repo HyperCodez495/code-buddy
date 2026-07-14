@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 5,
-  "VersionName": "0.5.0-split-a.5",
+  "Version": 6,
+  "VersionName": "0.6.0-split-a.6",
   "FriendlyName": "Code Buddy Avatar",
   "Description": "Authenticated Code Buddy avatar renderer for Unreal Engine and MetaHuman.",
   "Category": "Animation",

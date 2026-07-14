@@ -51,7 +51,7 @@ async function verifyContracts(files) {
 
   const descriptor = JSON.parse(await readFile(path.join(pluginRoot, 'CodeBuddyAvatar.uplugin'), 'utf8'));
   assert(descriptor.FileVersion === 3, 'uplugin FileVersion must be 3');
-  assert(descriptor.VersionName === '0.5.0-split-a.5', 'unexpected plugin version');
+  assert(descriptor.VersionName === '0.6.0-split-a.6', 'unexpected plugin version');
   const runtime = descriptor.Modules?.find((module) => module.Name === 'CodeBuddyAvatar');
   assert(runtime?.Type === 'Runtime', 'CodeBuddyAvatar must be a Runtime module');
   assert(runtime?.PlatformAllowList?.includes('Win64'), 'plugin must explicitly target Win64');
@@ -86,6 +86,9 @@ async function verifyContracts(files) {
     'if (!bSpeechStartReceived && !ActiveAudioComponent)',
     'if (bSpeechStartReceived && !ActiveTurnId.IsEmpty())',
     'avatar.speech.interrupted',
+    'TEXT("delivery")',
+    'Result.TargetWpm',
+    'Result.SentencePauseMs',
   ]) {
     assert(subsystem.includes(invariant), `missing renderer contract invariant: ${invariant}`);
   }
@@ -95,7 +98,7 @@ async function verifyContracts(files) {
   assert(config.includes('bAudioDrivenAnimationEnabled=False'), 'animation capability must fail closed');
 
   const deployment = await readFile(
-    path.join(repoRoot, 'scripts', 'unreal', 'Invoke-CodeBuddyAvatarV5.ps1'),
+    path.join(repoRoot, 'scripts', 'unreal', 'Invoke-CodeBuddyAvatarV6.ps1'),
     'utf8',
   );
   for (const invariant of [
@@ -122,9 +125,9 @@ async function buildManifest(files) {
   }
   return {
     schemaVersion: 1,
-    bundleId: 'metahuman-split-a.5',
+    bundleId: 'metahuman-split-a.6',
     protocolVersion: 1,
-    pluginVersion: '0.5.0-split-a.5',
+    pluginVersion: '0.6.0-split-a.6',
     files: entries,
   };
 }
