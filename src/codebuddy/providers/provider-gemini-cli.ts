@@ -70,6 +70,17 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 /** Grace period between SIGTERM and SIGKILL when killing a stuck child. */
 const KILL_GRACE_MS = 5_000;
 
+function abortErrorForSignal(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const error = new Error('gemini-cli: request aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw abortErrorForSignal(signal);
+}
+
 interface GeminiCliJsonOutput {
   response?: string;
   /**
@@ -157,6 +168,7 @@ export class GeminiCliProvider implements Provider {
     _tools?: CodeBuddyTool[],
     opts?: ChatOptions,
   ): Promise<CodeBuddyResponse> {
+    throwIfAborted(opts?.signal);
     const model = opts?.model ?? this.model;
     const prompt = formatMessagesForCli(messages);
     const args = ['-p', prompt, '-m', model, '-o', 'json', '--approval-mode', this.approvalMode];
@@ -166,6 +178,7 @@ export class GeminiCliProvider implements Provider {
       args,
       this.extraEnv,
       opts?.timeoutMs ?? this.requestTimeoutMs,
+      opts?.signal,
     );
 
     if (exitCode !== 0) {
@@ -209,6 +222,7 @@ export class GeminiCliProvider implements Provider {
     _tools?: CodeBuddyTool[],
     opts?: ChatOptions,
   ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
+    throwIfAborted(opts?.signal);
     const model = opts?.model ?? this.model;
     const prompt = formatMessagesForCli(messages);
     const args = [
@@ -227,11 +241,17 @@ export class GeminiCliProvider implements Provider {
       env: { ...process.env, ...this.extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const exitPromise = waitForExit(child);
 
+    let timedOut = false;
+    let callerAborted = false;
     const timeout = setTimeout(() => {
+      timedOut = true;
       logger.warn('[gemini-cli] stream timeout — sending SIGTERM');
       killChild(child);
+      rl.close();
     }, opts?.timeoutMs ?? this.requestTimeoutMs);
+    timeout.unref?.();
 
     const stderrChunks: string[] = [];
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk.toString()));
@@ -240,7 +260,15 @@ export class GeminiCliProvider implements Provider {
     });
 
     const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+    const onAbort = (): void => {
+      callerAborted = true;
+      killChild(child);
+      rl.close();
+    };
+    opts?.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts?.signal?.aborted) onAbort();
 
+    let exitCode: number | null = null;
     try {
       let bytesSeen = 0;
       for await (const line of rl) {
@@ -312,13 +340,20 @@ export class GeminiCliProvider implements Provider {
             break;
         }
       }
+      // Keep cancellation wired through process exit, not only stdout EOF.
+      exitCode = await exitPromise;
     } finally {
       clearTimeout(timeout);
+      opts?.signal?.removeEventListener('abort', onAbort);
       rl.close();
     }
 
-    // Wait for child to fully exit so we can inspect the exit code.
-    const exitCode = await waitForExit(child);
+    if (callerAborted && opts?.signal) throw abortErrorForSignal(opts.signal);
+    if (timedOut) {
+      throw new Error(
+        `gemini-cli: timeout after ${opts?.timeoutMs ?? this.requestTimeoutMs}ms`,
+      );
+    }
     if (exitCode !== 0) {
       throw mapExitCode(exitCode, stderrChunks.join(''));
     }
@@ -429,7 +464,13 @@ function spawnAndCollect(
   args: string[],
   extraEnv: Record<string, string>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<SpawnResult> {
+  try {
+    throwIfAborted(signal);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   return new Promise<SpawnResult>((resolve, reject) => {
     const child = spawn(binary, args, {
       shell: false,
@@ -441,12 +482,38 @@ function spawnAndCollect(
     const stderrChunks: Buffer[] = [];
     let stdoutBytes = 0;
     let killed = false;
+    let settled = false;
+
+    const cleanup = (): void => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const rejectOnce = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const resolveOnce = (result: SpawnResult): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+    const onAbort = (): void => {
+      killed = true;
+      killChild(child);
+      rejectOnce(signal ? abortErrorForSignal(signal) : new Error('gemini-cli: request aborted'));
+    };
 
     const timeout = setTimeout(() => {
       killed = true;
       logger.warn('[gemini-cli] timeout — sending SIGTERM');
       killChild(child);
     }, timeoutMs);
+    timeout.unref?.();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutBytes += chunk.length;
@@ -460,14 +527,13 @@ function spawnAndCollect(
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
 
     child.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(new Error(`gemini-cli: failed to spawn ${binary} — ${err.message}`));
+      rejectOnce(new Error(`gemini-cli: failed to spawn ${binary} — ${err.message}`));
     });
 
     child.on('close', (code) => {
-      clearTimeout(timeout);
+      if (settled) return;
       if (killed && code !== 0) {
-        reject(
+        rejectOnce(
           new Error(
             stdoutBytes > STDOUT_BYTES_CAP
               ? `gemini-cli: stdout exceeded ${STDOUT_BYTES_CAP} bytes`
@@ -476,7 +542,7 @@ function spawnAndCollect(
         );
         return;
       }
-      resolve({
+      resolveOnce({
         stdout: Buffer.concat(stdoutChunks).toString('utf-8'),
         stderr: Buffer.concat(stderrChunks).toString('utf-8'),
         exitCode: code,
@@ -491,13 +557,19 @@ function killChild(child: GeminiCliChild): void {
   } catch {
     /* already dead */
   }
-  setTimeout(() => {
+  const clearForceKill = (): void => clearTimeout(forceKill);
+  const forceKill = setTimeout(() => {
+    child.removeListener('close', clearForceKill);
     try {
-      if (!child.killed) child.kill('SIGKILL');
+      // `child.killed` only means a signal was sent; it does not prove the
+      // process exited. Escalate when no close event arrived during the grace.
+      if (child.exitCode === null) child.kill('SIGKILL');
     } catch {
       /* already dead */
     }
-  }, KILL_GRACE_MS).unref?.();
+  }, KILL_GRACE_MS);
+  forceKill.unref?.();
+  child.once('close', clearForceKill);
 }
 
 function waitForExit(child: GeminiCliChild): Promise<number | null> {

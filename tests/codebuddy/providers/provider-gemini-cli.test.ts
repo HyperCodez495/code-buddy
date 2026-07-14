@@ -14,11 +14,16 @@ import { PassThrough } from 'node:stream';
 const state = vi.hoisted(() => {
   return {
     spawnCalls: [] as Array<{ command: string; args: string[] }>,
+    spawnedChildren: [] as Array<{
+      killed: boolean;
+      kill: ReturnType<typeof vi.fn>;
+    }>,
     nextRun: {
       stdout: '',
       stderr: '',
       exitCode: 0 as number | null,
       streamLines: [] as string[],
+      delayMs: 0,
     },
   };
 });
@@ -41,13 +46,21 @@ vi.mock('node:child_process', async () => {
       child.stderr = stderr;
       child.killed = false;
       child.exitCode = null;
-      child.kill = (_sig?: string) => {
+      let completionTimer: ReturnType<typeof setTimeout> | undefined;
+      child.kill = vi.fn((_sig?: string) => {
         child.killed = true;
+        if (completionTimer) clearTimeout(completionTimer);
+        setImmediate(() => {
+          stdout.end();
+          stderr.end();
+          child.emit('close', null);
+        });
         return true;
-      };
+      });
+      state.spawnedChildren.push(child);
 
       // Defer until after the provider has wired up listeners.
-      setImmediate(() => {
+      completionTimer = setTimeout(() => {
         if (state.nextRun.stderr) stderr.write(state.nextRun.stderr);
         stderr.end();
 
@@ -65,7 +78,8 @@ vi.mock('node:child_process', async () => {
           child.exitCode = state.nextRun.exitCode;
           child.emit('close', state.nextRun.exitCode);
         });
-      });
+      }, state.nextRun.delayMs);
+      completionTimer.unref?.();
 
       return child;
     }),
@@ -77,7 +91,7 @@ import type { CodeBuddyMessage } from '../../../src/codebuddy/client.js';
 
 beforeEach(() => {
   state.spawnCalls.length = 0;
-  state.spawnFn = undefined;
+  state.spawnedChildren.length = 0;
   state.nextRun = { stdout: '', stderr: '', exitCode: 0, streamLines: [], delayMs: 0 };
 });
 
@@ -222,6 +236,44 @@ describe('GeminiCliProvider — chat() (non-streaming)', () => {
     expect(result.usage).toBeUndefined();
   });
 
+  it('does not spawn when the caller signal is already aborted', async () => {
+    const provider = new GeminiCliProvider({
+      binaryPath: '/fake/gemini',
+      model: 'gemini-2.5-pro',
+      defaultMaxTokens: 1024,
+    });
+
+    await expect(provider.chat(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      { signal: AbortSignal.abort() },
+    )).rejects.toMatchObject({ name: 'AbortError' });
+    expect(state.spawnCalls).toHaveLength(0);
+  });
+
+  it('kills a running child and removes the abort listener', async () => {
+    state.nextRun.delayMs = 60_000;
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    const provider = new GeminiCliProvider({
+      binaryPath: '/fake/gemini',
+      model: 'gemini-2.5-pro',
+      defaultMaxTokens: 1024,
+    });
+    const pending = provider.chat(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(state.spawnedChildren).toHaveLength(1));
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(state.spawnedChildren[0]?.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
   it('parses the nested stats.models[name].tokens shape (Gemini 3 era)', async () => {
     // Real gemini-cli >= v0.11 emits stats nested per model.
     state.nextRun.stdout = JSON.stringify({
@@ -329,6 +381,32 @@ describe('GeminiCliProvider — chatStream() (JSONL events)', () => {
       }
     };
     await expect(drain()).rejects.toThrow(/API_FAILURE/);
+  });
+
+  it('kills the streaming child and rejects instead of waiting for output', async () => {
+    state.nextRun.delayMs = 60_000;
+    const controller = new AbortController();
+    const provider = new GeminiCliProvider({
+      binaryPath: '/fake/gemini',
+      model: 'gemini-2.5-pro',
+      defaultMaxTokens: 1024,
+    });
+    const drain = async (): Promise<void> => {
+      for await (const _chunk of provider.chatStream(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        { signal: controller.signal },
+      )) {
+        // The child deliberately never writes before cancellation.
+      }
+    };
+    const pending = drain();
+    await vi.waitFor(() => expect(state.spawnedChildren).toHaveLength(1));
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(state.spawnedChildren[0]?.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
 

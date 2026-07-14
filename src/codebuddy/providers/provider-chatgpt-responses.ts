@@ -234,6 +234,65 @@ interface ResponsesRequestBody {
   include?: string[];
 }
 
+class ChatGptConnectTimeoutError extends Error {
+  constructor() {
+    super(`ChatGPT Responses backend did not respond within ${CONNECT_TIMEOUT_MS}ms`);
+    this.name = 'ChatGptConnectTimeoutError';
+  }
+}
+
+interface ChatGptRequestControl {
+  signal: AbortSignal;
+  abortForConnectTimeout(): void;
+  didConnectTimeout(): boolean;
+  wasCallerAborted(): boolean;
+  dispose(abortActive?: boolean): void;
+}
+
+/**
+ * One transport controller spans auth retries, model fallbacks and SSE body
+ * consumption. Keeping the parent listener past response headers is essential:
+ * a Responses request can stream for minutes after `fetch()` itself resolves.
+ */
+function createChatGptRequestControl(parent?: AbortSignal): ChatGptRequestControl {
+  const controller = new AbortController();
+  let connectTimedOut = false;
+  let callerAborted = false;
+  let disposed = false;
+  const onParentAbort = (): void => {
+    callerAborted = true;
+    if (!controller.signal.aborted) controller.abort(parent?.reason);
+  };
+
+  if (parent?.aborted) onParentAbort();
+  else parent?.addEventListener('abort', onParentAbort, { once: true });
+
+  return {
+    signal: controller.signal,
+    abortForConnectTimeout: (): void => {
+      if (controller.signal.aborted) return;
+      connectTimedOut = true;
+      controller.abort(new ChatGptConnectTimeoutError());
+    },
+    didConnectTimeout: () => connectTimedOut,
+    wasCallerAborted: () => callerAborted,
+    dispose: (abortActive = false): void => {
+      if (disposed) return;
+      disposed = true;
+      parent?.removeEventListener('abort', onParentAbort);
+      if (abortActive && !controller.signal.aborted) controller.abort();
+    },
+  };
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  const error = new Error('ChatGPT Responses request aborted');
+  error.name = 'AbortError';
+  throw error;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Provider implementation
 // ─────────────────────────────────────────────────────────────────────
@@ -336,117 +395,161 @@ export class ChatGptResponsesProvider implements Provider {
     tools: CodeBuddyTool[] = [],
     opts: ChatOptions = {}
   ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
-    // Auth is needed both by `/models` discovery and by the Responses call.
-    let auth = await this.authProvider();
-    if (!auth) {
-      throw new Error(
-        'No ChatGPT credentials. Run `/login chatgpt` (or click Sign In in Cowork settings) first.',
-      );
-    }
-
-    let catalog: ChatGptCodexModelCatalog | null = null;
-    if (this.modelCatalogProvider) {
-      try {
-        catalog = await this.modelCatalogProvider(auth);
-      } catch (error) {
-        logger.debug('[chatgpt-responses] Model discovery failed; continuing with safe policy', {
-          error: error instanceof Error ? error.name : 'unknown',
-        });
+    const requestControl = createChatGptRequestControl(opts.signal);
+    try {
+      throwIfAborted(requestControl.signal);
+      // Auth is needed both by `/models` discovery and by the Responses call.
+      let auth = await this.authProvider();
+      throwIfAborted(requestControl.signal);
+      if (!auth) {
+        throw new Error(
+          'No ChatGPT credentials. Run `/login chatgpt` (or click Sign In in Cowork settings) first.',
+        );
       }
-    }
 
-    let model = resolveCodexModel(
-      opts.model ?? this.currentModel,
-      opts.model != null,
-      this.configuredModel,
-    );
-    if (!opts.model) model = selectChatGptOAuthModel(model, catalog);
+      let catalog: ChatGptCodexModelCatalog | null = null;
+      if (this.modelCatalogProvider) {
+        try {
+          catalog = await this.modelCatalogProvider(auth);
+        } catch (error) {
+          logger.debug('[chatgpt-responses] Model discovery failed; continuing with safe policy', {
+            error: error instanceof Error ? error.name : 'unknown',
+          });
+        }
+        throwIfAborted(requestControl.signal);
+      }
+
+      let model = resolveCodexModel(
+        opts.model ?? this.currentModel,
+        opts.model != null,
+        this.configuredModel,
+      );
+      if (!opts.model) model = selectChatGptOAuthModel(model, catalog);
 
     // If this is a brand-new conversational turn (last user message has
     // no preceding tool round in messages), drop any stale reasoning
     // blobs from the previous turn — they belonged to a different
     // chain-of-thought.
-    if (isFreshUserTurn(messages)) {
-      this.lastTurnReasoningItems = [];
-    }
-    const { instructions, input } = convertMessages(messages, this.lastTurnReasoningItems);
-    let request = this.buildRequestForModel(model, instructions, input, tools, opts, catalog);
-    let response = await this.postResponses(request.body, auth, request.useResponsesLite);
+      if (isFreshUserTurn(messages)) {
+        this.lastTurnReasoningItems = [];
+      }
+      const { instructions, input } = convertMessages(messages, this.lastTurnReasoningItems);
+      let request = this.buildRequestForModel(model, instructions, input, tools, opts, catalog);
+      let response = await this.postResponses(
+        request.body,
+        auth,
+        request.useResponsesLite,
+        requestControl,
+      );
 
     // 401 → refresh and retry once.
-    if (response.status === 401) {
-      logger.debug('[chatgpt-responses] 401, refreshing token and retrying once');
-      auth = await this.refreshAuth();
-      if (!auth) {
-        throw new Error(
-          'ChatGPT auth expired or revoked. Run `/login chatgpt` to re-authenticate.',
+      if (response.status === 401) {
+        logger.debug('[chatgpt-responses] 401, refreshing token and retrying once');
+        auth = await this.refreshAuth();
+        throwIfAborted(requestControl.signal);
+        if (!auth) {
+          throw new Error(
+            'ChatGPT auth expired or revoked. Run `/login chatgpt` to re-authenticate.',
+          );
+        }
+        // Retry the exact same request. Authentication errors must never be
+        // disguised as model fallback.
+        response = await this.postResponses(
+          request.body,
+          auth,
+          request.useResponsesLite,
+          requestControl,
         );
       }
-      // Retry the exact same request. Authentication errors must never be
-      // disguised as model fallback.
-      response = await this.postResponses(request.body, auth, request.useResponsesLite);
-    }
 
     // Only 400/404 model compatibility failures may advance to another
     // account-supported model. Quota (429), auth (401/403), and transient
     // errors stop immediately.
-    if (!response.ok && !this.disableModelFallback && !opts.model) {
-      const errorText = await response.clone().text().catch(() => '');
-      if (isChatGptModelCompatibilityError(response.status, errorText)) {
-        for (const fallback of getChatGptOAuthFallbackModels(model, catalog)) {
-          logger.warn(
-            `[chatgpt-responses] Model "${model}" rejected by backend. Auto-falling back to "${fallback}". Set --model explicitly to override.`,
-          );
-          request = this.buildRequestForModel(
-            fallback,
-            instructions,
-            input,
-            tools,
-            opts,
-            catalog,
-          );
-          response = await this.postResponses(request.body, auth, request.useResponsesLite);
-          model = fallback;
-          if (response.ok) break;
+      if (!response.ok && !this.disableModelFallback && !opts.model) {
+        const errorText = await response.clone().text().catch(() => '');
+        throwIfAborted(requestControl.signal);
+        if (isChatGptModelCompatibilityError(response.status, errorText)) {
+          for (const fallback of getChatGptOAuthFallbackModels(model, catalog)) {
+            logger.warn(
+              `[chatgpt-responses] Model "${model}" rejected by backend. Auto-falling back to "${fallback}". Set --model explicitly to override.`,
+            );
+            request = this.buildRequestForModel(
+              fallback,
+              instructions,
+              input,
+              tools,
+              opts,
+              catalog,
+            );
+            response = await this.postResponses(
+              request.body,
+              auth,
+              request.useResponsesLite,
+              requestControl,
+            );
+            model = fallback;
+            if (response.ok) break;
 
-          const fallbackError = await response.clone().text().catch(() => '');
-          if (!isChatGptModelCompatibilityError(response.status, fallbackError)) break;
+            const fallbackError = await response.clone().text().catch(() => '');
+            throwIfAborted(requestControl.signal);
+            if (!isChatGptModelCompatibilityError(response.status, fallbackError)) break;
+          }
         }
       }
-    }
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw enrichError(
-        response.status,
-        errorText,
-        request.body.model,
-        getChatGptOAuthFallbackModels(request.body.model, catalog),
-      );
-    }
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throwIfAborted(requestControl.signal);
+        throw enrichError(
+          response.status,
+          errorText,
+          request.body.model,
+          getChatGptOAuthFallbackModels(request.body.model, catalog),
+        );
+      }
 
-    this.currentModel = request.body.model;
+      this.currentModel = request.body.model;
 
-    if (!response.body) {
-      throw new Error('ChatGPT Responses backend returned empty body');
-    }
+      if (!response.body) {
+        throw new Error('ChatGPT Responses backend returned empty body');
+      }
 
     // Reset capture buffer for THIS response — only successful new
     // reasoning blobs should populate `lastTurnReasoningItems`. We swap
     // in a fresh array so the SSE parser can push without races.
     // Pass the post-fallback model so streaming chunks are labelled
     // with the model that actually served the response.
-    const capturedReasoning: ResponsesReasoningItem[] = [];
-    try {
-      yield* parseSseStream(response.body, request.body.model, (item) => {
-        capturedReasoning.push(item);
-      });
-    } finally {
-      // Whatever we captured (even partially on error) replaces the
-      // previous turn's blobs — fresher data is always more correct.
-      if (capturedReasoning.length > 0) {
-        this.lastTurnReasoningItems = capturedReasoning;
+      const capturedReasoning: ResponsesReasoningItem[] = [];
+      try {
+        yield* parseSseStream(response.body, request.body.model, (item) => {
+          capturedReasoning.push(item);
+        });
+      } finally {
+        // Whatever we captured (even partially on error) replaces the
+        // previous turn's blobs — fresher data is always more correct.
+        if (capturedReasoning.length > 0) {
+          this.lastTurnReasoningItems = capturedReasoning;
+        }
       }
+    } catch (error) {
+      // The connect controller normally aborts inside postResponses(), but a
+      // controller can already be aborted before fetch starts (notably in
+      // tests, and in runtimes that wrap AbortController). Preserve caller
+      // cancellation verbatim; only an internal abort is a connect timeout.
+      if (
+        requestControl.didConnectTimeout() ||
+        (requestControl.signal.aborted && !requestControl.wasCallerAborted())
+      ) {
+        throw new Error(
+          `ChatGPT Responses backend did not respond within ${CONNECT_TIMEOUT_MS}ms. ` +
+            `Likely a network issue or stalled backend — try again, or run \`/login chatgpt\` to refresh credentials.`,
+        );
+      }
+      throw error;
+    } finally {
+      // Remove the caller listener and cancel any unread SSE body when a
+      // consumer stops early. Idempotent after normal response completion.
+      requestControl.dispose(true);
     }
   }
 
@@ -486,6 +589,7 @@ export class ChatGptResponsesProvider implements Provider {
     body: ResponsesRequestBody,
     auth: ChatGptAuth,
     useResponsesLite: boolean,
+    requestControl: ChatGptRequestControl,
   ): Promise<Response> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${auth.access_token}`,
@@ -513,20 +617,24 @@ export class ChatGptResponsesProvider implements Provider {
     // Connect timeout: bounds the wait for response headers only. Cleared
     // as soon as fetch resolves, so it does not interrupt body streaming —
     // the SSE reader has its own idle timeout for that.
-    const controller = new AbortController();
     const connectTimer = setTimeout(
-      () => controller.abort(),
+      () => requestControl.abortForConnectTimeout(),
       CONNECT_TIMEOUT_MS,
     );
+    connectTimer.unref?.();
     try {
+      throwIfAborted(requestControl.signal);
       return await fetch(RESPONSES_URL, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: requestControl.signal,
       });
     } catch (err) {
-      if ((err as Error)?.name === 'AbortError') {
+      if (
+        requestControl.didConnectTimeout() ||
+        (requestControl.signal.aborted && !requestControl.wasCallerAborted())
+      ) {
         throw new Error(
           `ChatGPT Responses backend did not respond within ${CONNECT_TIMEOUT_MS}ms. ` +
             `Likely a network issue or stalled backend — try again, or run \`/login chatgpt\` to refresh credentials.`,

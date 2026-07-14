@@ -138,9 +138,9 @@ export interface ChatOptions {
   disableProviderFallback?: boolean;
   /**
    * Abort this request mid-flight (barge-in / cancellation). Threaded to the
-   * transport (undici/fetch) via the OpenAI SDK's per-request `RequestOptions.signal`
-   * on the OpenAI-compat strategy. Additive: when omitted, the call is unchanged.
-   * (Gemini-native / ChatGPT-Responses / Gemini-CLI strategies currently ignore it.)
+   * active transport: OpenAI-compatible fetch, native Gemini fetch, ChatGPT
+   * Responses SSE, or the Gemini CLI child process. Additive: when omitted,
+   * the call is unchanged.
    */
   signal?: AbortSignal;
   /**

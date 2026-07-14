@@ -50,6 +50,66 @@ export interface GeminiNativeProviderOptions {
   defaultGoogleSearch?: boolean;
 }
 
+interface LinkedRequestAbortControl {
+  signal: AbortSignal;
+  clearTimeout(): void;
+  dispose(abortActive?: boolean): void;
+}
+
+/**
+ * Link a caller cancellation to one Gemini fetch while retaining the provider's
+ * existing per-request timeout. The parent listener deliberately remains live
+ * until the response body is consumed; `fetch()` resolving only means headers
+ * arrived, not that `response.json()` or an SSE stream has finished.
+ */
+function createLinkedRequestAbortControl(
+  parent: AbortSignal | undefined,
+  timeoutMs: number,
+): LinkedRequestAbortControl {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  const onParentAbort = (): void => {
+    if (!controller.signal.aborted) controller.abort(parent?.reason);
+  };
+
+  if (parent?.aborted) onParentAbort();
+  else parent?.addEventListener('abort', onParentAbort, { once: true });
+
+  if (!controller.signal.aborted) {
+    timeout = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        controller.abort(new DOMException('Gemini request timed out', 'TimeoutError'));
+      }
+    }, timeoutMs);
+    timeout.unref?.();
+  }
+
+  const clearRequestTimeout = (): void => {
+    if (timeout) clearTimeout(timeout);
+    timeout = undefined;
+  };
+
+  return {
+    signal: controller.signal,
+    clearTimeout: clearRequestTimeout,
+    dispose: (abortActive = false): void => {
+      if (disposed) return;
+      disposed = true;
+      clearRequestTimeout();
+      parent?.removeEventListener('abort', onParentAbort);
+      if (abortActive && !controller.signal.aborted) controller.abort();
+    },
+  };
+}
+
+function abortErrorForSignal(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const error = new Error('Gemini request aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
 export class GeminiNativeProvider implements Provider {
   private apiKey: string;
   private baseURL: string;
@@ -390,44 +450,50 @@ export class GeminiNativeProvider implements Provider {
       });
 
       let response: Response;
+      let responseAbortControl: LinkedRequestAbortControl | undefined;
       try {
         // Make request with retry, optionally guarded by the circuit breaker.
         response = await this.withCircuitBreaker(opts?.circuitBreaker, () => retry(
           async () => {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
-            let res: Response;
+            const control = createLinkedRequestAbortControl(opts?.signal, requestTimeoutMs);
             try {
-              res = await fetch(url, {
+              if (opts?.signal?.aborted) throw abortErrorForSignal(opts.signal);
+              const res = await fetch(url, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'x-goog-api-key': this.apiKey,
                 },
                 body: JSON.stringify(body),
-                signal: controller.signal,
+                signal: control.signal,
               });
-            } finally {
-              clearTimeout(timeoutId);
-            }
+              // Preserve the previous timeout semantics (headers/connect), but
+              // keep caller cancellation linked through body consumption.
+              control.clearTimeout();
 
-            if (!res.ok) {
-              const errorText = await res.text();
-              logger.error('Gemini API error', {
-                source: 'GeminiNativeProvider',
-                status: res.status,
-                statusText: res.statusText,
-                errorBody: errorText?.substring(0, 500),
-              });
-              throw new Error(`${res.status} ${errorText || res.statusText}`);
-            }
+              if (!res.ok) {
+                const errorText = await res.text();
+                logger.error('Gemini API error', {
+                  source: 'GeminiNativeProvider',
+                  status: res.status,
+                  statusText: res.statusText,
+                  errorBody: errorText?.substring(0, 500),
+                });
+                throw new Error(`${res.status} ${errorText || res.statusText}`);
+              }
 
-            return res;
+              responseAbortControl = control;
+              return res;
+            } catch (error) {
+              control.dispose(true);
+              throw error;
+            }
           },
           {
             ...RetryStrategies.llmApi,
             timeout: requestTimeoutMs * 2,
-            isRetryable: RetryPredicates.llmApiError,
+            isRetryable: error =>
+              !opts?.signal?.aborted && RetryPredicates.llmApiError(error),
             onRetry: (error, attempt, delay) => {
               logger.warn(`Gemini API call failed, retrying (attempt ${attempt}) in ${delay}ms...`, {
                 source: 'GeminiNativeProvider',
@@ -438,6 +504,8 @@ export class GeminiNativeProvider implements Provider {
           }
         ));
       } catch (error) {
+        responseAbortControl?.dispose(true);
+        if (opts?.signal?.aborted) throw abortErrorForSignal(opts.signal);
         const message = error instanceof Error ? error.message : String(error);
         const looksLikeModel404 =
           message.includes('404') &&
@@ -475,20 +543,26 @@ export class GeminiNativeProvider implements Provider {
         /* rate-limit telemetry is best-effort */
       }
 
-      const data = await response.json() as {
-        candidates: Array<{
-          content: {
-            parts: Array<{ text?: string; functionCall?: { name: string; args: unknown } }>;
+      const data = await (async () => {
+        try {
+          return await response.json() as {
+            candidates: Array<{
+              content: {
+                parts: Array<{ text?: string; functionCall?: { name: string; args: unknown } }>;
+              };
+              finishReason: string;
+              groundingMetadata?: unknown;
+            }>;
+            usageMetadata?: {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            };
           };
-          finishReason: string;
-          groundingMetadata?: unknown;
-        }>;
-        usageMetadata?: {
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-          totalTokenCount?: number;
-        };
-      };
+        } finally {
+          responseAbortControl?.dispose();
+        }
+      })();
 
       // Convert response to CodeBuddy format
       const candidate = data.candidates?.[0];
@@ -799,12 +873,12 @@ export class GeminiNativeProvider implements Provider {
     const streamUrl = `${this.baseURL}/models/${model}:streamGenerateContent?alt=sse`;
     const requestTimeoutMs =
       opts?.timeoutMs && opts.timeoutMs >= 1000 ? opts.timeoutMs : this.geminiRequestTimeoutMs;
+    const requestControl = createLinkedRequestAbortControl(opts?.signal, requestTimeoutMs);
 
     try {
+      if (opts?.signal?.aborted) throw abortErrorForSignal(opts.signal);
       // Build the same request body as chat
       const body = this.buildGeminiBody(messages, tools, opts);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 
       let res: Response;
       try {
@@ -815,10 +889,12 @@ export class GeminiNativeProvider implements Provider {
             'x-goog-api-key': this.apiKey,
           },
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: requestControl.signal,
         }));
       } finally {
-        clearTimeout(timeoutId);
+        // The provider timeout guards connection/headers as before. The parent
+        // signal remains linked until the SSE reader is fully consumed.
+        requestControl.clearTimeout();
       }
 
       if (!res.ok) {
@@ -827,11 +903,13 @@ export class GeminiNativeProvider implements Provider {
           source: 'GeminiNativeProvider',
           status: res.status,
         });
+        requestControl.dispose(true);
         yield* this.geminiChatStreamFallback(messages, tools, opts);
         return;
       }
 
       if (!res.body) {
+        requestControl.dispose(true);
         yield* this.geminiChatStreamFallback(messages, tools, opts);
         return;
       }
@@ -958,11 +1036,16 @@ export class GeminiNativeProvider implements Provider {
         }],
       };
     } catch (error) {
+      requestControl.dispose(true);
+      if (opts?.signal?.aborted) throw abortErrorForSignal(opts.signal);
       logger.warn('Gemini streaming error, falling back to non-streaming', {
         source: 'GeminiNativeProvider',
         error: error instanceof Error ? error.message : String(error),
       });
       yield* this.geminiChatStreamFallback(messages, tools, opts);
+    } finally {
+      // Also cancels an unread body when a consumer stops iterating early.
+      requestControl.dispose(true);
     }
   }
 

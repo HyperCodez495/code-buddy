@@ -1229,4 +1229,43 @@ describe('ChatGptResponsesProvider — chatStream wiring', () => {
     expect(caught!.message).toMatch(/did not respond/i);
     expect(caught!.message).toMatch(/login chatgpt/i);
   });
+
+  it('aborts the Responses SSE transport after headers and removes the caller listener', async () => {
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    let transportSignal: AbortSignal | undefined;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      transportSignal = init?.signal as AbortSignal;
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          const fail = (): void => streamController.error(transportSignal?.reason);
+          if (transportSignal?.aborted) fail();
+          else transportSignal?.addEventListener('abort', fail, { once: true });
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+    const provider = new ChatGptResponsesProvider({
+      authProvider: async () => authBundle(),
+      model: 'gpt-5.5',
+      defaultMaxTokens: 1_000,
+    });
+
+    const pending = provider.chat(
+      [{ role: 'user', content: 'long response' }],
+      [],
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(transportSignal).toBeDefined());
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(transportSignal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
 });
