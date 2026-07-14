@@ -203,6 +203,20 @@ describe('TaskRouter — privacy veto', () => {
     const plan = router.plan(classify(), peers, { privacyTag: 'public' });
     expect(plan.primary.peerId).toBe('cloud');
   });
+
+  it('keeps a local model on a mixed local/cloud peer for sensitive work', () => {
+    const peers = [peer('darkstar', {
+      egress: 'cloud',
+      models: [
+        model('qwen-local', { provider: 'ollama', egress: 'local' }),
+        model('claude-cloud', { provider: 'anthropic', egress: 'cloud' }),
+      ],
+    })];
+    const plan = router.plan(classify(), peers, { privacyTag: 'sensitive' });
+    expect(plan.primary.model).toBe('qwen-local');
+    expect(plan.primary.egress).toBe('local');
+    expect(plan.fallback).toBeUndefined();
+  });
 });
 
 describe('TaskRouter — target peers', () => {
@@ -326,6 +340,27 @@ describe('TaskRouter — cost scoring', () => {
     expect(plan.primary.peerId).toBe('ministar');
     expect(plan.fallback?.peerId).toBe('cloud');
   });
+
+  it('applies a task budget to estimated tokens rather than one million tokens', () => {
+    const peers = [peer('cloud', {
+      egress: 'cloud',
+      models: [model('reasoner', {
+        provider: 'openai',
+        costInputUsdPerMtok: 5,
+        costOutputUsdPerMtok: 20,
+      })],
+    })];
+    expect(() => router.plan(classify({ estimatedTokens: 1_000 }), peers, {
+      estimatedTokens: 1_000,
+      estimatedOutputTokens: 500,
+      maxCostUsd: 0.02,
+    })).not.toThrow();
+    expect(() => router.plan(classify({ estimatedTokens: 1_000 }), peers, {
+      estimatedTokens: 1_000,
+      estimatedOutputTokens: 500,
+      maxCostUsd: 0.014,
+    })).toThrow(NoPeerAvailableError);
+  });
 });
 
 describe('TaskRouter — load scoring', () => {
@@ -344,6 +379,22 @@ describe('TaskRouter — load scoring', () => {
     ];
     const plan = router.plan(classify(), peers);
     expect(plan.primary.peerId).toBe('idle');
+  });
+
+  it('hard-excludes a saturated peer', () => {
+    const peers = [
+      peer('saturated', {
+        models: [model('best', { strengths: ['cheap', 'fast'] })],
+        maxConcurrency: 1,
+        activeRequests: 1,
+      }),
+      peer('available', {
+        models: [model('fallback')],
+        maxConcurrency: 1,
+        activeRequests: 0,
+      }),
+    ];
+    expect(router.plan(classify(), peers).primary.peerId).toBe('available');
   });
 });
 

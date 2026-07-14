@@ -29,12 +29,17 @@
 
 import { buildActiveLlmRegistry, type ActiveLlm } from './active-llm-registry.js';
 import { findRuntimeProvider } from './provider-catalog.js';
+import { classifyModelEgress, type ModelEgress } from './model-egress.js';
+
+export { classifyModelEgress } from './model-egress.js';
 
 export interface ActiveLlmModelPoolEntry {
   provider: string;
   model: string;
   apiKey?: string;
   baseURL?: string;
+  /** Real inference egress, not merely where a CLI process happens to run. */
+  egress: ModelEgress;
   costInputUsdPerMtok: number;
 }
 
@@ -52,9 +57,11 @@ function toEntry(c: ActiveLlm): ActiveLlmModelPoolEntry {
     model: c.model ?? '',
     ...(c.apiKey ? { apiKey: c.apiKey } : {}),
     ...(c.baseURL ? { baseURL: c.baseURL } : {}),
+    egress: classifyModelEgress(c.baseURL, c.isLocal),
     costInputUsdPerMtok: c.costInputUsdPerMtok,
   };
 }
+
 
 function modelCost(active: ActiveLlm, model: string): number {
   if (

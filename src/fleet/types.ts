@@ -67,6 +67,8 @@ export interface FleetModelDescriptor {
   avgLatencyMs?: number;
   /** Provider family — see `FleetProvider`. */
   provider: FleetProvider;
+  /** Real destination of this model's inference call. Falls back to peer egress for old peers. */
+  egress?: FleetEgress;
 }
 
 /**

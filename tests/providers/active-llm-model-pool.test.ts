@@ -26,7 +26,10 @@ vi.mock('../../src/fleet/capability-registry.js', () => ({
   getLocalCapabilities: (...args: unknown[]) => getLocalCapabilities(...args),
 }));
 
-import { listActiveLlmModelPool } from '../../src/providers/active-llm-model-pool.js';
+import {
+  classifyModelEgress,
+  listActiveLlmModelPool,
+} from '../../src/providers/active-llm-model-pool.js';
 
 function active(over: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -61,6 +64,7 @@ describe('listActiveLlmModelPool — cloud expansion', () => {
       expect(entry.apiKey).toBe('k-grok');
       expect(entry.baseURL).toBe('https://api.x.ai/v1');
       expect(entry.costInputUsdPerMtok).toBe(0.5);
+      expect(entry.egress).toBe('cloud');
     }
   });
 
@@ -174,6 +178,7 @@ describe('listActiveLlmModelPool — local expansion', () => {
     const lmstudio = pool.filter((p) => p.provider === 'lmstudio').map((p) => p.model);
     expect(ollama).toEqual(['qwen3:8b', 'gemma4:12b']);
     expect(lmstudio).toEqual(['meta-llama-3.1-8b-instruct']);
+    expect(pool.every((entry) => entry.egress === 'local')).toBe(true);
   });
 
   it('caps probed local models per runtime', async () => {
@@ -198,6 +203,20 @@ describe('listActiveLlmModelPool — local expansion', () => {
 
     const pool = await listActiveLlmModelPool({ env: {} });
     expect(pool.map((p) => p.model)).toEqual(['grok-4-latest', 'grok-3-mini', 'qwen3:8b']);
+  });
+});
+
+describe('classifyModelEgress', () => {
+  it('distinguishes loopback, trusted LAN and public endpoints', () => {
+    expect(classifyModelEgress('http://127.0.0.1:11434/v1', true)).toBe('local');
+    expect(classifyModelEgress('http://darkstar:11434/v1', true)).toBe('lan');
+    expect(classifyModelEgress('http://192.168.1.20:11434/v1', true)).toBe('lan');
+    expect(classifyModelEgress('https://ollama.example.com/v1', true)).toBe('cloud');
+  });
+
+  it('keeps subscription CLIs classified as cloud despite a local-looking URI', () => {
+    expect(classifyModelEgress('agy-cli://local', false)).toBe('cloud');
+    expect(classifyModelEgress('gemini-cli://local', false)).toBe('cloud');
   });
 });
 

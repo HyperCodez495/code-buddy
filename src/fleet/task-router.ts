@@ -44,6 +44,8 @@ export interface DispatchLane {
   model: string;
   /** Exact backend serving `model`. Optional only for legacy persisted plans. */
   provider?: FleetProvider;
+  /** Effective inference egress for this exact model lane. */
+  egress?: FleetEgress;
   /** 0..1 — diagnostic, lets the UI explain "why this peer". */
   score: number;
   /** Per-term breakdown for the rationale text. */
@@ -104,6 +106,8 @@ export interface DispatchConstraints {
    * `contextWindow` is too small. Defaults to `taskClassification.estimatedTokens`.
    */
   estimatedTokens?: number;
+  /** Expected generated tokens used for real per-task cost admission. */
+  estimatedOutputTokens?: number;
   /**
    * Hermes-style required role. When set, peers tagged with this role
    * (in `PeerCapability.roles`) get a match-score bonus, so a
@@ -161,6 +165,15 @@ export class TaskRouter {
     const targetPeerIds = normalizeTargetPeerIds(constraints.targetPeerIds);
     const excludePeerIds = normalizeTargetPeerIds(constraints.excludePeerIds);
     const excludeProviders = normalizeExcludedProviders(constraints.excludeProviders);
+    const estimatedInputTokens = Math.max(
+      0,
+      constraints.estimatedTokens ?? classification.estimatedTokens ?? 0,
+    );
+    const estimatedOutputTokens = Math.max(
+      0,
+      constraints.estimatedOutputTokens ??
+        Math.min(4_096, Math.max(256, Math.ceil(estimatedInputTokens * 0.25))),
+    );
 
     // 1. Enumerate every (peer, model) candidate.
     const candidates: DispatchLane[] = [];
@@ -175,17 +188,18 @@ export class TaskRouter {
       }
 
       const cap = slot.capability;
-
-      // Privacy veto.
       if (
-        constraints.privacyTag === 'sensitive' &&
-        PRIVACY_VETO_EGRESS.includes(cap.egress)
-      ) {
-        continue;
-      }
+        cap.maxConcurrency !== undefined &&
+        (cap.activeRequests ?? 0) >= cap.maxConcurrency
+      ) continue;
 
       for (const model of cap.models) {
         // Hard filters first — drop before scoring.
+        const egress = model.egress ?? cap.egress;
+        if (
+          constraints.privacyTag === 'sensitive' &&
+          PRIVACY_VETO_EGRESS.includes(egress)
+        ) continue;
         if (excludeProviders?.has(model.provider)) continue;
         if (model.contextWindow < minContextWindow) continue;
         if (
@@ -195,12 +209,14 @@ export class TaskRouter {
         ) {
           continue;
         }
+        const estimatedUsd = estimateModelCost(
+          model,
+          estimatedInputTokens,
+          estimatedOutputTokens,
+        );
         if (
           constraints.maxCostUsd !== undefined &&
-          model.costInputUsdPerMtok !== undefined &&
-          // Rough estimate: 1 Mtok input + 0.5 Mtok output.
-          (model.costInputUsdPerMtok + (model.costOutputUsdPerMtok ?? 0) * 0.5) >
-            constraints.maxCostUsd * 2
+          estimatedUsd > constraints.maxCostUsd
         ) {
           continue;
         }
@@ -210,6 +226,8 @@ export class TaskRouter {
           cap,
           requiredStrengths,
           budget,
+          estimatedInputTokens,
+          estimatedOutputTokens,
           roleHint,
         );
         const score =
@@ -222,6 +240,7 @@ export class TaskRouter {
           peerId: slot.peerId,
           model: model.id,
           provider: model.provider,
+          egress,
           score,
           breakdown,
           role: roleHint && cap.roles?.includes(roleHint) ? roleHint : undefined,
@@ -335,6 +354,8 @@ function scoreCandidate(
   cap: PeerCapability,
   requiredStrengths: ModelStrength[],
   budgetUsd: number,
+  estimatedInputTokens: number,
+  estimatedOutputTokens: number,
   requiredRole?: string,
 ): DispatchLane['breakdown'] {
   let match = scoreMatch(model.strengths, requiredStrengths);
@@ -345,7 +366,10 @@ function scoreCandidate(
   if (requiredRole && cap.roles && cap.roles.includes(requiredRole)) {
     match = Math.min(1, match * 1.25);
   }
-  const cost = scoreCost(model, budgetUsd);
+  const cost = scoreCost(
+    estimateModelCost(model, estimatedInputTokens, estimatedOutputTokens),
+    budgetUsd,
+  );
   const load = scoreLoad(cap);
   const latency = scoreLatency(model);
   return { match, cost, load, latency };
@@ -378,14 +402,20 @@ function scoreMatch(
  * candidate matching capabilities) while still strongly preferring
  * cheap ones in head-to-head comparisons.
  */
-function scoreCost(model: FleetModelDescriptor, budgetUsd: number): number {
-  if (model.costInputUsdPerMtok === undefined) {
-    // Local model, no $ cost — best score.
-    return 1;
-  }
-  // Estimate cost for a typical 1Mtok in / 0.5Mtok out exchange.
-  const expected =
-    model.costInputUsdPerMtok + (model.costOutputUsdPerMtok ?? 0) * 0.5;
+function estimateModelCost(
+  model: FleetModelDescriptor,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  if (model.costInputUsdPerMtok === undefined) return 0;
+  return (
+    (inputTokens / 1_000_000) * model.costInputUsdPerMtok +
+    (outputTokens / 1_000_000) * (model.costOutputUsdPerMtok ?? 0)
+  );
+}
+
+function scoreCost(expected: number, budgetUsd: number): number {
+  if (expected <= 0) return 1;
   if (budgetUsd <= 0) return 0;
   const ratio = expected / budgetUsd;
   return 1 / (1 + ratio);

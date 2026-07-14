@@ -264,6 +264,23 @@ describe('capability-registry — Ollama probe', () => {
     expect(cap.egress).toBe('cloud');
     expect(cap.models.some((m) => m.provider === 'ollama')).toBe(true);
     expect(cap.models.some((m) => m.provider === 'anthropic')).toBe(true);
+    expect(cap.models.find((m) => m.provider === 'ollama')?.egress).toBe('local');
+    expect(cap.models.find((m) => m.provider === 'anthropic')?.egress).toBe('cloud');
+  });
+
+  it('classifies a private-network Ollama endpoint as LAN', async () => {
+    process.env.OLLAMA_BASE_URL = 'http://192.168.1.20:11434';
+    global.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'darkstar-qwen' }] }), {
+          status: 200,
+        });
+      }
+      throw new Error('econn');
+    }) as unknown as typeof fetch;
+    const cap = await getLocalCapabilities();
+    expect(cap.models.find((model) => model.id === 'darkstar-qwen')?.egress).toBe('lan');
+    expect(cap.egress).toBe('lan');
   });
 
   it('survives an Ollama probe error and returns empty models gracefully', async () => {

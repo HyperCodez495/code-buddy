@@ -30,6 +30,7 @@ import { logger } from '../utils/logger.js';
 import { getFleetLoad } from './fleet-load.js';
 import { getModelStrengths } from '../config/model-tools.js';
 import { findRuntimeProvider } from '../providers/provider-catalog.js';
+import { classifyModelEgress } from '../providers/model-egress.js';
 import type {
   FleetModelDescriptor,
   ModelStrength,
@@ -136,11 +137,11 @@ async function buildCapabilitySnapshot(): Promise<PeerCapability> {
   const lemonadeModels = await probeLemonade();
   models.push(...lemonadeModels);
 
-  const egress: PeerCapability['egress'] = models.some((m) =>
-    isCloudProvider(m.provider)
-  )
+  const egress: PeerCapability['egress'] = models.some((model) => model.egress === 'cloud')
     ? 'cloud' // any cloud key present → peer is a cloud-egress peer
-    : 'local';
+    : models.some((model) => model.egress === 'lan')
+      ? 'lan'
+      : 'local';
 
   return {
     models,
@@ -198,20 +199,6 @@ function emptyCapability(): PeerCapability {
     egress: 'local',
     machineLabel: os.hostname(),
   };
-}
-
-function isCloudProvider(p: FleetProvider): boolean {
-  return (
-    p === 'anthropic' ||
-    p === 'openai' ||
-    p === 'gemini' ||
-    p === 'gemini-cli' ||
-    p === 'agy-cli' ||
-    p === 'grok' ||
-    p === 'mistral' ||
-    p === 'openrouter' ||
-    p === 'chatgpt-oauth'
-  );
 }
 
 function hasChatGptOAuthCredentials(): boolean {
@@ -296,6 +283,7 @@ function buildAnthropicCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('opus') ? 15 : id.includes('sonnet') ? 3 : 0.8,
     costOutputUsdPerMtok: id.includes('opus') ? 75 : id.includes('sonnet') ? 15 : 4,
     provider: 'anthropic',
+    egress: 'cloud',
   }));
 }
 
@@ -308,6 +296,7 @@ function buildOpenAICatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('mini') ? 0.4 : 5,
     costOutputUsdPerMtok: id.includes('mini') ? 1.6 : id === 'gpt-5.6-sol' ? 30 : 20,
     provider: 'openai',
+    egress: 'cloud',
   }));
 }
 
@@ -334,6 +323,7 @@ function buildChatGptOAuthCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: 0,
     costOutputUsdPerMtok: 0,
     provider: 'chatgpt-oauth',
+    egress: 'cloud',
   }));
 }
 
@@ -346,6 +336,7 @@ function buildGeminiCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('flash') ? 0.3 : 2.5,
     costOutputUsdPerMtok: id.includes('flash') ? 1.2 : 10,
     provider: 'gemini',
+    egress: 'cloud',
   }));
 }
 
@@ -374,6 +365,7 @@ function buildGeminiCliCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: 0,
     costOutputUsdPerMtok: 0,
     provider: 'gemini-cli',
+    egress: 'cloud',
   }));
 }
 
@@ -403,6 +395,7 @@ async function probeAgyCli(): Promise<FleetModelDescriptor[]> {
     costInputUsdPerMtok: 0,
     costOutputUsdPerMtok: 0,
     provider: 'agy-cli',
+    egress: 'cloud',
   }));
 }
 
@@ -479,6 +472,7 @@ function buildGrokCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('fast') ? 0.5 : 2,
     costOutputUsdPerMtok: id.includes('fast') ? 2 : 10,
     provider: 'grok',
+    egress: 'cloud',
   }));
 }
 
@@ -499,6 +493,7 @@ function buildMistralCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('small') ? 0.2 : id.includes('medium') ? 1 : 4,
     costOutputUsdPerMtok: id.includes('small') ? 0.6 : id.includes('medium') ? 3 : 12,
     provider: 'mistral',
+    egress: 'cloud',
   }));
 }
 
@@ -512,6 +507,7 @@ function buildOpenRouterCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id === 'openrouter/free' || id.endsWith(':free') ? 0 : undefined,
     costOutputUsdPerMtok: id === 'openrouter/free' || id.endsWith(':free') ? 0 : undefined,
     provider: 'openrouter',
+    egress: 'cloud',
   }));
 }
 
@@ -533,6 +529,7 @@ async function probeOllama(): Promise<FleetModelDescriptor[]> {
       contextWindow: guessOllamaContext(m.name),
       strengths: deriveStrengths(m.name, 'ollama'),
       provider: 'ollama',
+      egress: classifyModelEgress(url, true),
     }));
   } catch (err) {
     logger.debug?.('[capability-registry] Ollama probe skipped', {
@@ -557,6 +554,7 @@ async function probeLmStudio(): Promise<FleetModelDescriptor[]> {
       contextWindow: 32_000,
       strengths: deriveStrengths(m.id, 'lm-studio'),
       provider: 'lm-studio',
+      egress: classifyModelEgress(url, true),
     }));
   } catch (err) {
     logger.debug?.('[capability-registry] LM Studio probe skipped', {
@@ -591,6 +589,7 @@ async function probeLemonade(): Promise<FleetModelDescriptor[]> {
         contextWindow: 32_768,
         strengths: deriveStrengths(model.id, 'lemonade'),
         provider: 'lemonade',
+        egress: classifyModelEgress(url, true),
       }));
   } catch (error) {
     logger.debug?.('[capability-registry] Lemonade probe skipped', {
