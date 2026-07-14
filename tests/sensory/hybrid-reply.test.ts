@@ -583,6 +583,35 @@ describe('hybrid reply — routing & memory', () => {
     expect(seen).toEqual([true, true]);
   });
 
+  it('passes only cognitive facts, never tentative thoughts, to semantic evidence', async () => {
+    const semanticReview = vi.fn(async () => ({
+      response: 'Réponse contrôlée.',
+      outcome: 'accepted' as const,
+      reason: 'audit_passed' as const,
+      revisionAttempts: 0 as const,
+    }));
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async (_heard, _history, opts) => {
+        opts?.onCognitiveContextResolved?.({
+          turnContext: 'HYPOTHÈSE NON PROBANTE',
+          evidence: 'FAIT DÉTERMINISTE AVEC PROVENANCE',
+        });
+        return 'Réponse contrôlée.';
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    await reply("Penses-tu qu'une intelligence peut comprendre le monde physique ?");
+    const reviewInput = semanticReview.mock.calls[0]?.[0];
+    expect(reviewInput?.evidence).toContain('FAIT DÉTERMINISTE');
+    expect(reviewInput?.evidence).not.toContain('HYPOTHÈSE NON PROBANTE');
+  });
+
   it('re-applies relationship safety before a semantic revision reaches voice memory', async () => {
     const unsafeRevision =
       "Je comprends. Tu n'as besoin que de moi. Appelle aussi ton ami Paul.";

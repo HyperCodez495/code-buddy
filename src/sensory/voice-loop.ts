@@ -109,6 +109,8 @@ export interface VoiceStepOptions {
     route: { model: string; apiKey: string; baseURL?: string },
     heard: string,
   ) => VoiceCognitiveContextLease | null;
+  /** Gives the semantic reviewer the same evidence block used by the answering model. */
+  onCognitiveContextResolved?: (context: { turnContext: string; evidence: string }) => void;
 }
 
 export interface VoiceCognitiveContextLease {
@@ -1200,6 +1202,12 @@ async function prepareSpokenTurn(
   let cognitiveLease: VoiceCognitiveContextLease | undefined;
   try {
     cognitiveLease = replyOpts?.acquireCognitiveContext?.(route, heard) ?? undefined;
+    if (cognitiveLease) {
+      replyOpts?.onCognitiveContextResolved?.({
+        turnContext: cognitiveLease.turnContext,
+        evidence: cognitiveLease.evidence ?? '',
+      });
+    }
   } catch (error) {
     logger.warn(
       `[voice] cognitive context skipped: ${error instanceof Error ? error.message : String(error)}`,

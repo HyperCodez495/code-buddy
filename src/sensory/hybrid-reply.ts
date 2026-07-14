@@ -165,6 +165,11 @@ export interface HybridReplyHandler extends ReplyFn {
   dispose(): void;
 }
 
+function mergeEvidence(...blocks: Array<string | undefined>): string | undefined {
+  const merged = blocks.map((block) => block?.trim()).filter(Boolean).join('\n\n');
+  return merged ? merged.slice(0, 3_000) : undefined;
+}
+
 /** Lowercase + strip diacritics so STT accent loss ("ca va" ≈ "ça va") still matches. */
 function norm(s: string): string {
   return s
@@ -464,6 +469,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       const recentHistory = conversationHistory(heard);
       const substantive = introspectionIntent !== null || classify(heard, recentHistory);
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
+      let cognitiveEvidence: string | undefined;
       const stepOpts: VoiceStepOptions = {
         ...(replyOpts ?? {}),
         ...(options.acquireCognitiveContext
@@ -477,6 +483,10 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
             baseURL: route.baseURL,
             model: route.model,
           };
+        },
+        onCognitiveContextResolved: (context) => {
+          replyOpts?.onCognitiveContextResolved?.(context);
+          cognitiveEvidence = context.evidence || undefined;
         },
       };
       let out = '';
@@ -512,12 +522,13 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       if (!out && !signal?.aborted) out = conversationFailureReply(heard, recentHistory);
       if (out && !signal?.aborted) {
         out = guardBeforeMemory(out);
+        const reviewEvidence = mergeEvidence(freshEvidence, cognitiveEvidence);
         const reviewed = await reviewBeforeDelivery({
           request: heard,
           draft: out,
           plan: prepared.plan,
           history: recentHistory,
-          ...(freshEvidence ? { evidence: freshEvidence } : {}),
+          ...(reviewEvidence ? { evidence: reviewEvidence } : {}),
           ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
           ...(signal ? { signal } : {}),
         });
@@ -571,6 +582,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       const semanticBuffer = shouldReviewPlan(prepared.plan, heard);
       let full = '';
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
+      let cognitiveEvidence: string | undefined;
       const streamOptions: VoiceStepOptions = {
         ...(replyOpts ?? {}),
         ...(options.acquireCognitiveContext
@@ -584,6 +596,10 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
             baseURL: route.baseURL,
             model: route.model,
           };
+        },
+        onCognitiveContextResolved: (context) => {
+          replyOpts?.onCognitiveContextResolved?.(context);
+          cognitiveEvidence = context.evidence || undefined;
         },
       };
       for await (const delta of chitchatStream!(heard, recent, streamOptions)) {
@@ -603,6 +619,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
           draft: completed,
           plan: prepared.plan,
           history: recent,
+          ...(cognitiveEvidence ? { evidence: cognitiveEvidence } : {}),
           ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
           ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
         });
