@@ -76,10 +76,12 @@ suit normalement cet ordre :
 2. `avatar.speech.prepared` ou plusieurs `avatar.speech.segment` — texte de performance ;
 3. `avatar.audio.started`, `avatar.audio.chunk`…, `avatar.audio.ended` — transfert d'un WAV ;
 4. `avatar.speech.started` — commencer lecture et animation faciale ;
-5. `avatar.speech.completed`, `avatar.speech.interrupted` ou `avatar.speech.failed` — arrêt terminal.
+5. `avatar.speech.completed`, `avatar.speech.interrupted` ou `avatar.speech.failed` — fin du tour.
 
-Un tour streaming peut contenir plusieurs WAV. Ne concaténez jamais deux streams : chaque `streamId`
-correspond à un conteneur RIFF complet et indépendant.
+Un tour streaming peut contenir plusieurs WAV et un seul `avatar.speech.started`. Ne concaténez
+jamais deux streams : chaque `streamId` correspond à un conteneur RIFF complet et indépendant. À la
+réception de `avatar.speech.completed`, laissez se vider la file audio locale avant de revenir à
+`ready`; `interrupted` et `failed` doivent en revanche couper immédiatement la lecture.
 
 ```json
 {
@@ -138,7 +140,8 @@ ni audio, ni secret.
 | `audio.started…ended` | Reconstruit et valide le WAV du `streamId`. |
 | `speech.started` | Joue le WAV et démarre Audio Driven Animation sur la même horloge. |
 | `speech.interrupted` | Coupe immédiatement audio, solveur facial et montage ; répond `interrupted`. |
-| événement terminal | Libère les buffers du `turnId`, ramène le visage et le regard au repos. |
+| `speech.completed` | Marque la source terminée, vide les WAV déjà reçus, puis ramène le visage au repos. |
+| `speech.failed` | Coupe la lecture, libère les buffers et passe en erreur. |
 
 Le rendu doit rester subtil : les intentions sont des directions de jeu, pas des animations obligées.
 Le lipsync doit suivre l'audio réel, tandis que regard et gestes peuvent être légèrement anticipés.
@@ -152,3 +155,9 @@ valident respectivement la reconstruction WAV et l'aller-retour avec un vrai Gat
 Avant le branchement MetaHuman, le client Unreal est accepté quand il peut : se reconnecter sans
 parole fantôme, reconstruire un WAV de plusieurs chunks à l'octet près, abandonner un stream troué,
 couper sur barge-in et publier un heartbeat stable sans perdre de chunk.
+
+L'implémentation de référence Split A v5 se trouve dans
+`integrations/unreal/CodeBuddyAvatar`. Elle peut être vérifiée localement avec
+`npm run verify:avatar-unreal`, puis préparée, compilée et testée sur Darkstar avec
+`scripts/unreal/Invoke-CodeBuddyAvatarV5.ps1`. La promotion dans `AvatarStudio/Plugins` reste une
+opération explicite et refuse de s'exécuter pendant qu'Unreal Editor est ouvert.

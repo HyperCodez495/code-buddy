@@ -1,0 +1,20 @@
+{
+  "FileVersion": 3,
+  "Version": 5,
+  "VersionName": "0.5.0-split-a.5",
+  "FriendlyName": "Code Buddy Avatar",
+  "Description": "Authenticated Code Buddy avatar renderer for Unreal Engine and MetaHuman.",
+  "Category": "Animation",
+  "CreatedBy": "Code Buddy",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "CodeBuddyAvatar",
+      "Type": "Runtime",
+      "LoadingPhase": "Default",
+      "PlatformAllowList": ["Win64"]
+    }
+  ]
+}

@@ -186,6 +186,13 @@ Le simulateur exécutable `src/avatar/avatar-renderer-simulator.ts` vérifie ce 
 et [`avatar-metahuman-protocol.md`](avatar-metahuman-protocol.md) constitue le guide d'implémentation
 côté Unreal.
 
+Le bundle Runtime Win64 Split A v5 est désormais versionné dans
+`integrations/unreal/CodeBuddyAvatar` avec un manifeste SHA-256 et un script séparant strictement
+préparation, validation Unreal et promotion. Ce jalon fournit le transport authentifié, la file WAV
+multi-segment, l'interruption et les événements Blueprint. Il ne vaut pas encore validation du rendu
+MetaHuman : le build UE 5.8, les tests Automation et le branchement Audio Live Link doivent être
+exécutés sur Darkstar avant d'activer `audioDrivenAnimation`.
+
 La documentation Epic indique que MetaHuman Animator sait générer une animation faciale en temps
 réel depuis une source audio, une caméra mono ou Live Link Face. L'animation audio hors ligne permet
 également d'influencer mouvement de tête, clignements et humeur. Unreal Engine 5.6 ou ultérieur est

@@ -65,6 +65,7 @@
     "start": "node dist/index.js",
     "start:bun": "bun run dist/index.js",
     "smoke:docx": "tsx scripts/smoke-docx-workshop.ts",
+    "verify:avatar-unreal": "node scripts/verify-unreal-avatar-plugin.mjs",
     "pilot:validate": "pwsh -NoProfile -ExecutionPolicy Bypass -File scratch/run-all-probes.ps1",
     "test": "vitest run",
     "test:watch": "vitest",
