@@ -144,11 +144,10 @@ export function wireSemanticVisionReaction(options: SemanticVisionOptions = {}):
             try {
               let recentHeard: string[] = [];
               try {
-                const { readRecentCompanionPercepts } = await import('../companion/percepts.js');
-                const heard = await readRecentCompanionPercepts({ modality: 'hearing', limit: 4 });
-                recentHeard = heard
-                  .map((h) => String((h.payload as { text?: string })?.text ?? h.summary ?? '').replace(/^Heard:\s*/i, ''))
-                  .filter(Boolean);
+                const { readRecentDialogueHearing } = await import(
+                  '../companion/dialogue-percepts.js'
+                );
+                recentHeard = (await readRecentDialogueHearing(4, options.cwd)).reverse();
               } catch {
                 /* memory context optional */
               }

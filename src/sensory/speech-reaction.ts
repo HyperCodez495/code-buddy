@@ -72,7 +72,8 @@ export interface SpeechReactionOptions {
   onHeard?: (text: string, context?: VoiceTurnContext) => void | Promise<void>;
   /**
    * Fire-and-forget semantic ingress for memory and background specialists.
-   * It starts before the response gate/LLM/TTS and never owns the mouth lock.
+   * It starts after the response gate accepts the turn, but before LLM/TTS, and
+   * never owns the mouth lock. Raw rejected hearing remains in the percept log.
    */
   onRecognizedTurn?: (turn: RecognizedVoiceTurn) => void | Promise<void>;
   /**
@@ -1370,31 +1371,41 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           ...(captureStartedAtMs !== undefined ? { speechStartedAtMs: captureStartedAtMs } : {}),
           ...(captureEndedAtMs !== undefined ? { speechEndedAtMs: captureEndedAtMs } : {}),
         };
-        if (options.onRecognizedTurn) {
-          void Promise.resolve()
-            .then(() => options.onRecognizedTurn!({ turnId, text, context: turnContext }))
-            .catch((error) => {
-              logger.warn(
-                `[speech] background turn ingress failed: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
-            });
-        }
-
+        let acceptedForSemanticIngress = true;
         let responded = Boolean(options.onHeard);
-        // Human-like gate: observed + remembered above; only SPEAK if warranted.
+        // Human-like gate: raw observation remains continuous; semantic dialogue and
+        // speech proceed only when this turn was accepted as addressed/warranted.
         if (options.shouldRespond) {
           const decisionStartMs = now();
           const decision = await options.shouldRespond(text);
           decisionMs = elapsedSince(decisionStartMs, now);
           decisionReason = decision.reason;
+          acceptedForSemanticIngress = decision.respond;
           if (!decision.respond) {
             logger.info(`[speech] silent (${decision.reason}, decision ${decisionMs}ms)`);
             responded = false;
           } else {
             responded = Boolean(options.onHeard);
             logger.info(`[speech] responding (${decision.reason}, decision ${decisionMs}ms)`);
+          }
+        }
+
+        if (acceptedForSemanticIngress && options.onRecognizedTurn) {
+          try {
+            const ingress = options.onRecognizedTurn({ turnId, text, context: turnContext });
+            void Promise.resolve(ingress).catch((error) => {
+              logger.warn(
+                `[speech] background turn ingress failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            });
+          } catch (error) {
+            logger.warn(
+              `[speech] background turn ingress failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
           }
         }
 

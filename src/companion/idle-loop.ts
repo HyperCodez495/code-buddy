@@ -27,6 +27,8 @@ import { join } from 'node:path';
 import { mkdir, appendFile, stat, rename } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { logger } from '../utils/logger.js';
+import { isCanonicalDialogueHearingPercept } from './dialogue-percepts.js';
+import type { CompanionPercept } from './percepts.js';
 
 /** The closed allowlist of operations the idle loop may perform WITHOUT review (printable). */
 export const IDLE_ACT_ALLOWLIST = [
@@ -117,11 +119,25 @@ async function defaultIsAlone(): Promise<boolean> {
 async function defaultRecentSummaries(): Promise<string[]> {
   try {
     const { readRecentCompanionPercepts } = await import('./percepts.js');
-    const recent = await readRecentCompanionPercepts({ limit: 12 });
-    return recent.map((p) => p.summary).filter(Boolean).slice(0, 12);
+    // Read a wider bounded window so nearby ambient TV cannot hide older
+    // canonical dialogue or non-hearing observations from the 12-item journal.
+    const recent = await readRecentCompanionPercepts({ limit: 60 });
+    return selectIdleJournalSummaries(recent);
   } catch {
     return [];
   }
+}
+
+/** Preserve non-hearing observations, but never journal rejected ambient speech as dialogue. */
+export function selectIdleJournalSummaries(percepts: CompanionPercept[]): string[] {
+  return percepts
+    .filter(
+      (percept) =>
+        percept.modality !== 'hearing' || isCanonicalDialogueHearingPercept(percept)
+    )
+    .map((percept) => percept.summary)
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 /** READ-ONLY `git status --porcelain -b` (no writes, no network). Empty on any error. */

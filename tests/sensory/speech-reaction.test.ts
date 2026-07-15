@@ -120,6 +120,7 @@ describe('speech reaction — speech_end → STT → percept', () => {
     const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-background-lane-'));
     let releaseMouth!: () => void;
     const mouthGate = new Promise<void>((resolve) => (releaseMouth = resolve));
+    const phases: string[] = [];
     let recognized:
       | { turnId: string; text: string; context: { turnId?: string } }
       | undefined;
@@ -127,10 +128,16 @@ describe('speech reaction — speech_end → STT → percept', () => {
     const unwire = wireSpeechReaction({
       debounceMs: 0,
       cwd: tmp,
+      shouldRespond: async () => {
+        phases.push('gate');
+        return { respond: true, reason: 'addressed' };
+      },
       onRecognizedTurn: async (turn) => {
+        phases.push('recognized');
         recognized = turn;
       },
       onHeard: async (_text, context) => {
+        phases.push('heard');
         heardTurnId = context?.turnId;
         await mouthGate;
       },
@@ -142,6 +149,7 @@ describe('speech reaction — speech_end → STT → percept', () => {
       expect(recognized?.turnId).toMatch(/^voice_/);
       expect(recognized?.context.turnId).toBe(recognized?.turnId);
       expect(heardTurnId).toBe(recognized?.turnId);
+      expect(phases).toEqual(['gate', 'recognized', 'heard']);
       // onHeard is still deliberately blocked, representing generation/TTS.
       // The semantic background ingress has nevertheless already completed.
     } finally {
@@ -150,6 +158,46 @@ describe('speech reaction — speech_end → STT → percept', () => {
       unwire();
     }
   });
+
+  it.each(['ambient', 'no-cue', 'ambient-long'])(
+    'keeps a raw %s percept without publishing a semantic turn',
+    async (reason) => {
+      const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-ambient-boundary-'));
+      const recognized: string[] = [];
+      const heard: string[] = [];
+      const unwire = wireSpeechReaction({
+        debounceMs: 0,
+        cwd: tmp,
+        shouldRespond: async () => ({ respond: false, reason }),
+        onRecognizedTurn: ({ text }) => {
+          recognized.push(text);
+        },
+        onHeard: (text) => {
+          heard.push(text);
+        },
+      });
+      try {
+        transcriptFinal(`bruit ambiant ${reason}`);
+        await tick();
+        expect(recognized).toEqual([]);
+        expect(heard).toEqual([]);
+        const journal = await readFile(
+          path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'),
+          'utf8',
+        );
+        const percept = JSON.parse(journal.trim()) as {
+          payload: { text: string; responded: boolean; decisionReason: string };
+        };
+        expect(percept.payload).toMatchObject({
+          text: `bruit ambiant ${reason}`,
+          responded: false,
+          decisionReason: reason,
+        });
+      } finally {
+        unwire();
+      }
+    },
+  );
 
   it('isolates a failing background lane from the canonical voice turn', async () => {
     const tmp = await mkdtemp(path.join(os.tmpdir(), 'speech-background-failure-'));

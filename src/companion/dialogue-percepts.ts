@@ -6,9 +6,33 @@
  * consume only turns that crossed the response gate.
  */
 
-interface DialogueHearingPercept {
+export interface DialogueHearingPercept {
   summary?: unknown;
   payload?: unknown;
+}
+
+function dialogueHearingText(percept: DialogueHearingPercept): string {
+  const payload =
+    percept.payload && typeof percept.payload === 'object' && !Array.isArray(percept.payload)
+      ? (percept.payload as Record<string, unknown>)
+      : null;
+  const text = typeof payload?.text === 'string' ? payload.text : percept.summary;
+  return typeof text === 'string' ? text.replace(/^Heard:\s*/i, '').trim() : '';
+}
+
+/** True only for non-empty hearing turns that crossed the response gate. */
+export function isCanonicalDialogueHearingPercept(
+  percept: DialogueHearingPercept
+): boolean {
+  const payload =
+    percept.payload && typeof percept.payload === 'object' && !Array.isArray(percept.payload)
+      ? (percept.payload as Record<string, unknown>)
+      : null;
+  return (
+    payload?.responded === true &&
+    payload.sttEmpty !== true &&
+    dialogueHearingText(percept).length > 0
+  );
 }
 
 export function selectDialogueHearingTexts(
@@ -19,19 +43,8 @@ export function selectDialogueHearingTexts(
   if (boundedLimit === 0) return [];
 
   return percepts
-    .filter((percept) => {
-      const payload =
-        percept.payload && typeof percept.payload === 'object' && !Array.isArray(percept.payload)
-          ? (percept.payload as Record<string, unknown>)
-          : null;
-      return payload?.responded === true && payload.sttEmpty !== true;
-    })
-    .map((percept) => {
-      const payload = percept.payload as Record<string, unknown>;
-      const text = typeof payload.text === 'string' ? payload.text : percept.summary;
-      return typeof text === 'string' ? text.replace(/^Heard:\s*/i, '').trim() : '';
-    })
-    .filter(Boolean)
+    .filter(isCanonicalDialogueHearingPercept)
+    .map(dialogueHearingText)
     .slice(-boundedLimit);
 }
 

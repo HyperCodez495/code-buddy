@@ -9,6 +9,7 @@ import {
 } from './percepts.js';
 import { recordCompanionSafetyEvent } from './safety-ledger.js';
 import { resolveUserName } from './user-name.js';
+import { isCanonicalDialogueHearingPercept } from './dialogue-percepts.js';
 
 export type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 export type CompanionSkillEvidenceKind = 'mission' | 'percept';
@@ -466,10 +467,14 @@ export async function curateCompanionSkills(
   const nowIso = now.toISOString();
   const existingStore = await readCompanionSkillCandidates({ ...options, cwd, now });
   const board = await readCompanionMissionBoard({ cwd });
-  const percepts = await readRecentCompanionPercepts({
+  const rawPercepts = await readRecentCompanionPercepts({
     cwd,
     limit: options.perceptLimit || DEFAULT_PERCEPT_LIMIT,
   });
+  const percepts = rawPercepts.filter(
+    (percept) =>
+      percept.modality !== 'hearing' || isCanonicalDialogueHearingPercept(percept)
+  );
   const existingById = new Map(
     existingStore.candidates.map((candidate) => [candidate.id, candidate])
   );

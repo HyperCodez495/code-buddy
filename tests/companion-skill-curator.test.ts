@@ -109,6 +109,54 @@ describe('companion skill curator', () => {
     expect(formatCompanionSkillCandidates(result.store)).toContain('Buddy Companion Skill Curator');
   });
 
+  it('excludes ambient hearing evidence while retaining addressed and non-hearing patterns', async () => {
+    await writeBoard(tempDir, []);
+    const record = async (
+      modality: 'hearing' | 'vision',
+      summary: string,
+      tag: string,
+      payload: Record<string, unknown> = {},
+    ): Promise<void> => {
+      await recordCompanionPercept(
+        { modality, source: 'test', summary, payload, tags: [tag] },
+        { cwd: tempDir },
+      );
+    };
+
+    await record('hearing', 'Heard: publicité numéro un', 'broadcast', {
+      text: 'publicité numéro un',
+      responded: false,
+      decisionReason: 'ambient',
+    });
+    await record('hearing', 'Heard: publicité numéro deux', 'broadcast', {
+      text: 'publicité numéro deux',
+      responded: false,
+      decisionReason: 'ambient-long',
+    });
+    await record('hearing', 'Heard: Lisa, prépare le projet', 'dialogue', {
+      text: 'Lisa, prépare le projet',
+      responded: true,
+      decisionReason: 'addressed',
+    });
+    await record('hearing', 'Heard: Oui, continue', 'dialogue', {
+      text: 'Oui, continue',
+      responded: true,
+      decisionReason: 'engaged',
+    });
+    await record('vision', 'Établi visible', 'workspace-observation');
+    await record('vision', 'Outils visibles', 'workspace-observation');
+
+    const result = await curateCompanionSkills({
+      cwd: tempDir,
+      recordSuggestions: false,
+    });
+    const ids = result.store.candidates.map((candidate) => candidate.id);
+    expect(ids).toContain('skill-pattern-dialogue');
+    expect(ids).toContain('skill-pattern-workspace-observation');
+    expect(ids).not.toContain('skill-pattern-broadcast');
+    expect(JSON.stringify(result.store.candidates)).not.toContain('publicité');
+  });
+
   it('promotes a candidate into a local skill artifact and audits it', async () => {
     await writeBoard(tempDir, [mission()]);
     await curateCompanionSkills({

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { wireSemanticVisionReaction } from '../../src/sensory/semantic-vision-reaction.js';
 import { createResponseDecider } from '../../src/sensory/respond-decider.js';
 import { getGlobalEventBus } from '../../src/events/event-bus.js';
+import { recordCompanionPercept } from '../../src/companion/percepts.js';
 
 let tmp: string;
 const tick = () => new Promise((r) => setTimeout(r, 60));
@@ -146,6 +147,51 @@ describe('arrival greeting — the robot notices and engages when someone arrive
       expect(line).not.toBe('Tiens, te revoilà — content de te voir.'); // not the LLM line
     } finally {
       unwire2();
+    }
+  });
+
+  it('grounds an LLM arrival opener only in canonical addressed hearing', async () => {
+    process.env.CODEBUDDY_SENSORY_GREET = 'true';
+    process.env.CODEBUDDY_SENSORY_GREET_LLM = 'true';
+    await recordCompanionPercept(
+      {
+        modality: 'hearing',
+        source: 'test',
+        summary: 'Heard: achetez ce produit après la publicité',
+        payload: {
+          text: 'achetez ce produit après la publicité',
+          responded: false,
+          decisionReason: 'ambient-long',
+        },
+      },
+      { cwd: tmp },
+    );
+    await recordCompanionPercept(
+      {
+        modality: 'hearing',
+        source: 'test',
+        summary: 'Heard: Lisa, nous travaillions sur PanoWorld',
+        payload: {
+          text: 'Lisa, nous travaillions sur PanoWorld',
+          responded: true,
+          decisionReason: 'addressed',
+        },
+      },
+      { cwd: tmp },
+    );
+
+    const greet = vi.fn(async () => {});
+    const llmChat = vi.fn(async () => 'Content de reprendre PanoWorld avec toi.');
+    const unwire = wireSemanticVisionReaction({ greet, llmChat, cwd: tmp });
+    try {
+      personEntered();
+      await waitForCalls(greet, 1);
+      expect(llmChat).toHaveBeenCalledTimes(1);
+      const prompt = JSON.stringify(llmChat.mock.calls[0]![0]);
+      expect(prompt).toContain('PanoWorld');
+      expect(prompt).not.toContain('publicité');
+    } finally {
+      unwire();
     }
   });
 

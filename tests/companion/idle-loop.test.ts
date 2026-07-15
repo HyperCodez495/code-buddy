@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { runIdleTick, resetIdleState, IDLE_ACT_ALLOWLIST, type IdleDeps, type IdleTask } from '../../src/companion/idle-loop.js';
+import {
+  runIdleTick,
+  resetIdleState,
+  IDLE_ACT_ALLOWLIST,
+  selectIdleJournalSummaries,
+  type IdleDeps,
+  type IdleTask,
+} from '../../src/companion/idle-loop.js';
+import type { CompanionPercept } from '../../src/companion/percepts.js';
 
 const DAY = new Date('2026-06-26T14:00:00');
 const NIGHT = new Date('2026-06-26T23:30:00');
@@ -25,6 +33,39 @@ afterEach(() => {
 });
 
 describe('idle loop — only acts when truly alone, and only safe things', () => {
+  it('keeps non-hearing observations and addressed dialogue, but drops ambient hearing', () => {
+    const percept = (
+      modality: CompanionPercept['modality'],
+      summary: string,
+      payload: Record<string, unknown> = {},
+    ): CompanionPercept => ({
+      id: summary,
+      modality,
+      source: 'test',
+      timestamp: DAY.toISOString(),
+      confidence: 1,
+      summary,
+      payload,
+      tags: [],
+    });
+
+    expect(
+      selectIdleJournalSummaries([
+        percept('hearing', 'Heard: journal télévisé', {
+          text: 'journal télévisé',
+          responded: false,
+          decisionReason: 'ambient',
+        }),
+        percept('vision', 'Patrice est revenu'),
+        percept('hearing', 'Heard: Lisa, continuons', {
+          text: 'Lisa, continuons',
+          responded: true,
+          decisionReason: 'addressed',
+        }),
+      ]),
+    ).toEqual(['Patrice est revenu', 'Heard: Lisa, continuons']);
+  });
+
   it('does nothing when not opted in', async () => {
     delete process.env.CODEBUDDY_COMPANION_IDLE;
     const record = vi.fn(async () => {});
