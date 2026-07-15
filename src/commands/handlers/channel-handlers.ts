@@ -34,6 +34,8 @@ import {
 interface ChannelOptions {
   type?: string;
   config?: string;
+  /** Select one named instance when a config contains several entries of the same type. */
+  instance?: string;
   json?: boolean;
 }
 
@@ -138,7 +140,11 @@ export interface StartConfiguredChannelsResult {
  * is the DM-pairing gate inside `registerAIMessageHandler`. Never throws on a
  * single channel failure — it collects the outcome per channel.
  */
-export async function startConfiguredChannels(configPath?: string, onlyType?: string): Promise<StartConfiguredChannelsResult> {
+export async function startConfiguredChannels(
+  configPath?: string,
+  onlyType?: string,
+  onlyInstance?: string,
+): Promise<StartConfiguredChannelsResult> {
   const { getChannelManager } = await import('../../channels/index.js');
   const manager = getChannelManager();
   await registerAIMessageHandler(manager);
@@ -156,7 +162,22 @@ export async function startConfiguredChannels(configPath?: string, onlyType?: st
     return result;
   }
 
-  const selected = config.channels.filter((entry) => !onlyType || entry.type === onlyType);
+  const normalizedInstance = onlyInstance?.trim().toLowerCase();
+  const selected = config.channels.filter((entry) => {
+    if (onlyType && entry.type !== onlyType) return false;
+    if (!normalizedInstance) return true;
+    const configuredName =
+      typeof entry.options?.name === 'string'
+        ? entry.options.name.trim().toLowerCase()
+        : '';
+    return normalizedInstance === 'default'
+      ? configuredName.length === 0
+      : configuredName === normalizedInstance;
+  });
+  if (selected.length === 0) {
+    result.noConfig = true;
+    return result;
+  }
   const lastByType = new Map<string, (typeof selected)[number]>();
   const counts = new Map<string, number>();
   for (const entry of selected) {
@@ -430,7 +451,7 @@ export async function handleChannels(action: string, options: ChannelOptions): P
       const channelType = options.type;
       if (!channelType) {
         // Start all configured channels (shared with `buddy server` intake)
-        const result = await startConfiguredChannels(options.config);
+        const result = await startConfiguredChannels(options.config, undefined, options.instance);
         if (result.noConfig) {
           console.log('No channel configuration found. Create .codebuddy/channels.json or use --config.');
           return;
@@ -448,7 +469,11 @@ export async function handleChannels(action: string, options: ChannelOptions): P
           process.exitCode = 1;
         }
       } else {
-        const result = await startConfiguredChannels(options.config, channelType);
+        const result = await startConfiguredChannels(
+          options.config,
+          channelType,
+          options.instance,
+        );
         if (result.noConfig) {
           console.log(`No configuration found for channel type: ${channelType}`);
           process.exitCode = 1;
@@ -492,7 +517,7 @@ export async function handleChannels(action: string, options: ChannelOptions): P
     }
 
     default:
-      console.log(`Usage: buddy channels [start|stop|status|list] [--type <type>] [--config <path>]`);
+      console.log(`Usage: buddy channels [start|stop|status|list] [--type <type>] [--instance <name|default>] [--config <path>]`);
   }
 }
 

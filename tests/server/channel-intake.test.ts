@@ -122,6 +122,47 @@ describe('startConfiguredChannels server intake (GAP-7 P2)', () => {
     expect(hoisted.telegramConfigs[0]).toMatchObject({ token: 'active-token' });
   });
 
+  it('selects one named instance before duplicate-type collapsing', async () => {
+    const cfg = writeConfig({
+      channels: [
+        { type: 'telegram', enabled: true, token: 'lisa-token' },
+        {
+          type: 'telegram',
+          enabled: true,
+          token: 'laura-token',
+          options: { name: 'Laura' },
+        },
+      ],
+    });
+
+    const lisa = await startConfiguredChannels(cfg, 'telegram', 'default');
+
+    expect(lisa.registered).toEqual(['telegram']);
+    expect(lisa.deduplicated).toEqual([]);
+    expect(hoisted.telegramConfigs).toHaveLength(1);
+    expect(hoisted.telegramConfigs[0]).toMatchObject({ token: 'lisa-token' });
+  });
+
+  it('reports no matching config for an unknown named instance', async () => {
+    const cfg = writeConfig({
+      channels: [
+        { type: 'telegram', enabled: true, token: 'lisa-token' },
+        {
+          type: 'telegram',
+          enabled: true,
+          token: 'laura-token',
+          options: { name: 'Laura' },
+        },
+      ],
+    });
+
+    const result = await startConfiguredChannels(cfg, 'telegram', 'unknown');
+
+    expect(result.noConfig).toBe(true);
+    expect(result.registered).toEqual([]);
+    expect(hoisted.registerChannel).not.toHaveBeenCalled();
+  });
+
   it('disconnects an existing runtime before replacing the same channel type', async () => {
     const existing = { disconnect: hoisted.disconnect };
     hoisted.getChannel.mockReturnValue(existing);

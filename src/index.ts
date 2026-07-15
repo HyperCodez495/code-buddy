@@ -2435,6 +2435,7 @@ program
   .description("Manage channel connections (Telegram, Discord, Slack, etc.)")
   .argument("[action]", "start|stop|status|list", "list")
   .option("--type <type>", "Channel type (telegram|discord|slack|whatsapp|signal|google-chat|teams|matrix|webchat)")
+  .option("--instance <name>", "Named channel instance, or default for an unnamed entry")
   .option("--config <path>", "Channel config file path")
   .option("--json", "Output JSON for status")
   .action(async (action, options) => {
