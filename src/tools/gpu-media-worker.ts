@@ -16,6 +16,7 @@ export interface GpuMediaWorkerConfig {
 }
 
 export interface GpuMediaWorkerCapabilities {
+  protocolVersion: 1;
   workerId: string;
   jobs: GpuMediaJobKind[];
   gpus?: Array<{ name: string; vramMb: number; busy: boolean }>;
@@ -159,20 +160,23 @@ export function parsePanoWorldPayload(value: unknown): PanoWorldPayload {
     }
     const panorama = raw as Record<string, unknown>;
     const cameraToWorld = optionalMatrix(
-      panorama.camera_to_world,
+      panorama.camera_to_world ?? panorama.cameraToWorld,
       `panoramas[${index}].camera_to_world`
     );
     return {
-      imagePath: requiredText(panorama.image_path, `panoramas[${index}].image_path`),
-      roomId: requiredText(panorama.room_id, `panoramas[${index}].room_id`, 128),
+      imagePath: requiredText(
+        panorama.image_path ?? panorama.imagePath,
+        `panoramas[${index}].image_path`
+      ),
+      roomId: requiredText(panorama.room_id ?? panorama.roomId, `panoramas[${index}].room_id`, 128),
       ...(cameraToWorld ? { cameraToWorld } : {}),
     };
   });
   return {
-    sceneId: requiredText(input.scene_id, 'scene_id', 128),
+    sceneId: requiredText(input.scene_id ?? input.sceneId, 'scene_id', 128),
     panoramas,
     profile,
-    outputDir: requiredText(input.output_dir, 'output_dir'),
+    outputDir: requiredText(input.output_dir ?? input.outputDir, 'output_dir'),
   };
 }
 
@@ -185,29 +189,37 @@ export function parseAvatarVideoPayload(value: unknown): AvatarVideoPayload {
     throw new Error('Only the measured 480p profile is enabled for Darkstar');
   }
   let channelTarget: AvatarVideoPayload['channelTarget'];
-  if (input.channel_target !== undefined) {
+  const rawChannelTarget = input.channel_target ?? input.channelTarget;
+  if (rawChannelTarget !== undefined) {
     if (
-      !input.channel_target ||
-      typeof input.channel_target !== 'object' ||
-      Array.isArray(input.channel_target)
+      !rawChannelTarget ||
+      typeof rawChannelTarget !== 'object' ||
+      Array.isArray(rawChannelTarget)
     ) {
       throw new Error('channel_target must be an object');
     }
-    const target = input.channel_target as Record<string, unknown>;
+    const target = rawChannelTarget as Record<string, unknown>;
     const threadId =
       typeof target.thread_id === 'string' && target.thread_id.trim()
         ? requiredText(target.thread_id, 'channel_target.thread_id', 256)
         : undefined;
     channelTarget = {
       channel: requiredText(target.channel, 'channel_target.channel', 64),
-      conversationId: requiredText(target.conversation_id, 'channel_target.conversation_id', 256),
+      conversationId: requiredText(
+        target.conversation_id ?? target.conversationId,
+        'channel_target.conversation_id',
+        256
+      ),
       ...(threadId ? { threadId } : {}),
     };
   }
   return {
-    turnId: requiredText(input.turn_id, 'turn_id', 128),
-    audioPath: requiredText(input.audio_path, 'audio_path'),
-    referenceImagePath: requiredText(input.reference_image_path, 'reference_image_path'),
+    turnId: requiredText(input.turn_id ?? input.turnId, 'turn_id', 128),
+    audioPath: requiredText(input.audio_path ?? input.audioPath, 'audio_path'),
+    referenceImagePath: requiredText(
+      input.reference_image_path ?? input.referenceImagePath,
+      'reference_image_path'
+    ),
     prompt: requiredText(input.prompt, 'prompt', 8_000),
     resolution: '480p',
     ...(channelTarget ? { channelTarget } : {}),
@@ -253,19 +265,17 @@ export class GpuMediaWorkerClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchFn(
-        new URL(`${this.baseUrl.pathname}${pathname}`, this.baseUrl),
-        {
-          ...init,
-          headers: {
-            accept: 'application/json',
-            ...(init.body ? { 'content-type': 'application/json' } : {}),
-            ...(this.config.token ? { authorization: `Bearer ${this.config.token}` } : {}),
-            ...init.headers,
-          },
-          signal: controller.signal,
-        }
-      );
+      const basePath = this.baseUrl.pathname === '/' ? '' : this.baseUrl.pathname;
+      const response = await this.fetchFn(new URL(`${basePath}${pathname}`, this.baseUrl), {
+        ...init,
+        headers: {
+          accept: 'application/json',
+          ...(init.body ? { 'content-type': 'application/json' } : {}),
+          ...(this.config.token ? { authorization: `Bearer ${this.config.token}` } : {}),
+          ...init.headers,
+        },
+        signal: controller.signal,
+      });
       const text = await response.text();
       const data = text ? (JSON.parse(text) as unknown) : {};
       if (!response.ok) {
@@ -287,6 +297,9 @@ export class GpuMediaWorkerClient {
 
   async capabilities(): Promise<GpuMediaWorkerCapabilities> {
     const data = parseObject(await this.request('/v1/capabilities'), 'capabilities');
+    if (data.protocolVersion !== 1) {
+      throw new Error('GPU worker protocol version is not supported');
+    }
     if (!Array.isArray(data.jobs)) throw new Error('GPU worker capabilities are missing jobs');
     return data as unknown as GpuMediaWorkerCapabilities;
   }

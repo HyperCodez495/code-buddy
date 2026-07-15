@@ -3389,6 +3389,16 @@ addLazyCommand(
   },
 );
 
+addLazyCommand(
+  program,
+  'gpu-worker',
+  'Run the authenticated PanoWorld/LongCat GPU job worker',
+  async () => {
+    const { createGpuWorkerCommand } = await import('./commands/gpu-worker.js');
+    return createGpuWorkerCommand();
+  },
+);
+
 // Vision-training — synthetic perception curriculum: score robot vision vs
 // self-labeled scenes to find where it's weak (opt-in CODEBUDDY_VISION_TRAIN=true)
 addLazyCommand(

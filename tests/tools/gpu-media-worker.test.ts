@@ -131,6 +131,7 @@ describe('gpu media worker contracts', () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
+          protocolVersion: 1,
           workerId: 'darkstar',
           jobs: ['panoworld_reconstruct', 'avatar_video_render'],
           gpus: [{ name: 'RTX 3090', vramMb: 24_576, busy: false }],

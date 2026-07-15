@@ -1,0 +1,433 @@
+/** Authenticated, persistent execution server for isolated GPU media runners. */
+
+import { spawn as realSpawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { timingSafeEqual, randomUUID } from 'crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
+import { mkdir, readFile, readdir, realpath, writeFile } from 'fs/promises';
+import { isAbsolute, join, relative, resolve } from 'path';
+import {
+  parseAvatarVideoPayload,
+  parsePanoWorldPayload,
+  type AvatarVideoPayload,
+  type GpuMediaJobKind,
+  type GpuMediaJobStatus,
+  type GpuMediaJobView,
+  type GpuMediaWorkerCapabilities,
+  type PanoWorldPayload,
+} from '../tools/gpu-media-worker.js';
+
+type JobPayload = PanoWorldPayload | AvatarVideoPayload;
+
+export interface GpuMediaRunnerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export interface GpuMediaWorkerServerConfig {
+  host: string;
+  port: number;
+  token: string;
+  stateDir: string;
+  allowedRoots: string[];
+  runners: Partial<Record<GpuMediaJobKind, GpuMediaRunnerConfig>>;
+  workerId?: string;
+  maxConcurrency?: number;
+}
+
+interface StoredGpuMediaJob extends GpuMediaJobView {
+  payload: JobPayload;
+  updatedAt: string;
+}
+
+export interface GpuMediaWorkerServerDeps {
+  spawn?: typeof realSpawn;
+  now?: () => Date;
+  capabilities?: () => Promise<Pick<GpuMediaWorkerCapabilities, 'gpus'>>;
+}
+
+export interface GpuMediaWorkerServer {
+  server: Server;
+  listen(): Promise<{ host: string; port: number }>;
+  close(): Promise<void>;
+  getJob(id: string): StoredGpuMediaJob | undefined;
+}
+
+const BODY_LIMIT = 1024 * 1024;
+const LOG_LIMIT = 1024 * 1024;
+const JOB_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+function publicJob(job: StoredGpuMediaJob): GpuMediaJobView {
+  const { payload: _payload, updatedAt: _updatedAt, ...view } = job;
+  return view;
+}
+
+function json(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  response.end(`${JSON.stringify(body)}\n`);
+}
+
+function authorized(request: IncomingMessage, token: string): boolean {
+  const header = request.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return false;
+  const actual = Buffer.from(header.slice(7));
+  const expected = Buffer.from(token);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > BODY_LIMIT) throw new Error('request body exceeds 1 MiB');
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  } catch {
+    throw new Error('request body is not valid JSON');
+  }
+}
+
+function isWithin(path: string, root: string): boolean {
+  const rel = relative(resolve(root), resolve(path));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+async function validatePayloadPaths(payload: JobPayload, allowedRoots: string[]): Promise<void> {
+  const paths =
+    'panoramas' in payload
+      ? [...payload.panoramas.map((panorama) => panorama.imagePath), payload.outputDir]
+      : [payload.audioPath, payload.referenceImagePath];
+  const canonicalRoots = await Promise.all(allowedRoots.map((root) => realpath(root)));
+  for (const path of paths) {
+    if (!isAbsolute(path)) throw new Error(`worker path must be absolute: ${path}`);
+    if (!allowedRoots.some((root) => isWithin(path, root))) {
+      throw new Error(`worker path is outside configured roots: ${path}`);
+    }
+    const canonicalPath = await realpath(path);
+    if (!canonicalRoots.some((root) => isWithin(canonicalPath, root))) {
+      throw new Error(`worker path resolves outside configured roots: ${path}`);
+    }
+  }
+}
+
+function appendBounded(current: string, chunk: Buffer): string {
+  if (current.length >= LOG_LIMIT) return current;
+  return `${current}${chunk.toString('utf8')}`.slice(0, LOG_LIMIT);
+}
+
+function wasCancelled(job: StoredGpuMediaJob): boolean {
+  return job.status === 'cancelled';
+}
+
+function waitForChild(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+  onLog: (stream: 'stdout' | 'stderr', chunk: Buffer) => void
+): Promise<{ code: number | null; timedOut: boolean }> {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const finish = (code: number | null, timedOut: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise({ code, timedOut });
+    };
+    child.stdout.on('data', (chunk: Buffer) => onLog('stdout', chunk));
+    child.stderr.on('data', (chunk: Buffer) => onLog('stderr', chunk));
+    child.once('error', () => finish(null, false));
+    child.once('close', (code) => finish(code, false));
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(null, true);
+    }, timeoutMs);
+  });
+}
+
+export function createGpuMediaWorkerServer(
+  config: GpuMediaWorkerServerConfig,
+  deps: GpuMediaWorkerServerDeps = {}
+): GpuMediaWorkerServer {
+  if (Buffer.byteLength(config.token.trim(), 'utf8') < 24) {
+    throw new Error('GPU worker token must contain at least 24 bytes');
+  }
+  if (config.allowedRoots.length === 0) throw new Error('At least one GPU worker root is required');
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65_535) {
+    throw new Error('GPU worker port is invalid');
+  }
+
+  const spawn = deps.spawn ?? realSpawn;
+  const now = deps.now ?? (() => new Date());
+  const jobs = new Map<string, StoredGpuMediaJob>();
+  const running = new Map<string, ChildProcessWithoutNullStreams>();
+  const executions = new Set<Promise<void>>();
+  const maxConcurrency = Math.max(1, Math.min(config.maxConcurrency ?? 1, 2));
+  let initialized = false;
+  let processing = false;
+
+  const jobDir = (id: string): string => join(config.stateDir, 'jobs', id);
+  const jobFile = (id: string): string => join(jobDir(id), 'job.json');
+
+  const persist = async (job: StoredGpuMediaJob): Promise<void> => {
+    job.updatedAt = now().toISOString();
+    await mkdir(jobDir(job.id), { recursive: true });
+    await writeFile(jobFile(job.id), `${JSON.stringify(job, null, 2)}\n`, 'utf8');
+  };
+
+  const initialize = async (): Promise<void> => {
+    if (initialized) return;
+    initialized = true;
+    const root = join(config.stateDir, 'jobs');
+    await mkdir(root, { recursive: true });
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !JOB_ID_PATTERN.test(entry.name)) continue;
+      try {
+        const job = JSON.parse(await readFile(jobFile(entry.name), 'utf8')) as StoredGpuMediaJob;
+        if (job.id !== entry.name) continue;
+        if (job.status === 'running') {
+          job.status = 'failed';
+          job.error = 'GPU worker restarted while the job was running';
+          job.completedAt = now().toISOString();
+          await persist(job);
+        }
+        jobs.set(job.id, job);
+      } catch {
+        // Ignore corrupt job directories; they remain on disk for manual audit.
+      }
+    }
+  };
+
+  const executeJob = async (job: StoredGpuMediaJob): Promise<void> => {
+    const runner = config.runners[job.kind];
+    if (!runner) {
+      job.status = 'failed';
+      job.error = `No runner configured for ${job.kind}`;
+      job.completedAt = now().toISOString();
+      await persist(job);
+      return;
+    }
+    const directory = jobDir(job.id);
+    const requestPath = join(directory, 'request.json');
+    const resultPath = join(directory, 'result.json');
+    job.status = 'running';
+    job.startedAt = now().toISOString();
+    job.progress = 0;
+    await writeFile(
+      requestPath,
+      `${JSON.stringify({ id: job.id, kind: job.kind, payload: job.payload }, null, 2)}\n`,
+      'utf8'
+    );
+    await persist(job);
+
+    const child = spawn(runner.command, [...(runner.args ?? []), requestPath], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        ...runner.env,
+        CODEBUDDY_GPU_JOB_ID: job.id,
+        CODEBUDDY_GPU_JOB_RESULT: resultPath,
+      },
+      shell: false,
+      windowsHide: true,
+    });
+    running.set(job.id, child);
+    let stdout = '';
+    let stderr = '';
+    const result = await waitForChild(
+      child,
+      Math.max(1_000, Math.min(runner.timeoutMs ?? 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000)),
+      (stream, chunk) => {
+        if (stream === 'stdout') stdout = appendBounded(stdout, chunk);
+        else stderr = appendBounded(stderr, chunk);
+      }
+    );
+    running.delete(job.id);
+    await Promise.all([
+      writeFile(join(directory, 'stdout.log'), stdout, 'utf8'),
+      writeFile(join(directory, 'stderr.log'), stderr, 'utf8'),
+    ]);
+    // The DELETE handler may mutate this shared job while the child is running.
+    if (wasCancelled(job)) {
+      await persist(job);
+      return;
+    }
+    if (result.timedOut || result.code !== 0) {
+      job.status = 'failed';
+      job.error = result.timedOut
+        ? 'GPU runner timed out'
+        : `GPU runner exited with code ${result.code ?? 'unknown'}`;
+    } else {
+      try {
+        const output = JSON.parse(await readFile(resultPath, 'utf8')) as unknown;
+        if (!output || typeof output !== 'object' || Array.isArray(output)) {
+          throw new Error('result manifest must be an object');
+        }
+        job.status = 'succeeded';
+        job.output = output as Record<string, unknown>;
+        job.progress = 1;
+      } catch (error) {
+        job.status = 'failed';
+        job.error = `GPU runner result is invalid: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+    job.completedAt = now().toISOString();
+    await persist(job);
+  };
+
+  const processQueue = async (): Promise<void> => {
+    if (processing) return;
+    processing = true;
+    try {
+      while (executions.size < maxConcurrency) {
+        const next = [...jobs.values()].find((job) => job.status === 'queued');
+        if (!next) break;
+        // Reserve synchronously so a concurrency >1 loop cannot select the
+        // same queued job twice before its first filesystem await.
+        next.status = 'running';
+        const execution = executeJob(next)
+          .catch(async (error) => {
+            next.status = 'failed';
+            next.error = error instanceof Error ? error.message : String(error);
+            next.completedAt = now().toISOString();
+            await persist(next);
+          })
+          .finally(() => {
+            executions.delete(execution);
+            processing = false;
+            void processQueue();
+          });
+        executions.add(execution);
+        if (maxConcurrency === 1) break;
+      }
+    } finally {
+      if (
+        executions.size >= maxConcurrency ||
+        ![...jobs.values()].some((job) => job.status === 'queued')
+      ) {
+        processing = false;
+      }
+    }
+  };
+
+  const submit = async (kind: GpuMediaJobKind, rawPayload: unknown): Promise<StoredGpuMediaJob> => {
+    if (!config.runners[kind]) throw new Error(`No runner configured for ${kind}`);
+    const payload =
+      kind === 'panoworld_reconstruct'
+        ? parsePanoWorldPayload(rawPayload)
+        : parseAvatarVideoPayload(rawPayload);
+    await validatePayloadPaths(payload, config.allowedRoots);
+    const timestamp = now().toISOString();
+    const job: StoredGpuMediaJob = {
+      id: `gpu-${randomUUID()}`,
+      kind,
+      status: 'queued',
+      progress: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      payload,
+    };
+    jobs.set(job.id, job);
+    await persist(job);
+    void processQueue();
+    return job;
+  };
+
+  const server = createServer(async (request, response) => {
+    try {
+      await initialize();
+      if (!authorized(request, config.token)) {
+        response.setHeader('www-authenticate', 'Bearer');
+        json(response, 401, { error: 'unauthorized' });
+        return;
+      }
+      const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+      if (request.method === 'GET' && url.pathname === '/v1/capabilities') {
+        const extra = deps.capabilities ? await deps.capabilities() : {};
+        json(response, 200, {
+          protocolVersion: 1,
+          workerId: config.workerId ?? 'codebuddy-gpu-worker',
+          jobs: Object.keys(config.runners),
+          queueDepth: [...jobs.values()].filter((job) => job.status === 'queued').length,
+          ...extra,
+        });
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/jobs') {
+        const body = await readJsonBody(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body))
+          throw new Error('job body must be an object');
+        const input = body as Record<string, unknown>;
+        if (input.kind !== 'panoworld_reconstruct' && input.kind !== 'avatar_video_render') {
+          throw new Error('job kind is invalid');
+        }
+        const job = await submit(input.kind, input.payload);
+        json(response, 202, publicJob(job));
+        return;
+      }
+      const match = url.pathname.match(/^\/v1\/jobs\/([A-Za-z0-9._-]{1,128})$/u);
+      if (match) {
+        const id = match[1]!;
+        const job = jobs.get(id);
+        if (!job) {
+          json(response, 404, { error: 'job not found' });
+          return;
+        }
+        if (request.method === 'GET') {
+          json(response, 200, publicJob(job));
+          return;
+        }
+        if (request.method === 'DELETE') {
+          if (job.status === 'queued' || job.status === 'running') {
+            job.status = 'cancelled';
+            job.completedAt = now().toISOString();
+            running.get(job.id)?.kill();
+            await persist(job);
+          }
+          json(response, 200, publicJob(job));
+          return;
+        }
+      }
+      json(response, 404, { error: 'not found' });
+    } catch (error) {
+      json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  return {
+    server,
+    async listen() {
+      await initialize();
+      return new Promise((resolvePromise, reject) => {
+        server.once('error', reject);
+        server.listen(config.port, config.host, () => {
+          server.off('error', reject);
+          const address = server.address();
+          resolvePromise({
+            host: config.host,
+            port: typeof address === 'object' && address ? address.port : config.port,
+          });
+          void processQueue();
+        });
+      });
+    },
+    async close() {
+      for (const child of running.values()) child.kill();
+      await Promise.allSettled([...executions]);
+      await new Promise<void>((resolvePromise, reject) => {
+        server.close((error) => (error ? reject(error) : resolvePromise()));
+      });
+    },
+    getJob(id) {
+      return jobs.get(id);
+    },
+  };
+}

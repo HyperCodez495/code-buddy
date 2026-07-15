@@ -15,6 +15,25 @@ The token is sent only as `Authorization: Bearer …` and is never included in a
 or tool result. Plain HTTP is rejected for public addresses. Prefer a Tailscale ACL that
 only permits the Code Buddy host to reach the worker port.
 
+On Darkstar, the worker itself is started with runner executables and allowed filesystem
+roots. Runner arguments are JSON arrays so no command is interpreted by a shell:
+
+```powershell
+$env:CODEBUDDY_GPU_WORKER_TOKEN = '<secret-from-a-secret-store>'
+$env:CODEBUDDY_PANOWORLD_RUNNER = 'D:\DEV\PanoWorld\.venv\Scripts\python.exe'
+$env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = '["D:/DEV/PanoWorld/codebuddy_runner.py"]'
+$env:CODEBUDDY_LONGCAT_RUNNER = 'D:\DEV\LongCat\.venv\Scripts\python.exe'
+$env:CODEBUDDY_LONGCAT_RUNNER_ARGS = '["D:/DEV/LongCat/codebuddy_runner.py"]'
+
+buddy gpu-worker --host 100.73.222.64 --port 4310 `
+  --root D:\DEV D:\LisaMedia --state-dir D:\CodeBuddyData\gpu-worker
+```
+
+Each runner receives the generated `request.json` as its final argument and writes its
+JSON result manifest to `%CODEBUDDY_GPU_JOB_RESULT%`. Standard output/error are bounded
+and persisted beside the job. The queue survives restarts; a job interrupted by a worker
+restart is marked failed instead of silently re-executed.
+
 ## Protocol
 
 The worker implements four JSON endpoints:
@@ -25,6 +44,9 @@ The worker implements four JSON endpoints:
 | `POST` | `/v1/jobs` | Submit a validated job |
 | `GET` | `/v1/jobs/:id` | Read status, progress and output manifest |
 | `DELETE` | `/v1/jobs/:id` | Request cancellation |
+
+`/v1/capabilities` reports `protocolVersion: 1`; clients fail closed on an unknown
+version instead of guessing a payload shape.
 
 Job states are `queued`, `running`, `succeeded`, `failed`, or `cancelled`. A worker must
 serialize incompatible loads: PanoWorld and LongCat must not occupy the same RTX 3090 at
