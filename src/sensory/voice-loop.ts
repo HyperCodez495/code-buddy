@@ -118,13 +118,36 @@ export interface VoiceStepOptions {
   spokenPrefix?: string;
   /** Raw-free internal phase telemetry for the end-to-end spoken-turn clock. */
   onReplyTimingPhase?: (phase: VoiceReplyTimingPhase) => void;
+  /** Raw-free pilot telemetry. Never carries the transcript or generated candidate. */
+  onSpokenPrefixTelemetry?: (cause: SpokenPrefixTelemetryCause) => void;
 }
 
 export type VoiceReplyTimingPhase =
   | 'prompt_ready'
   | 'provider_first_delta'
   | 'generation_complete'
-  | 'semantic_review_complete';
+  | 'semantic_review_complete'
+  | 'prefix_prompt_ready'
+  | 'prefix_provider_first_delta'
+  | 'prefix_generation_complete'
+  | 'prefix_semantic_review_complete'
+  | 'continuation_prompt_ready'
+  | 'continuation_provider_first_delta'
+  | 'continuation_generation_complete'
+  | 'continuation_semantic_review_complete';
+
+export type SpokenPrefixTelemetryCause =
+  | 'ineligible'
+  | 'empty'
+  | 'too_long'
+  | 'missing_terminal'
+  | 'multi_sentence'
+  | 'relationship_intervened'
+  | 'review_rejected'
+  | 'review_unavailable'
+  | 'post_review_invalid'
+  | 'accepted'
+  | 'final_guard_invalid';
 
 function reportReplyTimingPhase(
   options: VoiceStepOptions | undefined,
@@ -178,6 +201,22 @@ export interface VoiceReplyTiming {
   generationCompleteMs?: number;
   /** Delay until a required semantic audit/revision has completed. */
   semanticReviewCompleteMs?: number;
+  /** Raw-free metrics for the opt-in spoken-prefix pilot. */
+  spokenPrefix?: {
+    outcome: SpokenPrefixTelemetryCause;
+    causes: SpokenPrefixTelemetryCause[];
+    promptReadyMs?: number;
+    providerFirstDeltaMs?: number;
+    generationCompleteMs?: number;
+    semanticReviewCompleteMs?: number;
+  };
+  /** Provider/review phases of the answer that follows an accepted prefix. */
+  continuation?: {
+    promptReadyMs?: number;
+    providerFirstDeltaMs?: number;
+    generationCompleteMs?: number;
+    semanticReviewCompleteMs?: number;
+  };
   /** Delay until the relationship gate first releases model/shortcut content. */
   firstSafeReleaseMs?: number;
   /** Delay until the reply stream yields its first text (including an instant backchannel). */
@@ -386,14 +425,35 @@ const INSTANT_BACKCHANNELS = new Set<string>([
  * Last-mile structural and relationship gate for a generated opening proposition. Invalid
  * candidates fail closed; truncating one could silently change the claim being spoken.
  */
-export function prepareSpokenPrefixCandidate(candidate: string): string {
+export function prepareSpokenPrefixCandidate(
+  candidate: string,
+  onCause?: (cause: SpokenPrefixTelemetryCause) => void,
+): string {
   const prepared = prepareSpeech(candidate);
-  if (!prepared) return '';
-  const guarded = guardRelationshipReply(prepared).response.trim();
-  if (!guarded || guarded.length > MAX_SPOKEN_PREFIX_CHARS) return '';
-  if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) return '';
+  if (!prepared) {
+    onCause?.('empty');
+    return '';
+  }
+  const guardedResult = guardRelationshipReply(prepared);
+  if (guardedResult.intervened) onCause?.('relationship_intervened');
+  const guarded = guardedResult.response.trim();
+  if (!guarded) {
+    onCause?.('empty');
+    return '';
+  }
+  if (guarded.length > MAX_SPOKEN_PREFIX_CHARS) {
+    onCause?.('too_long');
+    return '';
+  }
+  if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) {
+    onCause?.('missing_terminal');
+    return '';
+  }
   const sentences = guarded.match(/[^.!?…]+[.!?…]+[)\]}'"»”’]*/gu) ?? [];
-  if (sentences.length !== 1 || sentences[0]?.trim() !== guarded) return '';
+  if (sentences.length !== 1 || sentences[0]?.trim() !== guarded) {
+    onCause?.('multi_sentence');
+    return '';
+  }
   return guarded;
 }
 
@@ -1310,7 +1370,10 @@ export async function defaultReply(
       replyOpts,
     );
     const { CodeBuddyClient, route, systemPrompt } = prepared;
-    reportReplyTimingPhase(replyOpts, 'prompt_ready');
+    reportReplyTimingPhase(
+      replyOpts,
+      replyOpts?.spokenPrefix ? 'continuation_prompt_ready' : 'prompt_ready',
+    );
     cognitiveLease = prepared.cognitiveLease;
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
@@ -1330,7 +1393,10 @@ export async function defaultReply(
         ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
       }
     );
-    reportReplyTimingPhase(replyOpts, 'generation_complete');
+    reportReplyTimingPhase(
+      replyOpts,
+      replyOpts?.spokenPrefix ? 'continuation_generation_complete' : 'generation_complete',
+    );
     const reply = (resp?.choices?.[0]?.message?.content ?? '').trim();
     if (reply && !replyOpts?.signal?.aborted) cognitiveLease?.commit();
     else cognitiveLease?.release();
@@ -1372,7 +1438,7 @@ export async function defaultSpokenPrefix(
     );
     const { CodeBuddyClient, route } = prepared;
     replyOpts?.onProviderResolved?.(route);
-    reportReplyTimingPhase(replyOpts, 'prompt_ready');
+    reportReplyTimingPhase(replyOpts, 'prefix_prompt_ready');
     const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     const response = await client.chat(
       [
@@ -1387,7 +1453,7 @@ export async function defaultSpokenPrefix(
         ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
       },
     );
-    reportReplyTimingPhase(replyOpts, 'generation_complete');
+    reportReplyTimingPhase(replyOpts, 'prefix_generation_complete');
     return replyOpts?.signal?.aborted
       ? ''
       : (response?.choices?.[0]?.message?.content ?? '').trim();
@@ -1446,7 +1512,10 @@ export async function* streamCompanionReply(
       replyOpts,
     );
     const { CodeBuddyClient, route, systemPrompt } = prepared;
-    reportReplyTimingPhase(replyOpts, 'prompt_ready');
+    reportReplyTimingPhase(
+      replyOpts,
+      replyOpts?.spokenPrefix ? 'continuation_prompt_ready' : 'prompt_ready',
+    );
     cognitiveLease = prepared.cognitiveLease;
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] stream reply model: ${route.model} — ${route.reason}`);
@@ -1474,7 +1543,12 @@ export async function* streamCompanionReply(
       if (typeof delta === 'string' && delta.length > 0) {
         if (!providerDeltaSeen) {
           providerDeltaSeen = true;
-          reportReplyTimingPhase(replyOpts, 'provider_first_delta');
+          reportReplyTimingPhase(
+            replyOpts,
+            replyOpts?.spokenPrefix
+              ? 'continuation_provider_first_delta'
+              : 'provider_first_delta',
+          );
         }
         if (!acknowledgement) {
           full += delta;
@@ -1494,7 +1568,10 @@ export async function* streamCompanionReply(
       }
     }
     if (!replyOpts?.signal?.aborted) {
-      reportReplyTimingPhase(replyOpts, 'generation_complete');
+      reportReplyTimingPhase(
+        replyOpts,
+        replyOpts?.spokenPrefix ? 'continuation_generation_complete' : 'generation_complete',
+      );
     }
     if (acknowledgement && !continuationEmitted) {
       const tail = continuation.trim();
@@ -2068,6 +2145,18 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let providerFirstDeltaMs: number | undefined;
     let generationCompleteMs: number | undefined;
     let semanticReviewCompleteMs: number | undefined;
+    let prefixPromptReadyMs: number | undefined;
+    let prefixProviderFirstDeltaMs: number | undefined;
+    let prefixGenerationCompleteMs: number | undefined;
+    let prefixSemanticReviewCompleteMs: number | undefined;
+    let continuationPromptReadyMs: number | undefined;
+    let continuationProviderFirstDeltaMs: number | undefined;
+    let continuationGenerationCompleteMs: number | undefined;
+    let continuationSemanticReviewCompleteMs: number | undefined;
+    const spokenPrefixCauses: SpokenPrefixTelemetryCause[] = [];
+    const noteSpokenPrefixCause = (cause: SpokenPrefixTelemetryCause): void => {
+      if (!spokenPrefixCauses.includes(cause)) spokenPrefixCauses.push(cause);
+    };
     let firstSafeReleaseMs: number | undefined;
     let firstTextMs: number | undefined;
     let firstSegmentMs: number | undefined;
@@ -2097,6 +2186,30 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
           break;
         case 'semantic_review_complete':
           semanticReviewCompleteMs ??= elapsed;
+          break;
+        case 'prefix_prompt_ready':
+          prefixPromptReadyMs ??= elapsed;
+          break;
+        case 'prefix_provider_first_delta':
+          prefixProviderFirstDeltaMs ??= elapsed;
+          break;
+        case 'prefix_generation_complete':
+          prefixGenerationCompleteMs ??= elapsed;
+          break;
+        case 'prefix_semantic_review_complete':
+          prefixSemanticReviewCompleteMs ??= elapsed;
+          break;
+        case 'continuation_prompt_ready':
+          continuationPromptReadyMs ??= elapsed;
+          break;
+        case 'continuation_provider_first_delta':
+          continuationProviderFirstDeltaMs ??= elapsed;
+          break;
+        case 'continuation_generation_complete':
+          continuationGenerationCompleteMs ??= elapsed;
+          break;
+        case 'continuation_semantic_review_complete':
+          continuationSemanticReviewCompleteMs ??= elapsed;
           break;
       }
     };
@@ -2361,10 +2474,21 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
                 signal,
                 delivery,
                 onReplyTimingPhase: markReplyTimingPhase,
+                onSpokenPrefixTelemetry: noteSpokenPrefixCause,
               });
               if (signal.aborted) return;
-              spokenPrefix = prepareSpokenPrefixCandidate(candidate);
+              const causesBeforeFinalGuard = spokenPrefixCauses.length;
+              spokenPrefix = prepareSpokenPrefixCandidate(
+                candidate,
+                noteSpokenPrefixCause,
+              );
+              if (candidate.trim() && !spokenPrefix) {
+                noteSpokenPrefixCause('final_guard_invalid');
+              } else if (!candidate.trim() && spokenPrefixCauses.length === causesBeforeFinalGuard) {
+                noteSpokenPrefixCause('empty');
+              }
               if (spokenPrefix) {
+                noteSpokenPrefixCause('accepted');
                 if (firstTextMs === undefined) firstTextMs = Date.now() - startedAt;
                 firstSafeReleaseMs ??= Date.now() - startedAt;
                 atStreamStart = false;
@@ -2625,6 +2749,12 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       } else {
         emitAvatarEvent({ type: 'avatar.turn.silent', turnId: avatarTurnId });
       }
+      const spokenPrefixOutcome = spokenPrefixCauses.at(-1);
+      const hasContinuationTiming =
+        continuationPromptReadyMs !== undefined ||
+        continuationProviderFirstDeltaMs !== undefined ||
+        continuationGenerationCompleteMs !== undefined ||
+        continuationSemanticReviewCompleteMs !== undefined;
       const timing: VoiceReplyTiming = {
         mode,
         totalMs: Date.now() - startedAt,
@@ -2634,6 +2764,44 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         ...(providerFirstDeltaMs !== undefined ? { providerFirstDeltaMs } : {}),
         ...(generationCompleteMs !== undefined ? { generationCompleteMs } : {}),
         ...(semanticReviewCompleteMs !== undefined ? { semanticReviewCompleteMs } : {}),
+        ...(spokenPrefixOutcome
+          ? {
+              spokenPrefix: {
+                outcome: spokenPrefixOutcome,
+                causes: [...spokenPrefixCauses],
+                ...(prefixPromptReadyMs !== undefined
+                  ? { promptReadyMs: prefixPromptReadyMs }
+                  : {}),
+                ...(prefixProviderFirstDeltaMs !== undefined
+                  ? { providerFirstDeltaMs: prefixProviderFirstDeltaMs }
+                  : {}),
+                ...(prefixGenerationCompleteMs !== undefined
+                  ? { generationCompleteMs: prefixGenerationCompleteMs }
+                  : {}),
+                ...(prefixSemanticReviewCompleteMs !== undefined
+                  ? { semanticReviewCompleteMs: prefixSemanticReviewCompleteMs }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(hasContinuationTiming
+          ? {
+              continuation: {
+                ...(continuationPromptReadyMs !== undefined
+                  ? { promptReadyMs: continuationPromptReadyMs }
+                  : {}),
+                ...(continuationProviderFirstDeltaMs !== undefined
+                  ? { providerFirstDeltaMs: continuationProviderFirstDeltaMs }
+                  : {}),
+                ...(continuationGenerationCompleteMs !== undefined
+                  ? { generationCompleteMs: continuationGenerationCompleteMs }
+                  : {}),
+                ...(continuationSemanticReviewCompleteMs !== undefined
+                  ? { semanticReviewCompleteMs: continuationSemanticReviewCompleteMs }
+                  : {}),
+              },
+            }
+          : {}),
         ...(firstSafeReleaseMs !== undefined ? { firstSafeReleaseMs } : {}),
         ...(firstTextMs !== undefined ? { firstTextMs } : {}),
         ...(firstSegmentMs !== undefined ? { firstSegmentMs } : {}),
@@ -2657,6 +2825,17 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             `semantic=${semanticReviewCompleteMs ?? -1}ms ` +
             `safeRelease=${firstSafeReleaseMs ?? -1}ms ` +
             `contentAudio=${firstContentAudioMs ?? -1}ms`
+        );
+      }
+      if (timing.spokenPrefix) {
+        logger.info(
+          `[voice] spoken-prefix pilot outcome=${timing.spokenPrefix.outcome} ` +
+            `causes=${timing.spokenPrefix.causes.join(',')} ` +
+            `prompt=${timing.spokenPrefix.promptReadyMs ?? -1}ms ` +
+            `generation=${timing.spokenPrefix.generationCompleteMs ?? -1}ms ` +
+            `semantic=${timing.spokenPrefix.semanticReviewCompleteMs ?? -1}ms ` +
+            `continuationPrompt=${timing.continuation?.promptReadyMs ?? -1}ms ` +
+            `continuationGeneration=${timing.continuation?.generationCompleteMs ?? -1}ms`,
         );
       }
       try {

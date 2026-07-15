@@ -373,7 +373,9 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
       prepared ??= await createPrepared(desiredRoute);
       opts?.onProviderResolved?.(prepared.route);
       try {
-        opts?.onReplyTimingPhase?.('prompt_ready');
+        opts?.onReplyTimingPhase?.(
+          opts.spokenPrefix ? 'continuation_prompt_ready' : 'prompt_ready',
+        );
       } catch {
         /* telemetry must never alter the agent turn */
       }
@@ -381,7 +383,9 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
       const result = await runInterruptibleVoiceAgentTurn(prepared.agent, transcript, opts);
       if (!opts?.signal?.aborted) {
         try {
-          opts?.onReplyTimingPhase?.('generation_complete');
+          opts?.onReplyTimingPhase?.(
+            opts.spokenPrefix ? 'continuation_generation_complete' : 'generation_complete',
+          );
         } catch {
           /* telemetry must never alter the agent turn */
         }

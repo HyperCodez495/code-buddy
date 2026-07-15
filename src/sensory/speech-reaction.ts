@@ -103,6 +103,20 @@ export interface SpeechReactionOptions {
         providerFirstDeltaMs?: number;
         generationCompleteMs?: number;
         semanticReviewCompleteMs?: number;
+        spokenPrefix?: {
+          outcome: string;
+          causes: string[];
+          promptReadyMs?: number;
+          providerFirstDeltaMs?: number;
+          generationCompleteMs?: number;
+          semanticReviewCompleteMs?: number;
+        };
+        continuation?: {
+          promptReadyMs?: number;
+          providerFirstDeltaMs?: number;
+          generationCompleteMs?: number;
+          semanticReviewCompleteMs?: number;
+        };
         firstSafeReleaseMs?: number;
         firstTextMs?: number;
         firstSegmentMs?: number;
@@ -1456,6 +1470,12 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
                   : {}),
                 ...(responseTiming?.semanticReviewCompleteMs !== undefined
                   ? { semanticReviewCompleteMs: responseTiming.semanticReviewCompleteMs }
+                  : {}),
+                ...(responseTiming?.spokenPrefix
+                  ? { spokenPrefix: responseTiming.spokenPrefix }
+                  : {}),
+                ...(responseTiming?.continuation
+                  ? { continuation: responseTiming.continuation }
                   : {}),
                 ...(responseTiming?.firstSafeReleaseMs !== undefined
                   ? { firstSafeReleaseMs: responseTiming.firstSafeReleaseMs }

@@ -247,6 +247,7 @@ describe('hybrid reply — validated spoken prefix', () => {
     const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
     delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
     try {
+      const causes: string[] = [];
       const prefixReply = vi.fn(async () => 'Proposition qui ne doit pas être générée.');
       const reply = makeHybridReply({
         fastReply: () => null,
@@ -255,8 +256,11 @@ describe('hybrid reply — validated spoken prefix', () => {
         prefixReply,
         agentReply: async () => 'unused',
       });
-      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?")).resolves.toBe('');
+      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?", {
+        onSpokenPrefixTelemetry: (cause) => causes.push(cause),
+      })).resolves.toBe('');
       expect(prefixReply).not.toHaveBeenCalled();
+      expect(causes).toEqual([]);
     } finally {
       if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
       else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
@@ -283,6 +287,7 @@ describe('hybrid reply — validated spoken prefix', () => {
     const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
     process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
     try {
+      const causes: string[] = [];
       const reply = makeHybridReply({
         fastReply: () => null,
         prefetch: () => null,
@@ -297,7 +302,10 @@ describe('hybrid reply — validated spoken prefix', () => {
         },
       });
 
-      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?")).resolves.toBe('');
+      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?", {
+        onSpokenPrefixTelemetry: (cause) => causes.push(cause),
+      })).resolves.toBe('');
+      expect(causes).toContain('review_unavailable');
     } finally {
       if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
       else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
@@ -356,11 +364,12 @@ describe('hybrid reply — validated spoken prefix', () => {
     const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
     process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
     try {
-      for (const candidate of [
-        'Première phrase. Deuxième phrase.',
-        `${'a'.repeat(181)}.`,
-        'Phrase sans terminaison',
-      ]) {
+      for (const [candidate, expectedCause] of [
+        ['Première phrase. Deuxième phrase.', 'multi_sentence'],
+        [`${'a'.repeat(181)}.`, 'too_long'],
+        ['Phrase sans terminaison', 'missing_terminal'],
+      ] as const) {
+        const causes: string[] = [];
         const semanticReview = vi.fn();
         const reply = makeHybridReply({
           fastReply: () => null,
@@ -372,9 +381,12 @@ describe('hybrid reply — validated spoken prefix', () => {
           semanticReview,
         });
         await expect(
-          reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?"),
+          reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?", {
+            onSpokenPrefixTelemetry: (cause) => causes.push(cause),
+          }),
         ).resolves.toBe('');
         expect(semanticReview).not.toHaveBeenCalled();
+        expect(causes).toContain(expectedCause);
       }
     } finally {
       if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;

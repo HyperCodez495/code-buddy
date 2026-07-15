@@ -25,6 +25,7 @@ import { logger } from '../utils/logger.js';
 import type {
   ReplyFn,
   SpokenPrefixFn,
+  SpokenPrefixTelemetryCause,
   StreamReplyFn,
   VoiceStepOptions,
 } from './voice-loop.js';
@@ -484,7 +485,11 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       return null;
     } finally {
       try {
-        timing?.onReplyTimingPhase?.('semantic_review_complete');
+        timing?.onReplyTimingPhase?.(
+          timing.spokenPrefix
+            ? 'continuation_semantic_review_complete'
+            : 'semantic_review_complete',
+        );
       } catch {
         /* observability must never break reply delivery */
       }
@@ -501,12 +506,43 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     return guarded.response.trim();
   }
 
-  function preparePrefixForSpeech(response: string): string {
-    const guarded = guardBeforeMemory(response);
-    if (!guarded || guarded.length > 180) return '';
-    if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) return '';
+  function reportPrefixCause(
+    timing: VoiceStepOptions | undefined,
+    cause: SpokenPrefixTelemetryCause,
+  ): void {
+    try {
+      timing?.onSpokenPrefixTelemetry?.(cause);
+    } catch {
+      /* raw-free telemetry must never alter acceptance */
+    }
+  }
+
+  function preparePrefixForSpeech(
+    response: string,
+    timing?: VoiceStepOptions,
+    postReview = false,
+  ): string {
+    const guardedResult = guardRelationshipReply(response);
+    if (guardedResult.intervened) {
+      logger.warn(
+        `[voice-hybrid] relationship safety intervened issues=${guardedResult.issues.join(',')}`,
+      );
+      reportPrefixCause(timing, 'relationship_intervened');
+    }
+    const guarded = guardedResult.response.trim();
+    let invalid: SpokenPrefixTelemetryCause | undefined;
+    if (!guarded) invalid = 'empty';
+    else if (guarded.length > 180) invalid = 'too_long';
+    else if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) invalid = 'missing_terminal';
     const sentences = guarded.match(/[^.!?…]+[.!?…]+[)\]}'"»”’]*/gu) ?? [];
-    if (sentences.length !== 1 || sentences[0]?.trim() !== guarded) return '';
+    if (!invalid && (sentences.length !== 1 || sentences[0]?.trim() !== guarded)) {
+      invalid = 'multi_sentence';
+    }
+    if (invalid) {
+      reportPrefixCause(timing, invalid);
+      if (postReview) reportPrefixCause(timing, 'post_review_invalid');
+      return '';
+    }
     return guarded;
   }
 
@@ -530,27 +566,34 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     input: HybridSemanticReviewInput,
     timing?: VoiceStepOptions,
   ): Promise<string> {
-    const candidate = preparePrefixForSpeech(input.draft);
+    const candidate = preparePrefixForSpeech(input.draft, timing);
     if (!candidate) return '';
-    if (!shouldReviewPlan(input.plan, input.request)) return candidate;
+    if (!shouldReviewPlan(input.plan, input.request)) {
+      reportPrefixCause(timing, 'accepted');
+      return candidate;
+    }
     try {
       const reviewed = await reviewSemantics({ ...input, draft: candidate });
       if (input.signal?.aborted) return '';
       if (reviewed.outcome !== 'accepted' && reviewed.outcome !== 'revised') {
+        reportPrefixCause(timing, 'review_rejected');
         logger.warn(
           `[voice-hybrid] spoken prefix rejected outcome=${reviewed.outcome} reason=${reviewed.reason}`,
         );
         return '';
       }
-      return preparePrefixForSpeech(reviewed.response);
+      const accepted = preparePrefixForSpeech(reviewed.response, timing, true);
+      if (accepted) reportPrefixCause(timing, 'accepted');
+      return accepted;
     } catch (error) {
+      reportPrefixCause(timing, 'review_unavailable');
       logger.warn(
         `[voice-hybrid] spoken prefix review failed closed (${error instanceof Error ? error.name : 'unknown'})`,
       );
       return '';
     } finally {
       try {
-        timing?.onReplyTimingPhase?.('semantic_review_complete');
+        timing?.onReplyTimingPhase?.('prefix_semantic_review_complete');
       } catch {
         /* observability must never alter acceptance */
       }
@@ -702,7 +745,10 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     try {
       const recent = conversationHistory(heard);
       const prepared = prepareConversationTurn(heard, recent);
-      if (!isSpokenPrefixEligible(heard, prepared.plan)) return '';
+      if (!isSpokenPrefixEligible(heard, prepared.plan)) {
+        reportPrefixCause(replyOpts, 'ineligible');
+        return '';
+      }
       await ensureDeps();
       let mainProvider: HybridSemanticReviewInput['mainProvider'];
       const prefixOptions: VoiceStepOptions = {
@@ -732,6 +778,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       }
       return accepted;
     } catch (error) {
+      reportPrefixCause(replyOpts, 'empty');
       logger.warn(
         `[voice-hybrid] spoken prefix failed closed (${error instanceof Error ? error.name : 'unknown'})`,
       );
@@ -825,7 +872,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
               ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
               ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
             });
-            continuationOptions.onReplyTimingPhase?.('semantic_review_complete');
+            continuationOptions.onReplyTimingPhase?.('continuation_semantic_review_complete');
             if (
               reviewed.outcome !== 'accepted' &&
               reviewed.outcome !== 'revised'
@@ -840,7 +887,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
               );
             }
           } catch (error) {
-            continuationOptions.onReplyTimingPhase?.('semantic_review_complete');
+            continuationOptions.onReplyTimingPhase?.('continuation_semantic_review_complete');
             logger.warn(
               `[voice-hybrid] prefixed continuation review failed closed (${error instanceof Error ? error.name : 'unknown'})`,
             );

@@ -4,6 +4,7 @@ import {
   defaultStreamReply,
   immediateThinkingAcknowledgement,
   type VoiceReplyTiming,
+  type VoiceStepOptions,
 } from '../../src/sensory/voice-loop.js';
 import {
   streamToSpeech,
@@ -12,6 +13,7 @@ import {
 } from '../../src/sensory/voice-stream.js';
 import { isSpeaking, _resetVoiceActivityForTests } from '../../src/sensory/voice-activity.js';
 import { makeHybridReply } from '../../src/sensory/hybrid-reply.js';
+import { logger } from '../../src/utils/logger.js';
 
 /**
  * Streaming voice pipeline (Lot 3): the reply is spoken sentence-by-sentence as the LLM
@@ -537,6 +539,78 @@ describe('makeVoiceReply — streaming integration', () => {
         spoke: true,
       });
     } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('keeps spoken-prefix and continuation phases separate and reports only raw-free causes', async () => {
+    let clock = 2_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const logs: string[] = [];
+    const info = vi.spyOn(logger, 'info').mockImplementation((message) => {
+      logs.push(String(message));
+    });
+    let timing: VoiceReplyTiming | undefined;
+    const secretCandidate = 'Proposition privée de test.';
+    try {
+      const blocking = vi.fn(async () => 'unused');
+      const replyFn = Object.assign(blocking, {
+        spokenPrefix: async (_heard: string, options?: VoiceStepOptions) => {
+          clock = 2_010;
+          options?.onReplyTimingPhase?.('prefix_prompt_ready');
+          clock = 2_020;
+          options?.onReplyTimingPhase?.('prefix_generation_complete');
+          options?.onSpokenPrefixTelemetry?.('accepted');
+          return secretCandidate;
+        },
+        stream: async function* (_heard: string, options?: VoiceStepOptions) {
+          clock = 2_030;
+          options?.onReplyTimingPhase?.('continuation_prompt_ready');
+          clock = 2_040;
+          options?.onReplyTimingPhase?.('continuation_provider_first_delta');
+          yield 'Continuation validée.';
+          clock = 2_050;
+          options?.onReplyTimingPhase?.('continuation_generation_complete');
+        },
+      });
+      const onHeard = makeVoiceReply({
+        replyFn,
+        streamSpeak: async (_text, options) => {
+          clock = 2_060;
+          options?.onFirstAudio?.();
+          return true;
+        },
+        synth: async () => '',
+        play: async () => undefined,
+        avatarEnabled: false,
+        onTiming: (value) => {
+          timing = value;
+        },
+      });
+
+      await onHeard('Question privée de test.');
+
+      expect(timing).toMatchObject({
+        spokenPrefix: {
+          outcome: 'accepted',
+          causes: ['accepted'],
+          promptReadyMs: 10,
+          generationCompleteMs: 20,
+        },
+        continuation: {
+          promptReadyMs: 30,
+          providerFirstDeltaMs: 40,
+          generationCompleteMs: 50,
+        },
+      });
+      expect(timing?.providerFirstDeltaMs).toBeUndefined();
+      expect(timing?.generationCompleteMs).toBeUndefined();
+      const pilotLog = logs.find((line) => line.includes('spoken-prefix pilot')) ?? '';
+      expect(pilotLog).toContain('outcome=accepted');
+      expect(pilotLog).not.toContain(secretCandidate);
+      expect(pilotLog).not.toContain('Question privée');
+    } finally {
+      info.mockRestore();
       now.mockRestore();
     }
   });

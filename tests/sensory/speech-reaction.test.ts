@@ -675,6 +675,17 @@ describe('speech reaction — speech_end → STT → percept', () => {
         providerFirstDeltaMs: 4,
         generationCompleteMs: 24,
         semanticReviewCompleteMs: 30,
+        spokenPrefix: {
+          outcome: 'accepted',
+          causes: ['accepted'],
+          promptReadyMs: 1,
+          generationCompleteMs: 18,
+        },
+        continuation: {
+          promptReadyMs: 20,
+          providerFirstDeltaMs: 22,
+          generationCompleteMs: 28,
+        },
         firstSafeReleaseMs: 32,
         firstTextMs: 5,
         firstSegmentMs: 35,
@@ -707,7 +718,7 @@ describe('speech reaction — speech_end → STT → percept', () => {
       await tick();
 
       const raw = await readFile(path.join(tmp, '.codebuddy', 'companion', 'percepts.jsonl'), 'utf8');
-      const percept = JSON.parse(raw.trim()) as { payload: { responded: boolean; latency: Record<string, number>; capture: Record<string, unknown> } };
+      const percept = JSON.parse(raw.trim()) as { payload: { responded: boolean; latency: Record<string, unknown>; capture: Record<string, unknown> } };
       expect(percept.payload.responded).toBe(true);
       expect(percept.payload.latency.sttMs).toBe(120);
       expect(percept.payload.latency.endpointMs).toBe(420);
@@ -721,6 +732,17 @@ describe('speech reaction — speech_end → STT → percept', () => {
       expect(percept.payload.latency.providerFirstDeltaMs).toBe(4);
       expect(percept.payload.latency.generationCompleteMs).toBe(24);
       expect(percept.payload.latency.semanticReviewCompleteMs).toBe(30);
+      expect(percept.payload.latency.spokenPrefix).toEqual({
+        outcome: 'accepted',
+        causes: ['accepted'],
+        promptReadyMs: 1,
+        generationCompleteMs: 18,
+      });
+      expect(percept.payload.latency.continuation).toEqual({
+        promptReadyMs: 20,
+        providerFirstDeltaMs: 22,
+        generationCompleteMs: 28,
+      });
       expect(percept.payload.latency.firstSafeReleaseMs).toBe(32);
       expect(percept.payload.latency.firstTextMs).toBe(5);
       expect(percept.payload.latency.firstSegmentMs).toBe(35);
