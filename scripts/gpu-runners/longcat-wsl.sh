@@ -7,6 +7,8 @@ WEIGHTS_ROOT="${CODEBUDDY_LONGCAT_WEIGHTS_ROOT:-/mnt/d/DEV/LongCat-Video/weights
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 export PATH="$ENV_DIR/bin:$PATH"
+export CC="${CC:-$ENV_DIR/bin/x86_64-conda-linux-gnu-cc}"
+export CXX="${CXX:-$ENV_DIR/bin/x86_64-conda-linux-gnu-c++}"
 export PYTHONPATH="$REPO_DIR"
 export CODEBUDDY_LONGCAT_REPO="$REPO_DIR"
 export CODEBUDDY_LONGCAT_WEIGHTS_ROOT="$WEIGHTS_ROOT"
@@ -28,6 +30,10 @@ fi
 if [[ ! -x "$ENV_DIR/bin/python" ]]; then
   echo "LongCat environment is unavailable: $ENV_DIR" >&2
   exit 3
+fi
+if [[ ! -x "$CC" || ! -x "$CXX" ]]; then
+  echo "LongCat compiler toolchain is unavailable; rerun setup-longcat-env.sh" >&2
+  exit 5
 fi
 if [[ ! -d "$REPO_DIR/longcat_video" ]]; then
   echo "LongCat source is unavailable: $REPO_DIR" >&2

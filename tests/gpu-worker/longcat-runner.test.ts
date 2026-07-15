@@ -55,6 +55,8 @@ describe('LongCat GPU runner hardening', () => {
     const setup = await readFile(SETUP, 'utf8');
     expect(setup).toContain("'pyloudnorm==0.1.1'");
     expect(setup).toContain("'torchao==0.10.0'");
+    expect(setup).toContain("'gcc_linux-64=11.2.0'");
+    expect(setup).toContain("'gxx_linux-64=11.2.0'");
     expect(setup).toContain('quantize_(linear, int8_weight_only())');
   });
 

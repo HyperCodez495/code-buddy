@@ -20,8 +20,17 @@ if [[ ! -x "$ENV_DIR/bin/python" ]]; then
   "$CONDA_BIN" create --yes --prefix "$ENV_DIR" python=3.10 pip ffmpeg libsndfile
 fi
 
+# TorchInductor/Triton builds a tiny CUDA driver extension on first use. Keep
+# the compiler inside the isolated environment instead of depending on WSL's
+# system packages, which are absent on a clean Darkstar installation.
+"$CONDA_BIN" install --yes --prefix "$ENV_DIR" \
+  'gcc_linux-64=11.2.0' \
+  'gxx_linux-64=11.2.0'
+
 PYTHON="$ENV_DIR/bin/python"
 PIP=("$PYTHON" -m pip)
+export CC="$ENV_DIR/bin/x86_64-conda-linux-gnu-cc"
+export CXX="$ENV_DIR/bin/x86_64-conda-linux-gnu-c++"
 "${PIP[@]}" install --upgrade 'pip==25.1.1' 'setuptools==80.9.0' 'wheel==0.45.1'
 "${PIP[@]}" install \
   'torch==2.6.0' 'torchvision==0.21.0' 'torchaudio==2.6.0' \
@@ -57,6 +66,7 @@ PIP=("$PYTHON" -m pip)
 "$PYTHON" - <<'PY'
 import torch
 import flash_attn
+import os
 import pyloudnorm
 import transformers
 from diffusers import __version__ as diffusers_version
@@ -65,6 +75,8 @@ from torchao.quantization import int8_weight_only, quantize_
 assert torch.__version__.startswith('2.6.0+cu124'), torch.__version__
 assert torch.cuda.is_available(), 'CUDA is unavailable inside the LongCat environment'
 assert torch.cuda.get_device_capability(0) == (8, 6), torch.cuda.get_device_capability(0)
+assert os.path.isfile(os.environ['CC']), os.environ['CC']
+assert os.path.isfile(os.environ['CXX']), os.environ['CXX']
 linear = torch.nn.Linear(64, 64, bias=False, dtype=torch.bfloat16)
 quantize_(linear, int8_weight_only())
 linear = linear.cuda()
