@@ -1057,6 +1057,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Restore exact content previously captured in the active workspace and session by callId or scoped identifier',
   },
   {
+    name: 'context_expand',
+    category: 'utility',
+    keywords: ['context', 'expand', 'segment', 'summary', 'exact', 'archive', 'conversation'],
+    priority: 8,
+    description: 'Expand exact original messages for a compacted segment in the current session',
+  },
+  {
     name: 'knowledge_search',
     category: 'utility',
     keywords: ['knowledge', 'search', 'convention', 'docs', 'domain', 'procedure'],

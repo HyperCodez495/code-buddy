@@ -29,6 +29,7 @@ code_exec
 code_explorer_ask
 code_graph
 code_stats
+context_expand
 codebase_map
 codebase_replace
 comfy_recipe

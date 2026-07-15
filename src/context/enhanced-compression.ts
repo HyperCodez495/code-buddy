@@ -24,6 +24,7 @@ import {
   SummarizationConfig,
 } from './types.js';
 import { logger } from '../utils/logger.js';
+import { isContextZoomEnabled, SegmentArchive } from './segment-archive.js';
 
 /**
  * Configuration for the enhanced compression engine.
@@ -144,12 +145,15 @@ export class EnhancedContextCompressor {
   private tokenCounter: TokenCounter;
   private archives: ContextArchive[] = [];
   private archiveIdCounter = 0;
+  private readonly segmentArchive: SegmentArchive;
 
   constructor(
     tokenCounter: TokenCounter,
-    config: Partial<EnhancedCompressionConfig> = {}
+    config: Partial<EnhancedCompressionConfig> = {},
+    segmentArchive: SegmentArchive = new SegmentArchive(),
   ) {
     this.tokenCounter = tokenCounter;
+    this.segmentArchive = segmentArchive;
     this.config = {
       ...DEFAULT_ENHANCED_CONFIG,
       ...config,
@@ -201,7 +205,11 @@ export class EnhancedContextCompressor {
 
     // Strategy 1: Sliding window with overlap
     if (currentTokens > tokenLimit) {
-      compressed = this.applySlidingWindowWithOverlap(compressed, classified) as CodeBuddyMessage[];
+      compressed = this.applySlidingWindowWithOverlap(
+        compressed,
+        classified,
+        sessionId,
+      ) as CodeBuddyMessage[];
       currentTokens = this.countTokens(compressed);
       strategiesApplied.push('sliding_window_overlap');
     }
@@ -215,7 +223,12 @@ export class EnhancedContextCompressor {
 
     // Strategy 3: Intelligent summarization
     if (currentTokens > tokenLimit && this.config.summarization.minMessagesForSummarization <= compressed.length) {
-      compressed = this.applyIntelligentSummarization(compressed, classified, keyInfo);
+      compressed = this.applyIntelligentSummarization(
+        compressed,
+        classified,
+        keyInfo,
+        sessionId,
+      );
       currentTokens = this.countTokens(compressed);
       strategiesApplied.push('intelligent_summarization');
     }
@@ -256,7 +269,8 @@ export class EnhancedContextCompressor {
    */
   private applySlidingWindowWithOverlap(
     messages: CodeBuddyMessage[],
-    classified: Map<number, ClassifiedMessage>
+    classified: Map<number, ClassifiedMessage>,
+    sessionId?: string,
   ): CodeBuddyMessage[] {
     const { windowSize, overlapSize, summarizeOldMessages } = this.config.slidingWindow;
 
@@ -290,9 +304,10 @@ export class EnhancedContextCompressor {
       const oldMessages = messages.slice(0, overlapStart);
       if (oldMessages.length > 0) {
         const summary = this.createContextSummary(oldMessages, classified);
+        const summaryContent = `[Context Summary - ${oldMessages.length} earlier messages]\n${summary}`;
         result.push({
           role: 'system',
-          content: `[Context Summary - ${oldMessages.length} earlier messages]\n${summary}`,
+          content: this.withSegmentMarker(summaryContent, oldMessages, sessionId),
         });
       }
     }
@@ -367,7 +382,8 @@ export class EnhancedContextCompressor {
   private applyIntelligentSummarization(
     messages: CodeBuddyMessage[],
     classified: Map<number, ClassifiedMessage>,
-    keyInfo: KeyInformation
+    keyInfo: KeyInformation,
+    sessionId?: string,
   ): CodeBuddyMessage[] {
     const { maxSummaryTokens, preserveKeyEntities, preserveErrors, preserveDecisions } = this.config.summarization;
     const windowSize = this.config.slidingWindow.windowSize;
@@ -425,10 +441,24 @@ export class EnhancedContextCompressor {
 
     const summaryMessage: CodeBuddyMessage = {
       role: 'system',
-      content: `[Intelligent Summary of ${toSummarize.length} messages]\n${summary}`,
+      content: this.withSegmentMarker(
+        `[Intelligent Summary of ${toSummarize.length} messages]\n${summary}`,
+        toSummarize,
+        sessionId,
+      ),
     };
 
     return [summaryMessage, ...toKeep];
+  }
+
+  private withSegmentMarker(
+    summary: string,
+    originalMessages: CodeBuddyMessage[],
+    sessionId?: string,
+  ): string {
+    if (!isContextZoomEnabled() || !sessionId) return summary;
+    const segmentId = this.segmentArchive.archive(sessionId, originalMessages, summary);
+    return segmentId ? `[segment:${segmentId}] ${summary}` : summary;
   }
 
   /**

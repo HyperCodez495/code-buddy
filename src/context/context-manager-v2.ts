@@ -36,6 +36,7 @@ import type {
   EnhancedCompressionResult,
 } from './types.js';
 import type { ContextEngine } from './context-engine.js';
+import { isContextZoomEnabled, SegmentArchive } from './segment-archive.js';
 
 // Lazy import memory monitor to avoid circular dependencies
 let memoryMonitorModule: typeof import('../utils/memory-monitor.js') | null = null;
@@ -183,6 +184,8 @@ export class ContextManagerV2 {
   private _importanceScorer: ImportanceScorer | null = null;
   /** Pluggable context engine (Native Engine v2026.3.7 alignment) */
   private contextEngine: ContextEngine | null = null;
+  /** Durable recovery store for opt-in hierarchical context summaries. */
+  private readonly segmentArchive: SegmentArchive;
 
   // Memory metrics for monitoring
   /** Maximum number of summaries to keep (prevents unbounded growth) */
@@ -228,16 +231,21 @@ export class ContextManagerV2 {
     enableEnhancedCompression: true, // Enable by default
   };
 
-  constructor(config: Partial<ContextManagerConfig> = {}) {
+  constructor(
+    config: Partial<ContextManagerConfig> = {},
+    segmentArchive: SegmentArchive = new SegmentArchive(),
+  ) {
     this.config = { ...ContextManagerV2.DEFAULT_CONFIG, ...config };
     this.tokenCounter = createTokenCounter(this.config.model);
     this.sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.segmentArchive = segmentArchive;
 
     // Initialize enhanced compressor if enabled
     if (this.config.enableEnhancedCompression) {
       this.enhancedCompressor = new EnhancedContextCompressor(
         this.tokenCounter,
-        this.config.enhancedCompressionConfig
+        this.config.enhancedCompressionConfig,
+        this.segmentArchive,
       );
     }
   }
@@ -256,6 +264,11 @@ export class ContextManagerV2 {
    */
   getContextEngine(): ContextEngine | null {
     return this.contextEngine;
+  }
+
+  /** Active logical conversation identifier used by context_expand. */
+  getSessionId(): string {
+    return this.sessionId;
   }
 
   /**
@@ -664,11 +677,14 @@ export class ContextManagerV2 {
     // For messages outside the window, keep any with score > 0.8 (high importance)
     const oldMessages = messages.slice(0, -keepCount);
     const importantOldMessages: CodeBuddyMessage[] = [];
+    const removedMessages: CodeBuddyMessage[] = [];
     for (let i = 0; i < oldMessages.length; i++) {
       const score = scores[i];
       const oldMessage = oldMessages[i];
       if (oldMessage !== undefined && (score?.score ?? 0) > 0.8) {
         importantOldMessages.push(oldMessage);
+      } else if (oldMessage !== undefined) {
+        removedMessages.push(oldMessage);
       }
     }
 
@@ -677,9 +693,10 @@ export class ContextManagerV2 {
     const parts: CodeBuddyMessage[] = [];
 
     if (removedCount > 0) {
+      const marker = `[Previous ${removedCount} messages summarized due to context limits]`;
       parts.push({
         role: 'system',
-        content: `[Previous ${removedCount} messages summarized due to context limits]`,
+        content: this.withSegmentMarker(marker, removedMessages),
       });
     }
 
@@ -744,10 +761,19 @@ export class ContextManagerV2 {
     // Create summary message
     const summaryMessage: CodeBuddyMessage = {
       role: 'system',
-      content: `[Conversation Summary]\n${summaryContent}`,
+      content: this.withSegmentMarker(
+        `[Conversation Summary]\n${summaryContent}`,
+        oldMessages,
+      ),
     };
 
     return [summaryMessage, ...recentMessages];
+  }
+
+  private withSegmentMarker(summary: string, originalMessages: CodeBuddyMessage[]): string {
+    if (!isContextZoomEnabled()) return summary;
+    const segmentId = this.segmentArchive.archive(this.sessionId, originalMessages, summary);
+    return segmentId ? `[segment:${segmentId}] ${summary}` : summary;
   }
 
   /**
@@ -1258,7 +1284,8 @@ export class ContextManagerV2 {
     if (enabled && !this.enhancedCompressor) {
       this.enhancedCompressor = new EnhancedContextCompressor(
         this.tokenCounter,
-        this.config.enhancedCompressionConfig
+        this.config.enhancedCompressionConfig,
+        this.segmentArchive,
       );
       logger.info('Enhanced compression enabled');
     } else if (!enabled) {

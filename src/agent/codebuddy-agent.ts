@@ -264,6 +264,7 @@ export class CodeBuddyAgent extends BaseAgent {
       marketplace: this.marketplace,
       repairCoordinator: this.repairCoordinator,
       sessionIdProvider: () => this.sessionStore.getCurrentSessionId() ?? undefined,
+      contextZoomSessionIdProvider: () => this.contextManager.getSessionId(),
     });
     this.toolHandler.setWorkingDirectory(workingDirectory);
 
