@@ -65,6 +65,13 @@ export {
   resetSearchInstance,
 } from './search-tools.js';
 
+// Tool Adapters - Opt-in multi-repository workspace
+export {
+  WorkspaceSearchTool,
+  WorkspaceReadTool,
+  createWorkspaceTools,
+} from '../workspace-tools.js';
+
 // Tool Adapters - Web
 export {
   WebSearchExecuteTool,
@@ -556,6 +563,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createTextEditorTools } = await import('./text-editor-tools.js');
   const { createBashTools } = await import('./bash-tools.js');
   const { createSearchTools } = await import('./search-tools.js');
+  const { createWorkspaceTools } = await import('../workspace-tools.js');
   const { createWebTools } = await import('./web-tools.js');
   const { createResearchTools } = await import('./research-tools.js');
   const { createMeetingTools } = await import('./meeting-tools.js');
@@ -620,6 +628,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createTextEditorTools(),
     ...createBashTools(),
     ...createSearchTools(),
+    ...createWorkspaceTools(),
     ...createWebTools(),
     ...createResearchTools(),
     ...createMeetingTools(),
@@ -710,6 +719,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createSelfDescribeTools(),
     ...createRemindTools(),
     ...createSearchTools(),
+    ...createWorkspaceTools(),
     ...createWebTools(),
     ...createResearchTools(),
     ...createMeetingTools(),
@@ -793,6 +803,7 @@ import { createLsTools } from './ls-tools.js';
 import { createSelfDescribeTools } from './self-describe-tools.js';
 import { createRemindTools } from './remind-tools.js';
 import { createSearchTools } from './search-tools.js';
+import { createWorkspaceTools } from '../workspace-tools.js';
 import { createWebTools } from './web-tools.js';
 import { createResearchTools } from './research-tools.js';
 import { createMeetingTools } from './meeting-tools.js';

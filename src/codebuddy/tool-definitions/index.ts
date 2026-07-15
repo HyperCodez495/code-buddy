@@ -41,6 +41,13 @@ export {
   SEARCH_TOOLS,
 } from './search-tools.js';
 
+// Opt-in multi-repository workspace tools
+export {
+  WORKSPACE_SEARCH_TOOL,
+  WORKSPACE_READ_TOOL,
+  WORKSPACE_TOOLS,
+} from './workspace-tools.js';
+
 // Todo tools
 export {
   CREATE_TODO_LIST_TOOL,

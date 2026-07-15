@@ -16,6 +16,19 @@ export interface SearchResult {
   match: string;
 }
 
+export interface TextSearchOptions {
+  includePattern?: string;
+  excludePattern?: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  regex?: boolean;
+  maxResults?: number;
+  fileTypes?: string[];
+  excludeFiles?: string[];
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
 export interface FileSearchResult {
   path: string;
   name: string;
@@ -93,7 +106,7 @@ export class SearchTool {
 
       // Search for text content if requested
       if (searchType === "text" || searchType === "both") {
-        const textResults = await this.executeRipgrep(query, options);
+        const textResults = await this.searchText(query, options);
         results.push(
           ...textResults.map((r) => ({
             type: "text" as const,
@@ -148,20 +161,22 @@ export class SearchTool {
   }
 
   /**
+   * Run the existing ripgrep text-search engine and return structured matches.
+   * This is the reusable primitive for bounded callers such as multi-repo search.
+   */
+  async searchText(query: string, options: TextSearchOptions = {}): Promise<SearchResult[]> {
+    const results = await this.executeRipgrep(query, options);
+    return options.maxResults === undefined
+      ? results
+      : results.slice(0, Math.max(0, options.maxResults));
+  }
+
+  /**
    * Execute ripgrep command with specified options
    */
   private async executeRipgrep(
     query: string,
-    options: {
-      includePattern?: string;
-      excludePattern?: string;
-      caseSensitive?: boolean;
-      wholeWord?: boolean;
-      regex?: boolean;
-      maxResults?: number;
-      fileTypes?: string[];
-      excludeFiles?: string[];
-    }
+    options: TextSearchOptions,
   ): Promise<SearchResult[]> {
     return new Promise((resolve, reject) => {
       const args = [
@@ -239,13 +254,24 @@ export class SearchTool {
       let output = "";
       let errorOutput = "";
       let timedOut = false;
+      let aborted = false;
 
       // Add timeout to prevent hanging on slow filesystems
-      const SEARCH_TIMEOUT = 30000; // 30 seconds
+      const SEARCH_TIMEOUT = options.timeoutMs ?? 30000;
       const timeout = setTimeout(() => {
         timedOut = true;
         rg.kill("SIGKILL");
       }, SEARCH_TIMEOUT);
+      const onAbort = () => {
+        aborted = true;
+        rg.kill('SIGKILL');
+      };
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        options.signal?.removeEventListener('abort', onAbort);
+      };
 
       rg.stdout.on("data", (data) => {
         if (output.length < 5_000_000) output += data.toString();
@@ -256,8 +282,10 @@ export class SearchTool {
       });
 
       rg.on("close", (code) => {
-        clearTimeout(timeout);
-        if (timedOut) {
+        cleanup();
+        if (aborted) {
+          reject(new Error('Search aborted'));
+        } else if (timedOut) {
           reject(new Error(`Search timed out after ${SEARCH_TIMEOUT / 1000} seconds`));
         } else if (code === 0 || code === 1) {
           // 0 = found, 1 = not found
@@ -269,7 +297,7 @@ export class SearchTool {
       });
 
       rg.on("error", (error) => {
-        clearTimeout(timeout);
+        cleanup();
         reject(error);
       });
     });

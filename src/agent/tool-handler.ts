@@ -109,6 +109,8 @@ const READ_ONLY_FILE_TOOLS = new Set<string>([
   'find_references',
   'find_definition',
   'search_multi',
+  'workspace_search',
+  'workspace_read',
 ]);
 
 /** Shell adapters own a stricter argv/sandbox/escalation pipeline. */

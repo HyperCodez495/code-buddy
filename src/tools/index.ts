@@ -5,9 +5,15 @@ export { TodoTool, type TodoItem, type TodoStats } from "./todo-tool.js";
 export {
   SearchTool,
   type SearchResult,
+  type TextSearchOptions,
   type FileSearchResult,
   type UnifiedSearchResult,
 } from "./search.js";
+export {
+  WorkspaceSearchTool,
+  WorkspaceReadTool,
+  createWorkspaceTools,
+} from './workspace-tools.js';
 export { WebSearchTool } from "./web-search.js";
 export { WeatherTool } from "./weather.js";
 export { StockQuoteTool } from "./stock-quote.js";
