@@ -132,6 +132,41 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def checkpoint_sha256(path: Path) -> tuple[str, str]:
+    """Hash once, then reuse only while strong file metadata remains identical."""
+    stat = path.stat()
+    cache_path = path.with_name(f"{path.name}.codebuddy-sha256.json")
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        cached_hash = cached.get("sha256") if isinstance(cached, dict) else None
+        if (
+            cached.get("version") == 1
+            and cached.get("size") == stat.st_size
+            and cached.get("mtimeNs") == stat.st_mtime_ns
+            and isinstance(cached_hash, str)
+            and re.fullmatch(r"[a-f0-9]{64}", cached_hash)
+        ):
+            return cached_hash, "stat-cache"
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+
+    digest = sha256(path)
+    try:
+        atomic_json(
+            cache_path,
+            {
+                "version": 1,
+                "size": stat.st_size,
+                "mtimeNs": stat.st_mtime_ns,
+                "sha256": digest,
+            },
+        )
+    except OSError:
+        # Read-only checkpoint stores remain supported; they simply hash every job.
+        pass
+    return digest, "computed"
+
+
 def prepare_dataset(payload: dict[str, Any], staging: Path, profile: str) -> tuple[Path, Path, int]:
     panoramas = payload.get("panoramas")
     if not isinstance(panoramas, list) or not panoramas:
@@ -316,6 +351,8 @@ def main() -> int:
 
     print("CODEBUDDY_PROGRESS 0.95 collecting outputs", flush=True)
     ply, cameras, rendered, depths = find_outputs(run_output)
+    print("CODEBUDDY_PROGRESS 0.97 verifying checkpoint", flush=True)
+    checkpoint_hash, checkpoint_hash_source = checkpoint_sha256(checkpoint)
     manifest: dict[str, Any] = {
         "sceneId": required_text(payload.get("sceneId"), "sceneId"),
         "profile": profile,
@@ -325,7 +362,8 @@ def main() -> int:
         "renderedPanoramas": [external_path(path) for path in rendered],
         "depthMaps": [external_path(path) for path in depths],
         "checkpointPath": external_path(checkpoint),
-        "checkpointSha256": sha256(checkpoint),
+        "checkpointSha256": checkpoint_hash,
+        "checkpointHashSource": checkpoint_hash_source,
         "elapsedMs": round((time.monotonic() - started) * 1000),
     }
     commit = git_commit(root)

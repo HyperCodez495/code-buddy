@@ -42,6 +42,11 @@ JSON result manifest to `%CODEBUDDY_GPU_JOB_RESULT%`. Standard output/error are 
 and persisted beside the job. The queue survives restarts; a job interrupted by a worker
 restart is marked failed instead of silently re-executed.
 
+Runners can publish live progress with `CODEBUDDY_PROGRESS <0..1> <message>` lines on
+standard output. The worker parses split stream chunks safely, exposes the latest bounded
+message through job status, and checkpoints logs at each progress transition. Failed jobs
+include a bounded final runner diagnostic while the full logs remain on Darkstar.
+
 The request path is also available as `%CODEBUDDY_GPU_JOB_REQUEST%`. This is required
 for Windows-to-WSL runners because `WSLENV` translates `/p` path variables without
 letting a shell reinterpret Windows backslashes.
@@ -102,6 +107,12 @@ It injects a process-local `sitecustomize` compatibility guard for the released
 PyTorch 2.3.1 environment: PanoWorld uses its own RMSNorm implementation but references
 the later `torch.nn.RMSNorm` symbol in an initialization type check. The upstream source
 and checkpoint remain unchanged.
+
+Checkpoint SHA-256 verification is complete on first use. A sidecar then caches the
+digest together with byte size and nanosecond modification time; any file change
+invalidates it, while unchanged 4–5 GiB weights avoid roughly one minute of redundant
+disk reads per job. Manifests state whether the digest was `computed` or came from the
+validated `stat-cache`.
 
 ## LongCat avatar
 

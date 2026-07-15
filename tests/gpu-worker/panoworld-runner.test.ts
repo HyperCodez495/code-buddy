@@ -84,6 +84,7 @@ describe('PanoWorld GPU runner', () => {
     });
     expect(String(manifest.plyPath)).toContain('point_cloud.ply');
     expect(manifest.checkpointSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(manifest.checkpointHashSource).toBe('computed');
     const staging = join(item.root, 'panoworld-staging', 'data', 'codebuddy_scene');
     expect(JSON.parse(await readFile(join(staging, 'map.json'), 'utf8'))).toEqual({
       view_000: [],
@@ -94,6 +95,22 @@ describe('PanoWorld GPU runner', () => {
     await expect(
       readFile(join(item.root, 'panoworld-staging', 'python-compat', 'sitecustomize.py'), 'utf8')
     ).resolves.toContain("hasattr(nn, 'RMSNorm')");
+
+    const request = JSON.parse(await readFile(item.request, 'utf8')) as { id: string };
+    request.id = 'gpu-test-cached';
+    await writeFile(item.request, JSON.stringify(request));
+    await execFileAsync('python3', [RUNNER, item.request], {
+      env: {
+        ...process.env,
+        CODEBUDDY_GPU_JOB_RESULT: item.result,
+        CODEBUDDY_PANOWORLD_ROOT: modelRoot,
+      },
+    });
+    const cachedManifest = JSON.parse(await readFile(item.result, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(cachedManifest.checkpointHashSource).toBe('stat-cache');
   });
 
   it('rejects multi-view input without measured camera poses', async () => {
