@@ -38,7 +38,7 @@ $env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = @(
   'bash',
   '/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/panoworld-wsl.sh'
 ) | ConvertTo-Json -Compress
-$forwarded = 'CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
+$forwarded = 'CODEBUDDY_GPU_JOB_REQUEST/p:CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
 $env:WSLENV = if ($env:WSLENV) { "${env:WSLENV}:$forwarded" } else { $forwarded }
 
 New-Item -ItemType Directory -Path $StateDir -Force | Out-Null

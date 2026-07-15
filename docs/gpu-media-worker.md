@@ -23,7 +23,7 @@ reference deployment keeps PanoWorld in WSL2 and Node on Windows:
 $env:CODEBUDDY_GPU_WORKER_TOKEN = '<secret-from-a-secret-store>'
 $env:CODEBUDDY_PANOWORLD_RUNNER = 'C:\Windows\System32\wsl.exe'
 $env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = '["-d","Ubuntu-22.04","--","bash","/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/panoworld-wsl.sh"]'
-$env:WSLENV = 'CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
+$env:WSLENV = 'CODEBUDDY_GPU_JOB_REQUEST/p:CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
 $env:CODEBUDDY_LONGCAT_RUNNER = 'D:\DEV\LongCat\.venv\Scripts\python.exe'
 $env:CODEBUDDY_LONGCAT_RUNNER_ARGS = '["D:/DEV/LongCat/codebuddy_runner.py"]'
 
@@ -41,6 +41,10 @@ Each runner receives the generated `request.json` as its final argument and writ
 JSON result manifest to `%CODEBUDDY_GPU_JOB_RESULT%`. Standard output/error are bounded
 and persisted beside the job. The queue survives restarts; a job interrupted by a worker
 restart is marked failed instead of silently re-executed.
+
+The request path is also available as `%CODEBUDDY_GPU_JOB_REQUEST%`. This is required
+for Windows-to-WSL runners because `WSLENV` translates `/p` path variables without
+letting a shell reinterpret Windows backslashes.
 
 ## Protocol
 

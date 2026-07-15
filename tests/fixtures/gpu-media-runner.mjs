@@ -10,6 +10,11 @@ if (request.payload?.prompt?.includes('[delay]')) {
 }
 await writeFile(
   resultPath,
-  `${JSON.stringify({ jobId: request.id, kind: request.kind, artifact: 'result.bin' })}\n`,
+  `${JSON.stringify({
+    jobId: request.id,
+    kind: request.kind,
+    artifact: 'result.bin',
+    requestEnvMatchesArgument: process.env.CODEBUDDY_GPU_JOB_REQUEST === requestPath,
+  })}\n`,
   'utf8'
 );

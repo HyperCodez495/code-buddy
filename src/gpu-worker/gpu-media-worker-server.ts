@@ -234,6 +234,7 @@ export function createGpuMediaWorkerServer(
         ...process.env,
         ...runner.env,
         CODEBUDDY_GPU_JOB_ID: job.id,
+        CODEBUDDY_GPU_JOB_REQUEST: requestPath,
         CODEBUDDY_GPU_JOB_RESULT: resultPath,
       },
       shell: false,

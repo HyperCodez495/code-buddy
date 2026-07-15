@@ -78,7 +78,11 @@ describe('GPU media worker server', () => {
         kind: 'panoworld_reconstruct',
         status: 'succeeded',
         progress: 1,
-        output: { jobId: submitted.id, artifact: 'result.bin' },
+        output: {
+          jobId: submitted.id,
+          artifact: 'result.bin',
+          requestEnvMatchesArgument: true,
+        },
       });
       expect(context.worker.getJob(submitted.id)?.payload).toBeTruthy();
     } finally {

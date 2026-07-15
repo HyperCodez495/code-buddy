@@ -13,4 +13,10 @@ export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.6}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export MAX_JOBS="${MAX_JOBS:-2}"
 
-exec "$ENV_DIR/bin/python" "$SCRIPT_DIR/panoworld-runner.py" "$@"
+REQUEST_PATH="${CODEBUDDY_GPU_JOB_REQUEST:-${1:-}}"
+if [[ -z "$REQUEST_PATH" ]]; then
+  echo 'CODEBUDDY_GPU_JOB_REQUEST or a request path argument is required' >&2
+  exit 2
+fi
+
+exec "$ENV_DIR/bin/python" "$SCRIPT_DIR/panoworld-runner.py" "$REQUEST_PATH"
