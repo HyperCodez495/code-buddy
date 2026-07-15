@@ -92,7 +92,7 @@ export async function proposeWidget(
     const parsed = await generateJsonWithRetry<{ template?: unknown }>(gen, buildUser(kind, sample, brief));
     const template = typeof parsed?.template === 'string' ? parsed.template.trim() : '';
     if (!template) return null;
-    return { kind, template, sample, ...(brief ? { brief } : {}) };
+    return { kind, template, sample, dataTypes: [kind.trim().toLowerCase()], ...(brief ? { brief } : {}) };
   } catch {
     return null;
   }

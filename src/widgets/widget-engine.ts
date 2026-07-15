@@ -12,12 +12,14 @@
  *
  * @module widgets/widget-engine
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { widgetKind, type WidgetProposal } from './widget-types.js';
 import {
   authoredWidgetsDir,
   hasWidgetForData,
+  listAuthoredWidgetRegistry,
+  readAuthoredWidget,
   renderWidgetForData,
   resolveWidgetSource,
   type WidgetTheme,
@@ -63,7 +65,23 @@ export function keepAuthoredWidget(proposal: WidgetProposal, env: NodeJS.Process
     writeFileSync(join(dir, 'widget.html'), proposal.template);
     writeFileSync(
       join(dir, 'meta.json'),
-      JSON.stringify({ kind, source: 'authored', createdAt: Date.now(), brief: proposal.brief ?? null }, null, 2)
+      JSON.stringify(
+        {
+          kind,
+          source: 'authored',
+          createdAt: Date.now(),
+          brief: proposal.brief ?? null,
+          dataTypes: [...new Set(
+            (proposal.dataTypes ?? [kind])
+              .map((dataType) => dataType.trim().toLowerCase())
+              .filter(Boolean)
+          )],
+          usedCount: 0,
+          lastUsedAt: null,
+        },
+        null,
+        2
+      )
     );
     return true;
   } catch {
@@ -73,24 +91,12 @@ export function keepAuthoredWidget(proposal: WidgetProposal, env: NodeJS.Process
 
 /** List authored widget kinds present on disk. */
 export function listAuthoredWidgets(env: NodeJS.ProcessEnv = process.env): string[] {
-  try {
-    return readdirSync(authoredWidgetsDir(env), { withFileTypes: true })
-      .filter((d) => d.isDirectory() && d.name.startsWith('authored-'))
-      .map((d) => d.name.slice('authored-'.length))
-      .filter((k) => existsSync(join(authoredWidgetsDir(env), `authored-${k}`, 'widget.html')));
-  } catch {
-    return [];
-  }
+  return listAuthoredWidgetRegistry(env).map((widget) => widget.kind);
 }
 
 /** Read an authored widget's raw template (or null). */
 export function readAuthoredTemplate(kind: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  try {
-    const p = join(authoredDir(kind.trim().toLowerCase(), env), 'widget.html');
-    return existsSync(p) ? readFileSync(p, 'utf8') : null;
-  } catch {
-    return null;
-  }
+  return readAuthoredWidget(kind, env)?.template ?? null;
 }
 
 function parseMs(raw: string | undefined, fallback: number): number {

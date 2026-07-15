@@ -11,14 +11,15 @@
  *
  * @module widgets/widget-registry
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { renderWeatherWidget } from './curated/weather.js';
 import { renderNewsWidget } from './curated/news.js';
 import { renderStockWidget } from './curated/stock.js';
-import { widgetKind } from './widget-types.js';
+import { widgetKind, type AuthoredWidget } from './widget-types.js';
 import { renderTemplate } from './template-engine.js';
+import { scanWidgetFirewall } from './widget-gate.js';
 
 /** Curated server-side renderers: data → self-contained HTML fragment (no script). */
 const CURATED: Record<string, (data: unknown) => string> = {
@@ -32,6 +33,123 @@ const CURATED: Record<string, (data: unknown) => string> = {
 /** Root dir for authored widgets (env-overridable). */
 export function authoredWidgetsDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.CODEBUDDY_WIDGETS_DIR?.trim() || join(homedir(), '.codebuddy', 'widgets');
+}
+
+function authoredWidgetDir(kind: string, env: NodeJS.ProcessEnv): string {
+  return join(authoredWidgetsDir(env), `authored-${kind}`);
+}
+
+function normalizedStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(
+    value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  )];
+}
+
+function finiteNonNegative(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
+
+function finiteTimestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Load one authored widget and its auto-match metadata. Legacy metadata is accepted. */
+export function readAuthoredWidget(
+  kind: string,
+  env: NodeJS.ProcessEnv = process.env
+): AuthoredWidget | null {
+  const normalizedKind = kind.trim().toLowerCase();
+  if (!normalizedKind) return null;
+  try {
+    const dir = authoredWidgetDir(normalizedKind, env);
+    const templatePath = join(dir, 'widget.html');
+    if (!existsSync(templatePath)) return null;
+    const template = readFileSync(templatePath, 'utf8');
+    let metadata: Record<string, unknown> = {};
+    const metadataPath = join(dir, 'meta.json');
+    if (existsSync(metadataPath)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(metadataPath, 'utf8'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          metadata = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // A malformed/legacy sidecar must not make the inert template disappear.
+      }
+    }
+    return {
+      kind: normalizedKind,
+      template,
+      dataTypes: normalizedStrings(metadata.dataTypes),
+      usedCount: finiteNonNegative(metadata.usedCount),
+      lastUsedAt: finiteTimestamp(metadata.lastUsedAt),
+      createdAt: finiteTimestamp(metadata.createdAt),
+      brief: typeof metadata.brief === 'string' ? metadata.brief : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** List the authored registry with declared data types and usage statistics. */
+export function listAuthoredWidgetRegistry(
+  env: NodeJS.ProcessEnv = process.env
+): AuthoredWidget[] {
+  try {
+    return readdirSync(authoredWidgetsDir(env), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('authored-'))
+      .map((entry) => readAuthoredWidget(entry.name.slice('authored-'.length), env))
+      .filter((entry): entry is AuthoredWidget => entry !== null)
+      .sort((a, b) => a.kind.localeCompare(b.kind));
+  } catch {
+    return [];
+  }
+}
+
+/** Increment authored auto-render statistics. Best effort and never-throws. */
+export function recordAuthoredWidgetUse(
+  kind: string,
+  env: NodeJS.ProcessEnv = process.env,
+  now: number = Date.now()
+): boolean {
+  const widget = readAuthoredWidget(kind, env);
+  if (!widget) return false;
+  try {
+    const path = join(authoredWidgetDir(widget.kind, env), 'meta.json');
+    let metadata: Record<string, unknown> = {};
+    if (existsSync(path)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          metadata = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Recreate a valid sidecar below while preserving registry defaults.
+      }
+    }
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          ...metadata,
+          kind: widget.kind,
+          source: 'authored',
+          dataTypes: widget.dataTypes,
+          usedCount: widget.usedCount + 1,
+          lastUsedAt: now,
+        },
+        null,
+        2
+      )
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Which source (if any) can render this kind: curated wins over authored. */
@@ -87,18 +205,24 @@ export function renderWidgetFragment(data: unknown, env: NodeJS.ProcessEnv = pro
     }
   }
   try {
-    const p = join(authoredWidgetsDir(env), `authored-${kind}`, 'widget.html');
-    if (existsSync(p)) {
-      const tpl = readFileSync(p, 'utf8');
-      // Authored widgets are SAFE Mustache-style templates, rendered server-side
-      // with the data interpolated (always escaped). No client script, CSP-proof.
-      const frag = renderTemplate(tpl, data);
-      if (frag.trim()) return neutralizeUnsafeUrls(frag);
-    }
+    const widget = readAuthoredWidget(kind, env);
+    return widget ? renderAuthoredWidgetFragment(widget, data) : null;
   } catch {
     /* none */
   }
   return null;
+}
+
+/** Render an authored registry entry against data, independently of data.type. */
+export function renderAuthoredWidgetFragment(widget: AuthoredWidget, data: unknown): string | null {
+  try {
+    if (!widget.template.trim() || scanWidgetFirewall(widget.template).length > 0) return null;
+    const fragment = renderTemplate(widget.template, data);
+    if (!fragment.trim() || scanWidgetFirewall(fragment).length > 0) return null;
+    return neutralizeUnsafeUrls(fragment);
+  } catch {
+    return null;
+  }
 }
 
 const BASE_CSS = `*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent}`;
@@ -132,6 +256,16 @@ export function renderWidgetForData(
   theme?: WidgetTheme
 ): string | null {
   const fragment = renderWidgetFragment(data, env);
+  return fragment ? renderWidgetDocument(fragment, theme) : null;
+}
+
+/** Server-render a specifically matched authored widget as a full CSP document. */
+export function renderAuthoredWidgetForData(
+  widget: AuthoredWidget,
+  data: unknown,
+  theme?: WidgetTheme
+): string | null {
+  const fragment = renderAuthoredWidgetFragment(widget, data);
   return fragment ? renderWidgetDocument(fragment, theme) : null;
 }
 
