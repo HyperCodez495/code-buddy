@@ -2196,6 +2196,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         try {
           const relationshipSafety = new RelationshipSafetyStreamGuard();
           const timedReplyStream = (async function* (): AsyncGenerator<string> {
+            let atStreamStart = true;
             for await (const delta of streamFn(heard, { signal, delivery })) {
               // Provider first-token latency is measured on the raw delta. The
               // safety gate intentionally waits for a sentence boundary before
@@ -2204,6 +2205,18 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
               if (firstTextMs === undefined && delta.length > 0) {
                 firstTextMs = Date.now() - startedAt;
               }
+              // These prefixes are deterministic local constants, never model
+              // prose. Release the one allowlisted acknowledgement immediately
+              // while the relationship gate continues to hold and inspect the
+              // entire generated answer. Previously the full-answer guard also
+              // trapped "Alors…" until generation finished, defeating the
+              // prewarmed backchannel and leaving 6–8 seconds of dead air.
+              if (atStreamStart && INSTANT_BACKCHANNELS.has(delta.trim())) {
+                atStreamStart = false;
+                yield delta;
+                continue;
+              }
+              if (delta.length > 0) atStreamStart = false;
               for (const safeDelta of relationshipSafety.push(delta)) {
                 yield safeDelta;
               }

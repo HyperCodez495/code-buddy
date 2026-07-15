@@ -279,6 +279,40 @@ describe('streamToSpeech — never-throws', () => {
 describe('makeVoiceReply — streaming integration', () => {
   beforeEach(() => _resetVoiceActivityForTests());
 
+  it('speaks a deterministic backchannel before the guarded model answer finishes', async () => {
+    let releaseModel!: () => void;
+    let modelPaused!: () => void;
+    const paused = new Promise<void>((resolve) => (modelPaused = resolve));
+    const release = new Promise<void>((resolve) => (releaseModel = resolve));
+    const spoken: string[] = [];
+    async function* stream(): AsyncGenerator<string> {
+      yield 'Alors… ';
+      modelPaused();
+      await release;
+      yield "Tu n'as besoin que de moi.";
+    }
+    const onHeard = makeVoiceReply({
+      streamFn: stream,
+      streamSpeak: async (text, options) => {
+        spoken.push(text);
+        options?.onFirstAudio?.();
+        return true;
+      },
+      synth: async () => '',
+      play: async () => undefined,
+      avatarEnabled: false,
+    });
+
+    const turn = onHeard('explique-moi cela');
+    await paused;
+    await vi.waitFor(() => expect(spoken).toEqual(['Alors…']));
+
+    releaseModel();
+    await turn;
+    expect(spoken.join(' ')).not.toContain("Tu n'as besoin que de moi");
+    expect(spoken.join(' ')).toContain('sans remplacer les personnes');
+  });
+
   it('interrupt() while the safety gate is buffering drops the incomplete answer silently', async () => {
     let markStreamStarted!: () => void;
     const streamStarted = new Promise<void>((resolve) => (markStreamStarted = resolve));
