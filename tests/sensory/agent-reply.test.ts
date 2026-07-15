@@ -106,6 +106,29 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
     expect(streamOptions[0]?.transientContext).toContain('conversation_response_plan');
   });
 
+  it('tells the grounded agent to continue after the accepted spoken prefix', async () => {
+    let transientContext = '';
+    const fakeAgent = {
+      async *processUserMessageStream(
+        _message: string,
+        options?: { transientContext?: string },
+      ): AsyncGenerator<unknown> {
+        transientContext = options?.transientContext ?? '';
+        yield { type: 'done' };
+      },
+      getChatHistory: () => [{ type: 'assistant', content: 'Continuation utile.' }],
+      abortCurrentOperation: vi.fn(),
+    };
+
+    await runInterruptibleVoiceAgentTurn(fakeAgent, 'question', {
+      spokenPrefix: 'Une première proposition est déjà établie.',
+    });
+
+    expect(transientContext).toContain('Une première proposition est déjà établie.');
+    expect(transientContext).toContain('Poursuis directement');
+    expect(transientContext).toContain('Ne répète');
+  });
+
   it('keeps the explicit utterance separate from a voice prompt containing old introspection', async () => {
     let received:
       | {
@@ -449,6 +472,23 @@ describe('agent-reply — spoken instruction → full agent turn', () => {
     expect(events).toContain('turn:start');
     expect(events).toContain('ack:start');
     expect(events.at(-1)).toBe('ack:end');
+  });
+
+  it('suppresses the legacy acknowledgement when a spoken prefix already owns the mouth', async () => {
+    const ack = vi.fn(async () => undefined);
+    const reply = makeAgentReply({
+      ack,
+      agentRunner: async (_heard, opts) => {
+        expect(opts?.spokenPrefix).toBe('Une proposition déjà validée.');
+        return 'Voici la continuation.';
+      },
+      summarize: async () => 'unused',
+    });
+
+    await expect(reply('développe', {
+      spokenPrefix: 'Une proposition déjà validée.',
+    })).resolves.toBe('Voici la continuation.');
+    expect(ack).not.toHaveBeenCalled();
   });
 
   it('observes an agent rejection while the ack is playing and reports it after the ack', async () => {

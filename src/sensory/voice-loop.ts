@@ -111,6 +111,11 @@ export interface VoiceStepOptions {
   ) => VoiceCognitiveContextLease | null;
   /** Gives the semantic reviewer the same evidence block used by the answering model. */
   onCognitiveContextResolved?: (context: { turnContext: string; evidence: string }) => void;
+  /**
+   * Complete opening sentence already accepted for speech. Continuation generators must
+   * advance the answer without repeating this text.
+   */
+  spokenPrefix?: string;
   /** Raw-free internal phase telemetry for the end-to-end spoken-turn clock. */
   onReplyTimingPhase?: (phase: VoiceReplyTimingPhase) => void;
 }
@@ -147,6 +152,8 @@ export type ReplyFn = (heard: string, opts?: VoiceStepOptions) => Promise<string
  * phatic reply, an unreachable model) — the caller then falls back to the blocking `ReplyFn`.
  */
 export type StreamReplyFn = (heard: string, opts?: VoiceStepOptions) => AsyncIterable<string>;
+/** Produce one independently useful, semantically reviewed opening sentence. */
+export type SpokenPrefixFn = (heard: string, opts?: VoiceStepOptions) => Promise<string>;
 /** Synthesize: turn reply text into a playable WAV file, return its path. */
 export type SynthFn = (text: string, opts?: VoiceStepOptions) => Promise<string>;
 /** Speak: play a WAV file to the speakers (blocking until done). */
@@ -367,12 +374,28 @@ export const SPEAK_SYSTEM_PROMPT =
   "Pas de markdown, pas de listes, pas de code, pas d'emoji.";
 
 export const IMMEDIATE_THINKING_ACKNOWLEDGEMENTS = ['Alors…', 'Voyons ça.'] as const;
+export const MAX_SPOKEN_PREFIX_CHARS = 180;
 const INSTANT_BACKCHANNELS = new Set<string>([
   ...IMMEDIATE_THINKING_ACKNOWLEDGEMENTS,
   ...Object.values(IMMEDIATE_EMOTION_ACKNOWLEDGEMENTS).filter(
     (value): value is string => Boolean(value)
   ),
 ]);
+
+/**
+ * Last-mile structural and relationship gate for a generated opening proposition. Invalid
+ * candidates fail closed; truncating one could silently change the claim being spoken.
+ */
+export function prepareSpokenPrefixCandidate(candidate: string): string {
+  const prepared = prepareSpeech(candidate);
+  if (!prepared) return '';
+  const guarded = guardRelationshipReply(prepared).response.trim();
+  if (!guarded || guarded.length > MAX_SPOKEN_PREFIX_CHARS) return '';
+  if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) return '';
+  const sentences = guarded.match(/[^.!?…]+[.!?…]+[)\]}'"»”’]*/gu) ?? [];
+  if (sentences.length !== 1 || sentences[0]?.trim() !== guarded) return '';
+  return guarded;
+}
 
 /** Resolve a pre-synthesized instant acknowledgement for the native Pocket
  * streaming path. Streaming used to bypass the TTS cache entirely, making the
@@ -1307,6 +1330,63 @@ export async function defaultReply(
   }
 }
 
+const SPOKEN_PREFIX_SYSTEM_APPEND = `<spoken_prefix_contract>
+Réponds par une seule phrase française autonome de 180 caractères maximum.
+Donne immédiatement une première proposition utile et prudente, pas une formule d'attente et pas l'annonce d'une action.
+Cette phrase sera prononcée avant une réponse plus développée : elle doit pouvoir rester seule si l'utilisateur interrompt ensuite.
+N'utilise ni liste, ni Markdown, ni citation inventée.
+</spoken_prefix_contract>`;
+
+/**
+ * Fast first proposition for an eligible developed/deliberative turn. Eligibility and
+ * semantic acceptance belong to the hybrid brain; this primitive only generates a candidate.
+ */
+export async function defaultSpokenPrefix(
+  heard: string,
+  history: VoiceHistoryTurn[] = [],
+  replyOpts?: VoiceStepOptions,
+): Promise<string> {
+  try {
+    if (replyOpts?.signal?.aborted) return '';
+    const delivery = replyOpts?.delivery ?? deriveVoiceDeliveryProfile(heard);
+    // Prefix generation deliberately does not acquire/commit resident cognitive context: the
+    // hybrid semantic gate has not accepted this private draft yet.
+    const prepared = await prepareSpokenTurn(
+      heard,
+      history,
+      undefined,
+      delivery,
+      { signal: replyOpts?.signal, delivery },
+    );
+    const { CodeBuddyClient, route } = prepared;
+    replyOpts?.onProviderResolved?.(route);
+    reportReplyTimingPhase(replyOpts, 'prompt_ready');
+    const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
+    const response = await client.chat(
+      [
+        { role: 'system', content: `${prepared.systemPrompt}\n\n${SPOKEN_PREFIX_SYSTEM_APPEND}` },
+        ...history,
+        { role: 'user', content: heard },
+      ] as never,
+      [],
+      {
+        temperature: voiceTemperature(),
+        maxTokens: 80,
+        ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
+      },
+    );
+    reportReplyTimingPhase(replyOpts, 'generation_complete');
+    return replyOpts?.signal?.aborted
+      ? ''
+      : (response?.choices?.[0]?.message?.content ?? '').trim();
+  } catch (error) {
+    logger.debug(
+      `[voice] spoken prefix unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return '';
+  }
+}
+
 /**
  * Default STREAMING think: the same short companion reply as `defaultReply`, but yielded as
  * token deltas so the voice pipeline can speak from the first sentence. Phatic small talk is
@@ -1336,9 +1416,10 @@ export async function* streamCompanionReply(
   let cognitiveLease: VoiceCognitiveContextLease | undefined;
   let cognitiveLeaseSettled = false;
   try {
-    const acknowledgement =
-      immediateEmotionAcknowledgement(detectEmotion(heard)) ??
-      immediateThinkingAcknowledgement(heard);
+    const acknowledgement = replyOpts?.spokenPrefix
+      ? null
+      : immediateEmotionAcknowledgement(detectEmotion(heard)) ??
+        immediateThinkingAcknowledgement(heard);
     let full = '';
     if (acknowledgement) {
       full = `${acknowledgement} `;
@@ -1348,7 +1429,7 @@ export async function* streamCompanionReply(
     const prepared = await prepareSpokenTurn(
       heard,
       history,
-      acknowledgement ?? undefined,
+      replyOpts?.spokenPrefix ?? acknowledgement ?? undefined,
       delivery,
       replyOpts,
     );
@@ -1920,8 +2001,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   // Streaming think step (pipeline: speak from the first sentence). A hybrid reply can expose
   // its matching stream as a function property; detect it here so wrapping that reply no longer
   // disables streaming accidentally. Plain injected ReplyFns keep their blocking contract.
-  const embeddedStream = (options.replyFn as (ReplyFn & { stream?: StreamReplyFn }) | undefined)
-    ?.stream;
+  const embeddedReply = options.replyFn as
+    | (ReplyFn & { stream?: StreamReplyFn; spokenPrefix?: SpokenPrefixFn })
+    | undefined;
+  const embeddedStream = embeddedReply?.stream;
+  const spokenPrefixFn = embeddedReply?.spokenPrefix;
   const streamFn: StreamReplyFn | undefined =
     options.streamFn ?? embeddedStream ?? (options.replyFn ? undefined : defaultStreamReply);
   const play = options.play ?? defaultPlay;
@@ -2259,9 +2343,29 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
           const relationshipSafety = new RelationshipSafetyStreamGuard();
           const timedReplyStream = (async function* (): AsyncGenerator<string> {
             let atStreamStart = true;
+            let spokenPrefix = '';
+            if (spokenPrefixFn) {
+              const candidate = await spokenPrefixFn(heard, {
+                signal,
+                delivery,
+                onReplyTimingPhase: markReplyTimingPhase,
+              });
+              if (signal.aborted) return;
+              spokenPrefix = prepareSpokenPrefixCandidate(candidate);
+              if (spokenPrefix) {
+                if (firstTextMs === undefined) firstTextMs = Date.now() - startedAt;
+                firstSafeReleaseMs ??= Date.now() - startedAt;
+                atStreamStart = false;
+                // The assembler only commits punctuation once whitespace/EOS proves the
+                // boundary. Emit that boundary now so continuation generation can fail or be
+                // interrupted without trapping an already accepted prefix in its buffer.
+                yield `${spokenPrefix} `;
+              }
+            }
             for await (const delta of streamFn(heard, {
               signal,
               delivery,
+              ...(spokenPrefix ? { spokenPrefix } : {}),
               onReplyTimingPhase: markReplyTimingPhase,
             })) {
               // Provider first-token latency is measured on the raw delta. The

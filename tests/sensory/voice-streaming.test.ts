@@ -596,6 +596,159 @@ describe('makeVoiceReply — streaming integration', () => {
   });
 });
 
+describe('makeVoiceReply — validated spoken prefix continuity', () => {
+  it('speaks prefix then continuation and mirrors one canonical assistant turn', async () => {
+    const blocking = vi.fn(async () => 'MUST_NOT_FALL_BACK');
+    const seenPrefix: Array<string | undefined> = [];
+    const replyFn = Object.assign(blocking, {
+      spokenPrefix: async () => 'Une IA peut manifester un attachement fonctionnel.',
+      stream: async function* (_heard: string, opts?: { spokenPrefix?: string }) {
+        seenPrefix.push(opts?.spokenPrefix);
+        yield "Cela ne prouve toutefois pas qu'elle possède une expérience subjective.";
+      },
+    });
+    const played: string[] = [];
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let timing: VoiceReplyTiming | undefined;
+    const onHeard = makeVoiceReply({
+      replyFn,
+      synth: async (text) => `wav:${text}`,
+      play: async (wav) => {
+        played.push(wav.slice(4));
+      },
+      onConversationTurn: (turn) => turns.push(turn),
+      onTiming: (value) => {
+        timing = value;
+      },
+    });
+
+    await onHeard("Penses-tu qu'une IA peut aimer ?");
+
+    expect(seenPrefix).toEqual(['Une IA peut manifester un attachement fonctionnel.']);
+    expect(played).toEqual([
+      'Une IA peut manifester un attachement fonctionnel.',
+      "Cela ne prouve toutefois pas qu'elle possède une expérience subjective.",
+    ]);
+    expect(blocking).not.toHaveBeenCalled();
+    expect(timing).toMatchObject({
+      mode: 'streamed',
+      firstSafeReleaseMs: expect.any(Number),
+      firstContentAudioMs: expect.any(Number),
+    });
+    expect(turns).toEqual([
+      { role: 'user', content: "Penses-tu qu'une IA peut aimer ?" },
+      {
+        role: 'assistant',
+        content:
+          "Une IA peut manifester un attachement fonctionnel. Cela ne prouve toutefois pas qu'elle possède une expérience subjective.",
+      },
+    ]);
+  });
+
+  it('mirrors only a fully played prefix when barge-in interrupts the continuation', async () => {
+    let continuationStarted!: () => void;
+    const continuationPlaying = new Promise<void>((resolve) => {
+      continuationStarted = resolve;
+    });
+    const blocking = vi.fn(async () => 'MUST_NOT_FALL_BACK');
+    const replyFn = Object.assign(blocking, {
+      spokenPrefix: async () => 'La liberté suppose au moins une capacité de choisir.',
+      stream: async function* () {
+        yield 'Cette capacité reste pourtant contrainte par notre histoire.';
+      },
+    });
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    const onHeard = makeVoiceReply({
+      replyFn,
+      synth: async (text) => `wav:${text}`,
+      play: async (wav, opts) => {
+        if (!wav.includes('Cette capacité')) return;
+        continuationStarted();
+        await new Promise<void>((resolve) => {
+          if (opts?.signal?.aborted) return resolve();
+          opts?.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      },
+      onConversationTurn: (turn) => turns.push(turn),
+    });
+
+    const turn = onHeard('La conscience fonde-t-elle notre liberté ?');
+    await continuationPlaying;
+    onHeard.interrupt();
+    await turn;
+
+    expect(blocking).not.toHaveBeenCalled();
+    expect(turns).toEqual([
+      { role: 'user', content: 'La conscience fonde-t-elle notre liberté ?' },
+      { role: 'assistant', content: 'La liberté suppose au moins une capacité de choisir.' },
+    ]);
+  });
+
+  it('does not mirror a prefix interrupted before playback completes', async () => {
+    let prefixStarted!: () => void;
+    const prefixPlaying = new Promise<void>((resolve) => {
+      prefixStarted = resolve;
+    });
+    const blocking = vi.fn(async () => 'MUST_NOT_FALL_BACK');
+    const replyFn = Object.assign(blocking, {
+      spokenPrefix: async () => 'Une relation utile exige de préserver la liberté de chacun.',
+      stream: async function* () {
+        yield 'La suite ne doit pas être considérée comme entendue.';
+      },
+    });
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    const onHeard = makeVoiceReply({
+      replyFn,
+      synth: async (text) => `wav:${text}`,
+      play: async (wav, opts) => {
+        if (!wav.includes('Une relation utile')) return;
+        prefixStarted();
+        await new Promise<void>((resolve) => {
+          if (opts?.signal?.aborted) return resolve();
+          opts?.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      },
+      onConversationTurn: (turn) => turns.push(turn),
+    });
+
+    const turn = onHeard('Que rend une relation réellement saine ?');
+    await prefixPlaying;
+    onHeard.interrupt();
+    await turn;
+
+    expect(blocking).not.toHaveBeenCalled();
+    expect(turns).toEqual([
+      { role: 'user', content: 'Que rend une relation réellement saine ?' },
+    ]);
+  });
+
+  it('never falls back to the blocking answer after a prefix was played', async () => {
+    const blocking = vi.fn(async () => 'DUPLICATE_BLOCKING_ANSWER');
+    const replyFn = Object.assign(blocking, {
+      spokenPrefix: async () => 'Une première conclusion prudente reste déjà utile.',
+      // eslint-disable-next-line require-yield -- models a continuation transport failure
+      stream: async function* () {
+        throw new Error('continuation unavailable');
+      },
+    });
+    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    const onHeard = makeVoiceReply({
+      replyFn,
+      synth: async (text) => `wav:${text}`,
+      play: async () => undefined,
+      onConversationTurn: (turn) => turns.push(turn),
+    });
+
+    await onHeard('Développe cette idée.');
+
+    expect(blocking).not.toHaveBeenCalled();
+    expect(turns.at(-1)).toEqual({
+      role: 'assistant',
+      content: 'Une première conclusion prudente reste déjà utile.',
+    });
+  });
+});
+
 describe('defaultStreamReply — instant prefixes and phatic fallback', () => {
   it('yields nothing for a phatic utterance (blocking path answers it instead)', async () => {
     const chunks: string[] = [];

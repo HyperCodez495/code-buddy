@@ -110,6 +110,15 @@ Une salutation reste brève. Une réponse factuelle expose le résultat, sa rais
 N'utilise ni Markdown, ni bloc de code, ni code en ligne, ni liste.
 </voice_response_contract>`;
 
+export function spokenPrefixContinuationGuidance(spokenPrefix?: string): string {
+  const prefix = spokenPrefix?.trim();
+  if (!prefix) return '';
+  return (
+    `Une phrase a déjà été prononcée et acceptée : ${JSON.stringify(prefix)}. ` +
+    "Poursuis directement par la prochaine phrase utile. Ne répète ni cette phrase ni son idée centrale, et n'ajoute aucun nouveau préambule."
+  );
+}
+
 function summaryMaxTokens(transcript: string, env: NodeJS.ProcessEnv = process.env): number {
   const configured = Number(env.CODEBUDDY_VOICE_MAX_TOKENS);
   const base = Number.isFinite(configured) ? Math.floor(configured) : 48;
@@ -270,6 +279,7 @@ export async function runInterruptibleVoiceAgentTurn(
   try {
     const transientContext = [
       prepareConversationTurn(transcript).systemGuidance,
+      spokenPrefixContinuationGuidance(opts?.spokenPrefix),
       opts?.delivery ? voiceDeliveryGuidance(opts.delivery) : '',
     ].filter(Boolean).join('\n\n');
     for await (const _event of agent.processUserMessageStream(transcript, {
@@ -443,6 +453,7 @@ function makeDefaultSummarize(): SummarizeFn {
       " On te donne ce que tu viens de faire ou de trouver en réponse à une demande parlée. " +
       "Restitue le RÉSULTAT à voix haute en suivant ce plan, sans perdre les faits, les sources ni les nuances utiles.\n" +
       prepareConversationTurn(transcript).systemGuidance +
+      (opts?.spokenPrefix ? `\n\n${spokenPrefixContinuationGuidance(opts.spokenPrefix)}` : '') +
       (opts?.delivery ? `\n\n${voiceDeliveryGuidance(opts.delivery)}` : '');
     const resp = await client.chat(
       [
@@ -529,7 +540,9 @@ export function makeAgentReply(options: AgentReplyOptions = {}): AgentReplyHandl
         }
       })();
       const acknowledgementPromise = (async (): Promise<void> => {
-        if (!options.ack) return;
+        // A validated opening proposition already owns the mouth and continuity. The legacy
+        // out-of-band acknowledgement would overlap it and is not part of result.spoken.
+        if (!options.ack || replyOpts?.spokenPrefix) return;
         try {
           await options.ack(heard, replyOpts);
         } catch {

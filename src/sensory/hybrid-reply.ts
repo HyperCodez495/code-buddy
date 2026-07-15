@@ -22,7 +22,12 @@
  */
 
 import { logger } from '../utils/logger.js';
-import type { ReplyFn, StreamReplyFn, VoiceStepOptions } from './voice-loop.js';
+import type {
+  ReplyFn,
+  SpokenPrefixFn,
+  StreamReplyFn,
+  VoiceStepOptions,
+} from './voice-loop.js';
 import type { PermissionMode } from '../security/permission-modes.js';
 import {
   intentKeyForQuery,
@@ -134,6 +139,12 @@ export interface HybridReplyOptions {
     history: HybridTurn[],
     opts?: VoiceStepOptions
   ) => AsyncIterable<string>;
+  /** Injectable fast candidate for the first complete proposition of a long answer. */
+  prefixReply?: (
+    heard: string,
+    history: HybridTurn[],
+    opts?: VoiceStepOptions,
+  ) => Promise<string>;
   /** Injectable: grounded agent turn → spoken summary. Default `makeAgentReply`. */
   agentReply?: ReplyFn;
   /** Injectable: true ⇒ route to the grounded agent; false ⇒ fast companion model.
@@ -160,6 +171,7 @@ export interface HybridReplyOptions {
 /** A normal ReplyFn with its matching streaming path attached for `makeVoiceReply`. */
 export interface HybridReplyHandler extends ReplyFn {
   stream: StreamReplyFn;
+  spokenPrefix: SpokenPrefixFn;
   /** Prepare the grounded standby without classifying or answering audio. */
   prewarm(transcriptHint?: string): Promise<void>;
   /** Release any unused predictive standby. */
@@ -203,6 +215,30 @@ const CURRENT_OR_PRIVATE_DATA =
 // Social / emotional small talk — stays a fast warm reply even if phrased as a question.
 const SOCIAL =
   /\b(je t aime|je taime|tu m aimes|tu maimes|ca va|comment ca va|comment vas-tu|comment vas tu|tu vas bien|tu es la|content|contente|heureux|heureuse|fatigue|fatiguee|triste|pas le moral|stresse|anxieux|anxieuse|angoisse|je me sens|seul|seule|a bout|besoin de parler|compagnie|bonne nuit|bonjour|bonsoir|merci|coucou|salut|hello|tu me manques|je pense a toi|bisous|cherie|cheri|mon amour|je t embrasse|ma journee|ta journee)\b/;
+const MEDICAL_OR_HEALTH_STAKES =
+  /\b(sante|health|medical|medecin|doctor|docteur|diagnosis|diagnostic|diagnostiquer|symptoms?|symptome|disease|maladie|treatment|traitement|medicine|medication|medicament|dosage|dose|posologie|douleur|blessure|urgence|grossesse|therapie|suicide|suicidaire|cancer|diabete|infection|vaccin|antibiotique|antidepresseur|ordonnance|chirurgie|cholesterol|cardiaque|psychiatre|psychologue|depression)\b/;
+const FINANCIAL_STAKES =
+  /\b(finance|financial|financier|argent|budget|epargne|invest|investir|investment|investissement|placement|portfolio|portefeuille|stocks?|actions? boursieres?|bonds?|obligation|crypto|bitcoin|credit|loan|pret|mortgage|hypotheque|tax|impot|fiscal|assurance vie|retirement|retraite|buy|acheter|sell|vendre|dividende|rendement)\b/;
+
+/**
+ * Conservative V1 eligibility gate for an independently spoken proposition. Fresh/private,
+ * action and high-stakes turns wait for the canonical grounded answer instead.
+ */
+export function isSpokenPrefixEligible(
+  raw: string,
+  plan: ConversationPlan = prepareConversationTurn(raw).plan,
+): boolean {
+  if (plan.depth !== 'developed' && plan.depth !== 'deliberative') return false;
+  if (plan.act === 'action' || plan.act === 'fresh_information') return false;
+  if (plan.analysis.needsFreshContext || isTechnicalSelfInspectionRequest(raw)) return false;
+  const normalized = norm(raw);
+  if (!normalized) return false;
+  if (CURRENT_OR_PRIVATE_DATA.test(normalized)) return false;
+  if (MEDICAL_OR_HEALTH_STAKES.test(normalized) || FINANCIAL_STAKES.test(normalized)) {
+    return false;
+  }
+  return true;
+}
 
 /** True when the user asks Lisa to inspect her own code, runtime, or self-model. */
 export function isTechnicalSelfInspectionRequest(raw: string): boolean {
@@ -287,6 +323,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   let fastReply = options.fastReply;
   let chitchat = options.chitchat;
   let chitchatStream = options.chitchatStream;
+  let prefixReply = options.prefixReply;
   let agentReply = options.agentReply;
   let pendingShortcut: { heard: string; reply: string; expiresAt: number } | null = null;
   let dependencyPromise: Promise<void> | null = null;
@@ -356,7 +393,15 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   }
 
   async function ensureDeps(needsStream = false): Promise<void> {
-    if (fastReply && chitchat && agentReply && (!needsStream || chitchatStream)) return;
+    if (
+      fastReply &&
+      chitchat &&
+      prefixReply &&
+      agentReply &&
+      (!needsStream || chitchatStream)
+    ) {
+      return;
+    }
     dependencyPromise ??= (async () => {
       const vl = await import('./voice-loop.js');
       fastReply = fastReply ?? vl.fastCompanionReply;
@@ -364,6 +409,9 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       chitchatStream =
         chitchatStream ??
         ((heard, hist, opts) => vl.streamCompanionReply(heard, hist, opts));
+      prefixReply =
+        prefixReply ??
+        ((heard, hist, opts) => vl.defaultSpokenPrefix(heard, hist, opts));
       if (!agentReply) {
         const { makeAgentReply } = await import('./agent-reply.js');
         agentReply = makeAgentReply({
@@ -451,6 +499,62 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       );
     }
     return guarded.response.trim();
+  }
+
+  function preparePrefixForSpeech(response: string): string {
+    const guarded = guardBeforeMemory(response);
+    if (!guarded || guarded.length > 180) return '';
+    if (!/[.!?…][)\]}'"»”’]*$/u.test(guarded)) return '';
+    const sentences = guarded.match(/[^.!?…]+[.!?…]+[)\]}'"»”’]*/gu) ?? [];
+    if (sentences.length !== 1 || sentences[0]?.trim() !== guarded) return '';
+    return guarded;
+  }
+
+  function removeRepeatedPrefix(prefix: string, response: string): string {
+    const cleanPrefix = prefix.trim();
+    const cleanResponse = response.trim();
+    if (!cleanPrefix || !cleanResponse) return cleanResponse;
+    if (
+      cleanResponse.length >= cleanPrefix.length &&
+      cleanResponse.slice(0, cleanPrefix.length).toLocaleLowerCase('fr') ===
+        cleanPrefix.toLocaleLowerCase('fr')
+    ) {
+      return cleanResponse.slice(cleanPrefix.length).trim();
+    }
+    return cleanResponse;
+  }
+
+  /** Unlike the legacy whole-answer enhancement, a prefix may not fail open: it is spoken
+   * before the canonical answer exists and therefore cannot be corrected retroactively. */
+  async function reviewPrefixBeforeDelivery(
+    input: HybridSemanticReviewInput,
+    timing?: VoiceStepOptions,
+  ): Promise<string> {
+    const candidate = preparePrefixForSpeech(input.draft);
+    if (!candidate) return '';
+    if (!shouldReviewPlan(input.plan, input.request)) return candidate;
+    try {
+      const reviewed = await reviewSemantics({ ...input, draft: candidate });
+      if (input.signal?.aborted) return '';
+      if (reviewed.outcome !== 'accepted' && reviewed.outcome !== 'revised') {
+        logger.warn(
+          `[voice-hybrid] spoken prefix rejected outcome=${reviewed.outcome} reason=${reviewed.reason}`,
+        );
+        return '';
+      }
+      return preparePrefixForSpeech(reviewed.response);
+    } catch (error) {
+      logger.warn(
+        `[voice-hybrid] spoken prefix review failed closed (${error instanceof Error ? error.name : 'unknown'})`,
+      );
+      return '';
+    } finally {
+      try {
+        timing?.onReplyTimingPhase?.('semantic_review_complete');
+      } catch {
+        /* observability must never alter acceptance */
+      }
+    }
   }
 
   async function evolveRelationship(heard: string): Promise<void> {
@@ -586,6 +690,55 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     }
   };
 
+  reply.spokenPrefix = async (
+    heard: string,
+    replyOpts?: VoiceStepOptions,
+  ): Promise<string> => {
+    // The extra generation + semantic audit must be measured before becoming a default hot
+    // path. Keeping the pilot opt-in also makes the pre-existing latency baseline unchanged.
+    if (process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX !== 'true') return '';
+    if (replyOpts?.signal?.aborted) return '';
+    const startedAt = Date.now();
+    try {
+      const recent = conversationHistory(heard);
+      const prepared = prepareConversationTurn(heard, recent);
+      if (!isSpokenPrefixEligible(heard, prepared.plan)) return '';
+      await ensureDeps();
+      let mainProvider: HybridSemanticReviewInput['mainProvider'];
+      const prefixOptions: VoiceStepOptions = {
+        ...(replyOpts ?? {}),
+        onProviderResolved: (route) => {
+          replyOpts?.onProviderResolved?.(route);
+          if (!route.baseURL) return;
+          mainProvider = {
+            apiKey: route.apiKey,
+            baseURL: route.baseURL,
+            model: route.model,
+          };
+        },
+      };
+      const draft = await prefixReply!(heard, recent, prefixOptions);
+      if (replyOpts?.signal?.aborted) return '';
+      const accepted = await reviewPrefixBeforeDelivery({
+        request: heard,
+        draft,
+        plan: prepared.plan,
+        history: recent,
+        ...(mainProvider ? { mainProvider } : {}),
+        ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
+      }, prefixOptions);
+      if (accepted) {
+        logger.info(`[voice-hybrid] spoken prefix ready ms=${Date.now() - startedAt}`);
+      }
+      return accepted;
+    } catch (error) {
+      logger.warn(
+        `[voice-hybrid] spoken prefix failed closed (${error instanceof Error ? error.name : 'unknown'})`,
+      );
+      return '';
+    }
+  };
+
   reply.stream = async function* (
     heard: string,
     replyOpts?: VoiceStepOptions
@@ -611,11 +764,106 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         }
         return;
       }
-      if (introspectionIntent !== null || classify(heard, recent)) return;
+      const substantive = introspectionIntent !== null || classify(heard, recent);
+      // Technical introspection never receives a speculative prefix. Other substantive turns
+      // keep the proven blocking fallback unless makeVoiceReply supplied an accepted prefix.
+      if (introspectionIntent !== null) return;
+      if (substantive && !replyOpts?.spokenPrefix) return;
 
       await ensureDeps(true);
+      if (substantive) {
+        const spokenPrefix = replyOpts!.spokenPrefix!.trim();
+        const preamble = buildContextPreamble(recent);
+        const freshContext = process.env.CODEBUDDY_PREFETCH === 'false'
+          ? null
+          : resolvePrefetchedTurnContextForConversation(heard, recent, { allowStale: true });
+        const freshEvidence = semanticReviewEvidenceFromPrefetch(freshContext);
+        const prepared = prepareConversationTurn(heard, recent, {
+          ...(freshContext ? { freshContext: freshContext.promptGuidance } : {}),
+        });
+        let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
+        let cognitiveEvidence: string | undefined;
+        const continuationOptions: VoiceStepOptions = {
+          ...(replyOpts ?? {}),
+          ...(options.acquireCognitiveContext
+            ? { acquireCognitiveContext: options.acquireCognitiveContext }
+            : {}),
+          spokenPrefix,
+          onProviderResolved: (route) => {
+            replyOpts?.onProviderResolved?.(route);
+            if (!route.baseURL) return;
+            responseMainProvider = {
+              apiKey: route.apiKey,
+              baseURL: route.baseURL,
+              model: route.model,
+            };
+          },
+          onCognitiveContextResolved: (context) => {
+            replyOpts?.onCognitiveContextResolved?.(context);
+            cognitiveEvidence = context.evidence || undefined;
+          },
+        };
+        const input = [preamble, prepared.systemGuidance, `Demande actuelle : ${heard}`]
+          .filter(Boolean)
+          .join('\n\n');
+        let completed = (await agentReply!(input, {
+          ...continuationOptions,
+          introspectionText: heard,
+        })).trim();
+        if (replyOpts?.signal?.aborted) return;
+        completed = guardBeforeMemory(removeRepeatedPrefix(spokenPrefix, completed));
+
+        if (completed && shouldReviewPlan(prepared.plan, heard)) {
+          try {
+            const reviewEvidence = mergeEvidence(freshEvidence, cognitiveEvidence);
+            const reviewed = await reviewSemantics({
+              request: heard,
+              draft: completed,
+              plan: prepared.plan,
+              history: [...recent, { role: 'assistant', content: spokenPrefix }],
+              ...(reviewEvidence ? { evidence: reviewEvidence } : {}),
+              ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
+              ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
+            });
+            continuationOptions.onReplyTimingPhase?.('semantic_review_complete');
+            if (
+              reviewed.outcome !== 'accepted' &&
+              reviewed.outcome !== 'revised'
+            ) {
+              logger.warn(
+                `[voice-hybrid] prefixed continuation rejected outcome=${reviewed.outcome} reason=${reviewed.reason}`,
+              );
+              completed = '';
+            } else {
+              completed = guardBeforeMemory(
+                removeRepeatedPrefix(spokenPrefix, reviewed.response),
+              );
+            }
+          } catch (error) {
+            continuationOptions.onReplyTimingPhase?.('semantic_review_complete');
+            logger.warn(
+              `[voice-hybrid] prefixed continuation review failed closed (${error instanceof Error ? error.name : 'unknown'})`,
+            );
+            completed = '';
+          }
+        }
+        if (replyOpts?.signal?.aborted) return;
+        if (completed) yield completed;
+        const canonical = [spokenPrefix, completed].filter(Boolean).join(' ');
+        if (canonical) {
+          await evolveRelationship(heard);
+          remember(heard, canonical);
+          logger.info(
+            `[voice-hybrid] route=agent-prefixed responseChars=${canonical.length}`,
+          );
+        }
+        return;
+      }
+
       const prepared = prepareConversationTurn(heard, recent);
-      const semanticBuffer = shouldReviewPlan(prepared.plan, heard);
+      // A prefixed continuation must be buffered even when no semantic critic is required:
+      // this lets us remove an accidental repeated prefix before any continuation is emitted.
+      const semanticBuffer = Boolean(replyOpts?.spokenPrefix) || shouldReviewPlan(prepared.plan, heard);
       let full = '';
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
       let cognitiveEvidence: string | undefined;
@@ -648,26 +896,40 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         if (!semanticBuffer) yield delta;
       }
       let completed = full.trim();
-      if (completed) completed = guardBeforeMemory(completed);
+      if (completed) {
+        completed = guardBeforeMemory(
+          removeRepeatedPrefix(replyOpts?.spokenPrefix ?? '', completed),
+        );
+      }
       if (completed && semanticBuffer && !replyOpts?.signal?.aborted) {
         const reviewed = await reviewBeforeDelivery({
           request: heard,
           draft: completed,
           plan: prepared.plan,
-          history: recent,
+          history: replyOpts?.spokenPrefix
+            ? [...recent, { role: 'assistant', content: replyOpts.spokenPrefix }]
+            : recent,
           ...(cognitiveEvidence ? { evidence: cognitiveEvidence } : {}),
           ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
           ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
         }, streamOptions);
         if (reviewed) {
-          completed = guardBeforeMemory(reviewed.response.trim() || completed);
+          completed = guardBeforeMemory(
+            removeRepeatedPrefix(
+              replyOpts?.spokenPrefix ?? '',
+              reviewed.response.trim() || completed,
+            ),
+          );
         }
         if (replyOpts?.signal?.aborted) return;
         yield completed;
       }
       if (completed && !replyOpts?.signal?.aborted) {
         await evolveRelationship(heard);
-        remember(heard, completed);
+        remember(
+          heard,
+          [replyOpts?.spokenPrefix, completed].filter(Boolean).join(' '),
+        );
         logger.info(`[voice-hybrid] route=chitchat-stream responseChars=${completed.length}`);
       }
     } catch (err) {

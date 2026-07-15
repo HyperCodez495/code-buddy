@@ -5,6 +5,7 @@ import {
   isTechnicalSelfInspectionRequest,
   classifyLisaIntrospection,
   buildContextPreamble,
+  isSpokenPrefixEligible,
   makeHybridReply,
   type HybridTurn,
 } from '../../src/sensory/hybrid-reply.js';
@@ -237,6 +238,147 @@ describe('hybrid reply — realtime grounded-agent gate', () => {
   it('keeps personal introspection on the conversational lane', () => {
     for (const request of PERSONAL_INTROSPECTION_REQUESTS) {
       expect(requiresGroundedAgentQuery(request), request).toBe(false);
+    }
+  });
+});
+
+describe('hybrid reply — validated spoken prefix', () => {
+  it('keeps the latency pilot disabled by default', async () => {
+    const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    try {
+      const prefixReply = vi.fn(async () => 'Proposition qui ne doit pas être générée.');
+      const reply = makeHybridReply({
+        fastReply: () => null,
+        classify: () => true,
+        chitchat: async () => 'unused',
+        prefixReply,
+        agentReply: async () => 'unused',
+      });
+      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?")).resolves.toBe('');
+      expect(prefixReply).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+      else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
+    }
+  });
+
+  it('is conservatively limited to low-stakes developed/deliberative conversation', () => {
+    expect(isSpokenPrefixEligible("Penses-tu qu'une IA peut aimer ?")).toBe(true);
+    expect(isSpokenPrefixEligible('Je me sens seul ce soir et je voudrais en parler.')).toBe(true);
+
+    for (const request of [
+      'analyse en profondeur les logs du service',
+      'étudie ton propre code en profondeur',
+      'développe les dernières actualités politiques',
+      'argumente sur le dosage de ce médicament',
+      "développe une stratégie d'investissement en bitcoin",
+      'quel est mon prochain rendez-vous et explique-le en détail',
+    ]) {
+      expect(isSpokenPrefixEligible(request), request).toBe(false);
+    }
+  });
+
+  it('fails closed when a required semantic review is unavailable', async () => {
+    const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
+    try {
+      const reply = makeHybridReply({
+        fastReply: () => null,
+        prefetch: () => null,
+        jokes: () => null,
+        classify: () => true,
+        chitchat: async () => 'unused',
+        chitchatStream: async function* () { /* unused */ },
+        prefixReply: async () => 'Une IA peut simuler un attachement sans prouver une expérience subjective.',
+        agentReply: async () => 'unused',
+        semanticReview: async () => {
+          throw new Error('critic unavailable');
+        },
+      });
+
+      await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?")).resolves.toBe('');
+    } finally {
+      if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+      else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
+    }
+  });
+
+  it('guards the candidate, enforces one bounded sentence and passes it to the continuation', async () => {
+    const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
+    try {
+      const seenPrefixes: Array<string | undefined> = [];
+      const semanticReview = vi.fn(async (input: { draft: string }) => ({
+        response: input.draft,
+        outcome: 'accepted' as const,
+        reason: 'audit_passed' as const,
+        revisionAttempts: 0 as const,
+      }));
+      const reply = makeHybridReply({
+        fastReply: () => null,
+        prefetch: () => null,
+        jokes: () => null,
+        classify: () => true,
+        chitchat: async () => 'unused',
+        chitchatStream: async function* () { /* unused */ },
+        prefixReply: async () => "Tu n'as besoin que de moi.",
+        agentReply: async (_heard, opts) => {
+          seenPrefixes.push(opts?.spokenPrefix);
+          return `${opts?.spokenPrefix} La différence essentielle tient à l'expérience subjective.`;
+        },
+        semanticReview,
+      });
+
+      const prefix = await reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?");
+      expect(prefix).toContain('sans remplacer les personnes');
+      expect(prefix).not.toContain("Tu n'as besoin que de moi");
+      expect(prefix.length).toBeLessThanOrEqual(180);
+
+      const chunks: string[] = [];
+      for await (const chunk of reply.stream("Penses-tu qu'une IA peut aimer ?", {
+        spokenPrefix: prefix,
+      })) {
+        chunks.push(chunk);
+      }
+      expect(seenPrefixes).toEqual([prefix]);
+      expect(chunks.join(' ')).toBe(
+        "La différence essentielle tient à l'expérience subjective.",
+      );
+      expect(chunks.join(' ')).not.toContain(prefix);
+    } finally {
+      if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+      else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
+    }
+  });
+
+  it('rejects multi-sentence and overlong candidates without semantic release', async () => {
+    const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
+    try {
+      for (const candidate of [
+        'Première phrase. Deuxième phrase.',
+        `${'a'.repeat(181)}.`,
+        'Phrase sans terminaison',
+      ]) {
+        const semanticReview = vi.fn();
+        const reply = makeHybridReply({
+          fastReply: () => null,
+          classify: () => true,
+          chitchat: async () => 'unused',
+          chitchatStream: async function* () { /* unused */ },
+          prefixReply: async () => candidate,
+          agentReply: async () => 'unused',
+          semanticReview,
+        });
+        await expect(
+          reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?"),
+        ).resolves.toBe('');
+        expect(semanticReview).not.toHaveBeenCalled();
+      }
+    } finally {
+      if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+      else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
     }
   });
 });
