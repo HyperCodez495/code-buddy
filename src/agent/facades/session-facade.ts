@@ -9,7 +9,7 @@
  */
 
 import type { CheckpointManager } from '../../checkpoints/checkpoint-manager.js';
-import type { SessionStore } from '../../persistence/session-store.js';
+import type { Session, SessionStore } from '../../persistence/session-store.js';
 import type { ChatEntry } from '../types.js';
 import { SessionEncryption } from '../../security/session-encryption.js';
 import { logger } from '../../utils/logger.js';
@@ -172,5 +172,63 @@ export class SessionFacade {
    */
   getCurrentSessionId(): string | null {
     return this.sessionStore.getCurrentSessionId();
+  }
+
+  /** Load a persisted session through the canonical session store. */
+  loadSession(sessionId: string): Promise<Session | null> {
+    return this.sessionStore.loadSession(sessionId);
+  }
+
+  /**
+   * Fork a session at a timeline boundary while preserving the existing
+   * on-disk session format. The source session is never modified.
+   */
+  async forkSessionAtTurn(
+    sourceSessionId: string,
+    newSessionId: string,
+    turn: number,
+  ): Promise<Session> {
+    if (!Number.isInteger(turn) || turn < 1) {
+      throw new Error('Turn must be a positive integer');
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(newSessionId) || newSessionId === '..') {
+      throw new Error('New session id may contain only letters, numbers, dots, underscores, and dashes');
+    }
+    if (sourceSessionId === newSessionId) {
+      throw new Error('Fork session id must differ from the source session id');
+    }
+    if (await this.sessionStore.loadSession(newSessionId)) {
+      throw new Error(`Session already exists: ${newSessionId}`);
+    }
+
+    const source = await this.sessionStore.loadSession(sourceSessionId);
+    if (!source) throw new Error(`Session not found: ${sourceSessionId}`);
+
+    let userTurns = 0;
+    const messages = [] as Session['messages'];
+    for (const message of source.messages) {
+      if (message.type === 'user') {
+        userTurns += 1;
+        if (userTurns > turn) break;
+      }
+      messages.push(message);
+    }
+
+    const forked: Session = {
+      ...source,
+      id: newSessionId,
+      name: `${source.name} (fork at turn ${turn})`,
+      messages,
+      createdAt: new Date(),
+      lastAccessedAt: new Date(),
+      metadata: {
+        ...source.metadata,
+        parentSessionId: sourceSessionId,
+        forkedFrom: sourceSessionId,
+        forkedAtTurn: turn,
+      },
+    };
+    await this.sessionStore.saveSession(forked);
+    return forked;
   }
 }

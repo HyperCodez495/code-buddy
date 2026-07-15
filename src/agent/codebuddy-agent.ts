@@ -269,6 +269,17 @@ export class CodeBuddyAgent extends BaseAgent {
     this.toolHandler.setWorkingDirectory(workingDirectory);
 
     // Initialize Executor
+    const timelineEnabled = process.env.CODEBUDDY_TIMELINE === 'true';
+    let lastTimelineCheckpointId: string | undefined;
+    if (timelineEnabled) {
+      try {
+        lastTimelineCheckpointId = this.checkpointManager.getCheckpoints().at(-1)?.id;
+      } catch (error) {
+        logger.warn('[session-timeline] failed to inspect initial checkpoint state', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     this.executor = new AgentExecutor({
       client: this.codebuddyClient,
       toolHandler: this.toolHandler,
@@ -279,6 +290,30 @@ export class CodeBuddyAgent extends BaseAgent {
       laneQueue: getLaneQueue(),
       laneId: 'agent-tools',
       messageQueue: this.messageQueue,
+      ...(timelineEnabled
+        ? {
+            recordTimelineTurn: async (turn) => {
+              const sessionId = this.sessionStore.getCurrentSessionId();
+              if (!sessionId) return;
+              const { SessionTimeline } = await import('../sessions/timeline.js');
+              const latestCheckpoint = this.checkpointManager.getCheckpoints().at(-1);
+              const turnCheckpoint = turn.filesTouched.length > 0 &&
+                latestCheckpoint?.id !== lastTimelineCheckpointId
+                ? latestCheckpoint
+                : undefined;
+              lastTimelineCheckpointId = latestCheckpoint?.id;
+              await new SessionTimeline(sessionId).record({
+                turn: turn.turn,
+                ts: turn.ts,
+                role: turn.role,
+                textPreview: turn.text,
+                toolCalls: turn.toolCalls,
+                filesTouched: turn.filesTouched,
+                ...(turnCheckpoint ? { checkpointId: turnCheckpoint.id } : {}),
+              });
+            },
+          }
+        : {}),
       operationalRobotNameProvider: async () => {
         const { getActivePersonaVoiceAsync } = await import(
           '../personas/persona-manager.js'

@@ -76,6 +76,16 @@ import {
   guardLisaOperationalSelfInspectionReply,
   renderLisaOperationalSelfResponse,
 } from '../../identity/lisa-introspection.js';
+import type { TimelineToolCall } from '../../sessions/timeline.js';
+
+export interface TimelineTurnData {
+  turn: number;
+  ts: string;
+  role: 'user' | 'assistant';
+  text: string;
+  toolCalls: TimelineToolCall[];
+  filesTouched: string[];
+}
 
 /**
  * Tools whose (verbose, prose/HTML) output TokenJuice may losslessly compress before it
@@ -443,6 +453,8 @@ export interface ExecutorDependencies {
    * static SP.
    */
   rebuildSystemPromptForQuery?: (message: string) => Promise<string | null>;
+  /** Optional opt-in observer invoked exactly once after a completed turn. */
+  recordTimelineTurn?: (turn: TimelineTurnData) => Promise<void> | void;
 }
 
 /**
@@ -995,6 +1007,15 @@ export class AgentExecutor {
     surface?: string,
     introspectionText?: string,
   ): AsyncGenerator<ExecutorEvent, void, unknown> {
+    const timelineEnabled =
+      process.env.CODEBUDDY_TIMELINE === 'true' && this.deps.recordTimelineTurn !== undefined;
+    const timelineHistoryStart = timelineEnabled ? history.length : 0;
+    const timelineTurn = timelineEnabled
+      ? Math.max(
+          1,
+          history.reduce((count, entry) => count + (entry.type === 'user' ? 1 : 0), 0),
+        )
+      : 0;
     // Shared pre-processing with the sequential path (@mentions, persona
     // auto-select, knowledge graph extraction). Single source of truth in
     // preprocessUserMessage (F10).
@@ -1083,6 +1104,14 @@ export class AgentExecutor {
         type: 'token_count',
         tokenCount: this.deps.tokenCounter.countTokens(content),
       };
+      if (timelineEnabled) {
+        await this.recordCompletedTimelineTurn(
+          timelineHistoryStart,
+          timelineTurn,
+          history,
+          message,
+        );
+      }
       yield { type: 'done' };
       return;
     }
@@ -2163,6 +2192,79 @@ export class AgentExecutor {
       messages.push({ role: "assistant", content: errorEntry.content });
       yield { type: "content", content: errorEntry.content };
       yield { type: "done" };
+    } finally {
+      if (timelineEnabled) {
+        await this.recordCompletedTimelineTurn(
+          timelineHistoryStart,
+          timelineTurn,
+          history,
+          message,
+        );
+      }
+    }
+  }
+
+  private async recordCompletedTimelineTurn(
+    historyStart: number,
+    turn: number,
+    history: ChatEntry[],
+    userMessage: string,
+  ): Promise<void> {
+    if (!this.deps.recordTimelineTurn) return;
+
+    try {
+      const turnHistory = history.slice(historyStart);
+      const assistant = [...turnHistory]
+        .reverse()
+        .find((entry) => entry.type === 'assistant');
+      const results = new Map<string, boolean>();
+      for (const entry of turnHistory) {
+        if (entry.type !== 'tool_result' || !entry.toolCall) continue;
+        results.set(entry.toolCall.id, entry.toolResult?.success === true);
+      }
+
+      const toolCalls: TimelineToolCall[] = [];
+      const seenCalls = new Set<string>();
+      for (const entry of turnHistory) {
+        const calls = entry.toolCalls ?? (entry.toolCall ? [entry.toolCall] : []);
+        for (const call of calls) {
+          const key = call.id || `${call.function.name}:${call.function.arguments}`;
+          if (seenCalls.has(key)) continue;
+          seenCalls.add(key);
+          toolCalls.push({
+            name: call.function.name,
+            ok: results.get(call.id) ?? false,
+          });
+        }
+      }
+
+      const successfulCallIds = new Set(
+        [...results.entries()]
+          .filter(([, success]) => success)
+          .map(([callId]) => callId),
+      );
+      const successfulHistory = turnHistory.map((entry) => ({
+        ...entry,
+        ...(entry.toolCalls
+          ? { toolCalls: entry.toolCalls.filter((call) => successfulCallIds.has(call.id)) }
+          : {}),
+        ...(entry.toolCall && !successfulCallIds.has(entry.toolCall.id)
+          ? { toolCall: undefined }
+          : {}),
+      }));
+
+      await this.deps.recordTimelineTurn({
+        turn,
+        ts: new Date().toISOString(),
+        role: assistant ? 'assistant' : 'user',
+        text: assistant?.content ?? userMessage,
+        toolCalls,
+        filesTouched: extractEditedFilesFromHistory(successfulHistory),
+      });
+    } catch (error) {
+      logger.warn('[agent-executor] timeline hook failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
