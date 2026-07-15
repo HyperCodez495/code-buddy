@@ -13,6 +13,7 @@
 import type { Command } from 'commander';
 import type { Publication, PublicationSource } from '../../research/publication-sources.js';
 import type { RelationClassifier } from '../../memory/collective-knowledge-graph.js';
+import type { PullFromPeerResult } from '../../fleet/peer-ckg-bridge.js';
 import { logger } from '../../utils/logger.js';
 
 export interface KnowledgeIngestDeps {
@@ -67,6 +68,8 @@ export interface KnowledgeIngestDeps {
   ) => Array<{ text: string; name: string; category: string | null; retention: number; mentions: number }>;
   /** Export the read-only Markdown mirror of structured facts. For `research mirror`. */
   exportFactMirror: (dir: string) => { files: string[]; factCount: number };
+  /** Pull a first-hand CKG delta from one fleet peer. For `research sync`. */
+  syncFromPeer?: (peerId: string, opts: { dryRun?: boolean }) => Promise<PullFromPeerResult>;
   log: (msg: string) => void;
 }
 
@@ -76,6 +79,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
   const { makeLlmRelationClassifier } = await import('../../research/relation-classifier.js');
   const { fetchCodeExplorerInsights } = await import('../../research/code-explorer-source.js');
   const { fetchConnectorContent } = await import('../../research/connector-source.js');
+  const { pullFromPeer } = await import('../../fleet/peer-ckg-bridge.js');
   const ckg = getCollectiveKnowledgeGraph();
   return {
     fetchPublications,
@@ -91,6 +95,7 @@ async function defaultDeps(): Promise<KnowledgeIngestDeps> {
     rememberFact: (input) => ckg.rememberFact(input),
     recallFacts: (query, opts) => ckg.recallFacts(query, opts),
     exportFactMirror: (dir) => ckg.exportFactMirror(dir),
+    syncFromPeer: (peerId, opts) => pullFromPeer(peerId, opts),
     log: (msg) => console.log(msg),
   };
 }
@@ -282,8 +287,41 @@ export function runRetract(
   return result.status;
 }
 
+/** Pull one peer's bounded CKG delta and render a concise CLI summary. */
+export async function runSync(
+  peerId: string,
+  opts: { dryRun?: boolean },
+  deps: KnowledgeIngestDeps,
+): Promise<PullFromPeerResult> {
+  const syncFromPeer = deps.syncFromPeer ?? (async (id, syncOpts) => {
+    const { pullFromPeer } = await import('../../fleet/peer-ckg-bridge.js');
+    return pullFromPeer(id, syncOpts);
+  });
+  const result = await syncFromPeer(peerId, opts);
+  if (result.dryRun) {
+    deps.log(`Dry-run : ${result.wouldIngest} entrée(s) seraient ingérées depuis ${peerId}.`);
+    for (const entry of result.entries) {
+      deps.log(`• [${entry.type}] ${entry.name} (${entry.id})`);
+    }
+  } else {
+    deps.log(
+      `✅ CKG synchronisé depuis ${peerId} : ${result.ingested} ingérée(s), ` +
+        `${result.skipped} déjà vue(s), curseur ${result.maxTs}.`,
+    );
+  }
+  return result;
+}
+
 /** Attach ingest/recall/stats subcommands to the `research` command. */
 export function addKnowledgeSubcommands(cmd: Command, depsFactory: () => Promise<KnowledgeIngestDeps> = defaultDeps): void {
+  cmd
+    .command('sync <peer>')
+    .description('Pull first-hand lessons/facts from an opted-in fleet peer')
+    .option('--dry-run', 'Show entries that would be ingested without writing ledger or sync state', false)
+    .action(async (peer: string, opts: { dryRun?: boolean }) => {
+      await runSync(peer, opts, await depsFactory());
+    });
+
   cmd
     .command('ingest <topic>')
     .description('Fetch scientific publications on a topic and ingest them into the collective knowledge graph (auto-linked)')

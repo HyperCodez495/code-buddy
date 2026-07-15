@@ -100,6 +100,42 @@ describe('research knowledge-ingest — Commander routing (subcommand vs <topic>
     expect(logs.join('\n')).toContain('Graphe de connaissances collectif');
   });
 
+  it('routes `research sync <peer> --dry-run` without invoking wide research', async () => {
+    const calls: Array<{ peerId: string; dryRun?: boolean }> = [];
+    const { deps, logs } = stubDeps({
+      syncFromPeer: async (peerId, opts) => {
+        calls.push({ peerId, ...opts });
+        return {
+          peerId,
+          dryRun: opts.dryRun === true,
+          fetched: 1,
+          ingested: 0,
+          skipped: 0,
+          wouldIngest: 1,
+          maxTs: 1000,
+          entries: [{
+            v: 1,
+            kind: 'entity',
+            recordedAt: '2026-07-15T10:00:00.000Z',
+            agentId: 'source/local',
+            contentHash: 'hash',
+            id: 'fact:collective:preview',
+            type: 'fact',
+            name: 'preview',
+            text: 'preview text',
+          }],
+        };
+      },
+    });
+    const { cmd, wide } = buildResearchLike(deps);
+
+    await cmd.parseAsync(['node', 'research', 'sync', 'alpha', '--dry-run']);
+
+    expect(wide.topic).toBeNull();
+    expect(calls).toEqual([{ peerId: 'alpha', dryRun: true }]);
+    expect(logs.join('\n')).toContain('1 entrée(s) seraient ingérées');
+  });
+
   it('still runs Wide Research for `research "<free topic>"`', async () => {
     const { deps } = stubDeps();
     const { cmd, wide } = buildResearchLike(deps);
