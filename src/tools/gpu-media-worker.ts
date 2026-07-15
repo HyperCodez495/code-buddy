@@ -151,7 +151,7 @@ export function parsePanoWorldPayload(value: unknown): PanoWorldPayload {
   if (!Array.isArray(input.panoramas) || input.panoramas.length === 0) {
     throw new Error('panoramas must contain at least one view');
   }
-  const maximum = profile === 'single-2048' ? 1 : 6;
+  const maximum = profile === 'single-2048' ? 1 : 5;
   if (input.panoramas.length > maximum) {
     throw new Error(`${profile} accepts at most ${maximum} panorama(s)`);
   }

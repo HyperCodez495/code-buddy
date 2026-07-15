@@ -171,7 +171,7 @@ def prepare_dataset(payload: dict[str, Any], staging: Path, profile: str) -> tup
     panoramas = payload.get("panoramas")
     if not isinstance(panoramas, list) or not panoramas:
         fail("panoramas must contain at least one view")
-    maximum = 1 if profile == "single-2048" else 6
+    maximum = 1 if profile == "single-2048" else 5
     if len(panoramas) > maximum:
         fail(f"{profile} accepts at most {maximum} panorama(s)")
 

@@ -48,13 +48,13 @@ describe('gpu media worker contracts', () => {
       parsePanoWorldPayload({
         scene_id: 'house',
         profile: 'multi-1024',
-        panoramas: Array.from({ length: 7 }, (_, index) => ({
+        panoramas: Array.from({ length: 6 }, (_, index) => ({
           image_path: `D:\\captures\\${index}.jpg`,
           room_id: 'house',
         })),
         output_dir: 'D:\\outputs',
       })
-    ).toThrow(/at most 6/);
+    ).toThrow(/at most 5/);
   });
 
   it('requires a complete camera matrix when one is supplied', () => {

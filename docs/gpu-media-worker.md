@@ -104,7 +104,19 @@ unpublished floorplan/style generator is not represented as available.
 Profiles are deliberately bounded:
 
 - `single-2048`: one 2048×1024 panorama, identity pose permitted;
-- `multi-1024`: one to six 1024×512 panoramas, with measured camera-to-world matrices.
+- `multi-1024`: one to five 1024×512 panoramas, with measured camera-to-world matrices.
+
+Darkstar measurements on GPU 0 (RTX 3090, 24,576 MiB) established the production cap:
+
+| Profile | Views | Elapsed | Observed peak VRAM | Decision |
+|---|---:|---:|---:|---|
+| `multi-1024` | 4 | 60.9 s | 16,346 MiB | safe |
+| `multi-1024` | 5 | 58.6 s | 20,074 MiB | production maximum |
+| `multi-1024` | 6 | 61.8 s | 23,826 MiB | experimental only; 750 MiB headroom |
+
+Six views completed on the synthetic smoke scene, but the remaining memory margin is too
+small for production scene variance and CUDA fragmentation. Both the public contract and
+the isolated runner therefore reject more than five views.
 
 The expected output manifest points to the 3DGS PLY, cameras, rendered panoramas, depth
 maps, elapsed time and the verified checkpoint SHA-256. The result is spatial memory,

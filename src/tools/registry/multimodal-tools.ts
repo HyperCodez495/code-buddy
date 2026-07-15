@@ -758,7 +758,7 @@ export class GpuMediaJobTool implements ITool {
           payload: {
             type: 'object',
             description:
-              'Validated job payload. PanoWorld accepts single-2048 (1 view) or multi-1024 (max 6); avatar rendering is restricted to 480p.',
+              'Validated job payload. PanoWorld accepts single-2048 (1 view) or multi-1024 (max 5); avatar rendering is restricted to 480p.',
           },
           job_id: { type: 'string', description: 'Required for status or cancel.' },
         },
