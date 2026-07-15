@@ -2381,6 +2381,16 @@ function addLazyCommand(
 
 addLazyCommand(
   program,
+  'ws',
+  'Manage and search the opt-in multi-repository workspace',
+  async () => {
+    const { createWsCommand } = await import('./commands/ws.js');
+    return createWsCommand();
+  },
+);
+
+addLazyCommand(
+  program,
   'provider',
   'Manage AI providers (Claude, ChatGPT, Grok, Gemini)',
   async () => {

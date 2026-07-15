@@ -142,6 +142,22 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Run multiple searches in one call',
     fleetSafe: true,
   },
+  {
+    name: 'workspace_search',
+    category: 'file_search',
+    keywords: ['workspace', 'multi-repo', 'repository', 'ecosystem', 'search', 'grep'],
+    priority: 10,
+    description: 'Search text across every selected repository in the opt-in workspace',
+    fleetSafe: true,
+  },
+  {
+    name: 'workspace_read',
+    category: 'file_read',
+    keywords: ['workspace', 'multi-repo', 'repository', 'ecosystem', 'read', 'file'],
+    priority: 10,
+    description: 'Read a bounded file from a repository in the opt-in workspace',
+    fleetSafe: true,
+  },
 
   // System operations
   {

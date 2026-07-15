@@ -189,6 +189,8 @@ web_extract
 web_fetch
 web_search
 web_test
+workspace_read
+workspace_search
 write_file
 x_search
 yb_query_group_info

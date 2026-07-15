@@ -24,6 +24,7 @@ import { loadAuthoredTools } from "../agent/self-improvement/tool-skill-mutator.
 import { applyToolFilter } from "../utils/tool-filter.js";
 import { TOOL_METADATA } from "../tools/metadata.js";
 import { getPluginMarketplace } from "../plugins/marketplace.js";
+import { getWorkspace } from '../workspace/workspace-config.js';
 
 // Import modular tool definitions
 import {
@@ -32,6 +33,7 @@ import {
   MORPH_EDIT_TOOL,
   isMorphEnabled,
   SEARCH_TOOLS,
+  WORKSPACE_TOOLS,
   TODO_TOOLS,
   KANBAN_TOOLS,
   MESSAGING_TOOLS,
@@ -152,6 +154,7 @@ export function getBuiltinToolNames(): string[] {
     SELF_DESCRIBE_TOOLS,
     [MORPH_EDIT_TOOL],
     SEARCH_TOOLS,
+    WORKSPACE_TOOLS,
     TODO_TOOLS,
     KANBAN_TOOLS,
     MESSAGING_TOOLS,
@@ -259,6 +262,7 @@ export function initializeToolRegistry(): void {
   }
 
   registerGroup(SEARCH_TOOLS);
+  registerGroup(WORKSPACE_TOOLS, () => getWorkspace() !== null);
   registerGroup(TODO_TOOLS);
   registerGroup(KANBAN_TOOLS);
   registerGroup(MESSAGING_TOOLS);
