@@ -1992,6 +1992,10 @@ export type ServerEvent =
         at: string;
       };
     }
+  | {
+      type: 'voice.dictation.toggle';
+      payload: { at: number; accelerator: string };
+    }
   | { type: 'panic-stop'; payload: Record<string, never> };
 
 /** Autonomous goal-loop progress, surfaced by the chat goal banner. */

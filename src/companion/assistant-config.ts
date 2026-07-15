@@ -166,7 +166,11 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     key: 'CODEBUDDY_VOICEBOX_LANGUAGE',
     label: 'Voicebox language',
     group: 'voice',
-    type: 'text',
+    type: 'enum',
+    options: [
+      'fr', 'en', 'zh', 'ja', 'ko', 'de', 'ru', 'pt', 'es', 'it', 'he', 'ar',
+      'da', 'el', 'fi', 'hi', 'ms', 'nl', 'no', 'pl', 'sv', 'sw', 'tr',
+    ],
     default: 'fr',
     envFile: 'both',
     help: 'Voicebox language code used for Lisa speech.',

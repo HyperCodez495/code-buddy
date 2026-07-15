@@ -59,6 +59,14 @@ once it reaches `1.0.0`.
 
 ### Added
 
+- **Voicebox Studio et dictée globale locale.** Cowork et la CLI inventorient le serveur Voicebox,
+  ses profils, son backend GPU, ses modèles et ses 23 langues ; ils peuvent créer et sélectionner
+  un clone vocal autorisé ou supprimer un profil avec confirmation. Le consentement est explicite,
+  la création est annulée si l'échantillon échoue et Voicebox ne peut jamais réécrire la personnalité
+  de Lisa. Dans Cowork, `Ctrl/Cmd+Shift+Espace` enregistre puis transcrit localement avant d'insérer le
+  texte dans l'application active, sans transmettre le transcript à un shell ; le presse-papiers seul
+  sert de repli sûr quand l'injection système n'est pas disponible.
+
 - **Lisa contrôle désormais le sens réel de ses réponses profondes avant de les partager.** Des
   obligations argumentatives déterministes alimentent un critique indépendant qui mesure réponse
   effective, cohérence, appui, objection, progression et ancrage factuel, puis autorise au plus une

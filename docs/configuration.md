@@ -89,10 +89,14 @@
 | `CODEBUDDY_VOICEBOX_INSTRUCT` | Acoustic delivery instruction only, maximum 500 characters | unset |
 | `CODEBUDDY_VOICEBOX_AUDIO_STREAM` | Pipe returned WAV directly to speakers/avatar | `true` |
 | `CODEBUDDY_TTS_VOLUME` | Assistant-only normalized output volume (0–100) | `100` |
+| `COWORK_DICTATION_SHORTCUT` | Cowork global dictation accelerator; press once to record and again to transcribe/paste | `CommandOrControl+Shift+Space` |
 
 Code Buddy always sends `personality: false` to Voicebox: the renderer cannot rewrite Lisa's
 answer. Voicebox falls back to Pocket and then Piper. Diagnose without changing configuration with
-`buddy assistant voicebox`; add `--benchmark` to compare the cold/warm Voicebox and Pocket latency.
+`buddy assistant voicebox`; create an authorized profile with
+`buddy assistant voicebox-clone <name> <audio> --text <transcript> --consent`, or remove one with
+`buddy assistant voicebox-delete <profile-id> --yes`. Add `--benchmark` to compare the cold/warm
+Voicebox and Pocket latency.
 Use `buddy assistant latency --engine both` to measure the real prefetched-answer path to first PCM
 without opening speakers or publishing to Telegram/MetaHuman.
 For a remote desktop install, Voicebox is loopback-only by default. Prefer a private Tailscale TCP

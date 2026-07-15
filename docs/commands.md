@@ -475,6 +475,8 @@ buddy assistant set <key> <value>
 buddy assistant voice <pocket-name-or-sample>
 buddy assistant voices
 buddy assistant voicebox [--json] [--benchmark [text]] [--runs <1-5>]
+buddy assistant voicebox-clone <name> <audio> --text <transcript> --consent [--language fr] [--select]
+buddy assistant voicebox-delete <profile-id> --yes
 buddy assistant latency [--json] [--query <text>] [--engine active|pocket|voicebox|both] [--runs <1-5>] [--segment-chars <32-240>]
 buddy assistant quality [--apply] [--limit <n>]
 buddy assistant benchmark [--model <name>] [--base-url <url>] [--runs <n>]

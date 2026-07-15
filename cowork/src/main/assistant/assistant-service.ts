@@ -63,6 +63,62 @@ export type AssistantPlayPreviewResponse =
 
 export type AssistantRestartResponse = AssistantRestartServiceResult[] | AssistantErrorResponse;
 
+export interface VoiceboxStudioProfile {
+  id: string;
+  name: string;
+  description?: string | null;
+  language?: string;
+  voice_type?: string;
+  default_engine?: string | null;
+  sample_count?: number;
+  generation_count?: number;
+}
+
+export interface VoiceboxStudioResponse {
+  available: boolean;
+  baseUrl: string;
+  configuredProfile?: string;
+  resolvedProfile?: VoiceboxStudioProfile;
+  profiles: VoiceboxStudioProfile[];
+  models: Array<{
+    model_name: string;
+    display_name: string;
+    downloaded: boolean;
+    downloading?: boolean;
+    loaded?: boolean;
+    size_mb?: number | null;
+  }>;
+  health?: {
+    status: string;
+    model_loaded: boolean;
+    gpu_available: boolean;
+    gpu_type?: string | null;
+    vram_used_mb?: number | null;
+    backend_type?: string | null;
+    backend_variant?: string | null;
+  };
+  languages: readonly string[];
+  engine: string;
+  error?: string;
+  hint?: string;
+}
+
+export interface VoiceboxCloneRequest {
+  name: string;
+  description?: string;
+  language: string;
+  referenceText: string;
+  filename: string;
+  audio: Uint8Array | ArrayBuffer;
+  consent: boolean;
+}
+
+export type VoiceboxStudioResult = VoiceboxStudioResponse | AssistantErrorResponse;
+export type VoiceboxCloneResult =
+  | { ok: true; profile: VoiceboxStudioProfile; sampleId: string }
+  | AssistantErrorResponse;
+export type VoiceboxDeleteResult = { ok: true } | AssistantErrorResponse;
+
 interface CoreAssistantConfigModule {
   ASSISTANT_SETTINGS?: AssistantSetting[];
   readAssistantConfig?: () => Record<string, string>;
@@ -79,6 +135,24 @@ interface CoreAssistantConfigModule {
   getSystemVolume?: () => Promise<number | null>;
   setSystemVolume?: (percent: number) => Promise<boolean>;
   readAssistantVoiceDiagnostics?: () => AssistantVoiceDiagnostics | null;
+  probeVoiceboxStudio?: (env: NodeJS.ProcessEnv) => Promise<VoiceboxStudioResponse>;
+  createVoiceboxClone?: (
+    input: {
+      name: string;
+      description?: string;
+      language: string;
+      referenceText: string;
+      filename: string;
+      audio: Uint8Array;
+      consent: boolean;
+    },
+    env: NodeJS.ProcessEnv
+  ) => Promise<{ profile: VoiceboxStudioProfile; sample: { id: string } }>;
+  deleteVoiceboxProfile?: (
+    profileId: string,
+    confirmed: boolean,
+    env: NodeJS.ProcessEnv
+  ) => Promise<void>;
 }
 
 export type AssistantVolumeResponse = { volume: number | null } | AssistantErrorResponse;
@@ -148,12 +222,26 @@ export class AssistantService {
 
   constructor(
     private readonly loader: CoreLoader = () =>
-      loadCoreModule<CoreAssistantConfigModule>('companion/assistant-config.js')
+      loadCoreModule<CoreAssistantConfigModule>('companion/assistant-config.js'),
+    private readonly voiceboxLoader: CoreLoader = () =>
+      loadCoreModule<CoreAssistantConfigModule>('voice/voicebox-tts.js')
   ) {}
 
   private async module(): Promise<CoreAssistantConfigModule | null> {
     this.modPromise ??= this.loader().catch(() => null);
     return this.modPromise;
+  }
+
+  private async voiceboxModule(): Promise<CoreAssistantConfigModule | null> {
+    const [assistant, voicebox] = await Promise.all([
+      this.module(),
+      this.voiceboxLoader().catch(() => null),
+    ]);
+    return { ...(assistant ?? {}), ...(voicebox ?? {}) };
+  }
+
+  private voiceboxEnv(mod: CoreAssistantConfigModule): NodeJS.ProcessEnv {
+    return { ...(mod.readAssistantConfig?.() ?? {}), ...process.env };
   }
 
   async getConfig(): Promise<AssistantConfigResponse> {
@@ -285,6 +373,49 @@ export class AssistantService {
         return unavailable('module assistant indisponible (diagnostic vocal)');
       }
       return { diagnostics: mod.readAssistantVoiceDiagnostics() };
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async voiceboxStudio(): Promise<VoiceboxStudioResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.probeVoiceboxStudio) return unavailable('module Voicebox indisponible');
+      return await mod.probeVoiceboxStudio(this.voiceboxEnv(mod));
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async createVoiceboxClone(request: VoiceboxCloneRequest): Promise<VoiceboxCloneResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.createVoiceboxClone) return unavailable('module Voicebox indisponible');
+      const audio = request.audio instanceof Uint8Array
+        ? request.audio
+        : new Uint8Array(request.audio);
+      const result = await mod.createVoiceboxClone({
+        name: request.name,
+        ...(request.description?.trim() ? { description: request.description } : {}),
+        language: request.language,
+        referenceText: request.referenceText,
+        filename: request.filename,
+        audio,
+        consent: request.consent === true,
+      }, this.voiceboxEnv(mod));
+      return { ok: true, profile: result.profile, sampleId: result.sample.id };
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async deleteVoiceboxProfile(profileId: string, confirmed: boolean): Promise<VoiceboxDeleteResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.deleteVoiceboxProfile) return unavailable('module Voicebox indisponible');
+      await mod.deleteVoiceboxProfile(profileId, confirmed === true, this.voiceboxEnv(mod));
+      return { ok: true };
     } catch (err) {
       return unavailable(errorMessage(err));
     }

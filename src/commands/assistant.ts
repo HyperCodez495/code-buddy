@@ -9,7 +9,7 @@
  * @module commands/assistant
  */
 import { execFileSync } from 'node:child_process';
-import { unlinkSync } from 'node:fs';
+import { readFileSync, unlinkSync } from 'node:fs';
 import type { Command } from 'commander';
 import {
   ASSISTANT_SETTINGS,
@@ -162,17 +162,17 @@ export function registerAssistantCommand(program: Command): void {
 
   assistant
     .command('voicebox')
-    .description('Probe the Voicebox endpoint and configured Lisa profile (read-only)')
+    .description('Inspect the Voicebox endpoint, GPU, models, languages, and profiles')
     .option('--json', 'Output the diagnostic as JSON')
     .option('--benchmark [text]', 'Also compare Voicebox and Pocket latency (two runs each)')
     .option('--runs <n>', 'Benchmark attempts per renderer (1–5)', '2')
     .action(async (options: { json?: boolean; benchmark?: string | boolean; runs: string }) => {
-      const { probeVoicebox } = await import('../voice/voicebox-tts.js');
+      const { probeVoiceboxStudio } = await import('../voice/voicebox-tts.js');
       const config = readAssistantConfig();
       // Persisted assistant values supply defaults; explicit launch-time env
       // overrides remain authoritative for one-off diagnostics and CI probes.
       const env = { ...config, ...process.env };
-      const report = await probeVoicebox(env);
+      const report = await probeVoiceboxStudio(env);
       let benchmark: TtsLatencyBenchmarkReport | undefined;
       if (options.benchmark) {
         const { DEFAULT_TTS_BENCHMARK_TEXT, runTtsLatencyBenchmark } = await import(
@@ -191,6 +191,16 @@ export function registerAssistantCommand(program: Command): void {
         console.log(`Voicebox: ${report.available ? 'prêt' : 'indisponible'}`);
         console.log(`Endpoint: ${report.baseUrl}`);
         console.log(`Moteur: ${report.engine}`);
+        if (report.health) {
+          console.log(
+            `Calcul: ${report.health.gpu_available ? report.health.gpu_type ?? 'GPU' : 'CPU'} · ` +
+            `modèle ${report.health.model_loaded ? 'chargé' : 'non chargé'}`
+          );
+        }
+        console.log(
+          `Modèles téléchargés: ${report.models.filter((model) => model.downloaded).length}/${report.models.length}`
+        );
+        console.log(`Langues disponibles: ${report.languages.join(', ')}`);
         console.log(
           `Profil configuré: ${report.configuredProfile ?? '(aucun — choisissez-en un ci-dessous)'}`
         );
@@ -304,6 +314,85 @@ export function registerAssistantCommand(program: Command): void {
         }
       }
       if (!report.cacheHit || report.results.some((result) => result.successes === 0)) {
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
+    .command('voicebox-clone')
+    .description('Create an authorized Voicebox clone from one local reference sample')
+    .argument('<name>', 'Voice profile name')
+    .argument('<audio>', 'Reference WAV/MP3/M4A/OGG/FLAC/AAC/WebM/Opus file')
+    .requiredOption('--text <transcript>', 'Exact transcript spoken in the reference sample')
+    .option('--language <code>', 'Voicebox language code', 'fr')
+    .option('--description <text>', 'Optional profile description')
+    .option('--consent', 'Confirm that you have explicit authorization to clone this voice')
+    .option('--select', 'Select the created profile for Lisa')
+    .option('--json', 'Output JSON')
+    .action(async (
+      name: string,
+      audioPath: string,
+      options: {
+        text: string;
+        language: string;
+        description?: string;
+        consent?: boolean;
+        select?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      const { createVoiceboxClone, VOICEBOX_LANGUAGES } = await import('../voice/voicebox-tts.js');
+      if (!options.consent) {
+        console.error('Refusé : ajoute --consent uniquement si tu as l’autorisation explicite de cloner cette voix.');
+        process.exitCode = 1;
+        return;
+      }
+      if (!VOICEBOX_LANGUAGES.includes(options.language as (typeof VOICEBOX_LANGUAGES)[number])) {
+        console.error(`Langue invalide. Valeurs : ${VOICEBOX_LANGUAGES.join(', ')}`);
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const config = readAssistantConfig();
+        const result = await createVoiceboxClone({
+          name,
+          ...(options.description ? { description: options.description } : {}),
+          language: options.language as (typeof VOICEBOX_LANGUAGES)[number],
+          referenceText: options.text,
+          filename: audioPath.split(/[\\/]/u).pop() || 'sample.wav',
+          audio: readFileSync(audioPath),
+          consent: true,
+        }, { ...config, ...process.env });
+        if (options.select) {
+          printWriteResult(writeAssistantConfig({
+            CODEBUDDY_VOICEBOX_PROFILE: result.profile.id,
+            CODEBUDDY_TTS_ENGINE: 'voicebox',
+          }));
+        }
+        if (options.json) console.log(JSON.stringify(result, null, 2));
+        else console.log(`Profil créé : ${result.profile.name} (${result.profile.id}) · échantillon ${result.sample.id}`);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
+    .command('voicebox-delete')
+    .description('Delete a Voicebox profile and its samples')
+    .argument('<profile-id>', 'Voicebox profile id')
+    .option('--yes', 'Confirm irreversible deletion')
+    .action(async (profileId: string, options: { yes?: boolean }) => {
+      try {
+        const { deleteVoiceboxProfile } = await import('../voice/voicebox-tts.js');
+        await deleteVoiceboxProfile(
+          profileId,
+          options.yes === true,
+          { ...readAssistantConfig(), ...process.env }
+        );
+        console.log(`Profil Voicebox supprimé : ${profileId}`);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
       }
     });

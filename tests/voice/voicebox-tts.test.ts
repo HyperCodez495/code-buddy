@@ -3,8 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createVoiceboxClone,
+  deleteVoiceboxProfile,
   openVoiceboxAudioStream,
   probeVoicebox,
+  probeVoiceboxStudio,
   resetVoiceboxProfileCache,
   resolveVoiceboxBaseUrl,
   resolveVoiceboxConfig,
@@ -170,5 +173,127 @@ describe('Voicebox synthesis', () => {
       error: 'connect timeout',
       hint: expect.stringContaining('127.0.0.1:17493/health'),
     });
+  });
+});
+
+describe('Voicebox studio administration', () => {
+  it('creates a consented clone with one sample and preserves renderer ownership of personality', async () => {
+    const requests: Array<{ method: string; url: string; body?: unknown }> = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      requests.push({ method, url, body: init?.body });
+      if (method === 'POST' && url.endsWith('/profiles')) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body).toMatchObject({
+          name: 'Lisa',
+          language: 'fr',
+          voice_type: 'cloned',
+          default_engine: 'qwen',
+        });
+        expect(body).not.toHaveProperty('personality');
+        return new Response(JSON.stringify({ id: 'lisa-id', name: 'Lisa', language: 'fr' }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (method === 'POST' && url.endsWith('/profiles/lisa-id/samples')) {
+        expect(init?.body).toBeInstanceOf(FormData);
+        const form = init?.body as FormData;
+        expect(form.get('reference_text')).toBe('Bonjour, je suis Lisa.');
+        expect((form.get('file') as File).name).toBe('lisa.webm');
+        return new Response(JSON.stringify({
+          id: 'sample-id',
+          profile_id: 'lisa-id',
+          audio_path: '/profiles/lisa-id/lisa.webm',
+          reference_text: 'Bonjour, je suis Lisa.',
+        }), { headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected request ${method} ${url}`);
+    });
+
+    await expect(createVoiceboxClone({
+      name: ' Lisa ',
+      language: 'fr',
+      referenceText: ' Bonjour, je suis Lisa. ',
+      filename: 'lisa.webm',
+      audio: new Uint8Array([1, 2, 3]),
+      consent: true,
+    }, {}, { fetchImpl })).resolves.toMatchObject({
+      profile: { id: 'lisa-id' },
+      sample: { id: 'sample-id' },
+    });
+    expect(requests).toHaveLength(2);
+  });
+
+  it('requires explicit authorization and rolls back a half-created profile', async () => {
+    await expect(createVoiceboxClone({
+      name: 'Lisa',
+      language: 'fr',
+      referenceText: 'Bonjour.',
+      filename: 'lisa.wav',
+      audio: new Uint8Array([1]),
+      consent: false,
+    })).rejects.toThrow('Explicit authorization');
+
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/profiles')) {
+        return new Response(JSON.stringify({ id: 'orphan', name: 'Lisa' }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ detail: 'sample rejected' }), { status: 400 });
+      }
+      if (init?.method === 'DELETE') return new Response('{}');
+      throw new Error('unexpected request');
+    });
+    await expect(createVoiceboxClone({
+      name: 'Lisa',
+      language: 'fr',
+      referenceText: 'Bonjour.',
+      filename: 'lisa.wav',
+      audio: new Uint8Array([1]),
+      consent: true,
+    }, {}, { fetchImpl })).rejects.toThrow('sample rejected');
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      new URL('http://127.0.0.1:17493/profiles/orphan'),
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  it('inventories health, profiles, models, and all advertised languages in parallel', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/profiles')) return new Response(JSON.stringify([
+        { id: 'lisa', name: 'Lisa', language: 'fr', sample_count: 2 },
+      ]));
+      if (url.endsWith('/health')) return new Response(JSON.stringify({
+        status: 'healthy', model_loaded: true, gpu_available: true, gpu_type: 'CUDA',
+      }));
+      if (url.endsWith('/models/status')) return new Response(JSON.stringify({ models: [
+        { model_name: 'qwen-1.7b', display_name: 'Qwen 1.7B', downloaded: true, loaded: true },
+      ] }));
+      throw new Error('unexpected request');
+    });
+    const report = await probeVoiceboxStudio(
+      { CODEBUDDY_VOICEBOX_PROFILE: 'Lisa' },
+      { fetchImpl }
+    );
+    expect(report.available).toBe(true);
+    expect(report.health?.gpu_type).toBe('CUDA');
+    expect(report.models[0]?.loaded).toBe(true);
+    expect(report.languages).toHaveLength(23);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('requires confirmation before destructive profile deletion', async () => {
+    await expect(deleteVoiceboxProfile('lisa', false)).rejects.toThrow('explicit confirmation');
+    const fetchImpl = vi.fn(async () => new Response('{}'));
+    await deleteVoiceboxProfile('lisa', true, {}, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      new URL('http://127.0.0.1:17493/profiles/lisa'),
+      expect.objectContaining({ method: 'DELETE' })
+    );
   });
 });

@@ -49,6 +49,7 @@ import { MemoryPanel } from './components/MemoryPanel';
 // AutonomyPanel is lazy loaded below
 import { LiveLauncherPanel } from './components/LiveLauncherPanel';
 import { FocusView } from './components/FocusView';
+import { GlobalDictationOverlay } from './components/GlobalDictationOverlay';
 import { Group, Panel } from 'react-resizable-panels';
 import { UpdateNotification } from './components/UpdateNotification';
 import { NotificationToastContainer } from './components/NotificationToast';
@@ -629,6 +630,9 @@ function App() {
         onDismiss={clearGlobalNotice}
         onAction={handleGlobalNoticeAction}
       />
+
+      {/* System-wide local dictation — resident so the shortcut also works while Cowork is unfocused. */}
+      <GlobalDictationOverlay />
 
       {/* Update notification banner */}
       {updateInfo && updateInfo.available && (

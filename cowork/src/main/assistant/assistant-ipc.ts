@@ -3,7 +3,7 @@
  * entry calls `registerAssistantIpc` after creating the service.
  */
 import type { IpcMain } from 'electron';
-import type { AssistantService } from './assistant-service.js';
+import type { AssistantService, VoiceboxCloneRequest } from './assistant-service.js';
 
 export const ASSISTANT_CHANNELS = {
   get: 'assistant.get',
@@ -15,6 +15,9 @@ export const ASSISTANT_CHANNELS = {
   getVolume: 'assistant.getVolume',
   setVolume: 'assistant.setVolume',
   diagnostics: 'assistant.diagnostics',
+  voiceboxStudio: 'assistant.voiceboxStudio',
+  voiceboxClone: 'assistant.voiceboxClone',
+  voiceboxDelete: 'assistant.voiceboxDelete',
 } as const;
 
 export function registerAssistantIpc(
@@ -38,4 +41,14 @@ export function registerAssistantIpc(
     service.setVolume(percent)
   );
   ipcMain.handle(ASSISTANT_CHANNELS.diagnostics, async () => service.diagnostics());
+  ipcMain.handle(ASSISTANT_CHANNELS.voiceboxStudio, async () => service.voiceboxStudio());
+  ipcMain.handle(
+    ASSISTANT_CHANNELS.voiceboxClone,
+    async (_event, request: VoiceboxCloneRequest) => service.createVoiceboxClone(request)
+  );
+  ipcMain.handle(
+    ASSISTANT_CHANNELS.voiceboxDelete,
+    async (_event, profileId: string, confirmed: boolean) =>
+      service.deleteVoiceboxProfile(profileId ?? '', confirmed === true)
+  );
 }

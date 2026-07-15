@@ -45,6 +45,29 @@ buddy assistant set CODEBUDDY_TTS_ENGINE voicebox
 buddy assistant apply
 ```
 
+Le diagnostic inventorie aussi le GPU, les modèles locaux et les 23 langues annoncées par
+Voicebox. Cowork → Assistant contient le même studio : création d'un profil cloné depuis un
+échantillon, sélection pour Lisa et suppression confirmée. Le clonage exige une case ou l'option
+`--consent` : elle signifie que l'opérateur a le droit et l'autorisation explicite de copier cette
+voix. La création est transactionnelle ; si l'envoi de l'échantillon échoue, Code Buddy retire le
+profil vide créé quelques millisecondes plus tôt.
+
+```bash
+buddy assistant voicebox-clone Lisa ./lisa.webm \
+  --text "Transcription exacte de l'échantillon" --language fr --consent --select
+buddy assistant voicebox-delete <profile-id> --yes
+```
+
+### Dictée système Cowork
+
+Cowork transforme aussi le raccourci `Ctrl/Cmd+Shift+Espace` en dictée globale locale : une première
+pression démarre l'écoute, une seconde transcrit puis insère le texte dans l'application restée
+active. La reconnaissance réutilise le STT local Cowork. Sur Linux, `wtype` est choisi sous Wayland
+et `xdotool` sous X11 ; sans injecteur disponible, le résultat reste dans le presse-papiers avec un
+diagnostic au lieu d'être perdu. Le raccourci peut être remplacé au lancement avec
+`COWORK_DICTATION_SHORTCUT`. Le texte n'est jamais passé à un shell et l'ancien presse-papiers n'est
+restauré que si l'utilisateur ne l'a pas modifié entre-temps.
+
 Le port Voicebox ne doit pas être publié sur Internet : utilise l'adresse Tailscale de Darkstar ou
 un tunnel local de confiance. Le premier essai du benchmark comprend le chargement à froid. L'API
 `/generate/stream` de Voicebox 0.5 livre actuellement le WAV après le calcul CUDA complet ; elle

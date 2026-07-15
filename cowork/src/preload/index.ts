@@ -289,6 +289,58 @@ interface AssistantVoiceDiagnostics {
 type AssistantDiagnosticsResponse =
   | { diagnostics: AssistantVoiceDiagnostics | null }
   | AssistantErrorResponse;
+interface VoiceboxStudioProfile {
+  id: string;
+  name: string;
+  description?: string | null;
+  language?: string;
+  voice_type?: string;
+  default_engine?: string | null;
+  sample_count?: number;
+  generation_count?: number;
+}
+interface VoiceboxStudioResponse {
+  available: boolean;
+  baseUrl: string;
+  configuredProfile?: string;
+  resolvedProfile?: VoiceboxStudioProfile;
+  profiles: VoiceboxStudioProfile[];
+  models: Array<{
+    model_name: string;
+    display_name: string;
+    downloaded: boolean;
+    downloading?: boolean;
+    loaded?: boolean;
+    size_mb?: number | null;
+  }>;
+  health?: {
+    status: string;
+    model_loaded: boolean;
+    gpu_available: boolean;
+    gpu_type?: string | null;
+    vram_used_mb?: number | null;
+    backend_type?: string | null;
+    backend_variant?: string | null;
+  };
+  languages: readonly string[];
+  engine: string;
+  error?: string;
+  hint?: string;
+}
+type VoiceboxStudioResult = VoiceboxStudioResponse | AssistantErrorResponse;
+interface VoiceboxCloneRequest {
+  name: string;
+  description?: string;
+  language: string;
+  referenceText: string;
+  filename: string;
+  audio: ArrayBuffer;
+  consent: boolean;
+}
+type VoiceboxCloneResult =
+  | { ok: true; profile: VoiceboxStudioProfile; sampleId: string }
+  | AssistantErrorResponse;
+type VoiceboxDeleteResult = { ok: true } | AssistantErrorResponse;
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -1089,6 +1141,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('assistant.setVolume', percent),
     diagnostics: (): Promise<AssistantDiagnosticsResponse> =>
       ipcRenderer.invoke('assistant.diagnostics'),
+    voiceboxStudio: (): Promise<VoiceboxStudioResult> =>
+      ipcRenderer.invoke('assistant.voiceboxStudio'),
+    voiceboxClone: (request: VoiceboxCloneRequest): Promise<VoiceboxCloneResult> =>
+      ipcRenderer.invoke('assistant.voiceboxClone', request),
+    voiceboxDelete: (profileId: string, confirmed: boolean): Promise<VoiceboxDeleteResult> =>
+      ipcRenderer.invoke('assistant.voiceboxDelete', profileId, confirmed),
   },
 
   widgets: {
@@ -1395,6 +1453,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('voice.transcribe', { audio, language: options?.language }),
     status: (): Promise<{ available: boolean; bootError: string | null }> =>
       ipcRenderer.invoke('voice.status'),
+    dictationStatus: (): Promise<{
+      available: boolean;
+      accelerator: string;
+      registered: boolean;
+      platform: string;
+    }> => ipcRenderer.invoke('voice.dictationStatus'),
+    pasteDictation: (transcript: string): Promise<{
+      ok: boolean;
+      copied: boolean;
+      pasted: boolean;
+      mechanism: 'osascript' | 'powershell' | 'wtype' | 'xdotool' | 'clipboard';
+      error?: string;
+    }> => ipcRenderer.invoke('voice.dictationPaste', transcript),
     diagnostics: (): Promise<{
       ok: boolean;
       checkedAt: string;
@@ -5422,6 +5493,9 @@ declare global {
         getVolume: () => Promise<AssistantVolumeResponse>;
         setVolume: (percent: number) => Promise<AssistantSetVolumeResponse>;
         diagnostics: () => Promise<AssistantDiagnosticsResponse>;
+        voiceboxStudio: () => Promise<VoiceboxStudioResult>;
+        voiceboxClone: (request: VoiceboxCloneRequest) => Promise<VoiceboxCloneResult>;
+        voiceboxDelete: (profileId: string, confirmed: boolean) => Promise<VoiceboxDeleteResult>;
       };
       widgets: {
         render: (data: unknown, theme?: 'dark' | 'light') => Promise<string | null>;
@@ -6023,6 +6097,19 @@ declare global {
           options?: { language?: string }
         ) => Promise<{ ok: boolean; text?: string; durationMs?: number; error?: string }>;
         status: () => Promise<{ available: boolean; bootError: string | null }>;
+        dictationStatus: () => Promise<{
+          available: boolean;
+          accelerator: string;
+          registered: boolean;
+          platform: string;
+        }>;
+        pasteDictation: (transcript: string) => Promise<{
+          ok: boolean;
+          copied: boolean;
+          pasted: boolean;
+          mechanism: 'osascript' | 'powershell' | 'wtype' | 'xdotool' | 'clipboard';
+          error?: string;
+        }>;
         diagnostics: () => Promise<{
           ok: boolean;
           checkedAt: string;

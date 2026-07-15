@@ -151,6 +151,7 @@ import {
 import { VoiceBridge } from './voice/voice-bridge';
 import { TTSBridge } from './voice/tts-bridge';
 import { KyutaiBridge } from './voice/kyutai-bridge';
+import { SystemDictationService } from './voice/system-dictation';
 import { ClipboardWatcher } from './clipboard/clipboard-watcher';
 import { SessionExportService } from './session/session-export-service';
 import { SessionInsightsBridge } from './session/session-insights-bridge';
@@ -431,6 +432,7 @@ let voiceConversation: VoiceConversationSession | null = null;
 let voiceBridge: VoiceBridge | null = null;
 let ttsBridge: TTSBridge | null = null;
 let kyutaiBridge: KyutaiBridge | null = null;
+let systemDictation: SystemDictationService | null = null;
 let clipboardWatcher: ClipboardWatcher | null = null;
 let sessionExportService: SessionExportService | null = null;
 let sessionInsightsBridge: SessionInsightsBridge | null = null;
@@ -443,6 +445,9 @@ let notificationBridge: NotificationBridge | null = null;
 let liveLauncherBridge: ReturnType<typeof registerLiveLauncherIpcHandlers> | null = null;
 let icmIntegration: ICMIntegration | null = null;
 let taskDispatch: TaskDispatch | null = null;
+const GLOBAL_DICTATION_ACCELERATOR =
+  process.env.COWORK_DICTATION_SHORTCUT?.trim() || 'CommandOrControl+Shift+Space';
+let globalDictationRegistered = false;
 
 async function resolveScheduledTaskTitle(
   prompt: string,
@@ -1121,6 +1126,21 @@ function createWindow() {
   mainWindow.on('blur', () => {
     globalShortcut.unregister('CommandOrControl+Alt+S');
   });
+
+  // Voicebox-inspired system dictation. A toggle chord works reliably through
+  // Electron's cross-platform globalShortcut API; capture remains in the
+  // sandboxed renderer and only the final transcript crosses back for paste.
+  if (!globalDictationRegistered) {
+    globalDictationRegistered = globalShortcut.register(GLOBAL_DICTATION_ACCELERATOR, () => {
+      sendToRenderer({
+        type: 'voice.dictation.toggle',
+        payload: { at: Date.now(), accelerator: GLOBAL_DICTATION_ACCELERATOR },
+      });
+    });
+    if (!globalDictationRegistered) {
+      logWarn(`[Voice Dictation] global shortcut unavailable: ${GLOBAL_DICTATION_ACCELERATOR}`);
+    }
+  }
 
   // Notify renderer about config status after window is ready
   mainWindow.webContents.on('did-finish-load', () => {
@@ -1912,6 +1932,11 @@ app
     // COWORK_STT_PROVIDER / COWORK_TTS_PROVIDER / COWORK_VOICE_PROVIDER
     // is set to "kyutai" (or "dsm"/"moshi").
     kyutaiBridge = new KyutaiBridge();
+    systemDictation = new SystemDictationService({
+      platform: process.platform,
+      env: process.env,
+      clipboard,
+    });
     // TTS bridge — resident Pocket TTS by default, with the older Piper path
     // retained as an automatic compatibility fallback.
     ttsBridge = new TTSBridge();
@@ -2488,6 +2513,10 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
 app.on('before-quit', async (event) => {
   meetingDisplayAudioBroker.dispose();
+  if (globalDictationRegistered) {
+    globalShortcut.unregister(GLOBAL_DICTATION_ACCELERATOR);
+    globalDictationRegistered = false;
+  }
   if (!isCleaningUp) {
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
@@ -4085,6 +4114,35 @@ ipcMain.handle('voice.status', async () => {
     fallbackProvider: 'faster-whisper',
     kyutai,
   };
+});
+
+ipcMain.handle('voice.dictationStatus', async () => ({
+  available: Boolean(systemDictation && globalDictationRegistered),
+  accelerator: GLOBAL_DICTATION_ACCELERATOR,
+  registered: globalDictationRegistered,
+  platform: process.platform,
+}));
+
+ipcMain.handle('voice.dictationPaste', async (_event, transcript: string) => {
+  if (!systemDictation) {
+    return {
+      ok: false,
+      copied: false,
+      pasted: false,
+      mechanism: 'clipboard',
+      error: 'system dictation is not initialized',
+    };
+  }
+  if (typeof transcript !== 'string') {
+    return {
+      ok: false,
+      copied: false,
+      pasted: false,
+      mechanism: 'clipboard',
+      error: 'invalid transcript',
+    };
+  }
+  return systemDictation.paste(transcript);
 });
 
 ipcMain.handle('voice.diagnostics', async () => {

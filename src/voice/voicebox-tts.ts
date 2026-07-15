@@ -23,12 +23,68 @@ export type VoiceboxEngine = (typeof VOICEBOX_ENGINES)[number];
 export const VOICEBOX_MODEL_SIZES = ['0.6B', '1.7B', '1B', '3B'] as const;
 export type VoiceboxModelSize = (typeof VOICEBOX_MODEL_SIZES)[number];
 
+/** Languages advertised by Voicebox's current seven-engine API. */
+export const VOICEBOX_LANGUAGES = [
+  'zh', 'en', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it', 'he', 'ar',
+  'da', 'el', 'fi', 'hi', 'ms', 'nl', 'no', 'pl', 'sv', 'sw', 'tr',
+] as const;
+export type VoiceboxLanguage = (typeof VOICEBOX_LANGUAGES)[number];
+
 export interface VoiceboxProfile {
   id: string;
   name: string;
+  description?: string | null;
   language?: string;
   default_engine?: string | null;
   voice_type?: string;
+  sample_count?: number;
+  generation_count?: number;
+}
+
+export interface VoiceboxProfileSample {
+  id: string;
+  profile_id: string;
+  audio_path: string;
+  reference_text: string;
+}
+
+export interface VoiceboxHealth {
+  status: string;
+  model_loaded: boolean;
+  model_downloaded?: boolean | null;
+  model_size?: string | null;
+  gpu_available: boolean;
+  gpu_type?: string | null;
+  vram_used_mb?: number | null;
+  backend_type?: string | null;
+  backend_variant?: string | null;
+}
+
+export interface VoiceboxModelStatus {
+  model_name: string;
+  display_name: string;
+  downloaded: boolean;
+  downloading?: boolean;
+  loaded?: boolean;
+  size_mb?: number | null;
+}
+
+export interface VoiceboxStudioProbe extends VoiceboxProbe {
+  health?: VoiceboxHealth;
+  models: VoiceboxModelStatus[];
+  languages: readonly VoiceboxLanguage[];
+}
+
+export interface VoiceboxCloneInput {
+  name: string;
+  description?: string;
+  language: VoiceboxLanguage;
+  referenceText: string;
+  filename: string;
+  audio: Uint8Array;
+  /** Explicit proof that the operator is authorized to clone this voice. */
+  consent: boolean;
+  defaultEngine?: VoiceboxEngine;
 }
 
 export interface VoiceboxConfig {
@@ -68,6 +124,10 @@ const DEFAULT_BASE_URL = 'http://127.0.0.1:17493';
 const DEFAULT_TIMEOUT_MS = 180_000;
 const DEFAULT_MAX_AUDIO_BYTES = 64 * 1024 * 1024;
 const PROFILE_CACHE_TTL_MS = 5 * 60_000;
+const MAX_PROFILE_AUDIO_BYTES = 50 * 1024 * 1024;
+const ALLOWED_PROFILE_AUDIO_EXTENSIONS = new Set([
+  '.wav', '.mp3', '.m4a', '.ogg', '.flac', '.aac', '.webm', '.opus',
+]);
 const profileCache = new Map<string, { profile: VoiceboxProfile; expiresAt: number }>();
 const profileLookups = new Map<string, Promise<VoiceboxProfile | null>>();
 
@@ -138,6 +198,50 @@ function isVoiceboxProfile(value: unknown): value is VoiceboxProfile {
   return typeof candidate.id === 'string' && typeof candidate.name === 'string';
 }
 
+function isVoiceboxProfileSample(value: unknown): value is VoiceboxProfileSample {
+  if (!value || typeof value !== 'object') return false;
+  const sample = value as Partial<VoiceboxProfileSample>;
+  return typeof sample.id === 'string' &&
+    typeof sample.profile_id === 'string' &&
+    typeof sample.audio_path === 'string' &&
+    typeof sample.reference_text === 'string';
+}
+
+function isVoiceboxHealth(value: unknown): value is VoiceboxHealth {
+  if (!value || typeof value !== 'object') return false;
+  const health = value as Partial<VoiceboxHealth>;
+  return typeof health.status === 'string' &&
+    typeof health.model_loaded === 'boolean' &&
+    typeof health.gpu_available === 'boolean';
+}
+
+function isVoiceboxModelStatus(value: unknown): value is VoiceboxModelStatus {
+  if (!value || typeof value !== 'object') return false;
+  const model = value as Partial<VoiceboxModelStatus>;
+  return typeof model.model_name === 'string' &&
+    typeof model.display_name === 'string' &&
+    typeof model.downloaded === 'boolean';
+}
+
+async function voiceboxError(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { detail?: unknown; message?: unknown };
+    const detail = typeof payload.detail === 'string'
+      ? payload.detail
+      : typeof payload.message === 'string'
+        ? payload.message
+        : '';
+    if (detail) return detail.slice(0, 500);
+  } catch {
+    // The status code below remains actionable when the server body is not JSON.
+  }
+  return `HTTP ${response.status}`;
+}
+
+function voiceboxHeaders(config: VoiceboxConfig): Record<string, string> {
+  return { 'X-Voicebox-Client-Id': config.clientId };
+}
+
 function isLoopbackVoicebox(baseUrl: string): boolean {
   try {
     const hostname = new URL(baseUrl).hostname;
@@ -171,6 +275,218 @@ export async function listVoiceboxProfiles(
   const payload: unknown = await response.json();
   if (!Array.isArray(payload)) throw new Error('Voicebox returned an invalid profile list');
   return payload.filter(isVoiceboxProfile);
+}
+
+export async function listVoiceboxProfileSamples(
+  profileId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<VoiceboxProfileSample[]> {
+  const cleanId = profileId.trim();
+  if (!cleanId) throw new Error('Voicebox profile id is required');
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const response = await (options.fetchImpl ?? fetch)(
+    new URL(`/profiles/${encodeURIComponent(cleanId)}/samples`, config.baseUrl),
+    {
+      headers: voiceboxHeaders(config),
+      signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+    }
+  );
+  if (!response.ok) throw new Error(`Voicebox samples: ${await voiceboxError(response)}`);
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) throw new Error('Voicebox returned an invalid sample list');
+  return payload.filter(isVoiceboxProfileSample);
+}
+
+/**
+ * Create one cloned profile and attach its first reference sample atomically.
+ * If the sample upload fails, the empty profile is removed best-effort so the
+ * studio does not accumulate misleading half-created voices.
+ */
+export async function createVoiceboxClone(
+  input: VoiceboxCloneInput,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<{ profile: VoiceboxProfile; sample: VoiceboxProfileSample }> {
+  if (!input.consent) {
+    throw new Error('Explicit authorization is required before cloning a voice');
+  }
+  const name = input.name.trim();
+  const description = input.description?.trim();
+  const referenceText = input.referenceText.trim();
+  const filename = input.filename.trim().replace(/[\\/]/gu, '_');
+  if (!name || name.length > 100) throw new Error('Voice profile name must contain 1–100 characters');
+  if (description && description.length > 500) throw new Error('Voice profile description is limited to 500 characters');
+  if (!VOICEBOX_LANGUAGES.includes(input.language)) throw new Error('Unsupported Voicebox language');
+  if (!referenceText || referenceText.length > 1_000) {
+    throw new Error('Reference transcript must contain 1–1000 characters');
+  }
+  if (!(input.audio instanceof Uint8Array) || input.audio.byteLength === 0) {
+    throw new Error('A non-empty reference audio sample is required');
+  }
+  if (input.audio.byteLength > MAX_PROFILE_AUDIO_BYTES) {
+    throw new Error('Reference audio exceeds the 50 MiB Voicebox limit');
+  }
+  const suffix = filename.toLowerCase().match(/\.[a-z0-9]+$/u)?.[0] ?? '';
+  if (!ALLOWED_PROFILE_AUDIO_EXTENSIONS.has(suffix)) {
+    throw new Error('Reference audio must be WAV, MP3, M4A, OGG, FLAC, AAC, WebM, or Opus');
+  }
+
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const signal = requestSignal(config.timeoutMs, options.signal);
+  const createResponse = await fetchImpl(new URL('/profiles', config.baseUrl), {
+    method: 'POST',
+    headers: {
+      ...voiceboxHeaders(config),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      ...(description ? { description } : {}),
+      language: input.language,
+      voice_type: 'cloned',
+      default_engine: input.defaultEngine ?? 'qwen',
+    }),
+    signal,
+  });
+  if (!createResponse.ok) {
+    throw new Error(`Voicebox profile creation: ${await voiceboxError(createResponse)}`);
+  }
+  const created: unknown = await createResponse.json();
+  if (!isVoiceboxProfile(created)) throw new Error('Voicebox returned an invalid created profile');
+
+  try {
+    const form = new FormData();
+    const audioCopy = new Uint8Array(input.audio.byteLength);
+    audioCopy.set(input.audio);
+    form.append('file', new Blob([audioCopy.buffer]), filename);
+    form.append('reference_text', referenceText);
+    const sampleResponse = await fetchImpl(
+      new URL(`/profiles/${encodeURIComponent(created.id)}/samples`, config.baseUrl),
+      {
+        method: 'POST',
+        headers: voiceboxHeaders(config),
+        body: form,
+        signal,
+      }
+    );
+    if (!sampleResponse.ok) {
+      throw new Error(`Voicebox sample upload: ${await voiceboxError(sampleResponse)}`);
+    }
+    const sample: unknown = await sampleResponse.json();
+    if (!isVoiceboxProfileSample(sample)) {
+      throw new Error('Voicebox returned an invalid created sample');
+    }
+    resetVoiceboxProfileCache();
+    return { profile: created, sample };
+  } catch (error) {
+    try {
+      await fetchImpl(new URL(`/profiles/${encodeURIComponent(created.id)}`, config.baseUrl), {
+        method: 'DELETE',
+        headers: voiceboxHeaders(config),
+        // Cleanup gets its own bounded signal: an aborted upload request must
+        // not leave a half-created profile behind.
+        signal: requestSignal(Math.min(config.timeoutMs, 10_000)),
+      });
+    } catch {
+      // Preserve the original upload error; cleanup remains best-effort.
+    }
+    throw error;
+  }
+}
+
+export async function deleteVoiceboxProfile(
+  profileId: string,
+  confirmed: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<void> {
+  const cleanId = profileId.trim();
+  if (!confirmed) throw new Error('Voice profile deletion requires explicit confirmation');
+  if (!cleanId) throw new Error('Voicebox profile id is required');
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const response = await (options.fetchImpl ?? fetch)(
+    new URL(`/profiles/${encodeURIComponent(cleanId)}`, config.baseUrl),
+    {
+      method: 'DELETE',
+      headers: voiceboxHeaders(config),
+      signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+    }
+  );
+  if (!response.ok) throw new Error(`Voicebox profile deletion: ${await voiceboxError(response)}`);
+  resetVoiceboxProfileCache();
+}
+
+/** Capability inventory for Cowork and CLI administration. */
+export async function probeVoiceboxStudio(
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<VoiceboxStudioProbe> {
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const [profilesResponse, healthResponse, modelsResponse] = await Promise.all([
+      fetchImpl(new URL('/profiles', config.baseUrl), {
+        headers: voiceboxHeaders(config),
+        signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+      }),
+      fetchImpl(new URL('/health', config.baseUrl), {
+        headers: voiceboxHeaders(config),
+        signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+      }),
+      fetchImpl(new URL('/models/status', config.baseUrl), {
+        headers: voiceboxHeaders(config),
+        signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+      }),
+    ]);
+    if (!profilesResponse.ok) throw new Error(`profiles ${await voiceboxError(profilesResponse)}`);
+    if (!healthResponse.ok) throw new Error(`health ${await voiceboxError(healthResponse)}`);
+    const profilesPayload: unknown = await profilesResponse.json();
+    const healthPayload: unknown = await healthResponse.json();
+    const modelsPayload: unknown = modelsResponse.ok ? await modelsResponse.json() : null;
+    if (!Array.isArray(profilesPayload)) throw new Error('invalid profile list');
+    if (!isVoiceboxHealth(healthPayload)) throw new Error('invalid health response');
+    const profiles = profilesPayload.filter(isVoiceboxProfile);
+    const modelCandidates = modelsPayload && typeof modelsPayload === 'object'
+      ? (modelsPayload as { models?: unknown }).models
+      : null;
+    const models = Array.isArray(modelCandidates)
+      ? modelCandidates.filter(isVoiceboxModelStatus)
+      : [];
+    const wanted = config.profile.toLocaleLowerCase('fr');
+    const resolvedProfile = config.profile
+      ? profiles.find((profile) => profile.id === config.profile ||
+          profile.name.toLocaleLowerCase('fr') === wanted)
+      : undefined;
+    return {
+      available: config.profile ? Boolean(resolvedProfile) : true,
+      baseUrl: config.baseUrl,
+      ...(config.profile ? { configuredProfile: config.profile } : {}),
+      ...(resolvedProfile ? { resolvedProfile } : {}),
+      profiles,
+      models,
+      health: healthPayload,
+      languages: VOICEBOX_LANGUAGES,
+      engine: config.engine,
+      ...(config.profile && !resolvedProfile
+        ? { error: `Configured profile '${config.profile}' was not found` }
+        : {}),
+    };
+  } catch (error) {
+    const hint = voiceboxReachabilityHint(config.baseUrl);
+    return {
+      available: false,
+      baseUrl: config.baseUrl,
+      ...(config.profile ? { configuredProfile: config.profile } : {}),
+      profiles: [],
+      models: [],
+      languages: VOICEBOX_LANGUAGES,
+      engine: config.engine,
+      error: error instanceof Error ? error.message : String(error),
+      ...(hint ? { hint } : {}),
+    };
+  }
 }
 
 function profileKey(config: VoiceboxConfig): string {
