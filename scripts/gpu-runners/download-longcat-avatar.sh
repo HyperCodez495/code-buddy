@@ -22,8 +22,16 @@ require_command() {
 }
 
 require_command curl
+require_command flock
 require_command sha256sum
 require_command stat
+
+mkdir -p "$WEIGHTS_ROOT"
+exec 9>"$WEIGHTS_ROOT/.codebuddy-download.lock"
+if ! flock --nonblock 9; then
+  echo "Another LongCat checkpoint download is already active in $WEIGHTS_ROOT" >&2
+  exit 5
+fi
 
 download_file() {
   local repo="$1"
@@ -38,6 +46,13 @@ download_file() {
   local actual_sha256
 
   mkdir -p "$(dirname -- "$destination")"
+  if [[ -f "$partial" ]]; then
+    actual_size="$(stat -c '%s' "$partial")"
+    if (( actual_size > expected_size )); then
+      echo "Removing oversized partial file: $relative_path" >&2
+      rm -f -- "$partial"
+    fi
+  fi
   if [[ -f "$destination" ]]; then
     actual_size="$(stat -c '%s' "$destination")"
     if [[ "$actual_size" == "$expected_size" ]]; then
@@ -63,12 +78,14 @@ download_file() {
   actual_size="$(stat -c '%s' "$partial")"
   if [[ "$actual_size" != "$expected_size" ]]; then
     echo "Size mismatch for $relative_path: expected $expected_size, got $actual_size" >&2
+    rm -f -- "$partial"
     exit 3
   fi
   if [[ "$expected_sha256" != '-' ]]; then
     actual_sha256="$(sha256sum "$partial" | cut -d' ' -f1)"
     if [[ "$actual_sha256" != "$expected_sha256" ]]; then
       echo "SHA-256 mismatch for $relative_path" >&2
+      rm -f -- "$partial"
       exit 4
     fi
   fi
