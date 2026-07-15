@@ -67,6 +67,8 @@ describe('LongCat GPU runner hardening', () => {
     ]);
     expect(runner).toContain('RUNNER_VERSION = "2"');
     expect(launcher).toContain("$longcatReady.runnerVersion -ne '2'");
+    expect(launcher).toContain('Get-NetIPAddress -IPAddress $BindHost');
+    expect(launcher).toContain('[int]$BindWaitSeconds = 120');
   });
 
   it('accepts exactly the pinned clean source tree', async () => {

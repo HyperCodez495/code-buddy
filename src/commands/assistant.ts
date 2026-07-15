@@ -378,6 +378,91 @@ export function registerAssistantCommand(program: Command): void {
     });
 
   assistant
+    .command('voicebox-preset')
+    .description('Create a Voicebox profile from a functional built-in speaker')
+    .argument('<name>', 'Voice profile name')
+    .requiredOption('--voice <id>', 'Preset voice id, for example ff_siwis')
+    .option('--engine <name>', 'kokoro or qwen_custom_voice', 'kokoro')
+    .option('--language <code>', 'Voicebox language code', 'fr')
+    .option('--description <text>', 'Optional profile description')
+    .option('--select', 'Select the preset profile for Lisa')
+    .option('--json', 'Output JSON')
+    .action(async (
+      name: string,
+      options: {
+        voice: string;
+        engine: string;
+        language: string;
+        description?: string;
+        select?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      const { createVoiceboxPresetProfile, VOICEBOX_LANGUAGES } = await import(
+        '../voice/voicebox-tts.js'
+      );
+      if (!VOICEBOX_LANGUAGES.includes(options.language as (typeof VOICEBOX_LANGUAGES)[number])) {
+        console.error(`Langue invalide. Valeurs : ${VOICEBOX_LANGUAGES.join(', ')}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!['kokoro', 'qwen_custom_voice'].includes(options.engine)) {
+        console.error('Moteur invalide. Valeurs : kokoro, qwen_custom_voice');
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const profile = await createVoiceboxPresetProfile({
+          name,
+          ...(options.description ? { description: options.description } : {}),
+          language: options.language as (typeof VOICEBOX_LANGUAGES)[number],
+          engine: options.engine as 'kokoro' | 'qwen_custom_voice',
+          voiceId: options.voice,
+        }, { ...readAssistantConfig(), ...process.env });
+        if (options.select) {
+          printWriteResult(writeAssistantConfig({
+            CODEBUDDY_VOICEBOX_PROFILE: profile.id,
+            CODEBUDDY_VOICEBOX_ENGINE: profile.default_engine ?? options.engine,
+            CODEBUDDY_TTS_ENGINE: 'voicebox',
+          }));
+        }
+        if (options.json) console.log(JSON.stringify(profile, null, 2));
+        else console.log(`Voix prédéfinie créée : ${profile.name} (${profile.id})`);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
+    .command('voicebox-model')
+    .description('Download, cancel, unload, or delete a Voicebox model')
+    .argument('<action>', 'download, cancel, unload, or delete')
+    .argument('<model-name>', 'Canonical Voicebox model name')
+    .option('--yes', 'Confirm deletion from disk')
+    .action(async (action: string, modelName: string, options: { yes?: boolean }) => {
+      const allowed = ['download', 'cancel', 'unload', 'delete'] as const;
+      if (!allowed.includes(action as (typeof allowed)[number])) {
+        console.error(`Action invalide. Valeurs : ${allowed.join(', ')}`);
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const { manageVoiceboxModel } = await import('../voice/voicebox-tts.js');
+        const result = await manageVoiceboxModel(
+          modelName,
+          action as (typeof allowed)[number],
+          options.yes === true,
+          { ...readAssistantConfig(), ...process.env }
+        );
+        console.log(result.message);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  assistant
     .command('voicebox-delete')
     .description('Delete a Voicebox profile and its samples')
     .argument('<profile-id>', 'Voicebox profile id')

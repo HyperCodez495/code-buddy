@@ -6,7 +6,9 @@ param(
   [string]$NodeDir = 'D:\DEV\_third_party\node-v22.23.1-win-x64',
   [string]$StateDir = 'D:\CodeBuddyData\gpu-worker',
   [string]$TokenFile = 'D:\CodeBuddyData\gpu-worker\token',
-  [string]$LongCatReadyFile = 'D:\CodeBuddyData\gpu-worker\longcat-ready'
+  [string]$LongCatReadyFile = 'D:\CodeBuddyData\gpu-worker\longcat-ready',
+  [ValidateRange(0, 600)]
+  [int]$BindWaitSeconds = 120
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +31,19 @@ $roots = @('D:\DEV', 'D:\CodeBuddyData', 'D:\LisaMedia') |
   Where-Object { Test-Path -LiteralPath $_ -PathType Container }
 if ($roots.Count -eq 0) {
   throw 'No GPU worker filesystem root is available.'
+}
+
+# Scheduled tasks can start before Tailscale has restored its interface after a
+# reboot. Wait for the configured private address instead of exiting once and
+# leaving the worker stopped until a human notices.
+if ($BindHost -notin @('0.0.0.0', '127.0.0.1', '::', '::1') -and $BindWaitSeconds -gt 0) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($BindWaitSeconds)
+  while (-not (Get-NetIPAddress -IPAddress $BindHost -ErrorAction SilentlyContinue)) {
+    if ([DateTime]::UtcNow -ge $deadline) {
+      throw "GPU worker bind address did not become available within $BindWaitSeconds seconds: $BindHost"
+    }
+    Start-Sleep -Seconds 2
+  }
 }
 
 $env:CODEBUDDY_GPU_WORKER_TOKEN = $token

@@ -37,6 +37,9 @@ export interface VoiceboxProfile {
   language?: string;
   default_engine?: string | null;
   voice_type?: string;
+  preset_engine?: string | null;
+  preset_voice_id?: string | null;
+  design_prompt?: string | null;
   sample_count?: number;
   generation_count?: number;
 }
@@ -72,6 +75,7 @@ export interface VoiceboxModelStatus {
 export interface VoiceboxStudioProbe extends VoiceboxProbe {
   health?: VoiceboxHealth;
   models: VoiceboxModelStatus[];
+  presetVoices: VoiceboxPresetVoice[];
   languages: readonly VoiceboxLanguage[];
 }
 
@@ -86,6 +90,26 @@ export interface VoiceboxCloneInput {
   consent: boolean;
   defaultEngine?: VoiceboxEngine;
 }
+
+export type VoiceboxPresetEngine = 'kokoro' | 'qwen_custom_voice';
+
+export interface VoiceboxPresetVoice {
+  voice_id: string;
+  name: string;
+  gender: string;
+  language: string;
+  engine: VoiceboxPresetEngine;
+}
+
+export interface VoiceboxPresetProfileInput {
+  name: string;
+  description?: string;
+  language: VoiceboxLanguage;
+  engine: VoiceboxPresetEngine;
+  voiceId: string;
+}
+
+export type VoiceboxModelAction = 'download' | 'cancel' | 'unload' | 'delete';
 
 export interface VoiceboxConfig {
   baseUrl: string;
@@ -221,6 +245,15 @@ function isVoiceboxModelStatus(value: unknown): value is VoiceboxModelStatus {
   return typeof model.model_name === 'string' &&
     typeof model.display_name === 'string' &&
     typeof model.downloaded === 'boolean';
+}
+
+function isVoiceboxPresetVoice(value: unknown): value is Omit<VoiceboxPresetVoice, 'engine'> {
+  if (!value || typeof value !== 'object') return false;
+  const voice = value as Partial<VoiceboxPresetVoice>;
+  return typeof voice.voice_id === 'string' &&
+    typeof voice.name === 'string' &&
+    typeof voice.gender === 'string' &&
+    typeof voice.language === 'string';
 }
 
 async function voiceboxError(response: Response): Promise<string> {
@@ -396,6 +429,121 @@ export async function createVoiceboxClone(
   }
 }
 
+/** Create a profile backed by one of Voicebox's functional built-in speakers. */
+export async function createVoiceboxPresetProfile(
+  input: VoiceboxPresetProfileInput,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<VoiceboxProfile> {
+  const name = input.name.trim();
+  const description = input.description?.trim();
+  const voiceId = input.voiceId.trim();
+  if (!name || name.length > 100) throw new Error('Voice profile name must contain 1–100 characters');
+  if (description && description.length > 500) {
+    throw new Error('Voice profile description is limited to 500 characters');
+  }
+  if (!VOICEBOX_LANGUAGES.includes(input.language)) throw new Error('Unsupported Voicebox language');
+  if (!['kokoro', 'qwen_custom_voice'].includes(input.engine)) {
+    throw new Error('Unsupported Voicebox preset engine');
+  }
+  if (!/^[a-zA-Z0-9_-]{1,100}$/u.test(voiceId)) {
+    throw new Error('Invalid Voicebox preset voice id');
+  }
+
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const response = await (options.fetchImpl ?? fetch)(new URL('/profiles', config.baseUrl), {
+    method: 'POST',
+    headers: {
+      ...voiceboxHeaders(config),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      ...(description ? { description } : {}),
+      language: input.language,
+      voice_type: 'preset',
+      preset_engine: input.engine,
+      preset_voice_id: voiceId,
+      default_engine: input.engine,
+      // Deliberately omit `personality`: Code Buddy remains the conversational brain.
+    }),
+    signal: requestSignal(Math.min(config.timeoutMs, 30_000), options.signal),
+  });
+  if (!response.ok) {
+    throw new Error(`Voicebox preset profile: ${await voiceboxError(response)}`);
+  }
+  const created: unknown = await response.json();
+  if (!isVoiceboxProfile(created)) throw new Error('Voicebox returned an invalid preset profile');
+  resetVoiceboxProfileCache();
+  return created;
+}
+
+export async function listVoiceboxPresetVoices(
+  engine: VoiceboxPresetEngine,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<VoiceboxPresetVoice[]> {
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const response = await (options.fetchImpl ?? fetch)(
+    new URL(`/profiles/presets/${engine}`, config.baseUrl),
+    {
+      headers: voiceboxHeaders(config),
+      signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+    }
+  );
+  if (!response.ok) throw new Error(`Voicebox preset voices: ${await voiceboxError(response)}`);
+  const payload: unknown = await response.json();
+  const candidates = payload && typeof payload === 'object'
+    ? (payload as { voices?: unknown }).voices
+    : null;
+  return Array.isArray(candidates)
+    ? candidates.filter(isVoiceboxPresetVoice).map((voice) => ({ ...voice, engine }))
+    : [];
+}
+
+/** Bounded model lifecycle operations used by the CLI and Cowork studio. */
+export async function manageVoiceboxModel(
+  modelName: string,
+  action: VoiceboxModelAction,
+  confirmed = false,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<{ message: string }> {
+  const cleanName = modelName.trim();
+  if (!/^[a-zA-Z0-9._-]{1,100}$/u.test(cleanName)) {
+    throw new Error('Invalid Voicebox model name');
+  }
+  if (action === 'delete' && !confirmed) {
+    throw new Error('Model deletion requires explicit confirmation');
+  }
+  const config = resolveVoiceboxConfig(env, options.timeoutMs);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const jsonAction = action === 'download' || action === 'cancel';
+  const path = action === 'download'
+    ? '/models/download'
+    : action === 'cancel'
+      ? '/models/download/cancel'
+      : action === 'unload'
+        ? `/models/${encodeURIComponent(cleanName)}/unload`
+        : `/models/${encodeURIComponent(cleanName)}`;
+  const response = await fetchImpl(new URL(path, config.baseUrl), {
+    method: action === 'delete' ? 'DELETE' : 'POST',
+    headers: {
+      ...voiceboxHeaders(config),
+      ...(jsonAction ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(jsonAction ? { body: JSON.stringify({ model_name: cleanName }) } : {}),
+    signal: requestSignal(Math.min(config.timeoutMs, 30_000), options.signal),
+  });
+  if (!response.ok) throw new Error(`Voicebox model ${action}: ${await voiceboxError(response)}`);
+  const payload: unknown = await response.json().catch(() => null);
+  const message = payload && typeof payload === 'object' &&
+    typeof (payload as { message?: unknown }).message === 'string'
+    ? (payload as { message: string }).message
+    : `Model ${cleanName}: ${action}`;
+  return { message };
+}
+
 export async function deleteVoiceboxProfile(
   profileId: string,
   confirmed: boolean,
@@ -426,7 +574,7 @@ export async function probeVoiceboxStudio(
   const config = resolveVoiceboxConfig(env, options.timeoutMs);
   const fetchImpl = options.fetchImpl ?? fetch;
   try {
-    const [profilesResponse, healthResponse, modelsResponse] = await Promise.all([
+    const [profilesResponse, healthResponse, modelsResponse, kokoroResponse, qwenPresetResponse] = await Promise.all([
       fetchImpl(new URL('/profiles', config.baseUrl), {
         headers: voiceboxHeaders(config),
         signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
@@ -439,12 +587,22 @@ export async function probeVoiceboxStudio(
         headers: voiceboxHeaders(config),
         signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
       }),
+      fetchImpl(new URL('/profiles/presets/kokoro', config.baseUrl), {
+        headers: voiceboxHeaders(config),
+        signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+      }),
+      fetchImpl(new URL('/profiles/presets/qwen_custom_voice', config.baseUrl), {
+        headers: voiceboxHeaders(config),
+        signal: requestSignal(Math.min(config.timeoutMs, 15_000), options.signal),
+      }),
     ]);
     if (!profilesResponse.ok) throw new Error(`profiles ${await voiceboxError(profilesResponse)}`);
     if (!healthResponse.ok) throw new Error(`health ${await voiceboxError(healthResponse)}`);
     const profilesPayload: unknown = await profilesResponse.json();
     const healthPayload: unknown = await healthResponse.json();
     const modelsPayload: unknown = modelsResponse.ok ? await modelsResponse.json() : null;
+    const kokoroPayload: unknown = kokoroResponse.ok ? await kokoroResponse.json() : null;
+    const qwenPresetPayload: unknown = qwenPresetResponse.ok ? await qwenPresetResponse.json() : null;
     if (!Array.isArray(profilesPayload)) throw new Error('invalid profile list');
     if (!isVoiceboxHealth(healthPayload)) throw new Error('invalid health response');
     const profiles = profilesPayload.filter(isVoiceboxProfile);
@@ -454,6 +612,17 @@ export async function probeVoiceboxStudio(
     const models = Array.isArray(modelCandidates)
       ? modelCandidates.filter(isVoiceboxModelStatus)
       : [];
+    const presetVoices = ([
+      ['kokoro', kokoroPayload],
+      ['qwen_custom_voice', qwenPresetPayload],
+    ] as const).flatMap(([engine, payload]) => {
+      const voices = payload && typeof payload === 'object'
+        ? (payload as { voices?: unknown }).voices
+        : null;
+      return Array.isArray(voices)
+        ? voices.filter(isVoiceboxPresetVoice).map((voice) => ({ ...voice, engine }))
+        : [];
+    });
     const wanted = config.profile.toLocaleLowerCase('fr');
     const resolvedProfile = config.profile
       ? profiles.find((profile) => profile.id === config.profile ||
@@ -466,6 +635,7 @@ export async function probeVoiceboxStudio(
       ...(resolvedProfile ? { resolvedProfile } : {}),
       profiles,
       models,
+      presetVoices,
       health: healthPayload,
       languages: VOICEBOX_LANGUAGES,
       engine: config.engine,
@@ -481,6 +651,7 @@ export async function probeVoiceboxStudio(
       ...(config.profile ? { configuredProfile: config.profile } : {}),
       profiles: [],
       models: [],
+      presetVoices: [],
       languages: VOICEBOX_LANGUAGES,
       engine: config.engine,
       error: error instanceof Error ? error.message : String(error),
@@ -590,16 +761,15 @@ export async function openVoiceboxAudioStream(
   }
 }
 
-/** Buffer one bounded Voicebox response into a normalized, private WAV file. */
-export async function synthesizeVoiceboxWav(
+/** Buffer one bounded Voicebox response for preview, playback, or persistence. */
+export async function renderVoiceboxWavBytes(
   text: string,
-  wavPath: string,
   env: NodeJS.ProcessEnv = process.env,
   options: VoiceboxRequestOptions = {}
-): Promise<boolean> {
+): Promise<Uint8Array | null> {
   const config = resolveVoiceboxConfig(env, options.timeoutMs);
   const stream = await openVoiceboxAudioStream(text, env, options);
-  if (!stream) return false;
+  if (!stream) return null;
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -610,24 +780,36 @@ export async function synthesizeVoiceboxWav(
       total += value.byteLength;
       if (total > config.maxAudioBytes) {
         await reader.cancel('Voicebox audio exceeded configured size limit');
-        return false;
+        return null;
       }
       chunks.push(value);
     }
-    if (total <= 44) return false;
+    if (total <= 44) return null;
     const audio = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total);
-    await writeFile(wavPath, normalizePcm16Wav(audio, env), { mode: 0o600 });
-    return true;
+    return normalizePcm16Wav(audio, env);
   } catch (error) {
     if (!options.signal?.aborted) {
       logger.debug(
         `[voicebox-tts] audio read failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    return false;
+    return null;
   } finally {
     reader.releaseLock();
   }
+}
+
+/** Buffer one bounded Voicebox response into a normalized, private WAV file. */
+export async function synthesizeVoiceboxWav(
+  text: string,
+  wavPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: VoiceboxRequestOptions = {}
+): Promise<boolean> {
+  const audio = await renderVoiceboxWavBytes(text, env, options);
+  if (!audio) return false;
+  await writeFile(wavPath, audio, { mode: 0o600 });
+  return true;
 }
 
 /** Read-only endpoint/profile diagnostic used by `buddy assistant voicebox`. */

@@ -16,6 +16,7 @@ import json
 import math
 import os
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 
@@ -310,7 +311,6 @@ def build_pipeline(
     )
     pipeline.to(device)
     pipeline.dit.enable_loras(["dmd"])
-    compile_pipeline(pipeline, device)
     collect_cuda()
     return pipeline
 
@@ -388,9 +388,25 @@ def optimize_int8_kernels(
     return dit
 
 
-def compile_pipeline(pipeline: LongCatVideoAvatarPipeline, device: torch.device) -> None:
+def latent_grid_size(pipeline: LongCatVideoAvatarPipeline, image: Any) -> tuple[int, int, int]:
+    """Match the exact token grid that ``generate_ai2v`` will send to the DiT."""
+    spatial_scale = pipeline.vae_scale_factor_spatial * 2
+    height, width = pipeline.get_condition_shape(
+        image,
+        "480p",
+        scale_factor_spatial=spatial_scale,
+    )
+    temporal = 1 + (NUM_FRAMES - 1) // pipeline.vae_scale_factor_temporal
+    return temporal, height // spatial_scale, width // spatial_scale
+
+
+def compile_pipeline(
+    pipeline: LongCatVideoAvatarPipeline,
+    device: torch.device,
+    grid_size: tuple[int, int, int],
+) -> None:
     marker("compile")
-    grid_size = (NUM_FRAMES, 480 // 16, 832 // 16)
+    print(f"LongCat compile grid: {grid_size}", flush=True)
     key_name = ".".join(str(value) for value in grid_size) + "-None-None"
     for block in pipeline.dit.blocks:
         attention = getattr(block, "attn", None)
@@ -406,6 +422,62 @@ def compile_pipeline(pipeline: LongCatVideoAvatarPipeline, device: torch.device)
     )
 
 
+def save_avatar_video(
+    output_tensor: torch.Tensor,
+    output_base: Path,
+    audio_path: Path,
+) -> None:
+    """Save the generated clip even when FFmpeg was built without libx264.
+
+    LongCat's helper first writes an H.264 intermediate, then unnecessarily
+    re-encodes it with libx264 while adding AAC audio. Conda's redistributable
+    FFmpeg omits that GPL encoder, so fall back to stream-copying the already
+    encoded H.264 track. This keeps the generated pixels intact and only
+    encodes the audio track.
+    """
+    try:
+        save_video_ffmpeg(
+            output_tensor,
+            str(output_base),
+            str(audio_path),
+            fps=FPS,
+            quality=5,
+        )
+        return
+    except subprocess.CalledProcessError as error:
+        crop_video = output_base.with_name(f"{output_base.name}-cropvideo.mp4")
+        crop_audio = output_base.with_name(f"{output_base.name}-cropaudio.wav")
+        if not crop_video.is_file() or not crop_audio.is_file():
+            raise error
+        print(
+            "LongCat FFmpeg lacks libx264; muxing the existing H.264 stream without re-encoding",
+            flush=True,
+        )
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(crop_video),
+                "-i",
+                str(crop_audio),
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(output_base.with_suffix(".mp4")),
+            ],
+            check=True,
+        )
+        for temporary in (
+            output_base.with_name(f"{output_base.name}-temp.mp4"),
+            crop_video,
+            crop_audio,
+        ):
+            temporary.unlink(missing_ok=True)
+
+
 def render(
     pipeline: LongCatVideoAvatarPipeline,
     image_path: Path,
@@ -415,7 +487,6 @@ def render(
     output_dir: Path,
     device: torch.device,
 ) -> None:
-    marker("render")
     indices = torch.arange(5) - 2
     center_indices = torch.arange(0, NUM_FRAMES).unsqueeze(1) + indices.unsqueeze(0)
     center_indices = torch.clamp(
@@ -426,6 +497,8 @@ def render(
     audio_embedding = audio_embedding_cpu[center_indices][None, ...].to(device)
     generator = torch.Generator(device=device).manual_seed(42)
     image = load_image(str(image_path))
+    compile_pipeline(pipeline, device, latent_grid_size(pipeline, image))
+    marker("render")
     with torch.inference_mode():
         output, _latent = pipeline.generate_ai2v(
             image=image,
@@ -447,13 +520,7 @@ def render(
     collect_cuda()
     marker("encode")
     output_tensor = torch.from_numpy(np.stack([np.asarray(frame) for frame in video]))
-    save_video_ffmpeg(
-        output_tensor,
-        str(output_dir / "avatar"),
-        str(audio_path),
-        fps=FPS,
-        quality=5,
-    )
+    save_avatar_video(output_tensor, output_dir / "avatar", audio_path)
 
 
 def main() -> None:

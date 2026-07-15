@@ -104,4 +104,49 @@ describe('AssistantService Voicebox studio', () => {
       expect.any(Object)
     );
   });
+
+  it('creates preset voices, administers models, and returns bounded preview audio', async () => {
+    const createVoiceboxPresetProfile = vi.fn(async () => ({
+      id: 'preset-lisa',
+      name: 'Lisa Siwis',
+      voice_type: 'preset',
+    }));
+    const manageVoiceboxModel = vi.fn(async () => ({ message: 'download started' }));
+    const renderVoiceboxWavBytes = vi.fn(async () => new Uint8Array([82, 73, 70, 70]));
+    const service = new AssistantService(
+      async () => ({ readAssistantConfig: () => ({ CODEBUDDY_VOICEBOX_ENGINE: 'qwen' }) }),
+      async () => ({
+        createVoiceboxPresetProfile,
+        manageVoiceboxModel,
+        renderVoiceboxWavBytes,
+      })
+    );
+
+    await expect(service.createVoiceboxPresetProfile({
+      name: 'Lisa Siwis',
+      language: 'fr',
+      engine: 'kokoro',
+      voiceId: 'ff_siwis',
+    })).resolves.toMatchObject({ ok: true, profile: { id: 'preset-lisa' } });
+    await expect(service.manageVoiceboxModel({
+      modelName: 'qwen-tts-1.7B',
+      action: 'download',
+    })).resolves.toEqual({ ok: true, message: 'download started' });
+    await expect(service.previewVoiceboxProfile({
+      profileId: 'preset-lisa',
+      text: ' Bonjour Patrice. ',
+      engine: 'qwen',
+    })).resolves.toEqual({
+      ok: true,
+      audio: new Uint8Array([82, 73, 70, 70]),
+      mimeType: 'audio/wav',
+    });
+    expect(renderVoiceboxWavBytes).toHaveBeenCalledWith(
+      'Bonjour Patrice.',
+      expect.objectContaining({
+        CODEBUDDY_VOICEBOX_PROFILE: 'preset-lisa',
+        CODEBUDDY_VOICEBOX_ENGINE: 'qwen',
+      })
+    );
+  });
 });

@@ -3,7 +3,13 @@
  * entry calls `registerAssistantIpc` after creating the service.
  */
 import type { IpcMain } from 'electron';
-import type { AssistantService, VoiceboxCloneRequest } from './assistant-service.js';
+import type {
+  AssistantService,
+  VoiceboxCloneRequest,
+  VoiceboxPresetRequest,
+  VoiceboxModelRequest,
+  VoiceboxPreviewRequest,
+} from './assistant-service.js';
 
 export const ASSISTANT_CHANNELS = {
   get: 'assistant.get',
@@ -18,6 +24,9 @@ export const ASSISTANT_CHANNELS = {
   voiceboxStudio: 'assistant.voiceboxStudio',
   voiceboxClone: 'assistant.voiceboxClone',
   voiceboxDelete: 'assistant.voiceboxDelete',
+  voiceboxPreset: 'assistant.voiceboxPreset',
+  voiceboxModel: 'assistant.voiceboxModel',
+  voiceboxPreview: 'assistant.voiceboxPreview',
 } as const;
 
 export function registerAssistantIpc(
@@ -50,5 +59,18 @@ export function registerAssistantIpc(
     ASSISTANT_CHANNELS.voiceboxDelete,
     async (_event, profileId: string, confirmed: boolean) =>
       service.deleteVoiceboxProfile(profileId ?? '', confirmed === true)
+  );
+  ipcMain.handle(
+    ASSISTANT_CHANNELS.voiceboxPreset,
+    async (_event, request: VoiceboxPresetRequest) =>
+      service.createVoiceboxPresetProfile(request)
+  );
+  ipcMain.handle(
+    ASSISTANT_CHANNELS.voiceboxModel,
+    async (_event, request: VoiceboxModelRequest) => service.manageVoiceboxModel(request)
+  );
+  ipcMain.handle(
+    ASSISTANT_CHANNELS.voiceboxPreview,
+    async (_event, request: VoiceboxPreviewRequest) => service.previewVoiceboxProfile(request)
   );
 }

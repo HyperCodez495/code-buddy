@@ -11,17 +11,20 @@ import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  Download,
   FileAudio,
   Headphones,
   Keyboard,
   Loader2,
   Mic2,
   Power,
+  Play,
   Radio,
   RefreshCw,
   Save,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
   Volume2,
@@ -87,6 +90,8 @@ interface VoiceboxStudioProfile {
   language?: string;
   voice_type?: string;
   default_engine?: string | null;
+  preset_engine?: string | null;
+  preset_voice_id?: string | null;
   sample_count?: number;
   generation_count?: number;
 }
@@ -102,6 +107,14 @@ interface VoiceboxStudioSnapshot {
     downloaded: boolean;
     downloading?: boolean;
     loaded?: boolean;
+    size_mb?: number | null;
+  }>;
+  presetVoices: Array<{
+    voice_id: string;
+    name: string;
+    gender: string;
+    language: string;
+    engine: 'kokoro' | 'qwen_custom_voice';
   }>;
   health?: {
     status: string;
@@ -116,6 +129,24 @@ interface VoiceboxStudioSnapshot {
   engine: string;
   error?: string;
   hint?: string;
+}
+
+type VoiceboxModel = VoiceboxStudioSnapshot['models'][number];
+
+async function playWavBytes(audio: Uint8Array): Promise<void> {
+  const copy = new Uint8Array(audio.byteLength);
+  copy.set(audio);
+  const url = URL.createObjectURL(new Blob([copy.buffer], { type: 'audio/wav' }));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const player = new Audio(url);
+      player.onended = () => resolve();
+      player.onerror = () => reject(new Error('Lecture de l’aperçu Voicebox impossible'));
+      void player.play().catch(reject);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 const GROUP_ORDER: AssistantSettingGroup[] = ['voice', 'speech', 'behavior', 'companion'];
@@ -426,12 +457,19 @@ function VoiceboxStudioPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [creationMode, setCreationMode] = useState<'clone' | 'preset'>('preset');
   const [name, setName] = useState('Lisa');
   const [language, setLanguage] = useState('fr');
   const [description, setDescription] = useState('Voix principale de Lisa');
   const [referenceText, setReferenceText] = useState('');
+  const [presetKey, setPresetKey] = useState('kokoro:ff_siwis');
+  const [previewText, setPreviewText] = useState(
+    'Bonjour Patrice. Je suis heureuse de pouvoir enfin te parler avec ma propre voix.'
+  );
   const [sample, setSample] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
+  const [playingProfile, setPlayingProfile] = useState<string | null>(null);
+  const [modelBusy, setModelBusy] = useState<string | null>(null);
   const [dictation, setDictation] = useState<{
     available: boolean;
     accelerator: string;
@@ -471,6 +509,13 @@ function VoiceboxStudioPanel({
     }).catch(() => undefined);
   }, []);
 
+  const hasDownloadingModel = studio?.models.some((model) => model.downloading) ?? false;
+  useEffect(() => {
+    if (!hasDownloadingModel) return;
+    const timer = setInterval(() => void refresh(), 2_500);
+    return () => clearInterval(timer);
+  }, [hasDownloadingModel]);
+
   const createClone = async (): Promise<void> => {
     const api = window.electronAPI?.assistant;
     if (!api?.voiceboxClone || !sample) return;
@@ -502,6 +547,91 @@ function VoiceboxStudioPanel({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const createPreset = async (): Promise<void> => {
+    const api = window.electronAPI?.assistant;
+    if (!api?.voiceboxPreset) return;
+    const preset = studio?.presetVoices.find(
+      (voice) => `${voice.engine}:${voice.voice_id}` === presetKey
+    );
+    if (!preset) {
+      setError('Choisis une voix prédéfinie disponible.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.voiceboxPreset({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        language: preset.language,
+        engine: preset.engine,
+        voiceId: preset.voice_id,
+      });
+      if (isAssistantError(result)) throw new Error(result.error);
+      onProfileSelected(result.profile);
+      setNotice(
+        `Voix « ${result.profile.name} » créée depuis ${preset.name}. Écoute-la puis clique Appliquer pour l’utiliser.`
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewProfile = async (profile: VoiceboxStudioProfile): Promise<void> => {
+    const api = window.electronAPI?.assistant;
+    if (!api?.voiceboxPreview) return;
+    setPlayingProfile(profile.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.voiceboxPreview({
+        profileId: profile.id,
+        text: previewText,
+        engine: profile.default_engine ?? studio?.engine ?? 'qwen',
+      });
+      if (isAssistantError(result)) throw new Error(result.error);
+      await playWavBytes(result.audio);
+      setNotice(`Aperçu de « ${profile.name} » terminé.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPlayingProfile(null);
+    }
+  };
+
+  const runModelAction = async (
+    model: VoiceboxModel,
+    action: 'download' | 'cancel' | 'unload' | 'delete'
+  ): Promise<void> => {
+    const api = window.electronAPI?.assistant;
+    if (!api?.voiceboxModel) return;
+    const confirmed = action !== 'delete' || window.confirm(
+      `Supprimer ${model.display_name} de Darkstar${model.size_mb ? ` (${(model.size_mb / 1024).toFixed(1)} Gio)` : ''} ?`
+    );
+    if (!confirmed) return;
+    setModelBusy(model.model_name);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.voiceboxModel({
+        modelName: model.model_name,
+        action,
+        confirmed,
+      });
+      if (isAssistantError(result)) throw new Error(result.error);
+      setNotice(result.message);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelBusy(null);
     }
   };
 
@@ -543,7 +673,7 @@ function VoiceboxStudioPanel({
           <div>
             <h2 className="text-sm font-semibold">Studio vocal local Voicebox</h2>
             <p className="text-xs text-muted-foreground">
-              Profils clonés, modèles GPU et 23 langues, sans abonnement vocal.
+              Voix locales prédéfinies ou clonées, aperçus, modèles GPU et 23 langues, sans abonnement vocal.
             </p>
           </div>
         </div>
@@ -590,6 +720,15 @@ function VoiceboxStudioPanel({
               </div>
             </div>
             <div className="truncate text-xs text-muted-foreground" title={studio.baseUrl}>{studio.baseUrl}</div>
+            <label className="block text-xs text-muted-foreground">
+              Phrase d’aperçu
+              <input
+                value={previewText}
+                onChange={(event) => setPreviewText(event.target.value)}
+                maxLength={500}
+                className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-2 text-xs text-foreground"
+              />
+            </label>
             <div className="space-y-2">
               {studio.profiles.length > 0 ? studio.profiles.map((profile) => (
                 <div key={profile.id} className="flex items-center gap-2 rounded-md border border-border p-2 text-xs">
@@ -601,8 +740,19 @@ function VoiceboxStudioPanel({
                   >
                     <div className="truncate font-medium">{profile.name}</div>
                     <div className="truncate text-muted-foreground">
-                      {profile.language ?? 'auto'} · {profile.sample_count ?? 0} échantillon(s) · {profile.default_engine ?? 'qwen'}
+                      {profile.voice_type === 'preset' ? 'prédéfinie' : 'clonée'} · {profile.language ?? 'auto'} · {profile.default_engine ?? 'qwen'}
                     </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void previewProfile(profile)}
+                    disabled={Boolean(playingProfile) || busy}
+                    aria-label={`Écouter ${profile.name}`}
+                    className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50"
+                  >
+                    {playingProfile === profile.id
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Play className="h-3.5 w-3.5" />}
                   </button>
                   <button
                     type="button"
@@ -618,12 +768,65 @@ function VoiceboxStudioPanel({
                 <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">Aucun profil vocal. Crée le premier à droite.</p>
               )}
             </div>
+            <details className="rounded-md border border-border text-xs">
+              <summary className="cursor-pointer select-none px-3 py-2 font-medium">
+                Gérer les modèles ({downloadedModels}/{studio.models.length})
+              </summary>
+              <div className="max-h-72 space-y-1 overflow-y-auto border-t border-border p-2">
+                {studio.models.map((model) => (
+                  <div key={model.model_name} className="flex items-center gap-2 rounded bg-muted/30 p-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium" title={model.display_name}>{model.display_name}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {model.loaded
+                          ? 'chargé en VRAM'
+                          : model.downloading
+                            ? 'téléchargement…'
+                            : model.downloaded
+                              ? `${model.size_mb ? `${(model.size_mb / 1024).toFixed(1)} Gio · ` : ''}sur disque`
+                              : 'non installé'}
+                      </div>
+                    </div>
+                    {model.downloading ? (
+                      <button type="button" onClick={() => void runModelAction(model, 'cancel')} disabled={modelBusy === model.model_name} className="rounded border border-border px-2 py-1 hover:bg-muted">Annuler</button>
+                    ) : !model.downloaded ? (
+                      <button type="button" onClick={() => void runModelAction(model, 'download')} disabled={modelBusy === model.model_name} className="rounded border border-border p-1.5 hover:bg-muted" aria-label={`Télécharger ${model.display_name}`}><Download className="h-3.5 w-3.5" /></button>
+                    ) : (
+                      <>
+                        {model.loaded ? <button type="button" onClick={() => void runModelAction(model, 'unload')} disabled={modelBusy === model.model_name} className="rounded border border-border px-2 py-1 hover:bg-muted">Libérer</button> : null}
+                        <button type="button" onClick={() => void runModelAction(model, 'delete')} disabled={modelBusy === model.model_name} className="rounded p-1.5 text-muted-foreground hover:bg-error/10 hover:text-error" aria-label={`Supprimer le modèle ${model.display_name}`}><Trash2 className="h-3.5 w-3.5" /></button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
 
           <div className="space-y-3 rounded-md border border-border p-3">
             <div>
-              <div className="text-sm font-medium">Cloner une voix autorisée</div>
-              <p className="text-xs text-muted-foreground">Un son propre de 5 à 30 secondes et sa transcription exacte donnent le meilleur résultat.</p>
+              <div className="text-sm font-medium">Créer une voix</div>
+              <p className="text-xs text-muted-foreground">
+                Choisis une voix locale disponible ou clone un échantillon autorisé.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 rounded-md bg-muted/50 p-1 text-xs">
+              <button
+                type="button"
+                aria-pressed={creationMode === 'preset'}
+                onClick={() => setCreationMode('preset')}
+                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 ${creationMode === 'preset' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Prédéfinie
+              </button>
+              <button
+                type="button"
+                aria-pressed={creationMode === 'clone'}
+                onClick={() => setCreationMode('clone')}
+                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 ${creationMode === 'clone' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
+              >
+                <FileAudio className="h-3.5 w-3.5" /> Cloner
+              </button>
             </div>
             <div className="grid gap-2 sm:grid-cols-[1fr_110px]">
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nom du profil" maxLength={100} className="rounded-md border border-border bg-background px-3 py-2 text-sm" />
@@ -632,25 +835,61 @@ function VoiceboxStudioPanel({
               </select>
             </div>
             <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description facultative" maxLength={500} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
-            <textarea value={referenceText} onChange={(event) => setReferenceText(event.target.value)} placeholder="Transcription exacte de l’échantillon…" maxLength={1000} rows={2} className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" />
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs hover:bg-muted">
-              <Upload className="h-3.5 w-3.5" />
-              <span className="truncate">{sample?.name ?? 'Choisir WAV, MP3, M4A, OGG, FLAC, AAC, WebM ou Opus'}</span>
-              <input type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aac,.webm,.opus" className="sr-only" onChange={(event) => setSample(event.target.files?.[0] ?? null)} />
-            </label>
-            <label className="flex items-start gap-2 text-xs text-muted-foreground">
-              <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} className="mt-0.5" />
-              Je confirme avoir le droit et l’autorisation explicite de cloner cette voix.
-            </label>
-            <button
-              type="button"
-              onClick={() => void createClone()}
-              disabled={busy || !sample || !name.trim() || !referenceText.trim() || !consent}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              Créer le profil cloné
-            </button>
+            {creationMode === 'preset' ? (
+              <>
+                <select
+                  value={presetKey}
+                  onChange={(event) => {
+                    setPresetKey(event.target.value);
+                    const selected = studio.presetVoices.find(
+                      (voice) => `${voice.engine}:${voice.voice_id}` === event.target.value
+                    );
+                    if (selected) setLanguage(selected.language);
+                  }}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  {studio.presetVoices.map((voice) => (
+                    <option key={`${voice.engine}:${voice.voice_id}`} value={`${voice.engine}:${voice.voice_id}`}>
+                      {voice.name} · {voice.language} · {voice.gender === 'female' ? 'féminine' : 'masculine'} · {voice.engine}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Siwis est la voix féminine française de Kokoro. Les voix prédéfinies ne copient aucune personne réelle.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void createPreset()}
+                  disabled={busy || !name.trim() || studio.presetVoices.length === 0}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Créer le profil prédéfini
+                </button>
+              </>
+            ) : (
+              <>
+                <textarea value={referenceText} onChange={(event) => setReferenceText(event.target.value)} placeholder="Transcription exacte de l’échantillon…" maxLength={1000} rows={2} className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" />
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs hover:bg-muted">
+                  <Upload className="h-3.5 w-3.5" />
+                  <span className="truncate">{sample?.name ?? 'Choisir WAV, MP3, M4A, OGG, FLAC, AAC, WebM ou Opus'}</span>
+                  <input type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aac,.webm,.opus" className="sr-only" onChange={(event) => setSample(event.target.files?.[0] ?? null)} />
+                </label>
+                <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} className="mt-0.5" />
+                  Je confirme avoir le droit et l’autorisation explicite de cloner cette voix.
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void createClone()}
+                  disabled={busy || !sample || !name.trim() || !referenceText.trim() || !consent}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  Créer le profil cloné
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : loading ? (

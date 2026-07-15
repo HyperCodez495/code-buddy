@@ -47,7 +47,8 @@ buddy assistant apply
 
 Le diagnostic inventorie aussi le GPU, les modèles locaux et les 23 langues annoncées par
 Voicebox. Cowork → Assistant contient le même studio : création d'un profil cloné depuis un
-échantillon, sélection pour Lisa et suppression confirmée. Le clonage exige une case ou l'option
+échantillon, sélection d'une voix locale prédéfinie réellement prise en charge, aperçu audio,
+administration des modèles GPU, sélection pour Lisa et suppression confirmée. Le clonage exige une case ou l'option
 `--consent` : elle signifie que l'opérateur a le droit et l'autorisation explicite de copier cette
 voix. La création est transactionnelle ; si l'envoi de l'échantillon échoue, Code Buddy retire le
 profil vide créé quelques millisecondes plus tôt.
@@ -55,8 +56,16 @@ profil vide créé quelques millisecondes plus tôt.
 ```bash
 buddy assistant voicebox-clone Lisa ./lisa.webm \
   --text "Transcription exacte de l'échantillon" --language fr --consent --select
+buddy assistant voicebox-preset "Lisa Siwis" \
+  --engine kokoro --voice ff_siwis --language fr
+buddy assistant voicebox-model download qwen-tts-1.7B
+buddy assistant voicebox-model unload whisper-turbo
 buddy assistant voicebox-delete <profile-id> --yes
 ```
+
+Une voix prédéfinie ne copie aucune personne et n'a donc pas besoin d'échantillon ni de consentement
+de clonage. `personality` reste absent et les paroles demeurent entièrement produites par Code Buddy. Dans
+Cowork, le bouton lecture de chaque profil rend une phrase d'essai sur Darkstar avant toute activation.
 
 ### Dictée système Cowork
 

@@ -61,11 +61,18 @@ once it reaches `1.0.0`.
 
 - **Voicebox Studio et dictée globale locale.** Cowork et la CLI inventorient le serveur Voicebox,
   ses profils, son backend GPU, ses modèles et ses 23 langues ; ils peuvent créer et sélectionner
-  un clone vocal autorisé ou supprimer un profil avec confirmation. Le consentement est explicite,
+  un clone vocal autorisé, choisir une voix locale prédéfinie sans échantillon, écouter un aperçu,
+  administrer les modèles GPU ou supprimer un profil avec confirmation. Le consentement est explicite,
   la création est annulée si l'échantillon échoue et Voicebox ne peut jamais réécrire la personnalité
   de Lisa. Dans Cowork, `Ctrl/Cmd+Shift+Espace` enregistre puis transcrit localement avant d'insérer le
   texte dans l'application active, sans transmettre le transcript à un shell ; le presse-papiers seul
   sert de repli sûr quand l'injection système n'est pas disponible.
+
+- **LongCat Avatar 1.5 validé sur Darkstar.** Le profil RTX 3090 préchauffe désormais `torch.compile`
+  avec la grille latente correspondant réellement à l'image source, ce qui évite la pagination WSL2
+  observée avec l'ancienne grille fixe. Le muxage final conserve la vidéo H.264 existante lorsque le
+  FFmpeg Conda sans GPL ne fournit pas `libx264`, et le service Windows attend le retour de l'adresse
+  Tailscale après un redémarrage avant de démarrer le worker.
 
 - **Lisa contrôle désormais le sens réel de ses réponses profondes avant de les partager.** Des
   obligations argumentatives déterministes alimentent un critique indépendant qui mesure réponse

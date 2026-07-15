@@ -16,7 +16,13 @@ SOURCE = ROOT / "scripts" / "gpu-runners" / "longcat-lowmem-inference.py"
 
 def load_functions() -> dict[str, object]:
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
-    wanted = {"resolve_parent", "validate_checkpoint_tensor", "optimize_int8_kernels"}
+    wanted = {
+        "resolve_parent",
+        "validate_checkpoint_tensor",
+        "optimize_int8_kernels",
+        "latent_grid_size",
+        "save_avatar_video",
+    }
     body = [tree.body[0]]
     body.extend(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted
@@ -135,8 +141,64 @@ class LongCatLowMemoryHelpersTest(unittest.TestCase):
                     device=FakeDevice,
                 ),
                 "QuantizedLinear": FakeQuantizedLinear,
+                "NUM_FRAMES": 93,
+                "FPS": 25,
             }
         )
+
+    def test_compile_grid_matches_portrait_latents_instead_of_pixel_frames(self) -> None:
+        class FakePipeline:
+            vae_scale_factor_spatial = 8
+            vae_scale_factor_temporal = 4
+
+            @staticmethod
+            def get_condition_shape(_image, _resolution, scale_factor_spatial):
+                if scale_factor_spatial != 16:
+                    raise AssertionError("unexpected spatial scale")
+                return 832, 480
+
+        grid = self.namespace["latent_grid_size"](FakePipeline(), object())
+        self.assertEqual(grid, (24, 52, 30))
+
+    def test_video_mux_falls_back_to_copying_the_existing_h264_stream(self) -> None:
+        root = Path(self.id().replace(".", "-"))
+        output_base = root / "avatar"
+        crop_video = root / "avatar-cropvideo.mp4"
+        crop_audio = root / "avatar-cropaudio.wav"
+        temporary = root / "avatar-temp.mp4"
+        root.mkdir()
+        for path in (crop_video, crop_audio, temporary):
+            path.write_bytes(b"fixture")
+
+        calls: list[list[str]] = []
+
+        def fail_upstream(*_args, **_kwargs) -> None:
+            raise __import__("subprocess").CalledProcessError(8, ["ffmpeg"])
+
+        def capture(command: list[str], check: bool) -> None:
+            self.assertTrue(check)
+            calls.append(command)
+
+        self.namespace.update(
+            {
+                "Path": Path,
+                "save_video_ffmpeg": fail_upstream,
+                "subprocess": types.SimpleNamespace(
+                    CalledProcessError=__import__("subprocess").CalledProcessError,
+                    run=capture,
+                ),
+            }
+        )
+        try:
+            self.namespace["save_avatar_video"](object(), output_base, root / "voice.wav")
+        finally:
+            for path in root.glob("*"):
+                path.unlink()
+            root.rmdir()
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("copy", calls[0])
+        self.assertNotIn("libx264", calls[0])
 
     def test_checkpoint_shape_and_quantized_dtypes_are_enforced(self) -> None:
         validate = self.namespace["validate_checkpoint_tensor"]

@@ -70,6 +70,8 @@ export interface VoiceboxStudioProfile {
   language?: string;
   voice_type?: string;
   default_engine?: string | null;
+  preset_engine?: string | null;
+  preset_voice_id?: string | null;
   sample_count?: number;
   generation_count?: number;
 }
@@ -87,6 +89,13 @@ export interface VoiceboxStudioResponse {
     downloading?: boolean;
     loaded?: boolean;
     size_mb?: number | null;
+  }>;
+  presetVoices: Array<{
+    voice_id: string;
+    name: string;
+    gender: string;
+    language: string;
+    engine: 'kokoro' | 'qwen_custom_voice';
   }>;
   health?: {
     status: string;
@@ -113,11 +122,38 @@ export interface VoiceboxCloneRequest {
   consent: boolean;
 }
 
+export interface VoiceboxPresetRequest {
+  name: string;
+  description?: string;
+  language: string;
+  engine: 'kokoro' | 'qwen_custom_voice';
+  voiceId: string;
+}
+
+export interface VoiceboxModelRequest {
+  modelName: string;
+  action: 'download' | 'cancel' | 'unload' | 'delete';
+  confirmed?: boolean;
+}
+
+export interface VoiceboxPreviewRequest {
+  profileId: string;
+  text: string;
+  engine?: string;
+}
+
 export type VoiceboxStudioResult = VoiceboxStudioResponse | AssistantErrorResponse;
 export type VoiceboxCloneResult =
   | { ok: true; profile: VoiceboxStudioProfile; sampleId: string }
   | AssistantErrorResponse;
 export type VoiceboxDeleteResult = { ok: true } | AssistantErrorResponse;
+export type VoiceboxPresetResult =
+  | { ok: true; profile: VoiceboxStudioProfile }
+  | AssistantErrorResponse;
+export type VoiceboxModelResult = { ok: true; message: string } | AssistantErrorResponse;
+export type VoiceboxPreviewResult =
+  | { ok: true; audio: Uint8Array; mimeType: 'audio/wav' }
+  | AssistantErrorResponse;
 
 interface CoreAssistantConfigModule {
   ASSISTANT_SETTINGS?: AssistantSetting[];
@@ -148,6 +184,26 @@ interface CoreAssistantConfigModule {
     },
     env: NodeJS.ProcessEnv
   ) => Promise<{ profile: VoiceboxStudioProfile; sample: { id: string } }>;
+  createVoiceboxPresetProfile?: (
+    input: {
+      name: string;
+      description?: string;
+      language: string;
+      engine: 'kokoro' | 'qwen_custom_voice';
+      voiceId: string;
+    },
+    env: NodeJS.ProcessEnv
+  ) => Promise<VoiceboxStudioProfile>;
+  manageVoiceboxModel?: (
+    modelName: string,
+    action: VoiceboxModelRequest['action'],
+    confirmed: boolean,
+    env: NodeJS.ProcessEnv
+  ) => Promise<{ message: string }>;
+  renderVoiceboxWavBytes?: (
+    text: string,
+    env: NodeJS.ProcessEnv
+  ) => Promise<Uint8Array | null>;
   deleteVoiceboxProfile?: (
     profileId: string,
     confirmed: boolean,
@@ -416,6 +472,62 @@ export class AssistantService {
       if (!mod?.deleteVoiceboxProfile) return unavailable('module Voicebox indisponible');
       await mod.deleteVoiceboxProfile(profileId, confirmed === true, this.voiceboxEnv(mod));
       return { ok: true };
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async createVoiceboxPresetProfile(
+    request: VoiceboxPresetRequest
+  ): Promise<VoiceboxPresetResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.createVoiceboxPresetProfile) return unavailable('module Voicebox indisponible');
+      const profile = await mod.createVoiceboxPresetProfile({
+        name: request.name,
+        ...(request.description?.trim() ? { description: request.description } : {}),
+        language: request.language,
+        engine: request.engine,
+        voiceId: request.voiceId,
+      }, this.voiceboxEnv(mod));
+      return { ok: true, profile };
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async manageVoiceboxModel(request: VoiceboxModelRequest): Promise<VoiceboxModelResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.manageVoiceboxModel) return unavailable('module Voicebox indisponible');
+      const result = await mod.manageVoiceboxModel(
+        request.modelName,
+        request.action,
+        request.confirmed === true,
+        this.voiceboxEnv(mod)
+      );
+      return { ok: true, message: result.message };
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async previewVoiceboxProfile(request: VoiceboxPreviewRequest): Promise<VoiceboxPreviewResult> {
+    try {
+      const mod = await this.voiceboxModule();
+      if (!mod?.renderVoiceboxWavBytes) return unavailable('module Voicebox indisponible');
+      const profileId = request.profileId.trim();
+      const text = request.text.trim().slice(0, 500);
+      if (!profileId) return unavailable('profil Voicebox requis');
+      if (!text) return unavailable('texte d’aperçu requis');
+      const env = {
+        ...this.voiceboxEnv(mod),
+        CODEBUDDY_VOICEBOX_PROFILE: profileId,
+        ...(request.engine?.trim() ? { CODEBUDDY_VOICEBOX_ENGINE: request.engine.trim() } : {}),
+      };
+      const audio = await mod.renderVoiceboxWavBytes(text, env);
+      if (!audio) return unavailable('Voicebox n’a produit aucun audio');
+      return { ok: true, audio: new Uint8Array(audio), mimeType: 'audio/wav' };
     } catch (err) {
       return unavailable(errorMessage(err));
     }

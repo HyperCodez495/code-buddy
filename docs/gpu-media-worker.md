@@ -208,10 +208,20 @@ scripts/gpu-runners/setup-longcat-env.sh
 scripts/gpu-runners/download-longcat-avatar.sh
 ```
 
-The initial measured profile renders 93 frames at 25 FPS (3.72 seconds). Longer source
-audio is reported as truncated in the result manifest rather than silently presented as
-fully rendered. Video continuation remains disabled until its peak VRAM and identity
-drift have been measured on Darkstar.
+The validated Darkstar profile renders 93 frames at 25 FPS (3.72 seconds). A real Lisa
+portrait-and-French-voice smoke render completed all eight denoising steps in about
+4 minutes 14 seconds before VAE decoding. The measured portrait used latent grid
+`(24, 44, 34)`, peaked near 24.3 GiB on one RTX 3090, and produced a 544×704 H.264/AAC
+MP4. Compile prewarming derives that grid from the actual oriented source image; using a
+fixed landscape grid caused WSL2 PCI memory paging and is no longer permitted. Longer
+source audio is reported as truncated in the result manifest rather than silently
+presented as fully rendered. Video continuation remains disabled until its peak VRAM and
+identity drift have been measured on Darkstar.
+
+The upstream saver assumes a GPL-enabled FFmpeg and tries to re-encode the already-H.264
+intermediate with `libx264`. The isolated Conda build intentionally omits that encoder.
+The hardened adapter therefore falls back to losslessly stream-copying the existing H.264
+video while encoding only the AAC audio, then removes its temporary files.
 
 The first profile targets clean Lisa TTS audio directly; the optional 67 MB vocal
 separator is intentionally omitted. Music/mixed-audio isolation can be enabled later as
@@ -224,6 +234,10 @@ upstream and two checkpoint revisions. The current hardened contract requires
 `runnerVersion: "2"`; a stale or incompatible marker fails closed.
 Removing the marker and restarting the scheduled task rolls the capability back without
 affecting PanoWorld.
+
+The scheduled-task launcher also waits up to 120 seconds for its configured Tailscale
+address. This closes the reboot race where Windows launched the task before the private
+interface was ready and left the worker stopped.
 
 ## Operational gates
 

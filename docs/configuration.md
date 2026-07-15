@@ -95,7 +95,8 @@ Code Buddy always sends `personality: false` to Voicebox: the renderer cannot re
 answer. Voicebox falls back to Pocket and then Piper. Diagnose without changing configuration with
 `buddy assistant voicebox`; create an authorized profile with
 `buddy assistant voicebox-clone <name> <audio> --text <transcript> --consent`, or remove one with
-`buddy assistant voicebox-delete <profile-id> --yes`. Add `--benchmark` to compare the cold/warm
+`buddy assistant voicebox-delete <profile-id> --yes`. A non-cloned local preset can be created with
+`buddy assistant voicebox-preset <name> --engine kokoro --voice ff_siwis`; `voicebox-model` administers downloads and VRAM. Add `--benchmark` to compare the cold/warm
 Voicebox and Pocket latency.
 Use `buddy assistant latency --engine both` to measure the real prefetched-answer path to first PCM
 without opening speakers or publishing to Telegram/MetaHuman.

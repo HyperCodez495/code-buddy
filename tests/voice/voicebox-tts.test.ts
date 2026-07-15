@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createVoiceboxClone,
+  createVoiceboxPresetProfile,
   deleteVoiceboxProfile,
+  manageVoiceboxModel,
   openVoiceboxAudioStream,
   probeVoicebox,
   probeVoiceboxStudio,
@@ -274,6 +276,12 @@ describe('Voicebox studio administration', () => {
       if (url.endsWith('/models/status')) return new Response(JSON.stringify({ models: [
         { model_name: 'qwen-1.7b', display_name: 'Qwen 1.7B', downloaded: true, loaded: true },
       ] }));
+      if (url.endsWith('/profiles/presets/kokoro')) return new Response(JSON.stringify({ voices: [
+        { voice_id: 'ff_siwis', name: 'Siwis', gender: 'female', language: 'fr' },
+      ] }));
+      if (url.endsWith('/profiles/presets/qwen_custom_voice')) return new Response(JSON.stringify({ voices: [
+        { voice_id: 'Serena', name: 'Serena', gender: 'female', language: 'zh' },
+      ] }));
       throw new Error('unexpected request');
     });
     const report = await probeVoiceboxStudio(
@@ -283,8 +291,11 @@ describe('Voicebox studio administration', () => {
     expect(report.available).toBe(true);
     expect(report.health?.gpu_type).toBe('CUDA');
     expect(report.models[0]?.loaded).toBe(true);
+    expect(report.presetVoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ voice_id: 'ff_siwis', engine: 'kokoro' }),
+    ]));
     expect(report.languages).toHaveLength(23);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
   });
 
   it('requires confirmation before destructive profile deletion', async () => {
@@ -294,6 +305,56 @@ describe('Voicebox studio administration', () => {
     expect(fetchImpl).toHaveBeenCalledWith(
       new URL('http://127.0.0.1:17493/profiles/lisa'),
       expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  it('creates a functional preset voice without a sample or personality rewrite', async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        name: 'Lisa Siwis',
+        language: 'fr',
+        voice_type: 'preset',
+        default_engine: 'kokoro',
+        preset_engine: 'kokoro',
+        preset_voice_id: 'ff_siwis',
+      });
+      expect(body).not.toHaveProperty('personality');
+      return new Response(JSON.stringify({
+        id: 'preset-lisa',
+        name: 'Lisa Siwis',
+        voice_type: 'preset',
+        language: 'fr',
+      }), { headers: { 'content-type': 'application/json' } });
+    });
+
+    await expect(createVoiceboxPresetProfile({
+      name: ' Lisa Siwis ',
+      language: 'fr',
+      engine: 'kokoro',
+      voiceId: 'ff_siwis',
+    }, {}, { fetchImpl })).resolves.toMatchObject({ id: 'preset-lisa' });
+  });
+
+  it('administers model lifecycle with confirmation on deletion', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ message: 'ok' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    await manageVoiceboxModel('qwen-tts-1.7B', 'download', false, {}, { fetchImpl });
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      new URL('http://127.0.0.1:17493/models/download'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ model_name: 'qwen-tts-1.7B' }),
+      })
+    );
+    await manageVoiceboxModel('qwen-tts-1.7B', 'unload', false, {}, { fetchImpl });
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      new URL('http://127.0.0.1:17493/models/qwen-tts-1.7B/unload'),
+      expect.objectContaining({ method: 'POST' })
+    );
+    await expect(manageVoiceboxModel('qwen-tts-1.7B', 'delete')).rejects.toThrow(
+      'explicit confirmation'
     );
   });
 });

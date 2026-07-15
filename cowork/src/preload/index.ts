@@ -296,6 +296,9 @@ interface VoiceboxStudioProfile {
   language?: string;
   voice_type?: string;
   default_engine?: string | null;
+  preset_engine?: string | null;
+  preset_voice_id?: string | null;
+  design_prompt?: string | null;
   sample_count?: number;
   generation_count?: number;
 }
@@ -312,6 +315,13 @@ interface VoiceboxStudioResponse {
     downloading?: boolean;
     loaded?: boolean;
     size_mb?: number | null;
+  }>;
+  presetVoices: Array<{
+    voice_id: string;
+    name: string;
+    gender: string;
+    language: string;
+    engine: 'kokoro' | 'qwen_custom_voice';
   }>;
   health?: {
     status: string;
@@ -341,6 +351,30 @@ type VoiceboxCloneResult =
   | { ok: true; profile: VoiceboxStudioProfile; sampleId: string }
   | AssistantErrorResponse;
 type VoiceboxDeleteResult = { ok: true } | AssistantErrorResponse;
+interface VoiceboxPresetRequest {
+  name: string;
+  description?: string;
+  language: string;
+  engine: 'kokoro' | 'qwen_custom_voice';
+  voiceId: string;
+}
+interface VoiceboxModelRequest {
+  modelName: string;
+  action: 'download' | 'cancel' | 'unload' | 'delete';
+  confirmed?: boolean;
+}
+interface VoiceboxPreviewRequest {
+  profileId: string;
+  text: string;
+  engine?: string;
+}
+type VoiceboxPresetResult =
+  | { ok: true; profile: VoiceboxStudioProfile }
+  | AssistantErrorResponse;
+type VoiceboxModelResult = { ok: true; message: string } | AssistantErrorResponse;
+type VoiceboxPreviewResult =
+  | { ok: true; audio: Uint8Array; mimeType: 'audio/wav' }
+  | AssistantErrorResponse;
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -1147,6 +1181,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('assistant.voiceboxClone', request),
     voiceboxDelete: (profileId: string, confirmed: boolean): Promise<VoiceboxDeleteResult> =>
       ipcRenderer.invoke('assistant.voiceboxDelete', profileId, confirmed),
+    voiceboxPreset: (request: VoiceboxPresetRequest): Promise<VoiceboxPresetResult> =>
+      ipcRenderer.invoke('assistant.voiceboxPreset', request),
+    voiceboxModel: (request: VoiceboxModelRequest): Promise<VoiceboxModelResult> =>
+      ipcRenderer.invoke('assistant.voiceboxModel', request),
+    voiceboxPreview: (request: VoiceboxPreviewRequest): Promise<VoiceboxPreviewResult> =>
+      ipcRenderer.invoke('assistant.voiceboxPreview', request),
   },
 
   widgets: {
@@ -5496,6 +5536,9 @@ declare global {
         voiceboxStudio: () => Promise<VoiceboxStudioResult>;
         voiceboxClone: (request: VoiceboxCloneRequest) => Promise<VoiceboxCloneResult>;
         voiceboxDelete: (profileId: string, confirmed: boolean) => Promise<VoiceboxDeleteResult>;
+        voiceboxPreset: (request: VoiceboxPresetRequest) => Promise<VoiceboxPresetResult>;
+        voiceboxModel: (request: VoiceboxModelRequest) => Promise<VoiceboxModelResult>;
+        voiceboxPreview: (request: VoiceboxPreviewRequest) => Promise<VoiceboxPreviewResult>;
       };
       widgets: {
         render: (data: unknown, theme?: 'dark' | 'light') => Promise<string | null>;
