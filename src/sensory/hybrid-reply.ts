@@ -43,6 +43,7 @@ import {
   shouldUsePrefetchedAnswerDirectly,
 } from '../conversation/prefetched-turn-context.js';
 import { assessConversationResponse } from '../conversation/conversation-quality.js';
+import { isPureAcknowledgement } from '../conversation/dialogue-act.js';
 import { guardRelationshipReply } from '../conversation/relationship-safety.js';
 import { deriveArgumentObligations } from '../conversation/argument-obligations.js';
 import {
@@ -384,7 +385,21 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     while (history.length > maxTurns * 2) history.shift();
   }
 
-  function shortcutFor(heard: string): string | null {
+  function lastAssistantAskedQuestion(recent: readonly HybridTurn[]): boolean {
+    const latest = recent.at(-1);
+    return Boolean(
+      latest?.role === 'assistant' && /\?\s*(?:[»”"')\]]*)$/u.test(latest.content.trim())
+    );
+  }
+
+  function shortcutFor(heard: string, recent: readonly HybridTurn[] = []): string | null {
+    if (isPureAcknowledgement(heard)) {
+      // A bare "yeah" after Lisa's question is an answer, not phatic noise:
+      // preserve the preceding exchange so the conversational model can resolve
+      // what was accepted. Otherwise avoid a full 9-phrase model turn for a
+      // listener signal that a human would acknowledge in one short sentence.
+      return lastAssistantAskedQuestion(recent) ? null : "D'accord.";
+    }
     const fast = fastReply!(heard);
     if (fast) return fast;
     const pre = (options.prefetch ?? defaultPrefetchMatch)(heard);
@@ -460,6 +475,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       // the same instant route as a warm process.
       await ensureFastReply();
       const introspectionIntent = classifyLisaIntrospection(heard);
+      const recentHistory = conversationHistory(heard);
       const pending = pendingShortcut;
       pendingShortcut = null;
       // Identity/boundary canned lines ("qui es-tu ?", "es-tu consciente ?")
@@ -469,7 +485,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         ? null
         : pending?.heard === heard && pending.expiresAt >= Date.now()
           ? pending.reply
-          : shortcutFor(heard);
+          : shortcutFor(heard, recentHistory);
       if (shortcut) {
         // Relationship evolution is best-effort and must not delay an answer
         // that was explicitly precomputed for immediate delivery.
@@ -480,7 +496,6 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
       }
       await evolveRelationship(heard);
       await ensureDeps();
-      const recentHistory = conversationHistory(heard);
       const substantive = introspectionIntent !== null || classify(heard, recentHistory);
       let responseMainProvider: HybridSemanticReviewInput['mainProvider'];
       let cognitiveEvidence: string | undefined;
@@ -571,13 +586,14 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     try {
       await ensureFastReply();
       const introspectionIntent = classifyLisaIntrospection(heard);
+      const recent = conversationHistory(heard);
 
       // An instant answer is already complete text, but it still benefits from
       // the sentence pipeline: the first cached-news sentence reaches Pocket or
       // Voicebox immediately instead of synthesizing the entire bulletin first.
       // Keep a short-lived copy only for the immediate blocking fallback so a
       // stateful joke is never advanced twice when every audio path fails.
-      const shortcut = introspectionIntent ? null : shortcutFor(heard);
+      const shortcut = introspectionIntent ? null : shortcutFor(heard, recent);
       if (shortcut) {
         const safeShortcut = guardBeforeMemory(shortcut);
         pendingShortcut = { heard, reply: safeShortcut, expiresAt: Date.now() + 2_000 };
@@ -588,7 +604,6 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         }
         return;
       }
-      const recent = conversationHistory(heard);
       if (introspectionIntent !== null || classify(heard, recent)) return;
 
       await ensureDeps(true);

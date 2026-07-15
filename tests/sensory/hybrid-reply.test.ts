@@ -116,6 +116,75 @@ describe('hybrid reply — intent classifier (isSubstantiveQuery)', () => {
   });
 });
 
+describe('hybrid reply — contextual acknowledgements', () => {
+  it('answers a bare acknowledgement instantly when no question is pending', async () => {
+    const chitchat = vi.fn(async () => 'Cette voie ne doit pas être appelée.');
+    const chitchatStream = vi.fn(async function* () {
+      yield 'Cette voie ne doit pas être appelée.';
+    });
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat,
+      chitchatStream,
+      agentReply: async () => 'unused',
+    });
+
+    const streamed: string[] = [];
+    for await (const chunk of reply.stream('Yeah.')) streamed.push(chunk);
+    expect(streamed).toEqual(["D'accord."]);
+
+    for (const acknowledgement of ['yep', 'mm-hmm', 'uh-huh']) {
+      expect(await reply(acknowledgement), acknowledgement).toBe("D'accord.");
+    }
+    expect(chitchat).not.toHaveBeenCalled();
+    expect(chitchatStream).not.toHaveBeenCalled();
+  });
+
+  it('lets the model interpret yes when it answers Lisa\'s pending question', async () => {
+    const chitchat = vi.fn(async (_heard: string, history: HybridTurn[]) =>
+      history.at(-1)?.content.includes('continuer')
+        ? 'Oui, poursuivons ce raisonnement.'
+        : 'Contexte perdu.'
+    );
+    const reply = makeHybridReply({
+      fastReply: () => 'Réponse statique qui ne doit pas masquer le contexte.',
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      sharedHistory: () => [
+        { role: 'assistant', content: 'Veux-tu continuer ce raisonnement ?' },
+      ],
+      chitchat,
+      agentReply: async () => 'unused',
+    });
+
+    expect(await reply('Yeah.')).toBe('Oui, poursuivons ce raisonnement.');
+    expect(chitchat).toHaveBeenCalledWith(
+      'Yeah.',
+      [{ role: 'assistant', content: 'Veux-tu continuer ce raisonnement ?' }],
+      expect.any(Object),
+    );
+  });
+
+  it('never reduces an explicit continuation request to the acknowledgement shortcut', async () => {
+    const chitchat = vi.fn(async () => 'Je poursuis avec le prochain argument.');
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat,
+      agentReply: async () => 'unused',
+    });
+
+    expect(await reply('Continue.')).toBe('Je poursuis avec le prochain argument.');
+    expect(chitchat).toHaveBeenCalledOnce();
+  });
+});
+
 describe('hybrid reply — realtime grounded-agent gate', () => {
   it('keeps ordinary static questions on the fast streaming model', () => {
     for (const s of [

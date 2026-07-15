@@ -40,7 +40,8 @@ export function extractSalientTerms(text: string, limit = 6): string[] {
 }
 
 const PHATIC = /^(bonjour|bonsoir|salut|coucou|hello|merci|d accord|ok|okay|ca va|bonne nuit)\b/;
-const BACKCHANNEL = /^(oui|ouais|exactement|je vois|hum|hmm|ah bon|continue|vas y)[.!? ]*$/;
+const PURE_ACKNOWLEDGEMENT = /^(?:oui|ouais|yes|yeah|yep|yup|ok|okay|d accord|mhm|mhmm|mmhmm|mm hmm|uhuh|uh huh)\??$/;
+const BACKCHANNEL = /^(?:exactement|je vois|hum|hmm|ah bon)\??$/;
 const CLOSING = /\b(au revoir|a bientot|bonne nuit|on en reparle|a plus)\b/;
 const CORRECTION =
   /(?:^non\b|\b(je voulais dire|ce n est pas|tu as mal compris|corrige ce que|plutot que|rectification)\b)/;
@@ -65,6 +66,16 @@ const EXPLICIT_DEVELOPED =
   /\b(developpe|en detail|approfondis|argumente|explique vraiment|analyse en profondeur)\b/;
 const FOLLOW_UP = /^(?:mais|donc)\b/;
 
+/**
+ * A transcript that only acknowledges the preceding turn. Speech recognition
+ * commonly keeps these English/non-lexical forms even in an otherwise French
+ * conversation. Deliberate continuation requests are intentionally excluded:
+ * "continue" and "vas-y" carry an instruction to advance the discussion.
+ */
+export function isPureAcknowledgement(text: string): boolean {
+  return PURE_ACKNOWLEDGEMENT.test(normalizeConversationText(text));
+}
+
 function dialogueAct(text: string, normalized: string): DialogueAct {
   if (CORRECTION.test(normalized)) return 'correction';
   if (CLARIFICATION.test(normalized)) return 'clarification';
@@ -77,7 +88,7 @@ function dialogueAct(text: string, normalized: string): DialogueAct {
   if (OPINION.test(normalized) || DELIBERATIVE.test(normalized)) return 'opinion';
   if (ACTION.test(normalized)) return 'action';
   if (isContinuationRequest(text)) return 'continuation';
-  if (BACKCHANNEL.test(normalized)) return 'backchannel';
+  if (isPureAcknowledgement(text) || BACKCHANNEL.test(normalized)) return 'backchannel';
   if (PHATIC.test(normalized) && normalized.split(' ').length <= 5) return 'phatic';
   if (text.trim().endsWith('?') || QUESTION.test(normalized)) return 'question';
   return 'opinion';

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeConversationTurn } from '../../src/conversation/dialogue-act.js';
+import {
+  analyzeConversationTurn,
+  isPureAcknowledgement,
+} from '../../src/conversation/dialogue-act.js';
 import { ConversationStateManager } from '../../src/conversation/conversation-state.js';
 import { assessConversationResponse } from '../../src/conversation/conversation-quality.js';
 import {
@@ -17,6 +20,30 @@ describe('human conversation planning', () => {
     const philosophy = analyzeConversationTurn("Penses-tu qu'une IA peut aimer ?");
     expect(philosophy.act).toBe('opinion');
     expect(philosophy.depth).toBe('deliberative');
+  });
+
+  it('recognizes natural STT acknowledgements without swallowing continuation requests', () => {
+    for (const acknowledgement of [
+      'oui',
+      'Yeah.',
+      'yep',
+      'Yup!',
+      'mhm',
+      'mhmm',
+      'mm-hmm',
+      'uh-huh',
+    ]) {
+      expect(isPureAcknowledgement(acknowledgement), acknowledgement).toBe(true);
+      expect(analyzeConversationTurn(acknowledgement), acknowledgement).toMatchObject({
+        act: 'backchannel',
+        depth: 'brief',
+      });
+    }
+
+    for (const continuation of ['Continue.', 'Vas-y.']) {
+      expect(isPureAcknowledgement(continuation), continuation).toBe(false);
+      expect(analyzeConversationTurn(continuation).act, continuation).toBe('continuation');
+    }
   });
 
   it('opens a deliberation without compressing the whole debate into one answer', () => {
