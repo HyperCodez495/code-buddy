@@ -4,6 +4,7 @@ import { AvatarEventBus } from '../../src/avatar/avatar-event-bus.js';
 import {
   AvatarPlaybackStateMachine,
   planAvatarPerformance,
+  planAvatarSpeechProsody,
   splitAvatarAudioChunk,
   MAX_AVATAR_AUDIO_CHUNK_BYTES,
 } from '../../src/avatar/avatar-protocol.js';
@@ -38,6 +39,19 @@ describe('avatar performance protocol', () => {
       targetWpm: 195,
       sentencePauseMs: 360,
     });
+  });
+
+  it('adds a human-scale backchannel and per-segment prosody', () => {
+    const cue = planAvatarPerformance('Je suis inquiet, tu peux m’aider ?');
+    const prosody = planAvatarSpeechProsody('Oui, je suis avec toi.', cue);
+
+    expect(cue.backchannel).toBe('concerned_ack');
+    expect(prosody).toMatchObject({
+      onset: 'gentle',
+      emphasis: 'normal',
+    });
+    expect(prosody.breathBeforeMs).toBeGreaterThan(0);
+    expect(prosody.terminalPauseMs).toBeGreaterThan(100);
   });
 
   it('keeps ordered lifecycle state and ignores a late completion after interruption', () => {

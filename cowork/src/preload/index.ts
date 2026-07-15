@@ -252,6 +252,43 @@ type AssistantRestartResponse =
   | AssistantErrorResponse;
 type AssistantVolumeResponse = { volume: number | null } | AssistantErrorResponse;
 type AssistantSetVolumeResponse = { ok: true; volume: number } | AssistantErrorResponse;
+interface AssistantVoiceDiagnostics {
+  version: 1;
+  updatedAt: string;
+  phase: string;
+  activeTurnId?: string;
+  attention?: {
+    engaged: boolean;
+    source?: string;
+    remainingMs: number;
+    dialogueAgeMs: number;
+    closeReason?: string;
+  };
+  counters: {
+    captured: number;
+    accepted: number;
+    spoken: number;
+    suppressed: number;
+    interrupted: number;
+    failed: number;
+  };
+  recent: Array<{
+    sequence: number;
+    at: string;
+    turnId: string;
+    phase: string;
+    decisionReason?: string;
+    suppressionReason?: string;
+    scene?: string;
+    sceneConfidence?: number;
+    firstAudioMs?: number;
+    totalMs?: number;
+    aecActive?: boolean;
+  }>;
+}
+type AssistantDiagnosticsResponse =
+  | { diagnostics: AssistantVoiceDiagnostics | null }
+  | AssistantErrorResponse;
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -1050,6 +1087,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVolume: (): Promise<AssistantVolumeResponse> => ipcRenderer.invoke('assistant.getVolume'),
     setVolume: (percent: number): Promise<AssistantSetVolumeResponse> =>
       ipcRenderer.invoke('assistant.setVolume', percent),
+    diagnostics: (): Promise<AssistantDiagnosticsResponse> =>
+      ipcRenderer.invoke('assistant.diagnostics'),
   },
 
   widgets: {
@@ -5382,6 +5421,7 @@ declare global {
         restart: () => Promise<AssistantRestartResponse>;
         getVolume: () => Promise<AssistantVolumeResponse>;
         setVolume: (percent: number) => Promise<AssistantSetVolumeResponse>;
+        diagnostics: () => Promise<AssistantDiagnosticsResponse>;
       };
       widgets: {
         render: (data: unknown, theme?: 'dark' | 'light') => Promise<string | null>;

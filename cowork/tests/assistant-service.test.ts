@@ -30,3 +30,27 @@ describe('AssistantService.playPreview', () => {
     });
   });
 });
+
+describe('AssistantService.diagnostics', () => {
+  it('returns the raw-free voice runtime snapshot', async () => {
+    const snapshot = {
+      version: 1 as const,
+      updatedAt: '2026-07-15T12:00:00.000Z',
+      phase: 'speaking',
+      counters: {
+        captured: 2,
+        accepted: 1,
+        spoken: 1,
+        suppressed: 1,
+        interrupted: 0,
+        failed: 0,
+      },
+      recent: [],
+    };
+    const service = new AssistantService(async () => ({
+      readAssistantVoiceDiagnostics: () => snapshot,
+    }));
+
+    await expect(service.diagnostics()).resolves.toEqual({ diagnostics: snapshot });
+  });
+});

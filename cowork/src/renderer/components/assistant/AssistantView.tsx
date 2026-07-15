@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   AlertCircle,
   Bot,
   CheckCircle2,
@@ -14,8 +15,10 @@ import {
   Loader2,
   Mic2,
   Power,
+  Radio,
   Save,
   Settings2,
+  ShieldCheck,
   Volume2,
 } from 'lucide-react';
 
@@ -35,6 +38,41 @@ interface AssistantSetting {
 interface AssistantErrorResponse {
   ok: false;
   error: string;
+}
+
+interface AssistantVoiceTransition {
+  sequence: number;
+  at: string;
+  turnId: string;
+  phase: string;
+  decisionReason?: string;
+  suppressionReason?: string;
+  scene?: string;
+  sceneConfidence?: number;
+  firstAudioMs?: number;
+  totalMs?: number;
+  aecActive?: boolean;
+}
+
+interface AssistantVoiceDiagnostics {
+  updatedAt: string;
+  phase: string;
+  attention?: {
+    engaged: boolean;
+    source?: string;
+    remainingMs: number;
+    dialogueAgeMs: number;
+    closeReason?: string;
+  };
+  counters: {
+    captured: number;
+    accepted: number;
+    spoken: number;
+    suppressed: number;
+    interrupted: number;
+    failed: number;
+  };
+  recent: AssistantVoiceTransition[];
 }
 
 const GROUP_ORDER: AssistantSettingGroup[] = ['voice', 'speech', 'behavior', 'companion'];
@@ -89,6 +127,8 @@ const LABEL_OVERRIDES: Record<string, string> = {
   CODEBUDDY_SENSORY_ALWAYS_RESPOND: 'Toujours répondre',
   CODEBUDDY_SENSORY_CHIME_IN: 'Intervenir spontanément',
   CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS: 'Fenêtre de suivi',
+  BUDDY_SENSE_AEC: 'Annulation d’écho acoustique',
+  BUDDY_SENSE_AEC_SOURCE: 'Source AEC PipeWire/PulseAudio',
   CODEBUDDY_SPEECH_LANG: 'Langue d’écoute',
   CODEBUDDY_SENSORY_GREET: 'Salutations',
   CODEBUDDY_REMINDERS: 'Rappels',
@@ -134,6 +174,10 @@ const HELP_OVERRIDES: Record<string, string> = {
   CODEBUDDY_SENSORY_CHIME_IN: 'Autorise de courtes interventions opportunistes.',
   CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS:
     'Durée en millisecondes pendant laquelle le suivi reste actif.',
+  BUDDY_SENSE_AEC:
+    'Choisit automatiquement une source echo-cancel et garde le filtre sémantique en secours.',
+  BUDDY_SENSE_AEC_SOURCE:
+    'Laisse vide pour détecter automatiquement la source virtuelle d’annulation d’écho.',
   CODEBUDDY_SPEECH_LANG: 'Code de langue principal pour la reconnaissance vocale.',
   CODEBUDDY_SENSORY_GREET: 'Active les salutations du companion.',
   CODEBUDDY_REMINDERS: 'Active les rappels companion.',
@@ -168,6 +212,10 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
     true: 'Toujours transmettre',
     false: 'Ne jamais transmettre',
   },
+  BUDDY_SENSE_AEC: {
+    auto: 'Automatique — recommandé',
+    off: 'Désactivé',
+  },
 };
 
 function normalizeValues(
@@ -197,6 +245,134 @@ function isAssistantError(value: unknown): value is AssistantErrorResponse {
   return Boolean(value && typeof value === 'object' && (value as { ok?: unknown }).ok === false);
 }
 
+const PHASE_LABELS: Record<string, string> = {
+  idle: 'En veille',
+  listening: 'Écoute',
+  transcribing: 'Transcription',
+  deciding: 'Décision',
+  thinking: 'Réflexion',
+  speaking: 'Parole',
+  interrupted: 'Interrompue',
+  suppressed: 'Silence choisi',
+  completed: 'Tour terminé',
+  failed: 'Erreur',
+};
+
+function durationLabel(ms: number): string {
+  return ms >= 1_000 ? `${Math.round(ms / 1_000)} s` : `${Math.round(ms)} ms`;
+}
+
+function VoiceDiagnosticsPanel({
+  diagnostics,
+}: {
+  diagnostics: AssistantVoiceDiagnostics | null;
+}) {
+  const capture = diagnostics
+    ? [...diagnostics.recent].reverse().find((item) => item.aecActive !== undefined)
+    : undefined;
+  const scene = diagnostics
+    ? [...diagnostics.recent].reverse().find((item) => item.scene !== undefined)
+    : undefined;
+  const recent = diagnostics ? [...diagnostics.recent.slice(-6)].reverse() : [];
+
+  return (
+    <section
+      className="shrink-0 overflow-hidden rounded-lg border border-border bg-surface"
+      data-testid="assistant-voice-diagnostics"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-start gap-3">
+          <Activity className="mt-0.5 h-4 w-4 text-primary" aria-hidden="true" />
+          <div>
+            <h2 className="text-sm font-semibold">Boucle vocale en temps réel</h2>
+            <p className="text-xs text-muted-foreground">
+              État brut-sûr du micro jusqu’à MetaHuman, sans conserver les phrases.
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs">
+          <span
+            className={`h-2 w-2 rounded-full ${diagnostics ? 'bg-success' : 'bg-muted-foreground'}`}
+          />
+          {diagnostics ? PHASE_LABELS[diagnostics.phase] ?? diagnostics.phase : 'En attente du daemon'}
+        </span>
+      </header>
+
+      {diagnostics ? (
+        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_1fr_1.4fr]">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <Radio className="h-3.5 w-3.5" /> Attention
+            </div>
+            <div className="rounded-md bg-muted/40 p-3 text-xs">
+              <div className="font-medium">
+                {diagnostics.attention?.engaged ? 'Conversation ouverte' : 'Écoute ambiante'}
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                {diagnostics.attention?.engaged
+                  ? `${durationLabel(diagnostics.attention.remainingMs)} restantes · ${diagnostics.attention.source ?? 'dialogue'}`
+                  : diagnostics.attention?.closeReason ?? 'Lisa attend une adresse claire.'}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <ShieldCheck className="h-3.5 w-3.5 text-success" />
+              AEC {capture?.aecActive ? 'actif' : 'repli anti-écho sémantique'}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Scène : {scene?.scene ?? 'inconnue'}
+              {scene?.sceneConfidence !== undefined
+                ? ` · ${Math.round(scene.sceneConfidence * 100)} %`
+                : ''}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-medium">Compteurs de session</div>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              {Object.entries(diagnostics.counters).map(([label, value]) => (
+                <div key={label} className="rounded-md bg-muted/40 p-2">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 text-base font-semibold tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          <div>
+            <div className="text-xs font-medium">Transitions récentes</div>
+            <div className="mt-3 space-y-1.5" aria-live="polite">
+              {recent.length > 0 ? recent.map((item) => (
+                <div
+                  key={item.sequence}
+                  className="grid grid-cols-[82px_1fr_auto] items-center gap-2 rounded-md bg-muted/40 px-2.5 py-2 text-xs"
+                >
+                  <span className="font-medium">{PHASE_LABELS[item.phase] ?? item.phase}</span>
+                  <span className="truncate text-muted-foreground">
+                    {item.decisionReason ?? item.suppressionReason ?? item.scene ?? '—'}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {item.totalMs !== undefined
+                      ? durationLabel(item.totalMs)
+                      : item.firstAudioMs !== undefined
+                        ? durationLabel(item.firstAudioMs)
+                        : ''}
+                  </span>
+                </div>
+              )) : (
+                <p className="text-xs text-muted-foreground">Aucun tour vocal depuis le démarrage.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="p-4 text-sm text-muted-foreground">
+          Le tableau s’activera au prochain événement du daemon vocal.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function AssistantView() {
   const [settings, setSettings] = useState<AssistantSetting[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -208,6 +384,7 @@ export function AssistantView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
+  const [diagnostics, setDiagnostics] = useState<AssistantVoiceDiagnostics | null>(null);
   // Editable sentence used by « Écouter ». Kept in sync with the core default
   // (DEFAULT_VOICE_PREVIEW_TEXT) so the mount pre-warm hits the same cache entry.
   const [previewText, setPreviewText] = useState(
@@ -259,6 +436,26 @@ export function AssistantView() {
     void load();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async (): Promise<void> => {
+      try {
+        const result = await window.electronAPI?.assistant?.diagnostics?.();
+        if (!cancelled && result && !isAssistantError(result)) {
+          setDiagnostics(result.diagnostics);
+        }
+      } catch {
+        // The config panel remains usable when the resident daemon is offline.
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 1_500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 
@@ -522,6 +719,7 @@ export function AssistantView() {
           </div>
         ) : (
           <>
+            <VoiceDiagnosticsPanel diagnostics={diagnostics} />
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3">
               <div className="text-sm text-muted-foreground">
                 {changedCount > 0

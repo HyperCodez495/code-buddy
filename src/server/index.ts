@@ -1734,6 +1734,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   latestVoiceTiming = undefined;
                   return timing;
                 },
+                getAttentionSnapshot: () => responseDecider.snapshot(),
               };
               if (responsePolicy.gateEnabled) {
                 // Reuse the session decider shared with the vision greeting above, so a

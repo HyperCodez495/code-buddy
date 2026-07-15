@@ -16,6 +16,10 @@ import { PRESET_VOICES } from '../talk-mode/providers/pocket-tts.js';
 import { synthesizePocketWav } from '../voice/local-tts.js';
 import { resolveSensoryResponsePolicy } from '../sensory/respond-decider.js';
 import { DEFAULT_MARKET_SYMBOLS, DEFAULT_NEWS_QUERY } from './prefetch-config.js';
+import {
+  readVoiceRuntimeSnapshot,
+  type VoiceTurnRuntimeSnapshot,
+} from '../sensory/voice-turn-coordinator.js';
 
 export type AssistantSettingGroup = 'voice' | 'speech' | 'behavior' | 'companion';
 export type AssistantSettingType = 'toggle' | 'enum' | 'text' | 'voice' | 'volume';
@@ -47,6 +51,11 @@ export interface AssistantServiceRestartResult {
 export interface AssistantVoicePreviewPlaybackResult {
   path: string;
   played: boolean;
+}
+
+/** Raw-free live state consumed by Cowork's voice dashboard. */
+export function readAssistantVoiceDiagnostics(): VoiceTurnRuntimeSnapshot | null {
+  return readVoiceRuntimeSnapshot();
 }
 
 const MANAGED_MARKER = '# --- assistant config (managed) ---';
@@ -415,9 +424,9 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     label: 'Engage window ms',
     group: 'behavior',
     type: 'text',
-    default: '30000',
+    default: '120000',
     envFile: 'vision',
-    help: 'Time window during which follow-up speech stays engaged.',
+    help: 'Sliding attention window during which directed follow-ups stay engaged without repeating Lisa’s name.',
   },
   {
     key: 'CODEBUDDY_SENSORY_CONVERSATION_MODE',
@@ -433,9 +442,28 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     label: 'Conversation max ms',
     group: 'behavior',
     type: 'text',
-    default: '300000',
+    default: '600000',
     envFile: 'vision',
     help: 'Hard cap on a continuous dialogue before a re-address is required.',
+  },
+  {
+    key: 'BUDDY_SENSE_AEC',
+    label: 'Acoustic echo cancellation',
+    group: 'speech',
+    type: 'enum',
+    options: ['auto', 'off'],
+    default: 'auto',
+    envFile: 'vision',
+    help: 'Automatically selects a PipeWire/PulseAudio echo-cancel source when available and safely falls back to the microphone.',
+  },
+  {
+    key: 'BUDDY_SENSE_AEC_SOURCE',
+    label: 'AEC capture source',
+    group: 'speech',
+    type: 'text',
+    default: '',
+    envFile: 'vision',
+    help: 'Optional explicit PulseAudio echo-cancel source; leave empty for automatic discovery.',
   },
   {
     key: 'CODEBUDDY_SPEECH_LANG',

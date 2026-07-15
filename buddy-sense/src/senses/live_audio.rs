@@ -79,13 +79,20 @@ fn frame_samples() -> usize {
 /// Immediate, transcript-free turn-start signal.  The brain can use the
 /// user's speaking time to prepare its grounded agent while STT is still
 /// listening; this event never implies that a response is warranted.
-fn speech_start_event(rms: f64, thresholds: GateThresholds, adaptive: bool) -> SensoryEvent {
+fn speech_start_event(
+    rms: f64,
+    thresholds: GateThresholds,
+    adaptive: bool,
+    capture: &CaptureProfile,
+) -> SensoryEvent {
     let mut payload = serde_json::json!({
         "rms": rms,
         "rmsOn": thresholds.on,
         "rmsOff": thresholds.off,
         "adaptiveVad": adaptive,
         "sampleRate": SAMPLE_RATE,
+        "aecActive": capture.aec_active,
+        "captureSourceClass": capture.source_class,
     });
     if let (Some(noise_floor), Some(object)) = (thresholds.noise_floor, payload.as_object_mut()) {
         object.insert("noiseFloorRms".to_string(), serde_json::json!(noise_floor));
@@ -562,6 +569,101 @@ fn ffmpeg_bin() -> String {
         .unwrap_or_else(|| "ffmpeg".to_string())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CaptureProfile {
+    source: String,
+    aec_active: bool,
+    source_class: &'static str,
+}
+
+fn aec_source_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let echo_named = lower.contains("echo-cancel")
+        || lower.contains("echo_cancel")
+        || lower.contains("echocancel")
+        || lower.contains("aec_source");
+    // `pw-cli ls Node` also returns the module's private capture/playback
+    // streams. ffmpeg must open the public Audio/Source, never those internals.
+    echo_named && (lower.contains("source") || lower.contains("aec_source"))
+}
+
+fn select_capture_profile(
+    configured: &str,
+    mode: &str,
+    explicit_aec_source: Option<&str>,
+    available: &[String],
+) -> CaptureProfile {
+    let enabled = !matches!(
+        mode.trim().to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "disabled"
+    );
+    if enabled {
+        if let Some(source) = explicit_aec_source
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return CaptureProfile {
+                source: source.to_string(),
+                aec_active: true,
+                source_class: "echo_cancel",
+            };
+        }
+        if let Some(source) = available.iter().find(|source| aec_source_name(source)) {
+            return CaptureProfile {
+                source: source.clone(),
+                aec_active: true,
+                source_class: "echo_cancel",
+            };
+        }
+    }
+    CaptureProfile {
+        source: configured.to_string(),
+        aec_active: false,
+        source_class: "microphone",
+    }
+}
+
+fn available_pulse_sources() -> Vec<String> {
+    let output = Command::new("pactl")
+        .args(["list", "short", "sources"])
+        .output();
+    if let Ok(output) = output {
+        if output.status.success() {
+            return String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(|line| line.split_whitespace().nth(1).map(str::to_string))
+                .collect();
+        }
+    }
+    // Minimal PipeWire installations (including Ministar) may not ship pactl.
+    // pw-cli is part of PipeWire itself; node names are sufficient because we
+    // only select the strongly named echo-cancel virtual source.
+    let Ok(output) = Command::new("pw-cli").args(["ls", "Node"]).output() else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let value = line.trim().strip_prefix("node.name = ")?.trim();
+            Some(value.trim_matches('"').to_string())
+        })
+        .collect()
+}
+
+fn resolve_capture_profile(configured: &str) -> CaptureProfile {
+    let mode = std::env::var("BUDDY_SENSE_AEC").unwrap_or_else(|_| "auto".to_string());
+    let explicit = std::env::var("BUDDY_SENSE_AEC_SOURCE").ok();
+    select_capture_profile(
+        configured,
+        &mode,
+        explicit.as_deref(),
+        &available_pulse_sources(),
+    )
+}
+
 /// Spawn the sense: a blocking capture+decode loop on its own thread (the
 /// recognizer is `!Send`). `source` is a PulseAudio source name (or "default").
 pub async fn run(
@@ -584,6 +686,11 @@ fn capture_loop(
     endpoint_ms: u64,
     adaptive: bool,
 ) {
+    // Prefer a PipeWire/PulseAudio echo-cancel virtual source when one exists.
+    // If the host has no AEC module (or pactl is unavailable), keep the configured
+    // microphone: the semantic playback guard remains active and hearing never dies.
+    let capture = resolve_capture_profile(&source);
+    let source = capture.source.clone();
     // Load the recognizer ONCE (≈1–2 s). On failure, log loudly and bow out so
     // the daemon keeps beating instead of going deaf with a panic.
     let model_dir = crate::senses::stt::resolve_model_dir();
@@ -649,7 +756,14 @@ fn capture_loop(
     ));
     let partial_ms = env_u64("BUDDY_SENSE_MIC_PARTIAL_MS", DEFAULT_PARTIAL_TRANSCRIPT_MS);
     let mut partial_emitted = false;
-    eprintln!("[buddy-sense] live-audio: listening (pulse:{source})");
+    eprintln!(
+        "[buddy-sense] live-audio: listening (pulse:{source}, aec:{})",
+        if capture.aec_active {
+            "active"
+        } else {
+            "fallback"
+        },
+    );
 
     loop {
         if out.read_exact(&mut bytes).is_err() {
@@ -664,7 +778,8 @@ fn capture_loop(
         let segment = seg.push(&frame);
         if !was_speaking && seg.is_speaking() {
             partial_emitted = false;
-            let event = speech_start_event(frame_rms, seg.effective_thresholds(), adaptive);
+            let event =
+                speech_start_event(frame_rms, seg.effective_thresholds(), adaptive, &capture);
             if tx.blocking_send(event).is_err() {
                 break;
             }
@@ -733,6 +848,7 @@ fn capture_loop(
                         endpoint_ms,
                         None,
                         Some(segment.endpoint),
+                        &capture,
                     ) {
                         break;
                     }
@@ -745,6 +861,7 @@ fn capture_loop(
                         endpoint_ms,
                         Some(value),
                         Some(segment.endpoint),
+                        &capture,
                     ) {
                         break;
                     }
@@ -757,6 +874,7 @@ fn capture_loop(
                         endpoint_ms,
                         None,
                         Some(segment.endpoint),
+                        &capture,
                     ) {
                         break;
                     }
@@ -777,6 +895,7 @@ fn capture_loop(
                     endpoint_ms,
                     Some(held.decision),
                     Some(held.endpoint),
+                    &capture,
                 ) {
                     break;
                 }
@@ -790,7 +909,15 @@ fn capture_loop(
         final_utt.append(&mut utt);
     }
     if !final_utt.is_empty() {
-        let _ = emit_utterance(&mut stt, &tx, final_utt, endpoint_ms, None, final_endpoint);
+        let _ = emit_utterance(
+            &mut stt,
+            &tx,
+            final_utt,
+            endpoint_ms,
+            None,
+            final_endpoint,
+            &capture,
+        );
     }
     let _ = child.kill();
     eprintln!("[buddy-sense] live-audio: capture ended");
@@ -865,6 +992,7 @@ fn emit_utterance(
     endpoint_ms: u64,
     turn_decision: Option<SmartTurnDecision>,
     endpoint: Option<EndpointMetadata>,
+    capture: &CaptureProfile,
 ) -> bool {
     let audio_ms = (utt.len() as u64 * 1000) / SAMPLE_RATE as u64;
     let decode_started = std::time::Instant::now();
@@ -884,6 +1012,8 @@ fn emit_utterance(
         "audioMs": audio_ms,
         "decodeMs": decode_ms,
         "endpointMs": endpoint_ms,
+        "aecActive": capture.aec_active,
+        "captureSourceClass": capture.source_class,
     });
     if let Some(metadata) = endpoint {
         add_endpoint_payload(&mut payload, metadata, endpoint_ms);
@@ -956,7 +1086,12 @@ mod tests {
             off: 0.024,
             noise_floor: Some(0.02),
         };
-        let event = speech_start_event(0.08, thresholds, true);
+        let capture = CaptureProfile {
+            source: "echo-cancel-source".to_string(),
+            aec_active: true,
+            source_class: "echo_cancel",
+        };
+        let event = speech_start_event(0.08, thresholds, true, &capture);
         assert_eq!(event.modality, Modality::Audio);
         assert_eq!(event.kind, "speech_start");
         assert_eq!(event.salience, SPEECH_SALIENCE);
@@ -966,7 +1101,67 @@ mod tests {
         assert_eq!(event.payload["noiseFloorRms"], 0.02);
         assert_eq!(event.payload["adaptiveVad"], true);
         assert_eq!(event.payload["sampleRate"], SAMPLE_RATE);
+        assert_eq!(event.payload["aecActive"], true);
+        assert_eq!(event.payload["captureSourceClass"], "echo_cancel");
         assert!(event.payload.get("respond").is_none());
+    }
+
+    #[test]
+    fn capture_profile_prefers_an_available_echo_cancel_source() {
+        let profile = select_capture_profile(
+            "default",
+            "auto",
+            None,
+            &[
+                "alsa_input.usb-mic".to_string(),
+                "echo-cancel-source".to_string(),
+            ],
+        );
+        assert_eq!(profile.source, "echo-cancel-source");
+        assert!(profile.aec_active);
+        assert_eq!(profile.source_class, "echo_cancel");
+    }
+
+    #[test]
+    fn capture_profile_ignores_private_echo_cancel_streams() {
+        let profile = select_capture_profile(
+            "default",
+            "auto",
+            None,
+            &[
+                "echo-cancel-capture".to_string(),
+                "echo-cancel-sink".to_string(),
+                "echo-cancel-playback".to_string(),
+                "echo-cancel-source".to_string(),
+            ],
+        );
+        assert_eq!(profile.source, "echo-cancel-source");
+        assert!(profile.aec_active);
+    }
+
+    #[test]
+    fn capture_profile_falls_back_without_disabling_hearing() {
+        let profile = select_capture_profile(
+            "alsa_input.usb-mic",
+            "auto",
+            None,
+            &["alsa_input.usb-mic".to_string()],
+        );
+        assert_eq!(profile.source, "alsa_input.usb-mic");
+        assert!(!profile.aec_active);
+        assert_eq!(profile.source_class, "microphone");
+    }
+
+    #[test]
+    fn capture_profile_honours_the_aec_kill_switch() {
+        let profile = select_capture_profile(
+            "default",
+            "off",
+            Some("echo-cancel-source"),
+            &["echo-cancel-source".to_string()],
+        );
+        assert_eq!(profile.source, "default");
+        assert!(!profile.aec_active);
     }
 
     #[test]

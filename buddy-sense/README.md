@@ -130,6 +130,16 @@ to an 80 ms acoustic tail before STT),
 `1200`; `0` disables it),
 `BUDDY_SENSE_MIC_DEBUG=1` (echo each final to stderr), `BUDDY_SENSE_FFMPEG` (ffmpeg path).
 
+Acoustic echo cancellation is automatic when a PipeWire/PulseAudio source named
+`echo-cancel-source` is available. Buddy Sense checks `pactl`, then `pw-cli`, emits
+`aecActive`/`captureSourceClass` with every turn, and safely keeps the configured
+microphone plus the semantic playback guard when AEC is unavailable. On PipeWire,
+install [`docs/90-codebuddy-echo-cancel.conf`](docs/90-codebuddy-echo-cancel.conf)
+under `~/.config/pipewire/pipewire.conf.d/`, restart PipeWire/WirePlumber, and make
+`echo-cancel-sink` and `echo-cancel-source` the defaults so playback supplies the
+WebRTC reference signal. `BUDDY_SENSE_AEC=off` is the kill switch;
+`BUDDY_SENSE_AEC_SOURCE` explicitly pins a compatible virtual source.
+
 Each `transcript_final` includes additive endpoint diagnostics: `endedReason`
 (`silence` or `cap`), `endpointWaitMs`, `rmsOn`, `rmsOff`, `noiseFloorRms`,
 `adaptiveVad`, `hardCap`, and `hardCapCount`. If Smart Turn joins several

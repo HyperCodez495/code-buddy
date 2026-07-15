@@ -461,6 +461,27 @@ export function registerAssistantCommand(program: Command): void {
     });
 
   assistant
+    .command('replay-voice')
+    .description('Replay a voice JSONL offline to audit feedback-loop suppression (never speaks)')
+    .requiredOption('--file <path>', 'Conversation or quarantine JSONL to replay')
+    .option('--max-gap-ms <n>', 'Maximum assistant→echo delay', '30000')
+    .option('--json', 'Output the raw-free replay report as JSON')
+    .action(async (opts: { file: string; maxGapMs: string; json?: boolean }) => {
+      const { replayVoiceFile } = await import('../sensory/voice-replay-lab.js');
+      const report = replayVoiceFile(opts.file, {
+        maxEchoGapMs: Math.max(500, Number(opts.maxGapMs) || 30_000),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+      }
+      console.log(
+        `offline-silent: ${report.validTurns} turn(s), ${report.echoCandidates} echo candidate(s), `
+        + `${Math.round(report.suppressionCoverage * 100)}% suppression coverage — ${report.passed ? 'PASS' : 'FAIL'}`,
+      );
+    });
+
+  assistant
     .command('quality')
     .description('Evaluate recent user/Lisa exchanges without exposing their raw content')
     .option('--apply', 'Apply one reversible guidance if the same weakness is recurring')

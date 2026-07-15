@@ -103,6 +103,8 @@ export interface ResponseDecision {
   respond: boolean;
   /** Why — for logs ("addressed", "engaged", "ambient", "no-cue", "chime-in", "not-warranted"). */
   reason: string;
+  /** Dialogue lifecycle hint for telemetry and channel handoff. */
+  conversationAction?: 'open' | 'continue' | 'close';
 }
 
 /** The rare second-stage judgment: given the utterance + recent context, chime in? */
@@ -111,11 +113,11 @@ export type JudgeFn = (transcript: string, context: string[]) => Promise<boolean
 export interface ResponseDeciderOptions {
   /** Name that counts as being addressed. Default explicit option || CODEBUDDY_ROBOT_NAME || active persona robotName || 'Buddy'. */
   robotName?: string;
-  /** Post-reply window (ms) where follow-ups are treated as addressed. Default 30000. */
+  /** Post-reply window (ms) where follow-ups are treated as addressed. Default 120000. */
   engageWindowMs?: number;
   /** Keep a live dialogue going by EXTENDING the window on directed follow-ups. Default CODEBUDDY_SENSORY_CONVERSATION_MODE !== 'false' (on). */
   conversationMode?: boolean;
-  /** Hard cap (ms) on total dialogue duration before a re-address is required. Default 300000. */
+  /** Hard cap (ms) on total dialogue duration before a re-address is required. Default 600000. */
   conversationMaxMs?: number;
   /** Enable spontaneous chime-in (tiers 3-4). Default CODEBUDDY_SENSORY_CHIME_IN === 'true'. */
   chimeIn?: boolean;
@@ -141,6 +143,17 @@ export interface ResponseDecider {
    *  channel). NOTE: do NOT call this after every reply — that would make the window slide on
    *  ambient cross-talk and the robot would answer the whole room. */
   markEngaged(source?: EngagementSource): void;
+  /** Explicitly end continuity without disabling listening. */
+  close(reason?: string): void;
+  snapshot(): ResponseEngagementSnapshot;
+}
+
+export interface ResponseEngagementSnapshot {
+  engaged: boolean;
+  source?: EngagementSource;
+  remainingMs: number;
+  dialogueAgeMs: number;
+  closeReason?: string;
 }
 
 export type EngagementSource = 'addressed' | 'greeting' | 'arrival';
@@ -417,6 +430,13 @@ function isDirectGreeting(text: string): boolean {
   );
 }
 
+/** A human closing ends continuity after one final answer. */
+export function isConversationClosing(text: string): boolean {
+  const t = normalizeForCheapSpeechRules(text);
+  return /^(merci(?: beaucoup)?(?: lisa| buddy| code buddy)?|bonne nuit(?: lisa| buddy)?|a plus(?: tard)?(?: lisa| buddy)?|au revoir(?: lisa| buddy)?|bye(?: lisa| buddy)?|thank you(?: lisa| buddy)?|good night(?: lisa| buddy)?|see you(?: later)?(?: lisa| buddy)?)$/.test(t)
+    || /^(tu peux|vous pouvez) (?:t )?arreter(?: maintenant)?$/.test(t);
+}
+
 // ── default judge (rare, only on a cue with chime-in on) ──────────────
 
 function makeDefaultJudge(): JudgeFn {
@@ -471,11 +491,11 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
   const env = process.env;
   const explicitRobotName = opts.robotName?.trim();
   const engageWindowMs =
-    opts.engageWindowMs ?? Number(env.CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS ?? 30000);
+    opts.engageWindowMs ?? Number(env.CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS ?? 120000);
   const conversationMode =
     opts.conversationMode ?? env.CODEBUDDY_SENSORY_CONVERSATION_MODE !== 'false';
   const conversationMaxMs =
-    opts.conversationMaxMs ?? Number(env.CODEBUDDY_SENSORY_CONVERSATION_MAX_MS ?? 300000);
+    opts.conversationMaxMs ?? Number(env.CODEBUDDY_SENSORY_CONVERSATION_MAX_MS ?? 600000);
   const chimeIn = opts.chimeIn ?? env.CODEBUDDY_SENSORY_CHIME_IN === 'true';
   const respondToGreeting =
     opts.respondToGreeting ?? env.CODEBUDDY_SENSORY_RESPOND_TO_GREETING !== 'false';
@@ -496,6 +516,7 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
   let dialogueStartedAt = Number.NEGATIVE_INFINITY;
   let engagementSource: EngagementSource = 'addressed';
   let recentAmbientAt: number[] = [];
+  let closeReason: string | undefined;
   const pruneAmbient = (): void => {
     const cutoff = now() - ambientBurstWindowMs;
     recentAmbientAt = recentAmbientAt.filter((timestamp) => timestamp >= cutoff);
@@ -517,6 +538,29 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
     lastEngagedAt = t;
     engagementSource = source;
     recentAmbientAt = [];
+    closeReason = undefined;
+  };
+  const close = (reason = 'explicit'): void => {
+    lastEngagedAt = Number.NEGATIVE_INFINITY;
+    dialogueStartedAt = Number.NEGATIVE_INFINITY;
+    recentAmbientAt = [];
+    closeReason = reason;
+  };
+  const snapshot = (): ResponseEngagementSnapshot => {
+    const t = now();
+    const remainingMs = Number.isFinite(lastEngagedAt)
+      ? Math.max(0, engageWindowMs - (t - lastEngagedAt))
+      : 0;
+    const engaged = remainingMs > 0;
+    return {
+      engaged,
+      ...(engaged ? { source: engagementSource } : {}),
+      remainingMs,
+      dialogueAgeMs: engaged && Number.isFinite(dialogueStartedAt)
+        ? Math.max(0, t - dialogueStartedAt)
+        : 0,
+      ...(closeReason ? { closeReason } : {}),
+    };
   };
   async function resolveRobotNameForTurn(): Promise<string> {
     if (explicitRobotName) return explicitRobotName;
@@ -540,6 +584,14 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
       // Tier 0 — addressed by name (fuzzy, no LLM). ONLY an explicit address anchors the
       // engagement window — so it decays from the address, NOT from whatever was said next.
       const robotName = await resolveRobotNameForTurn();
+      const closing = isConversationClosing(text);
+      if (closing && (
+        isVocativeAddress(text, robotName, nameMatch)
+        || now() - lastEngagedAt < engageWindowMs
+      )) {
+        close('human-closing');
+        return { respond: true, reason: 'conversation-close', conversationAction: 'close' };
+      }
       if (isVocativeAddress(text, robotName, nameMatch)) {
         markEngaged('addressed');
         return { respond: true, reason: 'addressed' };
@@ -639,5 +691,5 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
     }
   }
 
-  return { decide, markEngaged };
+  return { decide, markEngaged, close, snapshot };
 }

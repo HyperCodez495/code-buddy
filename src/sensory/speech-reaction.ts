@@ -41,6 +41,8 @@ import {
   resolveIncompleteTurnHoldMs,
 } from './voice-turn-taking.js';
 import type { VoiceDeliveryProfile, VoiceTurnContext } from './voice-entrainment.js';
+import { getVoiceTurnCoordinator } from './voice-turn-coordinator.js';
+import { assessAudioScene, type AudioSceneAssessment } from './audio-scene.js';
 
 // Re-exported for back-compat: callers + tests import these from speech-reaction.
 export { resolveSpeechRecognitionEngine };
@@ -95,6 +97,14 @@ export interface SpeechReactionOptions {
    * everything (today's behavior). See `respond-decider.ts`.
    */
   shouldRespond?: (text: string) => Promise<{ respond: boolean; reason: string }>;
+  /** Raw-free state of the shared conversational attention window. */
+  getAttentionSnapshot?: () => {
+    engaged: boolean;
+    source?: 'addressed' | 'greeting' | 'arrival';
+    remainingMs: number;
+    dialogueAgeMs: number;
+    closeReason?: string;
+  };
   /** Optional timing handoff from the response handler (e.g. `makeVoiceReply`). */
   getResponseTiming?: () =>
     | {
@@ -1213,6 +1223,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   const incompleteTurnHoldMs = options.incompleteTurnHoldMs ?? resolveIncompleteTurnHoldMs();
   const now = options.now ?? (() => Date.now());
   const transcribe = options.transcriber ?? transcribeWavRaw;
+  const turnCoordinator = getVoiceTurnCoordinator();
   let lastAt = Number.NEGATIVE_INFINITY;
   let inFlight = false;
   let activeWav: string | undefined;
@@ -1221,11 +1232,13 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   let liveSeq = 0; // unique dedup key for live-mic finals (there's no WAV to key on)
   let turnSeq = 0;
   let pendingSpeechStartedAtMs: number | undefined;
+  let pendingSpeechTurnId: string | undefined;
   type SpeechJob = {
     p: ReturnType<typeof perceptionOf>;
     wav: string;
     presetText?: string;
     speechStartedAtMs?: number;
+    turnId?: string;
   };
   let pendingSpeech: SpeechJob | null = null;
   let heldLiveTurn: {
@@ -1234,6 +1247,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     key: string;
     timer: ReturnType<typeof setTimeout>;
     speechStartedAtMs?: number;
+    turnId?: string;
   } | null = null;
 
   const cleanupSpeechJob = async (job: SpeechJob): Promise<void> => {
@@ -1270,7 +1284,13 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     lastAt = t;
     inFlight = true;
     activeWav = job.wav;
-    const turnId = `voice_${t}_${++turnSeq}`;
+    const turnId = job.turnId ?? `voice_${t}_${++turnSeq}`;
+    if (!job.turnId) {
+      turnCoordinator.transition(turnId, 'listening', {
+        aecActive: (job.p.payload as Record<string, unknown> | undefined)?.aecActive === true,
+      });
+    }
+    turnCoordinator.transition(turnId, 'transcribing');
     activeTurnId = turnId;
 
     void (async () => {
@@ -1288,6 +1308,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
       let decisionReason: string | undefined;
       let spoke = false; // did the robot actually emit audio this turn? gates the echo re-stamp
       let responseTiming: ReturnType<NonNullable<SpeechReactionOptions['getResponseTiming']>>;
+      let audioScene: AudioSceneAssessment | undefined;
       try {
         // Live-mic path (buddy-sense `live-audio`): the daemon already decoded the
         // utterance in-process, so the transcript rides in the event payload — no
@@ -1336,8 +1357,14 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           sampleRate: payload.sampleRate,
           rmsOn: payload.rmsOn,
           rmsOff: payload.rmsOff,
+          aecActive: payload.aecActive === true,
+          captureSourceClass: payload.captureSourceClass,
         };
         if (!text) {
+          turnCoordinator.transition(turnId, 'suppressed', {
+            suppressionReason: normalizedText.filteredReason ?? 'stt-empty',
+            sttMs,
+          });
           const emptyReason = normalizedText.filteredReason ?? 'empty';
           logger.info(`[speech] empty transcript (${sttMs}ms STT, ${emptyReason})`);
           await recordCompanionPercept(
@@ -1386,6 +1413,12 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           logger.info(
             `[speech] suppressed playback capture reason=${suppressionReason}`,
           );
+          turnCoordinator.transition(turnId, 'suppressed', {
+            suppressionReason,
+            sttMs,
+            scene: 'assistant_playback',
+            sceneConfidence: echoClassification === 'echo' ? 0.98 : 0.8,
+          });
           await recordCompanionPercept(
             {
               modality: 'hearing',
@@ -1425,6 +1458,10 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         };
         let acceptedForSemanticIngress = true;
         let responded = Boolean(options.onHeard);
+        turnCoordinator.transition(turnId, 'deciding', {
+          sttMs,
+          wordCount: text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0,
+        });
         // Human-like gate: raw observation remains continuous; semantic dialogue and
         // speech proceed only when this turn was accepted as addressed/warranted.
         if (options.shouldRespond) {
@@ -1432,6 +1469,11 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           const decision = await options.shouldRespond(text);
           decisionMs = elapsedSince(decisionStartMs, now);
           decisionReason = decision.reason;
+          turnCoordinator.transition(turnId, 'deciding', {
+            decisionReason,
+            decisionMs,
+            sttMs,
+          });
           acceptedForSemanticIngress = decision.respond;
           if (!decision.respond) {
             logger.info(`[speech] silent (${decision.reason}, decision ${decisionMs}ms)`);
@@ -1440,7 +1482,29 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
             responded = Boolean(options.onHeard);
             logger.info(`[speech] responding (${decision.reason}, decision ${decisionMs}ms)`);
           }
+          const attention = options.getAttentionSnapshot?.();
+          if (attention) turnCoordinator.updateAttention(attention);
         }
+
+        audioScene = assessAudioScene({
+          transcript: text,
+          ...(decisionReason ? { decisionReason } : {}),
+          ...(playbackCaptureKind ? { playbackCaptureKind } : {}),
+          ...(echoClassification ? { echoClassification } : {}),
+          rms: finiteTimestamp(payload.rms),
+          rmsOn: finiteTimestamp(payload.rmsOn),
+          audioMs: finiteTimestamp(payload.audioMs),
+          turnDetector: typeof payload.turnDetector === 'string' ? payload.turnDetector : undefined,
+          speakerCount: finiteTimestamp(payload.speakerCount),
+          aecActive: payload.aecActive === true,
+        });
+        turnCoordinator.transition(turnId, 'deciding', {
+          ...(decisionReason ? { decisionReason } : {}),
+          scene: audioScene.scene,
+          sceneConfidence: audioScene.confidence,
+          decisionMs,
+          sttMs,
+        });
 
         if (acceptedForSemanticIngress && options.onRecognizedTurn) {
           try {
@@ -1462,6 +1526,10 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         }
 
         if (responded) {
+          turnCoordinator.transition(turnId, 'thinking', {
+            decisionReason,
+            decisionMs,
+          });
           const actionStartMs = now();
           await options.onHeard?.(text, turnContext);
           actionMs = elapsedSince(actionStartMs, now);
@@ -1469,6 +1537,19 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           // Plain hooks historically imply speech; instrumented voice handlers report whether
           // audio really started (empty/muted/failed replies must not arm a fake echo debounce).
           spoke = responseTiming?.spoke ?? true;
+          if (!responseTiming) {
+            turnCoordinator.transition(turnId, 'completed', {
+              decisionReason,
+              spoke,
+              totalMs: elapsedSince(transcribeStartMs, now),
+            });
+          }
+        } else {
+          turnCoordinator.transition(turnId, 'suppressed', {
+            suppressionReason: decisionReason ?? 'no-response-handler',
+            decisionMs,
+            sttMs,
+          });
         }
         const totalMs = elapsedSince(transcribeStartMs, now);
         const inputReadyMs =
@@ -1543,6 +1624,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
               },
               ...(responseTiming ? { responseMode: responseTiming.mode, spoke } : {}),
               ...(responseTiming?.delivery ? { delivery: responseTiming.delivery } : {}),
+              ...(audioScene ? { audioScene } : {}),
               ...(voiceResume ? { turnTaking: voiceResume } : {}),
               capture: {
                 ...capturePayload,
@@ -1565,6 +1647,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           );
         }
       } catch (err) {
+        turnCoordinator.transition(turnId, 'failed', { errorCategory: 'unknown' });
         logger.warn(
           `[speech] reaction failed: ${err instanceof Error ? err.message : String(err)}`
         );
@@ -1605,6 +1688,10 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
       pendingSpeechStartedAtMs = finiteTimestamp(payload.startedAtMs)
         ?? finiteTimestamp(p.receivedAt)
         ?? now();
+      pendingSpeechTurnId = `voice_${pendingSpeechStartedAtMs}_${++turnSeq}`;
+      turnCoordinator.transition(pendingSpeechTurnId, 'listening', {
+        aecActive: payload.aecActive === true,
+      });
       if (options.onSpeechStart) {
         void Promise.resolve().then(() => options.onSpeechStart!(payload)).catch((error) => {
           logger.debug('[speech] predictive warmup skipped', {
@@ -1643,7 +1730,9 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
       let speechStartedAtMs = finiteTimestamp(
         (p.payload as Record<string, unknown> | undefined)?.startedAtMs,
       ) ?? pendingSpeechStartedAtMs;
+      let turnId = pendingSpeechTurnId;
       pendingSpeechStartedAtMs = undefined;
+      pendingSpeechTurnId = undefined;
       let text = livePayload?.text?.trim();
       if (!text) return;
       const key = `live:${liveSeq++}`;
@@ -1651,6 +1740,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         clearTimeout(heldLiveTurn.timer);
         text = joinVoiceTurnFragments(heldLiveTurn.text, text);
         speechStartedAtMs = heldLiveTurn.speechStartedAtMs ?? speechStartedAtMs;
+        turnId = heldLiveTurn.turnId ?? turnId;
         heldLiveTurn = null;
       }
       // Smart Turn has already considered prosody and the complete audio. The
@@ -1671,6 +1761,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
             ...(held.speechStartedAtMs !== undefined
               ? { speechStartedAtMs: held.speechStartedAtMs }
               : {}),
+            ...(held.turnId ? { turnId: held.turnId } : {}),
           };
           if (inFlight) queuePendingSpeech(job);
           else startSpeechJob(job);
@@ -1681,6 +1772,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           key,
           timer,
           ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+          ...(turnId ? { turnId } : {}),
         };
         logger.debug(`[speech] holding likely incomplete turn for ${incompleteTurnHoldMs}ms → ${text}`);
         return;
@@ -1700,6 +1792,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
             wav: key,
             presetText: text,
             ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+            ...(turnId ? { turnId } : {}),
           });
         }
         return;
@@ -1709,6 +1802,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         wav: key,
         presetText: text,
         ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+        ...(turnId ? { turnId } : {}),
       });
       return;
     }
@@ -1718,7 +1812,9 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
     const speechStartedAtMs = finiteTimestamp(
       (p.payload as Record<string, unknown> | undefined)?.startedAtMs,
     ) ?? pendingSpeechStartedAtMs;
+    const turnId = pendingSpeechTurnId;
     pendingSpeechStartedAtMs = undefined;
+    pendingSpeechTurnId = undefined;
     if (!wav) return; // no audio to transcribe (the batch path needs a WAV)
 
     if (inFlight) {
@@ -1727,6 +1823,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
           p,
           wav,
           ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+          ...(turnId ? { turnId } : {}),
         });
       }
       return;
@@ -1736,6 +1833,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
       p,
       wav,
       ...(speechStartedAtMs !== undefined ? { speechStartedAtMs } : {}),
+      ...(turnId ? { turnId } : {}),
     });
   });
 

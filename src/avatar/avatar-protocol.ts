@@ -22,6 +22,14 @@ export type AvatarGesture =
   | 'thinking_glance';
 
 export type AvatarGaze = 'user' | 'camera' | 'thinking_away';
+export type AvatarBackchannel = 'none' | 'attentive_nod' | 'warm_ack' | 'concerned_ack';
+
+export interface AvatarProsodyCue {
+  onset: 'gentle' | 'direct' | 'reflective';
+  emphasis: 'light' | 'normal' | 'strong';
+  breathBeforeMs: number;
+  terminalPauseMs: number;
+}
 
 export interface AvatarDeliveryInput {
   pace: 'slow' | 'balanced' | 'brisk';
@@ -47,6 +55,8 @@ export interface AvatarPerformanceCue {
   gesture: AvatarGesture;
   gaze: AvatarGaze;
   speakingStyle: 'brief' | 'conversational' | 'reflective' | 'deliberative';
+  /** Silent acknowledgement shown while cognition prepares the spoken answer. */
+  backchannel: AvatarBackchannel;
   /** Additive V1 field. Older renderers safely ignore it. */
   delivery?: AvatarDeliveryCue;
 }
@@ -72,11 +82,13 @@ export type AvatarEvent = AvatarEventMetadata &
         type: 'avatar.speech.prepared';
         text: string;
         cue: AvatarPerformanceCue;
+        prosody?: AvatarProsodyCue;
       })
     | (AvatarTurnEvent & {
         type: 'avatar.speech.segment';
         text: string;
         cue: AvatarPerformanceCue;
+        prosody?: AvatarProsodyCue;
       })
     | (AvatarTurnEvent & {
         type: 'avatar.speech.started';
@@ -235,6 +247,13 @@ export function planAvatarPerformance(
           ? 'reflective'
           : 'conversational';
   const deliveryCue = avatarDeliveryCue(delivery);
+  const backchannel: AvatarBackchannel = affect === 'concerned' || emotion.emotion === 'anxiety'
+    ? 'concerned_ack'
+    : affect === 'warm' || affect === 'joyful'
+      ? 'warm_ack'
+      : conversation.analysis.act === 'question' || conversation.analysis.act === 'clarification'
+        ? 'attentive_nod'
+        : 'none';
 
   return {
     affect,
@@ -244,7 +263,38 @@ export function planAvatarPerformance(
     gesture,
     gaze: gesture === 'thinking_glance' ? 'thinking_away' : 'user',
     speakingStyle,
+    backchannel,
     ...(deliveryCue ? { delivery: deliveryCue } : {}),
+  };
+}
+
+/** Per-segment facial/acoustic timing direction for MetaHuman. */
+export function planAvatarSpeechProsody(
+  text: string,
+  cue: AvatarPerformanceCue,
+): AvatarProsodyCue {
+  const trimmed = text.trim();
+  const question = /\?$/.test(trimmed);
+  const exclamation = /!$/.test(trimmed);
+  const reflective = cue.speakingStyle === 'deliberative' || cue.speakingStyle === 'reflective';
+  return {
+    onset: cue.affect === 'concerned'
+      || cue.affect === 'warm'
+      || cue.backchannel === 'concerned_ack'
+      || cue.backchannel === 'warm_ack'
+      ? 'gentle'
+      : reflective
+        ? 'reflective'
+        : 'direct',
+    emphasis: exclamation || (cue.intensity >= 0.72 && cue.backchannel !== 'concerned_ack')
+      ? 'strong'
+      : question
+        ? 'light'
+        : 'normal',
+    breathBeforeMs: reflective ? 180 : cue.speakingStyle === 'brief' ? 40 : 90,
+    terminalPauseMs: question
+      ? 280
+      : cue.delivery?.sentencePauseMs ?? (reflective ? 320 : 220),
   };
 }
 

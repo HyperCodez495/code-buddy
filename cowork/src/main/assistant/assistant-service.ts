@@ -78,10 +78,52 @@ interface CoreAssistantConfigModule {
   ) => Promise<AssistantRestartServiceResult[]>;
   getSystemVolume?: () => Promise<number | null>;
   setSystemVolume?: (percent: number) => Promise<boolean>;
+  readAssistantVoiceDiagnostics?: () => AssistantVoiceDiagnostics | null;
 }
 
 export type AssistantVolumeResponse = { volume: number | null } | AssistantErrorResponse;
 export type AssistantSetVolumeResponse = { ok: true; volume: number } | AssistantErrorResponse;
+
+export interface AssistantVoiceTransition {
+  sequence: number;
+  at: string;
+  turnId: string;
+  phase: string;
+  decisionReason?: string;
+  suppressionReason?: string;
+  scene?: string;
+  sceneConfidence?: number;
+  firstAudioMs?: number;
+  totalMs?: number;
+  aecActive?: boolean;
+}
+
+export interface AssistantVoiceDiagnostics {
+  version: 1;
+  updatedAt: string;
+  phase: string;
+  activeTurnId?: string;
+  attention?: {
+    engaged: boolean;
+    source?: string;
+    remainingMs: number;
+    dialogueAgeMs: number;
+    closeReason?: string;
+  };
+  counters: {
+    captured: number;
+    accepted: number;
+    spoken: number;
+    suppressed: number;
+    interrupted: number;
+    failed: number;
+  };
+  recent: AssistantVoiceTransition[];
+}
+
+export type AssistantDiagnosticsResponse =
+  | { diagnostics: AssistantVoiceDiagnostics | null }
+  | AssistantErrorResponse;
 
 type CoreLoader = () => Promise<CoreAssistantConfigModule | null>;
 
@@ -231,6 +273,18 @@ export class AssistantService {
       }
 
       return mod.restartAssistantServices([...ASSISTANT_DAEMONS]);
+    } catch (err) {
+      return unavailable(errorMessage(err));
+    }
+  }
+
+  async diagnostics(): Promise<AssistantDiagnosticsResponse> {
+    try {
+      const mod = await this.module();
+      if (!mod?.readAssistantVoiceDiagnostics) {
+        return unavailable('module assistant indisponible (diagnostic vocal)');
+      }
+      return { diagnostics: mod.readAssistantVoiceDiagnostics() };
     } catch (err) {
       return unavailable(errorMessage(err));
     }

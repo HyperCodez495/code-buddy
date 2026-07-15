@@ -25,6 +25,7 @@ import { getAvatarEventBus } from '../avatar/avatar-event-bus.js';
 import {
   createAvatarTurnId,
   planAvatarPerformance,
+  planAvatarSpeechProsody,
   splitAvatarAudioChunk,
   MAX_AVATAR_AUDIO_CHUNK_BYTES,
   type AvatarEvent,
@@ -84,6 +85,7 @@ import {
   type VisualGroundingFn,
 } from '../companion/visual-grounding.js';
 import { VisualConsentGate } from '../companion/visual-consent.js';
+import { getVoiceTurnCoordinator } from './voice-turn-coordinator.js';
 
 /**
  * Cancellation handle threaded into the two interruptible steps of a spoken turn: the
@@ -2112,6 +2114,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     })
   );
   const visualConsent = new VisualConsentGate();
+  const turnCoordinator = getVoiceTurnCoordinator();
 
   // Resolve any persona-specific fallback voice per reply. Shared by the streaming and
   // blocking paths so synthesis selection has one source of truth.
@@ -2214,6 +2217,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       }
     };
     const avatarTurnId = context?.turnId ?? createAvatarTurnId();
+    turnCoordinator.transition(avatarTurnId, 'thinking');
     const avatarCue = planAvatarPerformance(heard, delivery);
     const avatarEnabled = options.avatarEnabled ?? (
       process.env.CODEBUDDY_AVATAR_BRIDGE !== 'false' || Boolean(options.onAvatarEvent)
@@ -2302,6 +2306,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         turnId: avatarTurnId,
         text: content,
         cue: avatarCue,
+        prosody: planAvatarSpeechProsody(content, avatarCue),
       });
     };
     const emitAvatarSegment = (text: string): void => {
@@ -2311,12 +2316,16 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         turnId: avatarTurnId,
         text,
         cue: avatarCue,
+        prosody: planAvatarSpeechProsody(text, avatarCue),
       });
     };
     const markAvatarSpeechStarted = (): void => {
       if (avatarSpeechStarted) return;
       avatarSpeechStarted = true;
       avatarSpeechStartedAt = Date.now();
+      turnCoordinator.transition(avatarTurnId, 'speaking', {
+        ...(firstAudioMs !== undefined ? { firstAudioMs } : {}),
+      });
       emitAvatarEvent({ type: 'avatar.speech.started', turnId: avatarTurnId });
     };
     emitAvatarEvent({
@@ -2733,18 +2742,31 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         }
       }
       if (signal.aborted) {
+        turnCoordinator.transition(avatarTurnId, 'interrupted', {
+          suppressionReason: 'barge-in',
+          totalMs: Date.now() - startedAt,
+        });
         emitAvatarEvent({
           type: 'avatar.speech.interrupted',
           turnId: avatarTurnId,
           reason: 'barge_in',
         });
       } else if (mode === 'failed') {
+        turnCoordinator.transition(avatarTurnId, 'failed', {
+          errorCategory: 'unknown',
+          totalMs: Date.now() - startedAt,
+        });
         emitAvatarEvent({
           type: 'avatar.speech.failed',
           turnId: avatarTurnId,
           reason: 'unknown',
         });
       } else if (spoke) {
+        turnCoordinator.transition(avatarTurnId, 'completed', {
+          spoke: true,
+          ...(firstAudioMs !== undefined ? { firstAudioMs } : {}),
+          totalMs: Date.now() - startedAt,
+        });
         emitAvatarEvent({
           type: 'avatar.speech.completed',
           turnId: avatarTurnId,
@@ -2754,6 +2776,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             : Date.now() - avatarSpeechStartedAt,
         });
       } else {
+        turnCoordinator.transition(avatarTurnId, 'suppressed', {
+          suppressionReason: 'silent-reply',
+          spoke: false,
+          totalMs: Date.now() - startedAt,
+        });
         emitAvatarEvent({ type: 'avatar.turn.silent', turnId: avatarTurnId });
       }
       const spokenPrefixOutcome = spokenPrefixCauses.at(-1);

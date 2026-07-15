@@ -165,6 +165,33 @@ describe('isDirectedFollowUp', () => {
 });
 
 describe('respond-decider — addressed + engagement window (no LLM)', () => {
+  it('answers a human closing once and immediately closes continuity', async () => {
+    let t = 1_000;
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => t,
+      chimeIn: false,
+      engageWindowMs: 120_000,
+    });
+    await d.decide('Lisa, raconte-moi quelque chose');
+    t = 2_000;
+    expect(await d.decide('merci Lisa')).toEqual({
+      respond: true,
+      reason: 'conversation-close',
+      conversationAction: 'close',
+    });
+    expect(d.snapshot()).toMatchObject({
+      engaged: false,
+      remainingMs: 0,
+      closeReason: 'human-closing',
+    });
+    t = 3_000;
+    expect(await d.decide('et encore une chose')).toEqual({
+      respond: false,
+      reason: 'ambient',
+    });
+  });
+
   it('accepts a judged short second-person request without a name and opens continuity', async () => {
     let t = 0;
     const judge = vi.fn(async () => true);
@@ -346,7 +373,7 @@ describe('respond-decider — addressed + engagement window (no LLM)', () => {
     expect(await d.decide('et demain ?')).toEqual({ respond: true, reason: 'engaged' });
 
     // Far later, an ambient statement (chime-in off) → silent.
-    t = 1000 + 10_000 + 60_000;
+    t = 1000 + 10_000 + 180_000;
     expect(await d.decide('il fait beau aujourd’hui')).toEqual({
       respond: false,
       reason: 'ambient',
