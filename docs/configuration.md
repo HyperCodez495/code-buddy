@@ -143,6 +143,7 @@ remote endpoint's retention policy.
 | `CODEBUDDY_PREFETCH` | Preload structured news, market, agenda, date, and configured weather evidence | true |
 | `CODEBUDDY_PREFETCH_INTERVAL_MS` | Wall-clock fresh-context refresh interval | 900000 |
 | `CODEBUDDY_MARKET_SYMBOLS` | Additional comma-separated market watchlist; deduplicated and capped at 10 total symbols after `^FCHI,^GSPC,^IXIC` | unset |
+| `CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS` | Watchdog for a serialized channel turn; releases Telegram/Discord/Slack FIFO after bounded cleanup (1000–900000 ms) | 180000 |
 | `CODEBUDDY_SEMANTIC_GATE` | Semantic audit + at most one independently re-audited revision for developed/deliberative companion answers (`auto`, `true`, `false`) | auto |
 | `CODEBUDDY_NEWS_QUERY` | Preferred news topics; the default is balanced into general and technology lanes | France/world/technology/AI |
 | `CODEBUDDY_NEWS_LOCALE` | Search language and country used for the grounded bulletin | fr-FR |
