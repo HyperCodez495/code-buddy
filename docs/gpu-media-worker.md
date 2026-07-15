@@ -32,7 +32,9 @@ buddy gpu-worker --host 100.73.222.64 --port 4310 `
 ```
 
 Install either official checkpoint with a resumable download that checks both the
-Hugging Face LFS byte size and SHA-256 before removing the `.partial` suffix:
+Hugging Face LFS byte size and SHA-256 before removing the `.partial` suffix. The
+installer also seeds the runner's metadata-bound digest cache from that verification,
+so the first reconstruction does not reread the multi-gigabyte checkpoint:
 
 ```bash
 scripts/gpu-runners/download-panoworld-checkpoint.sh 1024
