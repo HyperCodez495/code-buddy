@@ -15,6 +15,10 @@ ce qui demande du matériel/du temps pour se vivre aussi.
 J'écoute en continu (quand un micro est branché), mais je ne réponds que si **tu m'adresses la parole**
 (mon nom, fuzzy-matché pour survivre à la transcription) ou si la conversation **m'y appelle vraiment** —
 sinon je reste présent et silencieux. Je ne coupe jamais une conversation entre humains.
+Une demande courte clairement dirigée (« Tu vois le hamburger ? », « Can you help me? ») n'exige pas
+de répéter mon nom. `CODEBUDDY_SENSORY_RESPONSE_POLICY=contextual` est le réglage résident recommandé ;
+`addressed` désactive les interventions jugées et `always` reste réservé au push-to-talk ou aux tests.
+L'ancien `CODEBUDDY_SENSORY_ALWAYS_RESPOND=true` n'est plus qu'un alias déprécié et explicitement signalé.
 `respond-decider.ts` · `CODEBUDDY_SENSORY_SPEECH=true`, nom via `CODEBUDDY_ROBOT_NAME`.
 
 ### 🔊 Te parler — ici et à distance
@@ -515,7 +519,9 @@ lecture directe de l'intonation remplace automatiquement cette heuristique pour
 les événements de l'oreille Rust. Toute panne revient au VAD sans rendre Lisa sourde.
 Chaque percept `hearing` garde aussi la qualité de capture et la latence de
 boucle (`peakRms`, `avgRms`, seuils VAD, `sttMs`, `decisionMs`, `actionMs`,
-`firstTextMs`, `firstSegmentMs`, `firstAudioMs`, `firstContentAudioMs`,
+`promptReadyMs`, `providerFirstDeltaMs`, `generationCompleteMs`,
+`semanticReviewCompleteMs`, `firstSafeReleaseMs`, `firstTextMs`, `firstSegmentMs`,
+`firstAudioMs`, `firstContentAudioMs`,
 `perceivedResponseMs`, `totalMs`, `resumeAfterPlaybackMs` et `turnTaking.kind`,
 mode `streamed|blocking`, device ALSA).
 `firstAudioMs` mesure le début du son dans l'action vocale ; `perceivedResponseMs`
@@ -574,6 +580,11 @@ Un critique indépendant note ces dimensions avec un schéma JSON fermé; s'il d
 confiance une lacune, une seule révision est autorisée puis auditée à son tour avant parole, affichage
 ou mémoire. Une révision non vérifiable est abandonnée au profit du brouillon initial. Ce gate ne
 consulte jamais l'ancien score lexical et ne récompense donc ni la longueur ni les mots de liaison.
+Le prompt vocal ne recopie plus les six extraits de `<recent_dialogue>` déjà envoyés comme messages ;
+`CODEBUDDY_VOICE_INCLUDE_RECENT_DIALOGUE=true` restaure cette duplication uniquement pour un A/B.
+Une première proposition autonome, bornée et validée avant la réponse longue est disponible en pilote
+avec `CODEBUDDY_VOICE_SPOKEN_PREFIX=true`. Elle reste désactivée par défaut tant que ses mesures de
+latence et de qualité ne justifient pas son activation.
 Seul le texte accepté rejoint la continuité canonique gérée par la voix, Telegram ou Cowork. Les
 observateurs mémoire génériques du cœur (AutoCapture, ICM et hooks de plugins) ne sont pas rejoués
 sur ces tours protégés : ils ont leurs propres politiques de stockage et ne reçoivent donc jamais
