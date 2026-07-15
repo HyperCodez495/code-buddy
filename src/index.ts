@@ -3485,6 +3485,17 @@ addLazyCommand(
   },
 );
 
+// Code Buddy 2.0 — opt-in, repository-local living specifications
+addLazyCommand(
+  program,
+  'intents',
+  'Manage replayable intent specifications (EXPERIMENTAL, opt-in CODEBUDDY_INTENTS=true)',
+  async () => {
+    const { createIntentsCommand } = await import('./commands/intents.js');
+    return createIntentsCommand();
+  },
+);
+
 addLazyCommand(
   program,
   'forge',
