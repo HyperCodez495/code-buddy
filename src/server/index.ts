@@ -71,6 +71,7 @@ import { wireCompactionBridge, unwireCompactionBridge } from '../fleet/compactio
 import { wirePeerChatBridge, unwirePeerChatBridge } from '../fleet/peer-chat-bridge.js';
 import { wirePeerSessionBridge, unwirePeerSessionBridge } from '../fleet/peer-session-bridge.js';
 import { wirePeerToolBridge, unwirePeerToolBridge } from '../fleet/peer-tool-bridge.js';
+import { wirePeerCkgBridge, unwirePeerCkgBridge } from '../fleet/peer-ckg-bridge.js';
 import {
   wirePeerMissionExchangeBridge,
   unwirePeerMissionExchangeBridge,
@@ -1209,6 +1210,10 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
     // needed: the bridge wraps standalone executors and runs gates
     // (allowlist + fleetSafe + workspace root) per invocation.
     wirePeerToolBridge();
+    // CB2 INNOV-4 — pull-only CKG federation. The method remains registered
+    // when disabled so callers receive CKG_SYNC_NOT_ENABLED; its handler gates
+    // before touching the ledger.
+    wirePeerCkgBridge();
     wirePeerMissionExchangeBridge();
     // Phase (d).16a — auto-detect the peer.chat client from env
     // (priority order: ollama > grok > anthropic > gemini > openai).
@@ -2103,6 +2108,7 @@ export async function stopServer(server: HttpServer): Promise<void> {
     unwirePeerSessionBridge();
     // Phase (d).23 — un-register peer.tool.invoke + .stream.
     unwirePeerToolBridge();
+    unwirePeerCkgBridge();
     unwirePeerMissionExchangeBridge();
 
     const unwireCognition = (server as unknown as { _unwireCognition?: () => void })
