@@ -75,12 +75,13 @@ flowchart LR
 | `SubAgentBridge` | `cowork/src/main/agent/sub-agent-bridge.ts` | Wraps `agent/multi-agent/agent-tools.ts` and translates its event stream into `subagent.spawned/status/completed/output` ServerEvents. Also exposes `dryRunSubAgent()` for hooks-bridge. |
 | `TeamBridge` | `cowork/src/main/agent/team-bridge.ts` | Agent Teams (Phase 4 layer 9) — multi-host coordination on top of SubAgentBridge. |
 | `FleetBridge` | `cowork/src/main/agent/orchestrator-bridge.ts` | OrchestratorLauncher / `peer_delegate` dispatch (d.17). |
+| `GpuMediaAdminBridge` | `cowork/src/main/gpu-media/gpu-media-admin-bridge.ts` | Typed Cowork administration for the authenticated Darkstar worker: submit/status/cancel, PanoWorld manifest export and LongCat MP4 download. |
 
 ## IPC channels (one-shot)
 
 Format: `electronAPI.<namespace>.<method>(args)` → `ipcMain.handle('<namespace>.<method>', …)`.
 
-Namespaces include `config`, `mcp`, `skills`, `plugins`, `sandbox`, `logs`, `remote`, `template`, `workflow`, `tools`, `server`, `presence`, `hooks`, `a2a`, `subagent`, `orchestrator`, `fleet`, `team`, `notification`, `bookmark`, `snippet`, `customCommand`, `workspacePreset`, `permissionRule`, `sessionInsights`, `costDashboard`, `voice` (planned), `mcpMarketplace`, `mcpPlayground`, `globalSearch`, `nav`, `update`, `window`, `presence:event` listener, `presence:download-progress` listener.
+Namespaces include `config`, `mcp`, `skills`, `plugins`, `sandbox`, `logs`, `remote`, `template`, `workflow`, `tools`, `server`, `presence`, `hooks`, `a2a`, `subagent`, `orchestrator`, `fleet`, `team`, `gpuMedia`, `notification`, `bookmark`, `snippet`, `customCommand`, `workspacePreset`, `permissionRule`, `sessionInsights`, `costDashboard`, `voice` (planned), `mcpMarketplace`, `mcpPlayground`, `globalSearch`, `nav`, `update`, `window`, `presence:event` listener, `presence:download-progress` listener.
 
 ## IPC channels (streaming)
 

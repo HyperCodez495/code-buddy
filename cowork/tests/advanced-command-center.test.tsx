@@ -96,6 +96,19 @@ function makeHarness(initialRuns: LiveLauncherRunView[] = []) {
       }),
       cancel: vi.fn().mockResolvedValue({ ok: true }),
     },
+    gpuMedia: {
+      capabilities: vi.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'darkstar-test',
+        jobs: ['panoworld_reconstruct', 'avatar_video_render'],
+        queueDepth: 0,
+      }),
+      submit: vi.fn(),
+      status: vi.fn(),
+      cancel: vi.fn(),
+      download: vi.fn(),
+    },
+    selectFiles: vi.fn().mockResolvedValue([]),
     showItemInFolder: vi.fn().mockResolvedValue(true),
   };
   return { api, listeners, created };
@@ -262,6 +275,16 @@ describe('AdvancedCommandCenter launcher', () => {
 });
 
 describe('AdvancedCommandCenter administration', () => {
+  it('opens the GPU Darkstar administration surface', async () => {
+    const harness = makeHarness();
+    await renderCenter(harness.api);
+
+    await click('advanced-tab-gpu');
+
+    expect(query('gpu-media-admin')).not.toBeNull();
+    expect(harness.api.gpuMedia.capabilities).toHaveBeenCalledOnce();
+  });
+
   it('keeps at most 20 renderer runs when status events accumulate', async () => {
     const harness = makeHarness();
     await renderCenter(harness.api);
@@ -284,9 +307,7 @@ describe('AdvancedCommandCenter administration', () => {
     }
 
     await click('advanced-tab-runs');
-    expect(
-      container!.querySelectorAll('[data-testid^="advanced-run-ll_cap_"]'),
-    ).toHaveLength(20);
+    expect(container!.querySelectorAll('[data-testid^="advanced-run-ll_cap_"]')).toHaveLength(20);
     expect(query('advanced-run-ll_cap_0')).toBeNull();
     expect(query('advanced-run-ll_cap_24')).not.toBeNull();
   });

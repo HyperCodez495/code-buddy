@@ -72,6 +72,56 @@ async function installLauncherMock(electronApp: ElectronApplication): Promise<vo
   });
 }
 
+async function installGpuMediaMock(electronApp: ElectronApplication): Promise<void> {
+  await electronApp.evaluate(({ ipcMain }) => {
+    for (const channel of [
+      'gpuMedia.capabilities',
+      'gpuMedia.submit',
+      'gpuMedia.status',
+      'gpuMedia.cancel',
+      'gpuMedia.download',
+    ]) {
+      ipcMain.removeHandler(channel);
+    }
+    const running = {
+      id: 'gpu-e2e-running',
+      kind: 'panoworld_reconstruct',
+      status: 'running',
+      progress: 0.4,
+      progressMessage: 'chargement du checkpoint',
+    };
+    const completed = {
+      id: 'gpu-e2e-completed',
+      kind: 'panoworld_reconstruct',
+      status: 'succeeded',
+      progress: 1,
+      progressMessage: 'completed',
+      output: {
+        profile: 'single-2048',
+        plyPath: 'D:\\results\\point_cloud.ply',
+        checkpointSha256: 'abc123',
+      },
+    };
+    ipcMain.handle('gpuMedia.capabilities', async () => ({
+      protocolVersion: 1,
+      workerId: 'darkstar-e2e',
+      jobs: ['panoworld_reconstruct', 'avatar_video_render'],
+      queueDepth: 0,
+      gpus: [{ name: 'RTX 3090', vramMb: 24_576, busy: false }],
+    }));
+    ipcMain.handle('gpuMedia.submit', async () => running);
+    ipcMain.handle('gpuMedia.status', async (_event, jobId: string) =>
+      jobId === completed.id ? completed : running
+    );
+    ipcMain.handle('gpuMedia.cancel', async () => ({ ...running, status: 'cancelled' }));
+    ipcMain.handle('gpuMedia.download', async () => ({
+      ok: true,
+      format: 'json',
+      path: '/tmp/panoworld-gpu-e2e-completed.json',
+    }));
+  });
+}
+
 async function dismissTransientOverlays(appPage: Page): Promise<void> {
   await appPage.evaluate(() => localStorage.setItem('cowork.tourSeen', '1'));
   const onboarding = appPage.getByTestId('onboarding-wizard');
@@ -141,7 +191,7 @@ test('advanced command center launches and administers a deep research result', 
     .fill('Étudier la continuité des conversations multimodales');
   await expect(appPage.getByTestId('advanced-launcher-model')).toHaveValue('qwen3.6:27b');
   await expect(appPage.getByTestId('advanced-launcher-ollama-url')).toHaveValue(
-    'http://darkstar:11434/v1',
+    'http://darkstar:11434/v1'
   );
   await appPage.getByTestId('advanced-launcher-start').click();
 
@@ -165,6 +215,70 @@ test('advanced command center launches and administers a deep research result', 
   await expect(appPage.getByText('Tous les modules')).toBeVisible();
   await appPage.screenshot({
     path: path.join('/tmp', 'cowork-advanced-command-center-responsive.png'),
+    fullPage: false,
+  });
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('advanced command center administers Darkstar GPU jobs', async ({ electronApp, appPage }) => {
+  const runtimeErrors: string[] = [];
+  appPage.on('pageerror', (error) => runtimeErrors.push(error.message));
+  appPage.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+
+  await installGpuMediaMock(electronApp);
+  await dismissTransientOverlays(appPage);
+  await appPage.evaluate(() => {
+    localStorage.removeItem('codebuddy.gpu-media.jobs.v1');
+    const store = (
+      window as unknown as {
+        useAppStore?: {
+          getState: () => {
+            setNewShellEnabled: (enabled: boolean) => void;
+            setPrimaryView: (view: 'chat' | 'advanced') => void;
+          };
+        };
+      }
+    ).useAppStore?.getState();
+    if (!store) throw new Error('useAppStore missing');
+    store.setNewShellEnabled(true);
+    store.setPrimaryView('advanced');
+  });
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(1_400, 900);
+  });
+
+  await appPage.getByTestId('advanced-tab-gpu').click();
+  await expect(appPage.getByTestId('gpu-media-admin')).toBeVisible();
+  await expect(appPage.getByText(/darkstar-e2e/)).toBeVisible();
+  expect(await appPage.title()).toBeTruthy();
+  expect(appPage.url()).toMatch(/^file:/);
+  await expect(appPage.locator('vite-error-overlay')).toHaveCount(0);
+  await appPage.getByTestId('gpu-image-path').fill('D:\\captures\\room.jpg');
+  await appPage.getByTestId('gpu-output-dir').fill('D:\\results');
+  await appPage.getByTestId('gpu-submit').click();
+  await expect(appPage.getByTestId('gpu-job-gpu-e2e-running')).toBeVisible();
+  await expect(appPage.getByTestId('gpu-job-detail')).toContainText('chargement du checkpoint');
+  await appPage.getByTestId('gpu-cancel').click();
+  await expect(appPage.getByTestId('gpu-job-detail')).toContainText('Annulée');
+
+  await appPage.getByTestId('gpu-existing-id').fill('gpu-e2e-completed');
+  await appPage.getByTestId('gpu-existing-add').click();
+  await expect(appPage.getByTestId('gpu-job-output')).toContainText('point_cloud.ply');
+  await appPage.getByTestId('gpu-download').click();
+  await expect(appPage.getByText(/Manifeste PanoWorld enregistré/)).toBeVisible();
+  await appPage.screenshot({
+    path: path.join('/tmp', 'cowork-gpu-media-admin.png'),
+    fullPage: false,
+  });
+
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(900, 700);
+  });
+  await expect(appPage.getByTestId('gpu-media-admin')).toBeVisible();
+  await appPage.screenshot({
+    path: path.join('/tmp', 'cowork-gpu-media-admin-responsive.png'),
     fullPage: false,
   });
   expect(runtimeErrors).toEqual([]);

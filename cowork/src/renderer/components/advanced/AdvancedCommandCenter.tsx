@@ -42,8 +42,9 @@ import type {
 } from '../../../shared/live-launcher-types';
 import { useAppStore } from '../../store';
 import { MessageMarkdown } from '../MessageMarkdown';
+import { GpuMediaAdminPanel } from './GpuMediaAdminPanel';
 
-type CommandCenterTab = 'features' | 'runs';
+type CommandCenterTab = 'features' | 'runs' | 'gpu';
 type LauncherMode = 'research-direct' | 'research-wide' | 'research-deep' | 'flow';
 type FeaturePanel =
   | 'settings'
@@ -97,7 +98,8 @@ const LAUNCHER_PRESETS: readonly LauncherPreset[] = [
   {
     id: 'research-wide',
     label: 'Recherche large',
-    description: 'Plusieurs travailleurs explorent le sujet en parallèle, avec une limite de 15 min.',
+    description:
+      'Plusieurs travailleurs explorent le sujet en parallèle, avec une limite de 15 min.',
     command: 'buddy research "<sujet>" --wide --workers 5',
   },
   {
@@ -402,7 +404,7 @@ function appendRenderedLog(current: string[], incoming: string[]): string[] {
 /** Keep a newer live event from being overwritten by an older polling reply. */
 function mergeRunSnapshots(
   current: LiveLauncherRunView[],
-  incoming: LiveLauncherRunView[],
+  incoming: LiveLauncherRunView[]
 ): LiveLauncherRunView[] {
   const currentById = new Map(current.map((run) => [run.runId, run]));
   const merged = incoming.map((next) => {
@@ -513,7 +515,9 @@ export function AdvancedCommandCenter() {
         } else if (payload.run.status === 'cancelled') {
           setNotice('Exécution annulée. Les journaux déjà produits restent consultables.');
         } else if (payload.run.status === 'failed') {
-          setError(payload.run.error ?? 'L’exécution a échoué. Consulte le journal pour le diagnostic.');
+          setError(
+            payload.run.error ?? 'L’exécution a échoué. Consulte le journal pour le diagnostic.'
+          );
         }
         return;
       }
@@ -576,7 +580,7 @@ export function AdvancedCommandCenter() {
       !useLocalOllama &&
       !window.confirm(
         `Ce lancement utilisera le provider configuré avec le modèle « ${model.trim() || DEFAULT_MODEL} ». ` +
-          'Il peut consommer des crédits API, particulièrement en mode Deep Research. Continuer ?',
+          'Il peut consommer des crédits API, particulièrement en mode Deep Research. Continuer ?'
       )
     ) {
       return;
@@ -732,6 +736,20 @@ export function AdvancedCommandCenter() {
               </span>
             )}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'gpu'}
+            onClick={() => setTab('gpu')}
+            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+              tab === 'gpu'
+                ? 'bg-accent text-background'
+                : 'text-text-secondary hover:bg-accent/10 hover:text-text-primary'
+            }`}
+            data-testid="advanced-tab-gpu"
+          >
+            GPU Darkstar
+          </button>
         </div>
       </header>
 
@@ -786,7 +804,9 @@ export function AdvancedCommandCenter() {
                       : 'border-warning/40 bg-warning/10 text-warning'
                   }`}
                 >
-                  {useLocalOllama ? 'Ollama local/réseau · $0' : 'provider configuré · coût possible'}
+                  {useLocalOllama
+                    ? 'Ollama local/réseau · $0'
+                    : 'provider configuré · coût possible'}
                 </span>
               </div>
 
@@ -1045,7 +1065,7 @@ export function AdvancedCommandCenter() {
             })}
           </section>
         </div>
-      ) : (
+      ) : tab === 'runs' ? (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[330px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-r border-border bg-surface/20 p-3">
             <div className="mb-3 flex items-center justify-between px-1">
@@ -1246,6 +1266,8 @@ export function AdvancedCommandCenter() {
             )}
           </main>
         </div>
+      ) : (
+        <GpuMediaAdminPanel />
       )}
     </div>
   );

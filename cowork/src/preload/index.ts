@@ -89,6 +89,13 @@ import type {
 } from '../main/missions/mission-types';
 import type { VoiceBackgroundMissionInput } from '../shared/voice-background-mission';
 import type { LiveLauncherRunView, LiveLauncherStartInput } from '../shared/live-launcher-types';
+import type {
+  GpuMediaAdminApi,
+  GpuMediaAdminSubmitInput,
+  GpuMediaDownloadResult,
+  GpuMediaCapabilities,
+  GpuMediaJobView,
+} from '../shared/gpu-media-admin';
 import type { CompanionAvatarRendererSnapshot } from '../shared/avatar-renderer';
 import type {
   WorkflowDryRunResult,
@@ -4969,6 +4976,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: (): Promise<LiveLauncherRunView[]> => ipcRenderer.invoke('liveLauncher.list'),
   },
 
+  gpuMedia: {
+    capabilities: (): Promise<GpuMediaCapabilities> => ipcRenderer.invoke('gpuMedia.capabilities'),
+    submit: (input: GpuMediaAdminSubmitInput): Promise<GpuMediaJobView> =>
+      ipcRenderer.invoke('gpuMedia.submit', input),
+    status: (jobId: string): Promise<GpuMediaJobView> =>
+      ipcRenderer.invoke('gpuMedia.status', jobId),
+    cancel: (jobId: string): Promise<GpuMediaJobView> =>
+      ipcRenderer.invoke('gpuMedia.cancel', jobId),
+    download: (jobId: string): Promise<GpuMediaDownloadResult> =>
+      ipcRenderer.invoke('gpuMedia.download', jobId),
+  } satisfies GpuMediaAdminApi,
+
   // Knowledge base (Claude Cowork parity)
   knowledge: {
     list: (projectId?: string): Promise<Array<Record<string, unknown>>> =>
@@ -9137,6 +9156,7 @@ declare global {
         status: (runId: string) => Promise<LiveLauncherRunView | null>;
         list: () => Promise<LiveLauncherRunView[]>;
       };
+      gpuMedia: GpuMediaAdminApi;
       knowledge: {
         list: (projectId?: string) => Promise<Array<Record<string, unknown>>>;
         get: (id: string, projectId?: string) => Promise<Record<string, unknown> | null>;
