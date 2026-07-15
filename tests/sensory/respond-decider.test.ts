@@ -165,14 +165,14 @@ describe('isDirectedFollowUp', () => {
 });
 
 describe('respond-decider — addressed + engagement window (no LLM)', () => {
-  it('accepts short standalone second-person requests without a name or judge', async () => {
+  it('accepts a judged short second-person request without a name and opens continuity', async () => {
     let t = 0;
-    const judge = vi.fn(async () => false);
+    const judge = vi.fn(async () => true);
     const d = createResponseDecider({
       robotName: 'Lisa',
       now: () => t,
       engageWindowMs: 30_000,
-      chimeIn: false,
+      chimeIn: true,
       judge,
       recentContext: async () => [],
     });
@@ -181,7 +181,7 @@ describe('respond-decider — addressed + engagement window (no LLM)', () => {
       respond: true,
       reason: 'directed-request',
     });
-    expect(judge).not.toHaveBeenCalled();
+    expect(judge).toHaveBeenCalledOnce();
 
     // The direct request opens normal conversational continuity without requiring Lisa again.
     t = 1_000;
@@ -198,7 +198,7 @@ describe('respond-decider — addressed + engagement window (no LLM)', () => {
     'Could you explain this',
     'Do you see the hamburger?',
   ])('accepts a bounded FR/EN directed request: %s', async (utterance) => {
-    const judge = vi.fn(async () => false);
+    const judge = vi.fn(async () => true);
     const d = createResponseDecider({
       robotName: 'Lisa',
       now: () => 0,
@@ -210,6 +210,40 @@ describe('respond-decider — addressed + engagement window (no LLM)', () => {
     expect(await d.decide(utterance)).toEqual({
       respond: true,
       reason: 'directed-request',
+    });
+    expect(judge).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a standalone second-person request when context says it is ambient', async () => {
+    const judge = vi.fn(async () => false);
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => 0,
+      chimeIn: true,
+      judge,
+      recentContext: async () => ['A continuous television discussion is playing nearby.'],
+    });
+
+    await expect(d.decide('Why can you sound good?')).resolves.toEqual({
+      respond: false,
+      reason: 'not-warranted',
+    });
+    expect(judge).toHaveBeenCalledOnce();
+  });
+
+  it('keeps standalone requests name-gated under the addressed policy', async () => {
+    const judge = vi.fn(async () => true);
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => 0,
+      chimeIn: false,
+      judge,
+      recentContext: async () => [],
+    });
+
+    await expect(d.decide('Tu vois le hamburger ?')).resolves.toEqual({
+      respond: false,
+      reason: 'ambient',
     });
     expect(judge).not.toHaveBeenCalled();
   });

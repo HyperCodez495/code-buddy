@@ -555,12 +555,14 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
         return { respond: true, reason: 'greeting' };
       }
 
-      // A clearly directed short request does not need the robot name or an LLM judge. This
-      // preserves the natural voice-assistant affordance ("Tu vois le hamburger ?", "Can you
-      // help me?") while keeping long second-person TV/radio monologues out of the dialogue.
-      if (isClearlyDirectedStandaloneRequest(text)) {
-        markEngaged('addressed');
-        return { respond: true, reason: 'directed-request' };
+      // A short second-person request may omit the robot name, but it still needs the contextual
+      // judge outside an engagement window. Resident microphones also hear short TV questions
+      // ("Why can you ...?"); bypassing context here would reopen the ambient feedback loop.
+      // The stricter `addressed` policy therefore stays silent, while `contextual` evaluates the
+      // request together with recent hearing percepts below.
+      const clearlyDirectedRequest = isClearlyDirectedStandaloneRequest(text);
+      if (clearlyDirectedRequest && !chimeIn) {
+        return { respond: false, reason: 'ambient' };
       }
 
       // Fail closed before the optional chime-in judge: a long broadcast question must not
@@ -588,6 +590,10 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
         return { respond: false, reason: 'judge-error' };
       }
       if (warranted) {
+        if (clearlyDirectedRequest) {
+          markEngaged('addressed');
+          return { respond: true, reason: 'directed-request' };
+        }
         return { respond: true, reason: 'chime-in' };
       }
       return { respond: false, reason: 'not-warranted' };
