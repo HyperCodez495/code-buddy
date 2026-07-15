@@ -370,7 +370,7 @@ def main() -> int:
     if commit:
         manifest["panoWorldCommit"] = commit
     atomic_json(result_path, manifest)
-    print("CODEBUDDY_PROGRESS 1.00 completed", flush=True)
+    print("CODEBUDDY_PROGRESS 1.00 finalizing result", flush=True)
     return 0
 
 
