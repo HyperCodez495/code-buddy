@@ -432,7 +432,11 @@ function VoiceboxStudioPanel({
   const [referenceText, setReferenceText] = useState('');
   const [sample, setSample] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
-  const [dictation, setDictation] = useState<{ available: boolean; accelerator: string } | null>(null);
+  const [dictation, setDictation] = useState<{
+    available: boolean;
+    accelerator: string;
+    platform: string;
+  } | null>(null);
 
   const refresh = async (): Promise<void> => {
     const api = window.electronAPI?.assistant;
@@ -459,7 +463,11 @@ function VoiceboxStudioPanel({
   useEffect(() => {
     void refresh();
     void window.electronAPI?.voice?.dictationStatus?.().then((status) => {
-      setDictation({ available: status.available, accelerator: status.accelerator });
+      setDictation({
+        available: status.available,
+        accelerator: status.accelerator,
+        platform: status.platform,
+      });
     }).catch(() => undefined);
   }, []);
 
@@ -520,6 +528,13 @@ function VoiceboxStudioPanel({
   };
 
   const downloadedModels = studio?.models.filter((model) => model.downloaded).length ?? 0;
+  const gpuLabel = studio?.health?.gpu_available
+    ? (studio.health.gpu_type ?? 'actif').replace(/^CUDA \(NVIDIA GeForce (.+)\)$/u, 'CUDA · $1')
+    : 'CPU';
+  const dictationLabel = dictation?.accelerator.replace(
+    'CommandOrControl',
+    dictation.platform === 'darwin' ? 'Cmd' : 'Ctrl'
+  );
   return (
     <section className="shrink-0 overflow-hidden rounded-lg border border-border bg-surface" data-testid="voicebox-studio">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -556,14 +571,14 @@ function VoiceboxStudioPanel({
       {studio ? (
         <div className="grid gap-4 p-4 lg:grid-cols-[1fr_1.35fr]">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-md bg-muted/40 p-2">
                 <div className="text-muted-foreground">Serveur</div>
                 <div className="mt-1 font-medium">{studio.health?.status ?? (studio.available ? 'prêt' : 'indisponible')}</div>
               </div>
               <div className="rounded-md bg-muted/40 p-2">
                 <div className="text-muted-foreground">GPU</div>
-                <div className="mt-1 font-medium">{studio.health?.gpu_available ? studio.health.gpu_type ?? 'actif' : 'CPU'}</div>
+                <div className="mt-1 font-medium" title={studio.health?.gpu_type ?? undefined}>{gpuLabel}</div>
               </div>
               <div className="rounded-md bg-muted/40 p-2">
                 <div className="text-muted-foreground">Modèles</div>
@@ -571,7 +586,7 @@ function VoiceboxStudioPanel({
               </div>
               <div className="rounded-md bg-muted/40 p-2">
                 <div className="flex items-center gap-1 text-muted-foreground"><Keyboard className="h-3 w-3" />Dictée</div>
-                <div className="mt-1 truncate font-medium" title={dictation?.accelerator}>{dictation?.available ? dictation.accelerator : 'indisponible'}</div>
+                <div className="mt-1 truncate font-medium" title={dictation?.accelerator}>{dictation?.available ? dictationLabel : 'indisponible'}</div>
               </div>
             </div>
             <div className="truncate text-xs text-muted-foreground" title={studio.baseUrl}>{studio.baseUrl}</div>
