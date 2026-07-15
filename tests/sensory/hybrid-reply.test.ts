@@ -748,6 +748,47 @@ describe('hybrid reply — routing & memory', () => {
     expect(semanticReview).toHaveBeenCalledOnce();
   });
 
+  it('reports the real provider delta before a semantically buffered draft is released', async () => {
+    const phases: string[] = [];
+    const chunks: string[] = [];
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      chitchat: async () => 'unused',
+      chitchatStream: async function* (_heard, _history, options) {
+        options?.onReplyTimingPhase?.('prompt_ready');
+        options?.onReplyTimingPhase?.('provider_first_delta');
+        yield 'Brouillon qui doit rester inaudible.';
+        options?.onReplyTimingPhase?.('generation_complete');
+      },
+      agentReply: async () => 'unused',
+      semanticReview: vi.fn(async () => ({
+        response: 'Réponse révisée et vérifiée.',
+        outcome: 'revised' as const,
+        reason: 'revision_completed' as const,
+        revisionAttempts: 1 as const,
+      })),
+    });
+
+    for await (const chunk of reply.stream("Penses-tu qu'une IA peut aimer ?", {
+      onReplyTimingPhase: (phase) => phases.push(phase),
+    })) {
+      chunks.push(chunk);
+      phases.push('released_to_voice');
+    }
+
+    expect(chunks).toEqual(['Réponse révisée et vérifiée.']);
+    expect(phases).toEqual([
+      'prompt_ready',
+      'provider_first_delta',
+      'generation_complete',
+      'semantic_review_complete',
+      'released_to_voice',
+    ]);
+  });
+
   it('keeps the original deep answer when an injected semantic reviewer is unavailable', async () => {
     const draft = 'Une réponse provisoire mais utilisable.';
     const reply = makeHybridReply({

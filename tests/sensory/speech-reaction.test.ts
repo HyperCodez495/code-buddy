@@ -623,6 +623,11 @@ describe('speech reaction — speech_end → STT → percept', () => {
       },
       getResponseTiming: () => ({
         mode: 'streamed',
+        promptReadyMs: 2,
+        providerFirstDeltaMs: 4,
+        generationCompleteMs: 24,
+        semanticReviewCompleteMs: 30,
+        firstSafeReleaseMs: 32,
         firstTextMs: 5,
         firstSegmentMs: 35,
         firstAudioMs: 80,
@@ -664,6 +669,11 @@ describe('speech reaction — speech_end → STT → percept', () => {
       expect(percept.payload.latency.decisionMs).toBe(30);
       expect(percept.payload.latency.actionMs).toBe(250);
       expect(percept.payload.latency.totalMs).toBe(400);
+      expect(percept.payload.latency.promptReadyMs).toBe(2);
+      expect(percept.payload.latency.providerFirstDeltaMs).toBe(4);
+      expect(percept.payload.latency.generationCompleteMs).toBe(24);
+      expect(percept.payload.latency.semanticReviewCompleteMs).toBe(30);
+      expect(percept.payload.latency.firstSafeReleaseMs).toBe(32);
       expect(percept.payload.latency.firstTextMs).toBe(5);
       expect(percept.payload.latency.firstSegmentMs).toBe(35);
       expect(percept.payload.latency.firstAudioMs).toBe(80);

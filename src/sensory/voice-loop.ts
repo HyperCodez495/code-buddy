@@ -111,6 +111,25 @@ export interface VoiceStepOptions {
   ) => VoiceCognitiveContextLease | null;
   /** Gives the semantic reviewer the same evidence block used by the answering model. */
   onCognitiveContextResolved?: (context: { turnContext: string; evidence: string }) => void;
+  /** Raw-free internal phase telemetry for the end-to-end spoken-turn clock. */
+  onReplyTimingPhase?: (phase: VoiceReplyTimingPhase) => void;
+}
+
+export type VoiceReplyTimingPhase =
+  | 'prompt_ready'
+  | 'provider_first_delta'
+  | 'generation_complete'
+  | 'semantic_review_complete';
+
+function reportReplyTimingPhase(
+  options: VoiceStepOptions | undefined,
+  phase: VoiceReplyTimingPhase,
+): void {
+  try {
+    options?.onReplyTimingPhase?.(phase);
+  } catch {
+    /* telemetry must never alter the spoken reply */
+  }
 }
 
 export interface VoiceCognitiveContextLease {
@@ -144,13 +163,23 @@ export type StreamSpeakFn = (text: string, opts?: StreamSpeakOptions) => Promise
 
 export interface VoiceReplyTiming {
   mode: 'streamed' | 'blocking' | 'silent' | 'interrupted' | 'failed';
+  /** Delay until routing, persona and prompt augmentation are ready for the provider. */
+  promptReadyMs?: number;
+  /** True provider TTFT, measured before any semantic buffering or safety release. */
+  providerFirstDeltaMs?: number;
+  /** Delay until the answering provider has completed its draft generation. */
+  generationCompleteMs?: number;
+  /** Delay until a required semantic audit/revision has completed. */
+  semanticReviewCompleteMs?: number;
+  /** Delay until the relationship gate first releases model/shortcut content. */
+  firstSafeReleaseMs?: number;
   /** Delay until the reply stream yields its first text (including an instant backchannel). */
   firstTextMs?: number;
   /** Delay until a complete safe text segment is ready for TTS. */
   firstSegmentMs?: number;
   /** Delay from reply-handler entry until playback of the first sentence/clip begins. */
   firstAudioMs?: number;
-  /** Delay until non-backchannel answer audio begins. */
+  /** Primary perceived-response SLA: delay until non-backchannel answer audio begins. */
   firstContentAudioMs?: number;
   /** Number of streamed segments recovered through WAV synthesis after native TTS failed. */
   streamFallbackSegments?: number;
@@ -1246,6 +1275,7 @@ export async function defaultReply(
       replyOpts,
     );
     const { CodeBuddyClient, route, systemPrompt } = prepared;
+    reportReplyTimingPhase(replyOpts, 'prompt_ready');
     cognitiveLease = prepared.cognitiveLease;
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
@@ -1265,6 +1295,7 @@ export async function defaultReply(
         ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
       }
     );
+    reportReplyTimingPhase(replyOpts, 'generation_complete');
     const reply = (resp?.choices?.[0]?.message?.content ?? '').trim();
     if (reply && !replyOpts?.signal?.aborted) cognitiveLease?.commit();
     else cognitiveLease?.release();
@@ -1322,6 +1353,7 @@ export async function* streamCompanionReply(
       replyOpts,
     );
     const { CodeBuddyClient, route, systemPrompt } = prepared;
+    reportReplyTimingPhase(replyOpts, 'prompt_ready');
     cognitiveLease = prepared.cognitiveLease;
     replyOpts?.onProviderResolved?.(route);
     logger.debug(`[voice] stream reply model: ${route.model} — ${route.reason}`);
@@ -1329,6 +1361,7 @@ export async function* streamCompanionReply(
     let continuation = '';
     let continuationYielded = 0;
     let continuationEmitted = false;
+    let providerDeltaSeen = false;
     for await (const chunk of client.chatStream(
       [
         { role: 'system', content: systemPrompt },
@@ -1346,6 +1379,10 @@ export async function* streamCompanionReply(
       if (replyOpts?.signal?.aborted) break;
       const delta = chunk?.choices?.[0]?.delta?.content;
       if (typeof delta === 'string' && delta.length > 0) {
+        if (!providerDeltaSeen) {
+          providerDeltaSeen = true;
+          reportReplyTimingPhase(replyOpts, 'provider_first_delta');
+        }
         if (!acknowledgement) {
           full += delta;
           yield delta;
@@ -1362,6 +1399,9 @@ export async function* streamCompanionReply(
           continuationYielded = safeLength;
         }
       }
+    }
+    if (!replyOpts?.signal?.aborted) {
+      reportReplyTimingPhase(replyOpts, 'generation_complete');
     }
     if (acknowledgement && !continuationEmitted) {
       const tail = continuation.trim();
@@ -1928,6 +1968,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let replyMs = 0;
     let synthMs = 0;
     let playMs = 0;
+    let promptReadyMs: number | undefined;
+    let providerFirstDeltaMs: number | undefined;
+    let generationCompleteMs: number | undefined;
+    let semanticReviewCompleteMs: number | undefined;
+    let firstSafeReleaseMs: number | undefined;
     let firstTextMs: number | undefined;
     let firstSegmentMs: number | undefined;
     let firstAudioMs: number | undefined;
@@ -1942,6 +1987,23 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
     let avatarAudioStreamIndex = 0;
     let avatarSpeechStartedAt: number | undefined;
     let avatarFinalText = '';
+    const markReplyTimingPhase = (phase: VoiceReplyTimingPhase): void => {
+      const elapsed = Date.now() - startedAt;
+      switch (phase) {
+        case 'prompt_ready':
+          promptReadyMs ??= elapsed;
+          break;
+        case 'provider_first_delta':
+          providerFirstDeltaMs ??= elapsed;
+          break;
+        case 'generation_complete':
+          generationCompleteMs ??= elapsed;
+          break;
+        case 'semantic_review_complete':
+          semanticReviewCompleteMs ??= elapsed;
+          break;
+      }
+    };
     const avatarTurnId = context?.turnId ?? createAvatarTurnId();
     const avatarCue = planAvatarPerformance(heard, delivery);
     const avatarEnabled = options.avatarEnabled ?? (
@@ -2197,7 +2259,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
           const relationshipSafety = new RelationshipSafetyStreamGuard();
           const timedReplyStream = (async function* (): AsyncGenerator<string> {
             let atStreamStart = true;
-            for await (const delta of streamFn(heard, { signal, delivery })) {
+            for await (const delta of streamFn(heard, {
+              signal,
+              delivery,
+              onReplyTimingPhase: markReplyTimingPhase,
+            })) {
               // Provider first-token latency is measured on the raw delta. The
               // safety gate intentionally waits for a sentence boundary before
               // release, which is a separate (and potentially much longer)
@@ -2218,10 +2284,12 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
               }
               if (delta.length > 0) atStreamStart = false;
               for (const safeDelta of relationshipSafety.push(delta)) {
+                firstSafeReleaseMs ??= Date.now() - startedAt;
                 yield safeDelta;
               }
             }
             for (const safeDelta of relationshipSafety.finish()) {
+              firstSafeReleaseMs ??= Date.now() - startedAt;
               yield safeDelta;
             }
             const safety = relationshipSafety.assessment();
@@ -2304,7 +2372,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         rawReply = visualReply;
       } else {
         const replyStart = Date.now();
-        rawReply = await replyFn(heard, { signal, delivery });
+        rawReply = await replyFn(heard, {
+          signal,
+          delivery,
+          onReplyTimingPhase: markReplyTimingPhase,
+        });
         replyMs = Date.now() - replyStart;
       }
       // Interrupted during the think step → abandon silently (never speak a stale reply).
@@ -2315,6 +2387,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       const preparedReply = prepareSpeech(rawReply);
       const relationshipGuard = guardRelationshipReply(preparedReply ?? '');
       const reply = relationshipGuard.response;
+      if (reply) firstSafeReleaseMs ??= Date.now() - startedAt;
       if (relationshipGuard.intervened) {
         logger.warn(
           `[voice] relationship safety gate intervened: ${relationshipGuard.issues.join(',')}`
@@ -2441,6 +2514,11 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         totalMs: Date.now() - startedAt,
         spoke,
         delivery,
+        ...(promptReadyMs !== undefined ? { promptReadyMs } : {}),
+        ...(providerFirstDeltaMs !== undefined ? { providerFirstDeltaMs } : {}),
+        ...(generationCompleteMs !== undefined ? { generationCompleteMs } : {}),
+        ...(semanticReviewCompleteMs !== undefined ? { semanticReviewCompleteMs } : {}),
+        ...(firstSafeReleaseMs !== undefined ? { firstSafeReleaseMs } : {}),
         ...(firstTextMs !== undefined ? { firstTextMs } : {}),
         ...(firstSegmentMs !== undefined ? { firstSegmentMs } : {}),
         ...(firstAudioMs !== undefined ? { firstAudioMs } : {}),
@@ -2449,6 +2527,22 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         ...(mode === 'blocking' ? { replyMs, synthMs, playMs } : {}),
       };
       (handler as VoiceReplyHandler).lastTiming = timing;
+      if (
+        promptReadyMs !== undefined ||
+        providerFirstDeltaMs !== undefined ||
+        generationCompleteMs !== undefined ||
+        semanticReviewCompleteMs !== undefined ||
+        firstSafeReleaseMs !== undefined
+      ) {
+        logger.info(
+          `[voice] phase latency: prompt=${promptReadyMs ?? -1}ms ` +
+            `providerDelta=${providerFirstDeltaMs ?? -1}ms ` +
+            `generation=${generationCompleteMs ?? -1}ms ` +
+            `semantic=${semanticReviewCompleteMs ?? -1}ms ` +
+            `safeRelease=${firstSafeReleaseMs ?? -1}ms ` +
+            `contentAudio=${firstContentAudioMs ?? -1}ms`
+        );
+      }
       try {
         options.onTiming?.(timing);
       } catch {

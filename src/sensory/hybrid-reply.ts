@@ -416,7 +416,8 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   }
 
   async function reviewBeforeDelivery(
-    input: HybridSemanticReviewInput
+    input: HybridSemanticReviewInput,
+    timing?: VoiceStepOptions,
   ): Promise<SemanticResponseGateResult | null> {
     if (!shouldReviewPlan(input.plan, input.request)) return null;
     try {
@@ -433,6 +434,12 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
         `[voice-hybrid] semantic review unavailable (${error instanceof Error ? error.name : 'unknown'})`
       );
       return null;
+    } finally {
+      try {
+        timing?.onReplyTimingPhase?.('semantic_review_complete');
+      } catch {
+        /* observability must never break reply delivery */
+      }
     }
   }
 
@@ -560,7 +567,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
           ...(reviewEvidence ? { evidence: reviewEvidence } : {}),
           ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
           ...(signal ? { signal } : {}),
-        });
+        }, stepOpts);
         if (reviewed) out = guardBeforeMemory(reviewed.response.trim() || out);
       }
       if (signal?.aborted) return '';
@@ -651,7 +658,7 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
           ...(cognitiveEvidence ? { evidence: cognitiveEvidence } : {}),
           ...(responseMainProvider ? { mainProvider: responseMainProvider } : {}),
           ...(replyOpts?.signal ? { signal: replyOpts.signal } : {}),
-        });
+        }, streamOptions);
         if (reviewed) {
           completed = guardBeforeMemory(reviewed.response.trim() || completed);
         }

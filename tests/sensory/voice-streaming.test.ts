@@ -3,7 +3,6 @@ import {
   makeVoiceReply,
   defaultStreamReply,
   immediateThinkingAcknowledgement,
-  type PlayFn,
   type VoiceReplyTiming,
 } from '../../src/sensory/voice-loop.js';
 import {
@@ -492,6 +491,54 @@ describe('makeVoiceReply — streaming integration', () => {
     expect(timing?.firstTextMs).toEqual(expect.any(Number));
     expect(timing?.firstSegmentMs).toEqual(expect.any(Number));
     expect(timing?.firstAudioMs).toEqual(expect.any(Number));
+  });
+
+  it('records provider, review, relationship-release and content-audio phases independently', async () => {
+    let clock = 1_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    let timing: VoiceReplyTiming | undefined;
+    try {
+      const onHeard = makeVoiceReply({
+        streamFn: async function* (_heard, options) {
+          clock = 1_010;
+          options?.onReplyTimingPhase?.('prompt_ready');
+          clock = 1_020;
+          options?.onReplyTimingPhase?.('provider_first_delta');
+          yield 'Première phrase utile.';
+          clock = 1_030;
+          options?.onReplyTimingPhase?.('generation_complete');
+          clock = 1_040;
+          options?.onReplyTimingPhase?.('semantic_review_complete');
+        },
+        streamSpeak: async (_text, options) => {
+          clock = 1_050;
+          options?.onFirstAudio?.();
+          return true;
+        },
+        synth: async () => '',
+        play: async () => undefined,
+        avatarEnabled: false,
+        onTiming: (value) => {
+          timing = value;
+        },
+      });
+
+      await onHeard('Donne une réponse argumentée.');
+
+      expect(timing).toMatchObject({
+        mode: 'streamed',
+        promptReadyMs: 10,
+        providerFirstDeltaMs: 20,
+        firstTextMs: 20,
+        generationCompleteMs: 30,
+        semanticReviewCompleteMs: 40,
+        firstSafeReleaseMs: 40,
+        firstContentAudioMs: 50,
+        spoke: true,
+      });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('sends a prefetched shortcut through the progressive audio path', async () => {

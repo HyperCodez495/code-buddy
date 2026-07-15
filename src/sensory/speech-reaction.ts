@@ -98,6 +98,11 @@ export interface SpeechReactionOptions {
   getResponseTiming?: () =>
     | {
         mode: string;
+        promptReadyMs?: number;
+        providerFirstDeltaMs?: number;
+        generationCompleteMs?: number;
+        semanticReviewCompleteMs?: number;
+        firstSafeReleaseMs?: number;
         firstTextMs?: number;
         firstSegmentMs?: number;
         firstAudioMs?: number;
@@ -1429,6 +1434,21 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
                 decisionMs,
                 actionMs,
                 totalMs,
+                ...(responseTiming?.promptReadyMs !== undefined
+                  ? { promptReadyMs: responseTiming.promptReadyMs }
+                  : {}),
+                ...(responseTiming?.providerFirstDeltaMs !== undefined
+                  ? { providerFirstDeltaMs: responseTiming.providerFirstDeltaMs }
+                  : {}),
+                ...(responseTiming?.generationCompleteMs !== undefined
+                  ? { generationCompleteMs: responseTiming.generationCompleteMs }
+                  : {}),
+                ...(responseTiming?.semanticReviewCompleteMs !== undefined
+                  ? { semanticReviewCompleteMs: responseTiming.semanticReviewCompleteMs }
+                  : {}),
+                ...(responseTiming?.firstSafeReleaseMs !== undefined
+                  ? { firstSafeReleaseMs: responseTiming.firstSafeReleaseMs }
+                  : {}),
                 ...(responseTiming?.firstTextMs !== undefined
                   ? { firstTextMs: responseTiming.firstTextMs }
                   : {}),

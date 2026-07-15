@@ -362,8 +362,21 @@ function makeDefaultAgentRunner(cwd: string): AgentRunner {
       }
       prepared ??= await createPrepared(desiredRoute);
       opts?.onProviderResolved?.(prepared.route);
+      try {
+        opts?.onReplyTimingPhase?.('prompt_ready');
+      } catch {
+        /* telemetry must never alter the agent turn */
+      }
       logger.info(`[voice-act] agent turn on ${prepared.route.model}`);
-      return await runInterruptibleVoiceAgentTurn(prepared.agent, transcript, opts);
+      const result = await runInterruptibleVoiceAgentTurn(prepared.agent, transcript, opts);
+      if (!opts?.signal?.aborted) {
+        try {
+          opts?.onReplyTimingPhase?.('generation_complete');
+        } catch {
+          /* telemetry must never alter the agent turn */
+        }
+      }
+      return result;
     } finally {
       // The MCP manager is process-global and stays warm, but everything owned
       // by this one-shot agent (watchers, listeners, abort controller, memory)
