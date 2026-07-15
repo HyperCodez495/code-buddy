@@ -337,6 +337,14 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: true,
   },
   {
+    name: 'web_scrape',
+    category: 'web',
+    keywords: ['scrape', 'crawl', 'extract', 'cloudflare', 'anti-bot', 'stealth', 'html', 'markdown', 'adaptive', 'selector'],
+    priority: 8,
+    description: 'Scrape a public web page locally with Scrapling and graceful web_fetch fallback',
+    fleetSafe: true,
+  },
+  {
     name: 'web_extract',
     category: 'web',
     keywords: ['extract', 'fetch', 'url', 'website', 'page', 'http', 'https', 'read', 'hermes'],

@@ -15,6 +15,12 @@ export {
   createWorkspaceTools,
 } from './workspace-tools.js';
 export { WebSearchTool } from "./web-search.js";
+export {
+  WebScrapeTool,
+  type WebScrapeInput,
+  type WebScrapeMode,
+  type WebScrapeFormat,
+} from './web-scrape-tool.js';
 export { WeatherTool } from "./weather.js";
 export { StockQuoteTool } from "./stock-quote.js";
 export { AppServerTool, getAppServerTool, resetAppServerTool } from "./app-server-tool.js";

@@ -50,6 +50,52 @@ export const WEB_FETCH_TOOL: CodeBuddyTool = {
   },
 };
 
+// Local, heavy-duty scraping via the optional Scrapling Python sidecar.
+export const WEB_SCRAPE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "web_scrape",
+    description: "Scrape a web page locally with Scrapling. Supports fast HTTP extraction, stealth/Cloudflare browser mode, dynamic JavaScript rendering, and CSS selectors. Falls back to web_fetch when Scrapling is unavailable.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Public HTTP or HTTPS URL to scrape",
+        },
+        mode: {
+          type: "string",
+          enum: ["http", "stealth", "dynamic"],
+          description: "Scraping engine (default: http)",
+        },
+        format: {
+          type: "string",
+          enum: ["markdown", "text", "html"],
+          description: "Primary output format (default: markdown)",
+        },
+        css: {
+          type: "object",
+          description: "Named CSS selectors to extract, for example { title: 'h1', prices: '.price' }",
+          additionalProperties: { type: "string" },
+        },
+        timeout: {
+          type: "number",
+          description: "Timeout in milliseconds (default: CODEBUDDY_SCRAPLING_TIMEOUT_MS or 60000)",
+        },
+        impersonate: {
+          type: "string",
+          description: "Optional browser identity for HTTP mode",
+        },
+        solveCloudflare: {
+          type: "boolean",
+          description: "Attempt Cloudflare challenge handling in stealth mode",
+        },
+      },
+      required: ["url"],
+    },
+  },
+};
+
 // Hermes-compatible web_extract alias
 export const WEB_EXTRACT_TOOL: CodeBuddyTool = {
   type: "function",
@@ -189,6 +235,7 @@ export const STOCK_QUOTE_TOOL: CodeBuddyTool = {
 export const WEB_TOOLS: CodeBuddyTool[] = [
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
+  WEB_SCRAPE_TOOL,
   WEB_EXTRACT_TOOL,
   WEATHER_TOOL,
   STOCK_QUOTE_TOOL,

@@ -3389,6 +3389,17 @@ addLazyCommand(
   },
 );
 
+// Local Scrapling scraper — fast HTTP, stealth/Cloudflare, or dynamic rendering.
+addLazyCommand(
+  program,
+  'scrape',
+  'Scrape a web page locally with Scrapling (with web_fetch fallback)',
+  async () => {
+    const { createScrapeCommand } = await import('./commands/scrape.js');
+    return createScrapeCommand();
+  },
+);
+
 // Paper QA — grounded, cited answers over a local corpus of scientific PDFs
 addLazyCommand(
   program,

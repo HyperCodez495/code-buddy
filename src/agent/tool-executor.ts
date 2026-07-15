@@ -20,6 +20,7 @@ import {
   TodoTool,
   ImageTool,
   WebSearchTool,
+  WebScrapeTool,
   WeatherTool,
   StockQuoteTool,
   MorphEditorTool,
@@ -56,6 +57,8 @@ export interface ToolExecutorDependencies {
   todoTool: TodoTool;
   imageTool: ImageTool;
   webSearch: WebSearchTool;
+  /** Optional — defaults to the local Scrapling wrapper with web_fetch fallback. */
+  webScrape?: WebScrapeTool;
   /** Optional — defaults to a fresh WeatherTool (no config/key needed). */
   weather?: WeatherTool;
   /** Optional — defaults to a fresh StockQuoteTool (no config/key needed). */
@@ -205,6 +208,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   // Web
   web_search: 'web',
   web_fetch: 'web',
+  web_scrape: 'web',
   weather: 'web',
   stock_quote: 'web',
   browser: 'web',
@@ -244,6 +248,7 @@ export class ToolExecutor {
   private todoTool: TodoTool;
   private imageTool: ImageTool;
   private webSearch: WebSearchTool;
+  private webScrape: WebScrapeTool;
   private weather: WeatherTool;
   private stockQuote: StockQuoteTool;
   private checkpointManager: CheckpointManager;
@@ -274,6 +279,7 @@ export class ToolExecutor {
     this.todoTool = deps.todoTool;
     this.imageTool = deps.imageTool;
     this.webSearch = deps.webSearch;
+    this.webScrape = deps.webScrape ?? new WebScrapeTool();
     this.weather = deps.weather ?? new WeatherTool();
     this.stockQuote = deps.stockQuote ?? new StockQuoteTool();
     this.checkpointManager = deps.checkpointManager;
@@ -477,6 +483,17 @@ export class ToolExecutor {
 
       case "web_fetch":
         return await this.webSearch.fetchPage(args.url as string);
+
+      case 'web_scrape':
+        return await this.webScrape.execute({
+          url: args.url as string,
+          mode: args.mode as import('../tools/web-scrape-tool.js').WebScrapeMode | undefined,
+          format: args.format as import('../tools/web-scrape-tool.js').WebScrapeFormat | undefined,
+          css: args.css as Record<string, string> | undefined,
+          timeout: args.timeout as number | undefined,
+          impersonate: args.impersonate as string | undefined,
+          solveCloudflare: args.solveCloudflare as boolean | undefined,
+        });
 
       default:
         // Check if this is an MCP tool

@@ -76,6 +76,7 @@ export {
 export {
   WebSearchExecuteTool,
   WebFetchTool,
+  WebScrapeExecuteTool,
   createWebTools,
   resetWebSearchInstance,
 } from './web-tools.js';

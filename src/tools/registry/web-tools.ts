@@ -9,6 +9,7 @@
 import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
 import { WebSearchTool, WeatherTool, StockQuoteTool } from '../index.js';
+import { WebScrapeTool, type WebScrapeInput } from '../web-scrape-tool.js';
 
 // ============================================================================
 // Shared WebSearchTool Instance
@@ -207,6 +208,109 @@ export class WebFetchTool implements ITool {
 }
 
 // ============================================================================
+// WebScrapeExecuteTool
+// ============================================================================
+
+/** ITool adapter for the optional local Scrapling sidecar. */
+export class WebScrapeExecuteTool implements ITool {
+  readonly name = 'web_scrape';
+  readonly description = 'Scrape locally with Scrapling using HTTP, stealth, or dynamic browser rendering';
+  private readonly scraper = new WebScrapeTool();
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    return await this.scraper.execute(input as unknown as WebScrapeInput);
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Public HTTP or HTTPS URL to scrape' },
+          mode: {
+            type: 'string',
+            enum: ['http', 'stealth', 'dynamic'],
+            description: 'Scraping mode (default: http)',
+            default: 'http',
+          },
+          format: {
+            type: 'string',
+            enum: ['markdown', 'text', 'html'],
+            description: 'Output format (default: markdown)',
+            default: 'markdown',
+          },
+          css: {
+            type: 'object',
+            description: 'Map of output field names to CSS selectors',
+          },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in milliseconds',
+            minimum: 1,
+            maximum: 600000,
+          },
+          impersonate: { type: 'string', description: 'Optional browser identity for HTTP mode' },
+          solveCloudflare: {
+            type: 'boolean',
+            description: 'Attempt Cloudflare challenge handling in stealth mode',
+          },
+        },
+        required: ['url'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const data = input as Record<string, unknown>;
+    if (typeof data.url !== 'string' || data.url.trim() === '') {
+      return { valid: false, errors: ['url must be a non-empty string'] };
+    }
+    try {
+      new URL(data.url);
+    } catch {
+      return { valid: false, errors: ['url must be a valid URL'] };
+    }
+    if (data.mode !== undefined && !['http', 'stealth', 'dynamic'].includes(String(data.mode))) {
+      return { valid: false, errors: ['mode must be http, stealth, or dynamic'] };
+    }
+    if (data.format !== undefined && !['markdown', 'text', 'html'].includes(String(data.format))) {
+      return { valid: false, errors: ['format must be markdown, text, or html'] };
+    }
+    if (data.css !== undefined && (typeof data.css !== 'object' || data.css === null || Array.isArray(data.css))) {
+      return { valid: false, errors: ['css must be an object of named selectors'] };
+    }
+    if (data.css && Object.entries(data.css as Record<string, unknown>).some(
+      ([field, selector]) => !field.trim() || typeof selector !== 'string' || !selector.trim(),
+    )) {
+      return { valid: false, errors: ['css must map non-empty field names to non-empty selectors'] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'web' as ToolCategoryType,
+      keywords: ['scrape', 'crawl', 'extract', 'cloudflare', 'anti-bot', 'stealth', 'html', 'markdown', 'adaptive', 'selector'],
+      priority: 8,
+      modifiesFiles: false,
+      makesNetworkRequests: true,
+      fleetSafe: true,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+// ============================================================================
 // WeatherExecuteTool
 // ============================================================================
 
@@ -369,6 +473,7 @@ export function createWebTools(): ITool[] {
   return [
     new WebSearchExecuteTool(),
     new WebFetchTool(),
+    new WebScrapeExecuteTool(),
     new WeatherExecuteTool(),
     new StockQuoteExecuteTool(),
   ];
