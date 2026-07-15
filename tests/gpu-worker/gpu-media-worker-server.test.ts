@@ -47,6 +47,20 @@ async function waitForTerminal(client: GpuMediaWorkerClient, id: string): Promis
   throw new Error('job did not reach a terminal state');
 }
 
+async function waitForProgress(
+  client: GpuMediaWorkerClient,
+  id: string,
+  minimum: number
+): Promise<GpuMediaJobView> {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    const job = await client.status(id);
+    if ((job.progress ?? 0) >= minimum) return job;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  throw new Error('job did not report progress');
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
@@ -102,6 +116,54 @@ describe('GPU media worker server', () => {
           output_dir: context.data,
         })
       ).rejects.toThrow(/outside configured roots/);
+    } finally {
+      await context.worker.close();
+    }
+  });
+
+  it('publishes chunk-safe runner progress while a job is running', async () => {
+    const context = await fixture();
+    try {
+      const client = new GpuMediaWorkerClient({ baseUrl: context.baseUrl, token: TOKEN });
+      const submitted = await client.submit('panoworld_reconstruct', {
+        scene_id: 'progress-room',
+        profile: 'single-2048',
+        panoramas: [{ image_path: join(context.data, 'pano.jpg'), room_id: 'room' }],
+        output_dir: context.data,
+      });
+      await expect(waitForProgress(client, submitted.id, 0.25)).resolves.toMatchObject({
+        status: 'running',
+        progress: 0.25,
+        progressMessage: 'loading checkpoint',
+      });
+      await expect(waitForProgress(client, submitted.id, 0.75)).resolves.toMatchObject({
+        progress: 0.75,
+        progressMessage: 'reconstructing scene',
+      });
+      await expect(waitForTerminal(client, submitted.id)).resolves.toMatchObject({
+        status: 'succeeded',
+        progress: 1,
+        progressMessage: 'completed',
+      });
+    } finally {
+      await context.worker.close();
+    }
+  });
+
+  it('returns a bounded runner error summary instead of only an exit code', async () => {
+    const context = await fixture();
+    try {
+      const client = new GpuMediaWorkerClient({ baseUrl: context.baseUrl, token: TOKEN });
+      const submitted = await client.submit('panoworld_reconstruct', {
+        scene_id: 'failure-room',
+        profile: 'single-2048',
+        panoramas: [{ image_path: join(context.data, 'pano.jpg'), room_id: 'room' }],
+        output_dir: context.data,
+      });
+      await expect(waitForTerminal(client, submitted.id)).resolves.toMatchObject({
+        status: 'failed',
+        error: 'GPU runner exited with code 7: PanoWorld runner error: synthetic model failure',
+      });
     } finally {
       await context.worker.close();
     }

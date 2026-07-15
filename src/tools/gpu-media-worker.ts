@@ -28,6 +28,7 @@ export interface GpuMediaJobView {
   kind: GpuMediaJobKind;
   status: GpuMediaJobStatus;
   progress?: number;
+  progressMessage?: string;
   createdAt?: string;
   startedAt?: string;
   completedAt?: string;

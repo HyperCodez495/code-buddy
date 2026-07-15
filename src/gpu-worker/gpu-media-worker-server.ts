@@ -10,7 +10,6 @@ import {
   parsePanoWorldPayload,
   type AvatarVideoPayload,
   type GpuMediaJobKind,
-  type GpuMediaJobStatus,
   type GpuMediaJobView,
   type GpuMediaWorkerCapabilities,
   type PanoWorldPayload,
@@ -57,6 +56,7 @@ export interface GpuMediaWorkerServer {
 const BODY_LIMIT = 1024 * 1024;
 const LOG_LIMIT = 1024 * 1024;
 const JOB_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const PROGRESS_LINE_PATTERN = /^CODEBUDDY_PROGRESS\s+([0-9]+(?:\.[0-9]+)?)\s*(.*)$/u;
 
 function publicJob(job: StoredGpuMediaJob): GpuMediaJobView {
   const { payload: _payload, updatedAt: _updatedAt, ...view } = job;
@@ -123,6 +123,50 @@ async function validatePayloadPaths(payload: JobPayload, allowedRoots: string[])
 function appendBounded(current: string, chunk: Buffer): string {
   if (current.length >= LOG_LIMIT) return current;
   return `${current}${chunk.toString('utf8')}`.slice(0, LOG_LIMIT);
+}
+
+function runnerErrorSummary(stderr: string): string | undefined {
+  const lines = stderr
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const candidate = [...lines]
+    .reverse()
+    .find(
+      (line) =>
+        !line.startsWith('Traceback (') &&
+        !line.startsWith('File "') &&
+        !/^\^+$/u.test(line)
+    );
+  if (!candidate) return undefined;
+  const printable = [...candidate]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return printable ? printable.slice(0, 512) : undefined;
+}
+
+function consumeProgressLines(
+  pending: string,
+  chunk: Buffer,
+  onProgress: (progress: number, message?: string) => void
+): string {
+  const combined = `${pending}${chunk.toString('utf8')}`;
+  const lines = combined.split(/\r?\n/u);
+  const remainder = lines.pop() ?? '';
+  for (const line of lines) {
+    const match = line.trim().match(PROGRESS_LINE_PATTERN);
+    if (!match) continue;
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) continue;
+    const message = match[2]?.trim().slice(0, 256);
+    onProgress(Math.min(numeric, 0.99), message || undefined);
+  }
+  return remainder.slice(-1024);
 }
 
 function wasCancelled(job: StoredGpuMediaJob): boolean {
@@ -243,15 +287,38 @@ export function createGpuMediaWorkerServer(
     running.set(job.id, child);
     let stdout = '';
     let stderr = '';
+    let pendingProgressLine = '';
+    let progressWrites = Promise.resolve();
+    const recordProgress = (progress: number, message?: string): void => {
+      if (wasCancelled(job) || progress < (job.progress ?? 0)) return;
+      job.progress = progress;
+      if (message) job.progressMessage = message;
+      progressWrites = progressWrites.then(async () => {
+        await Promise.all([
+          persist(job),
+          writeFile(join(directory, 'stdout.log'), stdout, 'utf8'),
+          writeFile(join(directory, 'stderr.log'), stderr, 'utf8'),
+        ]);
+      });
+    };
     const result = await waitForChild(
       child,
       Math.max(1_000, Math.min(runner.timeoutMs ?? 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000)),
       (stream, chunk) => {
-        if (stream === 'stdout') stdout = appendBounded(stdout, chunk);
-        else stderr = appendBounded(stderr, chunk);
+        if (stream === 'stdout') {
+          stdout = appendBounded(stdout, chunk);
+          pendingProgressLine = consumeProgressLines(
+            pendingProgressLine,
+            chunk,
+            recordProgress
+          );
+        } else {
+          stderr = appendBounded(stderr, chunk);
+        }
       }
     );
     running.delete(job.id);
+    await progressWrites;
     await Promise.all([
       writeFile(join(directory, 'stdout.log'), stdout, 'utf8'),
       writeFile(join(directory, 'stderr.log'), stderr, 'utf8'),
@@ -263,9 +330,12 @@ export function createGpuMediaWorkerServer(
     }
     if (result.timedOut || result.code !== 0) {
       job.status = 'failed';
-      job.error = result.timedOut
-        ? 'GPU runner timed out'
-        : `GPU runner exited with code ${result.code ?? 'unknown'}`;
+      if (result.timedOut) {
+        job.error = 'GPU runner timed out';
+      } else {
+        const summary = runnerErrorSummary(stderr);
+        job.error = `GPU runner exited with code ${result.code ?? 'unknown'}${summary ? `: ${summary}` : ''}`;
+      }
     } else {
       try {
         const output = JSON.parse(await readFile(resultPath, 'utf8')) as unknown;
@@ -275,6 +345,7 @@ export function createGpuMediaWorkerServer(
         job.status = 'succeeded';
         job.output = output as Record<string, unknown>;
         job.progress = 1;
+        job.progressMessage = 'completed';
       } catch (error) {
         job.status = 'failed';
         job.error = `GPU runner result is invalid: ${error instanceof Error ? error.message : String(error)}`;
