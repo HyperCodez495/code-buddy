@@ -203,9 +203,17 @@ def main() -> None:
     if result_path.parent != request_path.parent:
         raise RunnerError("result path must share the worker job directory")
 
-    longcat_repo = Path(os.environ.get("CODEBUDDY_LONGCAT_REPO", "/mnt/d/DEV/LongCat-Video"))
+    longcat_repo = Path(
+        os.environ.get(
+            "CODEBUDDY_LONGCAT_REPO",
+            str(Path.home() / ".local" / "share" / "codebuddy" / "LongCat-Video"),
+        )
+    )
     weights_root = Path(
-        os.environ.get("CODEBUDDY_LONGCAT_WEIGHTS_ROOT", str(longcat_repo / "weights"))
+        os.environ.get(
+            "CODEBUDDY_LONGCAT_WEIGHTS_ROOT",
+            "/mnt/d/DEV/LongCat-Video/weights",
+        )
     )
     avatar_checkpoint = weights_root / "LongCat-Video-Avatar-1.5"
     readiness_path = weights_root / "codebuddy-longcat-avatar-1.5.json"

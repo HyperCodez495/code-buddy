@@ -2,11 +2,14 @@
 set -euo pipefail
 
 ENV_DIR="${CODEBUDDY_LONGCAT_ENV:-$HOME/.conda-envs/longcat-video}"
-REPO_DIR="${CODEBUDDY_LONGCAT_REPO:-/mnt/d/DEV/LongCat-Video}"
+REPO_DIR="${CODEBUDDY_LONGCAT_REPO:-$HOME/.local/share/codebuddy/LongCat-Video}"
+WEIGHTS_ROOT="${CODEBUDDY_LONGCAT_WEIGHTS_ROOT:-/mnt/d/DEV/LongCat-Video/weights}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 export PATH="$ENV_DIR/bin:$PATH"
 export PYTHONPATH="$REPO_DIR"
+export CODEBUDDY_LONGCAT_REPO="$REPO_DIR"
+export CODEBUDDY_LONGCAT_WEIGHTS_ROOT="$WEIGHTS_ROOT"
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
