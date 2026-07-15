@@ -83,6 +83,77 @@ describe('isDirectedFollowUp', () => {
 });
 
 describe('respond-decider — addressed + engagement window (no LLM)', () => {
+  it('accepts short standalone second-person requests without a name or judge', async () => {
+    let t = 0;
+    const judge = vi.fn(async () => false);
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => t,
+      engageWindowMs: 30_000,
+      chimeIn: false,
+      judge,
+      recentContext: async () => [],
+    });
+
+    expect(await d.decide('Tu vois le hamburger que j’ai préparé ?')).toEqual({
+      respond: true,
+      reason: 'directed-request',
+    });
+    expect(judge).not.toHaveBeenCalled();
+
+    // The direct request opens normal conversational continuity without requiring Lisa again.
+    t = 1_000;
+    expect(await d.decide('et tu le trouves comment ?')).toEqual({
+      respond: true,
+      reason: 'engaged',
+    });
+  });
+
+  it.each([
+    'Peux-tu vérifier cela',
+    'Pourriez-vous me répondre',
+    'Can you help me with this',
+    'Could you explain this',
+    'Do you see the hamburger?',
+  ])('accepts a bounded FR/EN directed request: %s', async (utterance) => {
+    const judge = vi.fn(async () => false);
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => 0,
+      chimeIn: true,
+      judge,
+      recentContext: async () => [],
+    });
+
+    expect(await d.decide(utterance)).toEqual({
+      respond: true,
+      reason: 'directed-request',
+    });
+    expect(judge).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "Je vous attends pour comprendre l'actualité du jour, l'éclairer, l'analyser, " +
+      'tenter de la mettre en perspective, sans parti et sans concession.',
+    'You can follow the entire story from the beginning, and when you reach the end, ' +
+      'you will understand why this decision surprised everybody watching tonight.',
+  ])('rejects a long second-person broadcast without consulting the judge', async (utterance) => {
+    const judge = vi.fn(async () => true);
+    const d = createResponseDecider({
+      robotName: 'Lisa',
+      now: () => 0,
+      chimeIn: true,
+      judge,
+      recentContext: async () => [],
+    });
+
+    expect(await d.decide(utterance)).toEqual({
+      respond: false,
+      reason: 'ambient-long',
+    });
+    expect(judge).not.toHaveBeenCalled();
+  });
+
   it('keeps passive arrival windows short until the human explicitly joins', async () => {
     let t = 0;
     const d = createResponseDecider({
@@ -358,7 +429,7 @@ describe('respond-decider — chime-in (LLM only on a cue)', () => {
         throw new Error('llm down');
       },
     });
-    await expect(d.decide('peux-tu m’aider ?')).resolves.toEqual({
+    await expect(d.decide('comment compiler ce projet ?')).resolves.toEqual({
       respond: false,
       reason: 'judge-error',
     });

@@ -166,7 +166,7 @@ function nameMatchIndices(words: string[], name: string): number[] {
   return [...new Set(idxs)].sort((a, b) => a - b);
 }
 
-const SECOND_PERSON = /\b(tu|te|toi|vous|ton|ta|tes)\b/;
+const SECOND_PERSON = /\b(tu|te|toi|vous|ton|ta|tes|you|your|yours)\b/;
 // Common request/imperative verbs directed at the assistant (broader than the chime-in cue).
 const IMPERATIVE =
   /\b(raconte|redis|repete|continue|arrete|attends|chante|joue|ouvre|ferme|mets|met|envoie|note|ajoute|calcule|traduis|rappelle|dis|donne|montre|explique|fais|lance|cherche|trouve|aide|baisse|monte|augmente|repond|reponds)\b/;
@@ -286,10 +286,35 @@ export function isDirectedFollowUp(text: string): boolean {
 /** Cheap pre-attentive cue: does the utterance look like it invites a response at all? */
 function hasResponseCue(text: string): boolean {
   if (text.includes('?')) return true;
-  const t = text.toLowerCase();
-  return /\b(aide|help|peux[- ]tu|tu peux|comment|pourquoi|qu'est|quel|quelle|quels|où|quand|combien|explique|montre|fais|lance|cherche|trouve|rappelle|dis|donne)\b/.test(
+  const t = normWords(text);
+  return /\b(aide|help|peux tu|pouvez vous|pourrais tu|pourriez vous|tu peux|vous pouvez|comment|pourquoi|qu est|quel|quelle|quels|ou|quand|combien|explique|montre|fais|lance|cherche|trouve|rappelle|dis|donne|what|why|how|where|when|who|which|can you|could you|would you|will you|do you|are you|have you|did you)\b/.test(
     t
   );
+}
+
+const MAX_STANDALONE_DIRECT_WORDS = 14;
+const DIRECT_SECOND_PERSON_REQUEST = /^(?:s il (?:te|vous) plait )?(?:peux tu|pouvez vous|pourrais tu|pourriez vous|veux tu|voulez vous|tu peux|vous pouvez|tu vois|vous voyez|tu m entends|vous m entendez|tu sais|vous savez|tu penses|vous pensez|tu crois|vous croyez)\b|^(?:please )?(?:can|could|would|will|do|are|have|did) you\b|^(?:what|why|how|where|when|who|which)\b.*\byou\b/;
+
+/**
+ * A short utterance can clearly address the resident assistant without repeating its name.
+ * Keep this stricter than the in-conversation follow-up rule: outside an engagement window,
+ * second person alone is not enough because radio/TV narration frequently uses "vous"/"you".
+ */
+function isClearlyDirectedStandaloneRequest(text: string): boolean {
+  const normalized = normWords(text);
+  if (!normalized) return false;
+  const words = normalized.split(' ').filter(Boolean);
+  if (words.length > MAX_STANDALONE_DIRECT_WORDS || !SECOND_PERSON.test(normalized)) {
+    return false;
+  }
+  return text.includes('?') || DIRECT_SECOND_PERSON_REQUEST.test(normalized);
+}
+
+/** Long second-person speech outside a dialogue is much more likely broadcast/cross-talk. */
+function isLongStandaloneSecondPersonSpeech(text: string): boolean {
+  const normalized = normWords(text);
+  if (!SECOND_PERSON.test(normalized)) return false;
+  return normalized.split(' ').filter(Boolean).length > MAX_STANDALONE_DIRECT_WORDS;
 }
 
 function normalizeForCheapSpeechRules(text: string): string {
@@ -452,6 +477,20 @@ export function createResponseDecider(opts: ResponseDeciderOptions = {}): Respon
       if (respondToGreeting && isDirectGreeting(text)) {
         markEngaged('greeting');
         return { respond: true, reason: 'greeting' };
+      }
+
+      // A clearly directed short request does not need the robot name or an LLM judge. This
+      // preserves the natural voice-assistant affordance ("Tu vois le hamburger ?", "Can you
+      // help me?") while keeping long second-person TV/radio monologues out of the dialogue.
+      if (isClearlyDirectedStandaloneRequest(text)) {
+        markEngaged('addressed');
+        return { respond: true, reason: 'directed-request' };
+      }
+
+      // Fail closed before the optional chime-in judge: a long broadcast question must not
+      // become expensive merely because it contains a generic "vous" or "you".
+      if (isLongStandaloneSecondPersonSpeech(text)) {
+        return { respond: false, reason: 'ambient-long' };
       }
 
       // Not addressed, not in a conversation.
