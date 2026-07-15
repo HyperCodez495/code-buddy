@@ -36,6 +36,22 @@ export interface StockQuoteToolOptions {
   timeoutMs?: number;
 }
 
+export type StockQuoteProvider =
+  | 'Finnhub'
+  | 'Yahoo Finance'
+  | 'Nasdaq'
+  | 'Euronext Live'
+  | 'Stooq';
+
+/** Public provenance attached to every successful quote. Never contains credentials. */
+export interface StockQuoteMetadata extends Record<string, unknown> {
+  provider: StockQuoteProvider;
+  sourceUrl: string;
+  fetchedAt: number;
+  /** Provider-reported quote time, when the upstream payload exposes one. */
+  quoteTime?: string;
+}
+
 export interface EuronextInstrument {
   isin: string;
   mic: string;
@@ -401,6 +417,20 @@ export function formatQuoteSummary(d: StockWidgetData): string {
   return parts.join(', ') + '.';
 }
 
+function quoteResult(
+  data: StockWidgetData,
+  provider: StockQuoteProvider,
+  sourceUrl: string
+): ToolResult {
+  const metadata: StockQuoteMetadata = {
+    provider,
+    sourceUrl,
+    fetchedAt: Date.now(),
+    ...(data.time ? { quoteTime: data.time } : {}),
+  };
+  return { success: true, output: formatQuoteSummary(data), data, metadata };
+}
+
 export class StockQuoteTool {
   private readonly yahooBaseUrl: string;
   private readonly nasdaqBaseUrl: string;
@@ -448,7 +478,10 @@ export class StockQuoteTool {
           /* profile optional */
         }
         const data = parseFinnhubQuote(quote.data, profile, s);
-        if (data) return { success: true, output: formatQuoteSummary(data), data };
+        if (data) {
+          const sourceUrl = `${this.finnhubBaseUrl}/api/v1/quote?symbol=${encodeURIComponent(s)}`;
+          return quoteResult(data, 'Finnhub', sourceUrl);
+        }
       } catch {
         /* fall through to Yahoo */
       }
@@ -462,7 +495,7 @@ export class StockQuoteTool {
         headers: { 'User-Agent': UA, Accept: 'application/json' },
       });
       const data = parseYahooQuote(resp.data, s);
-      if (data) return { success: true, output: formatQuoteSummary(data), data };
+      if (data) return quoteResult(data, 'Yahoo Finance', url);
     } catch {
       /* fall through to Nasdaq */
     }
@@ -477,7 +510,7 @@ export class StockQuoteTool {
           headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' },
         });
         const data = parseNasdaqQuote(resp.data, s);
-        if (data) return { success: true, output: formatQuoteSummary(data), data };
+        if (data) return quoteResult(data, 'Nasdaq', url);
       } catch {
         /* fall through to Stooq */
       }
@@ -503,13 +536,14 @@ export class StockQuoteTool {
         const key = page.match(/"ajax_secure"\s*:\s*\{\s*"kye"\s*:\s*"([^"]+)"/)?.[1];
         if (key) {
           const productData = `${instrument.isin}-${instrument.mic}`;
-          const quote = await axios.get(`${this.euronextBaseUrl}/en/ajax/getDetailedQuote/${encodeURIComponent(productData)}`, {
+          const quoteUrl = `${this.euronextBaseUrl}/en/ajax/getDetailedQuote/${encodeURIComponent(productData)}`;
+          const quote = await axios.get(quoteUrl, {
             timeout: this.timeoutMs,
             headers: { 'User-Agent': UA, Accept: 'application/json', Referer: `${this.euronextBaseUrl}${instrument.link}` },
           });
           const quoteHtml = decryptEuronextPayload(quote.data, key);
           const data = quoteHtml ? parseEuronextQuoteHtml(quoteHtml, instrument) : null;
-          if (data) return { success: true, output: formatQuoteSummary(data), data };
+          if (data) return quoteResult(data, 'Euronext Live', quoteUrl);
         }
       }
     } catch {
@@ -522,7 +556,7 @@ export class StockQuoteTool {
       const url = `${this.stooqBaseUrl}/q/l/?s=${encodeURIComponent(stooqSym.toLowerCase())}&f=sd2t2ohlcv&h&e=csv`;
       const resp = await axios.get(url, { timeout: this.timeoutMs, responseType: 'text' });
       const data = parseStooqCsv(String(resp.data), s);
-      if (data) return { success: true, output: formatQuoteSummary(data), data };
+      if (data) return quoteResult(data, 'Stooq', url);
     } catch {
       /* fall through */
     }

@@ -16,18 +16,33 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export type PrefetchKind = 'weather' | 'news' | 'agenda' | 'date';
-export const PREFETCH_KINDS: readonly PrefetchKind[] = ['weather', 'news', 'agenda', 'date'];
+export type PrefetchKind = 'weather' | 'news' | 'market' | 'agenda' | 'date';
+export const PREFETCH_KINDS: readonly PrefetchKind[] = [
+  'weather',
+  'news',
+  'market',
+  'agenda',
+  'date',
+];
 export const DEFAULT_NEWS_QUERY =
   "actualités France monde technologie intelligence artificielle aujourd'hui";
 export const DEFAULT_NEWS_SEARCH_LANES = [
   "actualités importantes France monde aujourd'hui",
   "actualités technologie intelligence artificielle aujourd'hui",
 ] as const;
+export const DEFAULT_MARKET_SYMBOLS = ['^FCHI', '^GSPC', '^IXIC'] as const;
+export const MAX_MARKET_SYMBOLS = 10;
+
+export function normalizeMarketSymbols(symbols: readonly string[]): string[] {
+  const cleaned = symbols
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter((symbol) => /^[A-Z0-9^.=:-]{1,24}$/.test(symbol));
+  return [...new Set(cleaned)].slice(0, MAX_MARKET_SYMBOLS);
+}
 
 export interface PrefetchItem {
   kind: PrefetchKind;
-  /** Weather → city name; news → optional query override; agenda/date → unused. */
+  /** Weather → city name; news → optional query override; market/agenda/date → unused. */
   param?: string;
 }
 
@@ -42,7 +57,19 @@ export const DEFAULT_PREFETCH_ITEMS: PrefetchItem[] = [
   { kind: 'date' },
   { kind: 'agenda' },
   { kind: 'news' },
+  { kind: 'market' },
 ];
+
+/**
+ * Indices kept warm for everyone, followed by an optional bounded watchlist.
+ * Invalid values are ignored instead of reaching a remote quote endpoint.
+ */
+export function loadMarketSymbols(env: NodeJS.ProcessEnv = process.env): string[] {
+  const configured = (env.CODEBUDDY_MARKET_SYMBOLS ?? '')
+    .split(',')
+    .filter(Boolean);
+  return normalizeMarketSymbols([...DEFAULT_MARKET_SYMBOLS, ...configured]);
+}
 
 export function defaultPrefetchItemsPath(env: NodeJS.ProcessEnv = process.env): string {
   return (

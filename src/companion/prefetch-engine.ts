@@ -15,20 +15,28 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import {
+  formatMarketDigest,
   formatNewsDigest,
   type FreshContextPayload,
+  type MarketDigest,
+  type MarketDigestItem,
   type NewsDigest,
   type NewsDigestItem,
 } from '../conversation/fresh-context.js';
 import {
   DEFAULT_NEWS_QUERY,
   DEFAULT_NEWS_SEARCH_LANES,
+  loadMarketSymbols,
   loadPrefetchItems,
+  normalizeMarketSymbols,
   prefetchItemKey,
   type PrefetchItem,
   type PrefetchKind,
 } from './prefetch-config.js';
+import type { StockQuoteMetadata } from '../tools/stock-quote.js';
 import type { SearchResult } from '../tools/web-search.js';
+import type { ToolResult } from '../types/index.js';
+import type { StockWidgetData } from '../widgets/widget-types.js';
 
 export interface PrefetchEntry {
   key: string;
@@ -43,6 +51,7 @@ export interface PrefetchEntry {
 export const FRESH_TTL_MS: Record<PrefetchKind, number> = {
   weather: 30 * 60_000,
   news: 15 * 60_000,
+  market: 15 * 60_000,
   agenda: 10 * 60_000,
   date: 12 * 60 * 60_000,
 };
@@ -51,6 +60,7 @@ export const FRESH_TTL_MS: Record<PrefetchKind, number> = {
 export const STALE_TTL_MS: Record<PrefetchKind, number> = {
   weather: 45 * 60_000,
   news: 60 * 60_000,
+  market: 30 * 60_000,
   agenda: 6 * 60 * 60_000,
   date: 24 * 60 * 60_000,
 };
@@ -65,6 +75,10 @@ export interface PrefetchDeps {
   fetchNews?: (query: string) => Promise<string | null>;
   /** query → structured headlines evidence. Default: WebSearchTool. */
   fetchNewsContext?: (query: string) => Promise<NewsDigest | null>;
+  /** Bounded symbols + cycle time → structured market evidence. Default: StockQuoteTool. */
+  fetchMarketContext?: (symbols: readonly string[], fetchedAt: number) => Promise<MarketDigest | null>;
+  /** Test/programmatic override; normal configuration uses CODEBUDDY_MARKET_SYMBOLS. */
+  marketSymbols?: readonly string[];
   /** now → spoken agenda text. Default: reminders. */
   fetchAgenda?: (now: number) => Promise<string | null>;
   /** now → spoken French date. Default: inline. */
@@ -122,6 +136,8 @@ export function normalizeQuery(text: string): string {
 const KIND_PATTERNS: Record<PrefetchKind, RegExp> = {
   weather: /\b(meteo|quel temps|le temps qu|temps qu il fait|il fait quel temps)\b/,
   news: /\b(actualite|actualites|nouvelles|les infos|quoi de neuf|gros titres|l actu)\b/,
+  market:
+    /\b(bourse|marches? financiers?|indices? boursiers?|cac\s*40|s\s*(?:&|et)?\s*p\s*500|sp\s*500|nasdaq|wall street|portefeuille boursier|mes valeurs|cours (?:de |des )?(?:indices?|actions?|titres?|valeurs?))\b/,
   agenda:
     /\b(agenda|mes rappels|mon programme|au programme|qu est ce que j ai|mes rendez|ma journee)\b/,
   date: /\b(quel jour|quelle date|on est quel|le jour on est|date du jour|quel jour on est|on est le combien)\b/,
@@ -142,7 +158,7 @@ export function intentKeyForQuery(heard: string, items: PrefetchItem[]): string 
     const named = weatherItems.find((i) => i.param && q.includes(normalizeQuery(i.param)));
     return prefetchItemKey(named ?? weatherItems[0]!);
   }
-  for (const kind of ['news', 'agenda', 'date'] as const) {
+  for (const kind of ['market', 'news', 'agenda', 'date'] as const) {
     if (KIND_PATTERNS[kind].test(q)) return kind;
   }
   return null;
@@ -195,6 +211,12 @@ export function matchPrefetchedDetailed(
       return { entry, answer: formatted.speech, freshness: 'stale', ageMs };
     }
   }
+  if (entry.kind === 'market' && entry.context?.kind === 'market') {
+    const formatted = formatMarketDigest(entry.context, { stale: true, now: args.now });
+    if (formatted.speech) {
+      return { entry, answer: formatted.speech, freshness: 'stale', ageMs };
+    }
+  }
   const minutes = Math.max(1, Math.round(ageMs / 60_000));
   return {
     entry,
@@ -237,6 +259,83 @@ async function defaultFetchWeather(city: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function isStockWidgetData(value: unknown): value is StockWidgetData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<StockWidgetData>;
+  const validType = candidate.type === 'stock' || candidate.type === 'market' || candidate.type === 'bourse';
+  const price = candidate.price ?? candidate.value;
+  return validType && (typeof price === 'number' || typeof price === 'string');
+}
+
+function isStockQuoteMetadata(value: unknown): value is StockQuoteMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<StockQuoteMetadata>;
+  return (
+    typeof candidate.provider === 'string' &&
+    typeof candidate.sourceUrl === 'string' &&
+    /^https?:\/\//i.test(candidate.sourceUrl) &&
+    typeof candidate.fetchedAt === 'number' &&
+    Number.isFinite(candidate.fetchedAt)
+  );
+}
+
+/** Fetch all symbols concurrently and retain every independently sourced success. */
+export async function fetchMarketContext(
+  symbols: readonly string[],
+  fetchedAt: number,
+  getQuote: (symbol: string) => Promise<ToolResult>
+): Promise<MarketDigest | null> {
+  try {
+    const settled = await Promise.allSettled(symbols.map((symbol) => getQuote(symbol)));
+    const items: MarketDigestItem[] = [];
+
+    for (const [index, outcome] of settled.entries()) {
+      if (outcome.status !== 'fulfilled') continue;
+      const result = outcome.value;
+      if (!result.success || !isStockWidgetData(result.data) || !isStockQuoteMetadata(result.metadata)) {
+        continue;
+      }
+      const data = result.data;
+      const metadata = result.metadata;
+      const symbol = (data.symbol ?? symbols[index] ?? '').trim().toUpperCase();
+      const name = (data.name ?? symbol).trim();
+      const price = data.price ?? data.value;
+      if (!symbol || !name || price == null) continue;
+      const quoteTime = metadata.quoteTime ?? data.time;
+      items.push({
+        title: `${name} (${symbol})`,
+        url: metadata.sourceUrl,
+        source: metadata.provider,
+        symbol,
+        name,
+        type: data.type,
+        price,
+        fetchedAt: metadata.fetchedAt,
+        ...(data.change != null ? { change: data.change } : {}),
+        ...(data.changePercent != null ? { changePercent: data.changePercent } : {}),
+        ...(data.currency ? { currency: data.currency } : {}),
+        ...(data.market ? { market: data.market } : {}),
+        ...(quoteTime ? { quoteTime, publishedAt: quoteTime } : {}),
+      });
+    }
+
+    return items.length > 0
+      ? { kind: 'market', locale: 'fr-FR', fetchedAt, symbols: [...symbols], items }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function defaultFetchMarketContext(
+  symbols: readonly string[],
+  fetchedAt: number
+): Promise<MarketDigest | null> {
+  const { StockQuoteTool } = await import('../tools/stock-quote.js');
+  const tool = new StockQuoteTool();
+  return fetchMarketContext(symbols, fetchedAt, (symbol) => tool.getQuote(symbol));
 }
 
 /** Build dated topic lanes so one broad query cannot collapse the whole bulletin onto AI. */
@@ -456,6 +555,17 @@ export async function computeAnswer(
           }
         }
         break;
+      case 'market': {
+        const symbols = deps.marketSymbols
+          ? normalizeMarketSymbols(deps.marketSymbols)
+          : loadMarketSymbols();
+        const digest = await (deps.fetchMarketContext ?? defaultFetchMarketContext)(symbols, now);
+        if (digest) {
+          context = digest;
+          answer = formatMarketDigest(digest, { now }).speech;
+        }
+        break;
+      }
       case 'agenda':
         answer = await (deps.fetchAgenda ?? defaultFetchAgenda)(now);
         break;

@@ -140,8 +140,9 @@ remote endpoint's retention policy.
 | `CODEBUDDY_FALLBACK_PROVIDERS` | Comma-separated provider/model fallbacks, for example `openai:gpt-4o,glm:glm-5-code` | unset |
 | `CODEBUDDY_FALLBACK_PROVIDER` / `CODEBUDDY_FALLBACK_MODEL` | Single provider/model fallback pair | unset |
 | `CODEBUDDY_VOICE_RESPONSE_STYLE` | Adaptive spoken response depth: `natural`, `concise`, or `developed` | natural |
-| `CODEBUDDY_PREFETCH` | Preload structured news, agenda, date, and configured weather evidence | true |
+| `CODEBUDDY_PREFETCH` | Preload structured news, market, agenda, date, and configured weather evidence | true |
 | `CODEBUDDY_PREFETCH_INTERVAL_MS` | Wall-clock fresh-context refresh interval | 900000 |
+| `CODEBUDDY_MARKET_SYMBOLS` | Additional comma-separated market watchlist; deduplicated and capped at 10 total symbols after `^FCHI,^GSPC,^IXIC` | unset |
 | `CODEBUDDY_SEMANTIC_GATE` | Semantic audit + at most one independently re-audited revision for developed/deliberative companion answers (`auto`, `true`, `false`) | auto |
 | `CODEBUDDY_NEWS_QUERY` | Preferred news topics; the default is balanced into general and technology lanes | France/world/technology/AI |
 | `CODEBUDDY_NEWS_LOCALE` | Search language and country used for the grounded bulletin | fr-FR |

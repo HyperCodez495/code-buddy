@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { PRESET_VOICES } from '../talk-mode/providers/pocket-tts.js';
 import { synthesizePocketWav } from '../voice/local-tts.js';
-import { DEFAULT_NEWS_QUERY } from './prefetch-config.js';
+import { DEFAULT_MARKET_SYMBOLS, DEFAULT_NEWS_QUERY } from './prefetch-config.js';
 
 export type AssistantSettingGroup = 'voice' | 'speech' | 'behavior' | 'companion';
 export type AssistantSettingType = 'toggle' | 'enum' | 'text' | 'voice' | 'volume';
@@ -616,6 +616,15 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     default: '900000',
     envFile: 'vision',
     help: 'Wall-clock refresh interval for fresh context; defaults to fifteen minutes.',
+  },
+  {
+    key: 'CODEBUDDY_MARKET_SYMBOLS',
+    label: 'Additional market symbols',
+    group: 'companion',
+    type: 'text',
+    default: '',
+    envFile: 'both',
+    help: `Comma-separated watchlist added to ${DEFAULT_MARKET_SYMBOLS.join(', ')} (maximum ten symbols total).`,
   },
   {
     key: 'CODEBUDDY_NEWS_QUERY',

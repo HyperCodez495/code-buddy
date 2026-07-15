@@ -11,8 +11,10 @@ import {
   type PrefetchKind,
 } from '../companion/prefetch-config.js';
 import {
+  formatMarketDigest,
   formatNewsDigest,
   type FreshContextCitation,
+  type MarketDigest,
   type NewsDigest,
 } from './fresh-context.js';
 import type { ConversationTurn } from './types.js';
@@ -39,9 +41,9 @@ export interface ResolvePrefetchedTurnContextOptions {
 }
 
 /**
- * Only public, source-attributed news may leave the main companion provider as
- * semantic-review evidence. Agenda entries are private; weather can reveal a
- * precise location; date needs no external evidence bundle.
+ * Only public, source-attributed news and market data may leave the main
+ * companion provider as semantic-review evidence. Agenda entries are private;
+ * weather can reveal a precise location; date needs no external evidence bundle.
  */
 export function semanticReviewEvidenceFromPrefetch(
   context:
@@ -49,7 +51,7 @@ export function semanticReviewEvidenceFromPrefetch(
     | null
     | undefined,
 ): string | undefined {
-  if (context?.kind !== 'news') return undefined;
+  if (context?.kind !== 'news' && context?.kind !== 'market') return undefined;
   // The answering model needs the defensive wrapper and instructions in
   // `promptGuidance`. A semantic critic only needs the public source data.
   // Avoid charging a second model for the same wrapper and prose again.
@@ -104,6 +106,33 @@ function newsEvidence(digest: NewsDigest, citations: FreshContextCitation[]): un
   };
 }
 
+function marketEvidence(digest: MarketDigest, citations: FreshContextCitation[]): unknown {
+  const citedUrls = new Set(citations.map((citation) => citation.url));
+  return {
+    kind: digest.kind,
+    locale: digest.locale,
+    fetchedAt: new Date(digest.fetchedAt).toISOString(),
+    symbols: digest.symbols.slice(0, 10),
+    items: digest.items
+      .filter((item) => citedUrls.has(item.url))
+      .slice(0, 10)
+      .map((item) => ({
+        symbol: bounded(item.symbol, 32),
+        name: bounded(item.name, 160),
+        type: item.type,
+        price: item.price,
+        change: item.change,
+        changePercent: item.changePercent,
+        currency: bounded(item.currency, 16),
+        market: bounded(item.market, 80),
+        provider: bounded(item.source, 80),
+        url: bounded(item.url, 1_200),
+        fetchedAt: new Date(item.fetchedAt).toISOString(),
+        quoteTime: bounded(item.quoteTime, 160),
+      })),
+  };
+}
+
 function buildPromptGuidance(
   match: PrefetchMatch,
   fetchedAt: number,
@@ -112,11 +141,13 @@ function buildPromptGuidance(
 ): string {
   const evidence = match.entry.context?.kind === 'news'
     ? newsEvidence(match.entry.context, citations)
-    : {
-        kind: match.entry.kind,
-        fetchedAt: new Date(fetchedAt).toISOString(),
-        answer: bounded(text, 4_000),
-      };
+    : match.entry.context?.kind === 'market'
+      ? marketEvidence(match.entry.context, citations)
+      : {
+          kind: match.entry.kind,
+          fetchedAt: new Date(fetchedAt).toISOString(),
+          answer: bounded(text, 4_000),
+        };
   return [
     '<fresh_context>',
     '# Contexte frais partagé entre voix, Telegram et Cowork',
@@ -125,7 +156,9 @@ function buildPromptGuidance(
     'Appuie la réponse sur ces éléments avant de lancer une nouvelle recherche. N’invente aucun fait absent.',
     match.entry.kind === 'news'
       ? 'Pour des actualités, indique la date ou la fraîcheur, explique la portée demandée et conserve les URL des sources dans la réponse textuelle.'
-      : 'Réponds directement avec la donnée préchargée et signale honnêtement si elle est périmée.',
+      : match.entry.kind === 'market'
+        ? "Pour les marchés, distingue toujours l'heure de collecte de l'heure de cotation, cite les sources et ne transforme pas ces données en conseil financier."
+        : 'Réponds directement avec la donnée préchargée et signale honnêtement si elle est périmée.',
     '<fresh_context_json>',
     safeJson(evidence),
     '</fresh_context_json>',
@@ -169,6 +202,18 @@ export function resolvePrefetchedTurnContext(
     semanticReviewEvidence = safeJson(
       newsEvidence(match.entry.context, citations),
     );
+  } else if (match.entry.context?.kind === 'market') {
+    fetchedAt = match.entry.context.fetchedAt;
+    const formatted = formatMarketDigest(match.entry.context, {
+      stale: match.freshness === 'stale',
+      now,
+    });
+    speech = formatted.speech || speech;
+    text = formatted.text || text;
+    citations = formatted.citations;
+    semanticReviewEvidence = safeJson(
+      marketEvidence(match.entry.context, citations),
+    );
   }
 
   return {
@@ -197,6 +242,12 @@ export function shouldUsePrefetchedAnswerDirectly(
   const query = normalized(heard);
   if (!query || ANALYTICAL_FOLLOW_UP.test(query)) return false;
   if (context.kind === 'news' && /\b(avis|argumente|raison|enjeu|risque|opportunite)\b/.test(query)) {
+    return false;
+  }
+  if (
+    context.kind === 'market' &&
+    /\b(cause|prevision|perspective|anticip|acheter|vendre|conseil|recommande|investir|va t (?:il|elle))\b/.test(query)
+  ) {
     return false;
   }
   return true;

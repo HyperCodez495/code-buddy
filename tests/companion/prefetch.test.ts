@@ -7,9 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   addPrefetchItem,
+  DEFAULT_MARKET_SYMBOLS,
   DEFAULT_NEWS_QUERY,
   DEFAULT_PREFETCH_ITEMS,
   loadPrefetchItems,
+  loadMarketSymbols,
   prefetchItemKey,
   removePrefetchItem,
   savePrefetchItems,
@@ -18,6 +20,7 @@ import {
 import {
   buildNewsSearchQueries,
   computeAnswer,
+  fetchMarketContext,
   frenchDate,
   intentKeyForQuery,
   matchPrefetched,
@@ -57,6 +60,19 @@ describe('prefetch-config', () => {
     savePrefetchItems([{ kind: 'weather' }, { kind: 'nope' } as unknown as PrefetchItem], path);
     expect(loadPrefetchItems(path)).toEqual([{ kind: 'weather' }]);
   });
+
+  it('keeps the three default indices and bounds a deduplicated configured watchlist', () => {
+    const configured = loadMarketSymbols({
+      CODEBUDDY_MARKET_SYMBOLS:
+        'aapl, MC.PA, aapl, invalid symbol, BTC-USD, one,two,three,four,five,six,seven,eight',
+    });
+    expect(configured.slice(0, 3)).toEqual([...DEFAULT_MARKET_SYMBOLS]);
+    expect(configured).toContain('AAPL');
+    expect(configured).toContain('MC.PA');
+    expect(configured.filter((symbol) => symbol === 'AAPL')).toHaveLength(1);
+    expect(configured).not.toContain('INVALID SYMBOL');
+    expect(configured).toHaveLength(10);
+  });
 });
 
 describe('news RSS evidence', () => {
@@ -83,6 +99,7 @@ describe('intentKeyForQuery', () => {
     { kind: 'weather', param: 'Paris' },
     { kind: 'weather', param: 'Lyon' },
     { kind: 'news' },
+    { kind: 'market' },
     { kind: 'agenda' },
     { kind: 'date' },
   ];
@@ -92,7 +109,10 @@ describe('intentKeyForQuery', () => {
     expect(intentKeyForQuery('il fait quel temps ?', items)).toBe('weather:paris');
   });
 
-  it('routes news / agenda / date', () => {
+  it('routes market / news / agenda / date', () => {
+    expect(intentKeyForQuery('où en est la bourse ?', items)).toBe('market');
+    expect(intentKeyForQuery('donne-moi le CAC 40 et le S&P 500', items)).toBe('market');
+    expect(intentKeyForQuery('comment évolue mon portefeuille boursier ?', items)).toBe('market');
     expect(intentKeyForQuery('quelles sont les actualités', items)).toBe('news');
     expect(intentKeyForQuery("qu'est-ce que j'ai aujourd'hui", items)).toBe('agenda');
     expect(intentKeyForQuery('on est quel jour ?', items)).toBe('date');
@@ -236,5 +256,87 @@ describe('computeAnswer + runPrefetchCycle (injected deps)', () => {
     );
     expect(entry?.context?.kind).toBe('news');
     expect(entry?.answer).toContain('selon Exemple');
+  });
+
+  it('stores a structured, source-attributed market digest', async () => {
+    const entry = await computeAnswer(
+      { kind: 'market' },
+      {
+        now,
+        marketSymbols: ['^FCHI'],
+        fetchMarketContext: async (symbols, fetchedAt) => ({
+          kind: 'market',
+          locale: 'fr-FR',
+          fetchedAt,
+          symbols: [...symbols],
+          items: [{
+            title: 'CAC 40 (^FCHI)',
+            url: 'https://quotes.example.test/cac40',
+            source: 'Yahoo Finance',
+            symbol: '^FCHI',
+            name: 'CAC 40',
+            type: 'market',
+            price: 7654.2,
+            changePercent: -0.56,
+            fetchedAt,
+            quoteTime: '17:35',
+          }],
+        }),
+      }
+    );
+    expect(entry?.context?.kind).toBe('market');
+    expect(entry?.answer).toContain('CAC 40');
+    expect(entry?.answer).toContain('cotation 17:35');
+    expect(entry?.answer).toContain('selon Yahoo Finance');
+  });
+});
+
+describe('fetchMarketContext', () => {
+  it('starts quotes in parallel and preserves partial successes with provenance', async () => {
+    const started: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = fetchMarketContext(
+      ['^FCHI', '^GSPC', '^IXIC'],
+      1_700_000_000_000,
+      async (symbol) => {
+        started.push(symbol);
+        await gate;
+        if (symbol === '^GSPC') throw new Error('provider unavailable');
+        if (symbol === '^IXIC') return { success: false, error: 'not found' };
+        return {
+          success: true,
+          output: 'CAC 40.',
+          data: {
+            type: 'market',
+            symbol,
+            name: 'CAC 40',
+            price: 7654.2,
+            changePercent: 0.42,
+            time: '17:35',
+          },
+          metadata: {
+            provider: 'Yahoo Finance',
+            sourceUrl: 'https://quotes.example.test/cac40',
+            fetchedAt: 1_700_000_000_100,
+            quoteTime: '17:35',
+          },
+        };
+      }
+    );
+
+    await Promise.resolve();
+    expect(started).toEqual(['^FCHI', '^GSPC', '^IXIC']);
+    release();
+    const digest = await pending;
+    expect(digest?.items).toHaveLength(1);
+    expect(digest?.items[0]).toMatchObject({
+      symbol: '^FCHI',
+      source: 'Yahoo Finance',
+      quoteTime: '17:35',
+      fetchedAt: 1_700_000_000_100,
+    });
   });
 });

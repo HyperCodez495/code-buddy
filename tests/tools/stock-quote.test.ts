@@ -2,7 +2,10 @@
  * Stock quote tool — pure parsers (Yahoo chart JSON, Stooq CSV) + French summary.
  * No network: tests run against captured payload shapes.
  */
+import axios from 'axios';
+import { beforeEach, vi } from 'vitest';
 import {
+  StockQuoteTool,
   parseYahooQuote,
   parseStooqCsv,
   parseFinnhubQuote,
@@ -12,6 +15,16 @@ import {
   parseEuronextQuoteHtml,
   formatQuoteSummary,
 } from '../../src/tools/stock-quote.js';
+
+vi.mock('axios', () => ({
+  default: { get: vi.fn() },
+}));
+
+const axiosGet = vi.mocked(axios.get);
+
+beforeEach(() => {
+  axiosGet.mockReset();
+});
 
 const yahooEquity = {
   chart: {
@@ -261,5 +274,43 @@ describe('formatQuoteSummary', () => {
     expect(s).toContain('226,34');
     expect(s).not.toContain('hausse');
     expect(s).not.toContain('baisse');
+  });
+});
+
+describe('StockQuoteTool provenance', () => {
+  it('attaches public Yahoo provenance and a separate collection timestamp', async () => {
+    axiosGet.mockResolvedValueOnce({ data: yahooEquity });
+    const before = Date.now();
+    const result = await new StockQuoteTool({
+      yahooBaseUrl: 'https://quotes.example.test',
+      timeoutMs: 100,
+    }).getQuote('AAPL');
+
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({
+      provider: 'Yahoo Finance',
+      sourceUrl: 'https://quotes.example.test/v8/finance/chart/AAPL?interval=1d&range=1d',
+    });
+    expect(result.metadata?.fetchedAt).toEqual(expect.any(Number));
+    expect(Number(result.metadata?.fetchedAt)).toBeGreaterThanOrEqual(before);
+  });
+
+  it('never exposes the Finnhub token in provenance', async () => {
+    axiosGet
+      .mockResolvedValueOnce({ data: { c: 226.34, d: 3.12, dp: 1.4, pc: 223.22 } })
+      .mockResolvedValueOnce({
+        data: { name: 'Apple Inc', ticker: 'AAPL', currency: 'USD', exchange: 'NASDAQ NMS' },
+      });
+    const result = await new StockQuoteTool({
+      finnhubBaseUrl: 'https://finnhub.example.test',
+      finnhubKey: 'super-secret-token',
+      timeoutMs: 100,
+    }).getQuote('AAPL');
+
+    expect(result.metadata).toMatchObject({
+      provider: 'Finnhub',
+      sourceUrl: 'https://finnhub.example.test/api/v1/quote?symbol=AAPL',
+    });
+    expect(JSON.stringify(result.metadata)).not.toContain('super-secret-token');
   });
 });

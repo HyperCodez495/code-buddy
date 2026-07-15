@@ -40,6 +40,34 @@ function newsEntry(at = now - 60_000): PrefetchEntry {
   };
 }
 
+function marketEntry(at = now - 60_000): PrefetchEntry {
+  return {
+    key: 'market',
+    kind: 'market',
+    answer: 'Point marchés vocal.',
+    at,
+    context: {
+      kind: 'market',
+      locale: 'fr-FR',
+      fetchedAt: at,
+      symbols: ['^FCHI', '^GSPC', '^IXIC'],
+      items: [{
+        title: 'CAC 40 (^FCHI)',
+        url: 'https://quotes.example.test/cac40',
+        source: 'Yahoo Finance',
+        symbol: '^FCHI',
+        name: 'CAC 40',
+        type: 'market',
+        price: 7654.2,
+        change: -42.8,
+        changePercent: -0.56,
+        fetchedAt: at + 500,
+        quoteTime: '17:35',
+      }],
+    },
+  };
+}
+
 const originalEnv = {
   cache: process.env.CODEBUDDY_PREFETCH_CACHE_FILE,
   items: process.env.CODEBUDDY_PREFETCH_ITEMS_FILE,
@@ -109,11 +137,48 @@ describe('shared prefetched turn context', () => {
     expect(isPrefetchedTurnRequest('Quoi de neuf aujourd’hui ?', [{ kind: 'news' }])).toBe(true);
   });
 
-  it('exports only public news context to an optional remote semantic critic', () => {
+  it('shares timestamped market citations while keeping analysis on the LLM lane', () => {
+    const context = resolvePrefetchedTurnContext('Où en est la bourse et le CAC 40 ?', {
+      cache: [marketEntry()],
+      items: [{ kind: 'market' }],
+      now,
+    });
+
+    expect(context?.speech).toContain('CAC 40');
+    expect(context?.speech).toContain('cotation 17:35');
+    expect(context?.text).toContain('L\'heure de collecte est distincte');
+    expect(context?.text).toContain('https://quotes.example.test/cac40');
+    expect(context?.citations).toEqual([
+      expect.objectContaining({
+        title: 'CAC 40 (^FCHI)',
+        source: 'Yahoo Finance',
+        publishedAt: '17:35',
+      }),
+    ]);
+    expect(context?.promptGuidance).toContain('"kind": "market"');
+    expect(context?.promptGuidance).toContain('"quoteTime": "17:35"');
+    expect(context?.semanticReviewEvidence).toContain('quotes.example.test');
+    expect(semanticReviewEvidenceFromPrefetch(context)).toBe(context?.semanticReviewEvidence);
+    expect(shouldUsePrefetchedAnswerDirectly('Où en est la bourse ?', context!)).toBe(true);
+    expect(
+      shouldUsePrefetchedAnswerDirectly('Pourquoi le CAC 40 baisse-t-il ?', context!)
+    ).toBe(false);
+    expect(
+      shouldUsePrefetchedAnswerDirectly('Est-ce que tu me conseilles d\'investir ?', context!)
+    ).toBe(false);
+  });
+
+  it('exports only public news/market context to an optional remote semantic critic', () => {
     const publicNews = '<fresh_context>Public URL and dated headline.</fresh_context>';
     expect(
       semanticReviewEvidenceFromPrefetch({ kind: 'news', promptGuidance: publicNews }),
     ).toBe(publicNews);
+    expect(
+      semanticReviewEvidenceFromPrefetch({
+        kind: 'market',
+        promptGuidance: '<fresh_context>Public timestamped quote.</fresh_context>',
+      }),
+    ).toBe('<fresh_context>Public timestamped quote.</fresh_context>');
     expect(
       semanticReviewEvidenceFromPrefetch({
         kind: 'agenda',

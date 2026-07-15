@@ -17,7 +17,30 @@ export interface NewsDigest {
   items: NewsDigestItem[];
 }
 
-export type FreshContextPayload = NewsDigest;
+export interface MarketDigestItem extends FreshContextCitation {
+  symbol: string;
+  name: string;
+  type: 'stock' | 'market' | 'bourse';
+  price: number | string;
+  change?: number | string;
+  changePercent?: number | string;
+  currency?: string;
+  market?: string;
+  /** Local collection time for this individual quote. */
+  fetchedAt: number;
+  /** Provider-reported quote time. It is deliberately distinct from fetchedAt. */
+  quoteTime?: string;
+}
+
+export interface MarketDigest {
+  kind: 'market';
+  locale: string;
+  fetchedAt: number;
+  symbols: string[];
+  items: MarketDigestItem[];
+}
+
+export type FreshContextPayload = NewsDigest | MarketDigest;
 
 export interface FormattedFreshContext {
   speech: string;
@@ -212,6 +235,91 @@ export function formatNewsDigest(
       url: item.url,
       ...(item.source ? { source: item.source } : {}),
       ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+    })),
+  };
+}
+
+function marketNumber(value: number | string | undefined): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const parsed = Number(value.trim().replace(/\s/g, '').replace(',', '.').replace('%', ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatMarketNumber(value: number): string {
+  return new Intl.NumberFormat('fr-FR', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatCollectionTimestamp(fetchedAt: number, locale: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: 'Europe/Paris',
+    }).format(new Date(fetchedAt));
+  } catch {
+    return new Date(fetchedAt).toISOString();
+  }
+}
+
+function marketItemSentence(item: MarketDigestItem): string {
+  const price = marketNumber(item.price);
+  if (price == null) return '';
+  const unit = item.currency || (item.type === 'market' || item.type === 'bourse' ? 'points' : '');
+  const percent = marketNumber(item.changePercent);
+  const change = marketNumber(item.change);
+  const directionValue = percent ?? change;
+  const movement = directionValue == null
+    ? ''
+    : directionValue === 0
+      ? ', stable'
+      : `, en ${directionValue > 0 ? 'hausse' : 'baisse'}${
+          percent != null ? ` de ${formatMarketNumber(Math.abs(percent))} %` : ''
+        }`;
+  const quoteTime = item.quoteTime ? `, cotation ${cleanSentence(item.quoteTime)}` : '';
+  const source = item.source ? `, selon ${cleanSentence(item.source)}` : '';
+  return `${cleanSentence(item.name)} : ${formatMarketNumber(price)}${unit ? ` ${unit}` : ''}${movement}${quoteTime}${source}.`;
+}
+
+/** Format the same market evidence for natural speech and source-rich text surfaces. */
+export function formatMarketDigest(
+  digest: MarketDigest,
+  options: { stale?: boolean; now?: number; maxItems?: number } = {}
+): FormattedFreshContext {
+  const now = options.now ?? Date.now();
+  const maxItems = Math.max(1, Math.min(10, options.maxItems ?? 10));
+  const items = digest.items
+    .filter((item) => marketNumber(item.price) != null && /^https?:\/\//i.test(item.url))
+    .slice(0, maxItems);
+  if (items.length === 0) return { speech: '', text: '', citations: [] };
+
+  const collectedAt = formatCollectionTimestamp(digest.fetchedAt, digest.locale);
+  const ageMinutes = Math.max(0, Math.round((now - digest.fetchedAt) / 60_000));
+  const lead = options.stale
+    ? `Je n'ai pas pu rafraîchir les marchés. Ces cotations ont été collectées il y a environ ${Math.max(1, ageMinutes)} minutes, le ${collectedAt}.`
+    : `Voici le point marchés, collecté le ${collectedAt}.`;
+  const speech = [lead, ...items.map(marketItemSentence).filter(Boolean)].join(' ');
+  const text = [
+    `${lead} L'heure de collecte est distincte de l'heure de cotation indiquée par chaque source.`,
+    ...items.map((item, index) => {
+      const sentence = marketItemSentence(item);
+      return `${index + 1}. ${sentence}\nSource : ${item.url}\nCollecte : ${new Date(item.fetchedAt).toISOString()}${
+        item.quoteTime ? ` · Cotation : ${item.quoteTime}` : ''
+      }`;
+    }),
+  ].join('\n');
+
+  return {
+    speech,
+    text,
+    citations: items.map((item) => ({
+      title: `${item.name} (${item.symbol})`,
+      url: item.url,
+      ...(item.source ? { source: item.source } : {}),
+      ...(item.quoteTime ? { publishedAt: item.quoteTime } : {}),
     })),
   };
 }
