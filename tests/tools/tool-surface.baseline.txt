@@ -29,11 +29,11 @@ code_exec
 code_explorer_ask
 code_graph
 code_stats
-context_expand
 codebase_map
 codebase_replace
 comfy_recipe
 computer_control
+context_expand
 create_file
 create_skill
 create_todo_list
@@ -188,6 +188,7 @@ vision_analyze
 weather
 web_extract
 web_fetch
+web_scrape
 web_search
 web_test
 workspace_read
