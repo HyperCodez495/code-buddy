@@ -7,6 +7,7 @@ import {
   fuzzyNameMatch,
   isVocativeAddress,
   isDirectedFollowUp,
+  resolveSensoryResponsePolicy,
 } from '../../src/sensory/respond-decider.js';
 import { getPersonaManager, resetPersonaManager } from '../../src/personas/persona-manager.js';
 
@@ -16,6 +17,87 @@ async function waitPersonaInit(pm: ReturnType<typeof getPersonaManager>): Promis
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+describe('sensory response policy resolution', () => {
+  it('defaults to the recommended contextual gate and honours chime-in there', () => {
+    expect(resolveSensoryResponsePolicy({ CODEBUDDY_SENSORY_CHIME_IN: 'true' })).toEqual({
+      policy: 'contextual',
+      gateEnabled: true,
+      chimeIn: true,
+      source: 'default',
+      warnings: [],
+    });
+  });
+
+  it('wires addressed through the gate with chime-in disabled', () => {
+    expect(
+      resolveSensoryResponsePolicy({
+        CODEBUDDY_SENSORY_RESPONSE_POLICY: 'addressed',
+        CODEBUDDY_SENSORY_CHIME_IN: 'true',
+      })
+    ).toEqual({
+      policy: 'addressed',
+      gateEnabled: true,
+      chimeIn: false,
+      source: 'explicit',
+      warnings: [],
+    });
+  });
+
+  it('keeps explicit always as the only unfiltered wiring and warns clearly', () => {
+    const resolved = resolveSensoryResponsePolicy({
+      CODEBUDDY_SENSORY_RESPONSE_POLICY: 'always',
+      CODEBUDDY_SENSORY_CHIME_IN: 'true',
+    });
+
+    expect(resolved).toMatchObject({
+      policy: 'always',
+      gateEnabled: false,
+      chimeIn: false,
+      source: 'explicit',
+    });
+    expect(resolved.warnings.join(' ')).toMatch(/unfiltered.*push-to-talk.*testing/i);
+  });
+
+  it('maps the deprecated always-respond boolean only when no enum is explicit', () => {
+    const legacy = resolveSensoryResponsePolicy({
+      CODEBUDDY_SENSORY_ALWAYS_RESPOND: 'true',
+    });
+    expect(legacy).toMatchObject({
+      policy: 'always',
+      gateEnabled: false,
+      source: 'legacy-alias',
+    });
+    expect(legacy.warnings.join(' ')).toMatch(/deprecated alias/i);
+
+    const explicit = resolveSensoryResponsePolicy({
+      CODEBUDDY_SENSORY_RESPONSE_POLICY: 'addressed',
+      CODEBUDDY_SENSORY_ALWAYS_RESPOND: 'true',
+    });
+    expect(explicit).toMatchObject({
+      policy: 'addressed',
+      gateEnabled: true,
+      source: 'explicit',
+    });
+    expect(explicit.warnings.join(' ')).toMatch(/deprecated and ignored/i);
+  });
+
+  it('fails closed to contextual on an invalid enum', () => {
+    const resolved = resolveSensoryResponsePolicy({
+      CODEBUDDY_SENSORY_RESPONSE_POLICY: 'reply-to-everything',
+      CODEBUDDY_SENSORY_ALWAYS_RESPOND: 'true',
+      CODEBUDDY_SENSORY_CHIME_IN: 'true',
+    });
+
+    expect(resolved).toMatchObject({
+      policy: 'contextual',
+      gateEnabled: true,
+      chimeIn: true,
+      source: 'invalid-fallback',
+    });
+    expect(resolved.warnings.join(' ')).toMatch(/invalid.*using contextual/i);
+  });
+});
 
 describe('fuzzyNameMatch', () => {
   it('matches the name despite STT mangling, rejects unrelated words', () => {

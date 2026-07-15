@@ -15,6 +15,10 @@ import { getTTSManager } from '../input/text-to-speech.js';
 import type { TTSConfig } from '../input/text-to-speech.js';
 import { describeVoiceReadiness, type VoiceReadiness } from '../sensory/voice-loop.js';
 import {
+  resolveSensoryResponsePolicy,
+  type SensoryResponsePolicy,
+} from '../sensory/respond-decider.js';
+import {
   resolveSpeechRecognitionEngine,
   resolveParakeetModelDir,
   engineUsesParakeetModel,
@@ -190,7 +194,7 @@ interface CompanionSensoryBridgeBrief {
   next?: string;
 }
 
-type CompanionVoiceResponseMode = 'addressed+greeting' | 'chime-in' | 'always';
+type CompanionVoiceResponseMode = SensoryResponsePolicy;
 
 interface CompanionVoiceAssistantBrief {
   robotName: string;
@@ -570,9 +574,7 @@ export function formatCompanionListenCheck(check: CompanionListenCheck): string 
 }
 
 function resolveVoiceResponseMode(): CompanionVoiceResponseMode {
-  if (isTruthyEnv('CODEBUDDY_SENSORY_ALWAYS_RESPOND')) return 'always';
-  if (isTruthyEnv('CODEBUDDY_SENSORY_CHIME_IN')) return 'chime-in';
-  return 'addressed+greeting';
+  return resolveSensoryResponsePolicy().policy;
 }
 
 function resolvePiperVoicePath(status: CompanionStatus): string {

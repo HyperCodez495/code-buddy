@@ -23,6 +23,82 @@
 
 import { logger } from '../utils/logger.js';
 
+export type SensoryResponsePolicy = 'contextual' | 'addressed' | 'always';
+
+export interface ResolvedSensoryResponsePolicy {
+  policy: SensoryResponsePolicy;
+  /** Contextual/addressed install the response gate; always is intentionally unfiltered. */
+  gateEnabled: boolean;
+  /** Only contextual may invoke the optional high-bar chime-in judge. */
+  chimeIn: boolean;
+  source: 'explicit' | 'legacy-alias' | 'default' | 'invalid-fallback';
+  warnings: string[];
+}
+
+const RESPONSE_POLICIES = new Set<SensoryResponsePolicy>([
+  'contextual',
+  'addressed',
+  'always',
+]);
+
+function envTrue(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === 'true';
+}
+
+/**
+ * Resolve the resident microphone response policy once for every config surface.
+ * An explicit enum wins over the deprecated boolean. Invalid values fail closed to
+ * contextual rather than silently enabling the unfiltered mode.
+ */
+export function resolveSensoryResponsePolicy(
+  env: NodeJS.ProcessEnv = process.env
+): ResolvedSensoryResponsePolicy {
+  const configured = env.CODEBUDDY_SENSORY_RESPONSE_POLICY?.trim().toLowerCase();
+  const legacyAlways = envTrue(env.CODEBUDDY_SENSORY_ALWAYS_RESPOND);
+  const warnings: string[] = [];
+  let policy: SensoryResponsePolicy;
+  let source: ResolvedSensoryResponsePolicy['source'];
+
+  if (configured && RESPONSE_POLICIES.has(configured as SensoryResponsePolicy)) {
+    policy = configured as SensoryResponsePolicy;
+    source = 'explicit';
+    if (legacyAlways) {
+      warnings.push(
+        'CODEBUDDY_SENSORY_ALWAYS_RESPOND is deprecated and ignored because CODEBUDDY_SENSORY_RESPONSE_POLICY is set.'
+      );
+    }
+  } else if (configured) {
+    policy = 'contextual';
+    source = 'invalid-fallback';
+    warnings.push(
+      `Invalid CODEBUDDY_SENSORY_RESPONSE_POLICY=${configured}; using contextual.`
+    );
+  } else if (legacyAlways) {
+    policy = 'always';
+    source = 'legacy-alias';
+    warnings.push(
+      'CODEBUDDY_SENSORY_ALWAYS_RESPOND=true is a deprecated alias for CODEBUDDY_SENSORY_RESPONSE_POLICY=always.'
+    );
+  } else {
+    policy = 'contextual';
+    source = 'default';
+  }
+
+  if (policy === 'always') {
+    warnings.push(
+      'Response policy always is unfiltered and intended only for explicit push-to-talk or testing, not a resident microphone.'
+    );
+  }
+
+  return {
+    policy,
+    gateEnabled: policy !== 'always',
+    chimeIn: policy === 'contextual' && envTrue(env.CODEBUDDY_SENSORY_CHIME_IN),
+    source,
+    warnings,
+  };
+}
+
 export interface ResponseDecision {
   respond: boolean;
   /** Why — for logs ("addressed", "engaged", "ambient", "no-cue", "chime-in", "not-warranted"). */

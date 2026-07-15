@@ -78,6 +78,21 @@ describe('assistant TTS defaults', () => {
         options: ['auto', 'true', 'false'],
         envFile: 'both',
       });
+    expect(
+      ASSISTANT_SETTINGS.find(
+        (setting) => setting.key === 'CODEBUDDY_SENSORY_RESPONSE_POLICY'
+      )
+    ).toMatchObject({
+      default: 'contextual',
+      type: 'enum',
+      options: ['contextual', 'addressed', 'always'],
+      envFile: 'vision',
+    });
+    expect(
+      ASSISTANT_SETTINGS.find(
+        (setting) => setting.key === 'CODEBUDDY_SENSORY_ALWAYS_RESPOND'
+      )
+    ).toBeUndefined();
   });
 });
 
@@ -101,6 +116,46 @@ describe('assistant permission posture migration', () => {
       writeFileSync(paths.vision, original, 'utf8');
       expect(readAssistantConfig(paths).CODEBUDDY_SENSORY_SPEAK_PERMISSION_MODE).toBe('default');
       expect(readFileSync(paths.vision, 'utf8')).toBe(original);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('assistant response policy migration', () => {
+  it('surfaces the legacy always alias without rewriting the env file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'assistant-response-policy-migration-'));
+    const paths = {
+      vision: join(dir, 'vision.env'),
+      lisa: join(dir, 'lisa.env'),
+    };
+    try {
+      const original = 'CODEBUDDY_SENSORY_ALWAYS_RESPOND=true\nUNRELATED=keep\n';
+      writeFileSync(paths.vision, original, 'utf8');
+      expect(readAssistantConfig(paths).CODEBUDDY_SENSORY_RESPONSE_POLICY).toBe('always');
+      expect(readFileSync(paths.vision, 'utf8')).toBe(original);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers an explicit policy over the deprecated boolean', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'assistant-response-policy-explicit-'));
+    const paths = {
+      vision: join(dir, 'vision.env'),
+      lisa: join(dir, 'lisa.env'),
+    };
+    try {
+      writeFileSync(
+        paths.vision,
+        [
+          'CODEBUDDY_SENSORY_ALWAYS_RESPOND=true',
+          'CODEBUDDY_SENSORY_RESPONSE_POLICY=addressed',
+          '',
+        ].join('\n'),
+        'utf8'
+      );
+      expect(readAssistantConfig(paths).CODEBUDDY_SENSORY_RESPONSE_POLICY).toBe('addressed');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -240,6 +295,16 @@ describe('writeAssistantConfig', () => {
         'CODEBUDDY_SENSORY_SPEAK_PERMISSION_MODE'
       );
       expect(readFileSync(paths.lisa, 'utf8')).toContain('CODEBUDDY_TTS_ENGINE=pocket');
+
+      const policy = writeAssistantConfig(
+        { CODEBUDDY_SENSORY_RESPONSE_POLICY: 'addressed' },
+        paths
+      );
+      expect(policy.vision).toContain('CODEBUDDY_SENSORY_RESPONSE_POLICY');
+      expect(policy.lisa).not.toContain('CODEBUDDY_SENSORY_RESPONSE_POLICY');
+      expect(readFileSync(paths.vision, 'utf8')).toContain(
+        'CODEBUDDY_SENSORY_RESPONSE_POLICY=addressed'
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

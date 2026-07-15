@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { PRESET_VOICES } from '../talk-mode/providers/pocket-tts.js';
 import { synthesizePocketWav } from '../voice/local-tts.js';
+import { resolveSensoryResponsePolicy } from '../sensory/respond-decider.js';
 import { DEFAULT_MARKET_SYMBOLS, DEFAULT_NEWS_QUERY } from './prefetch-config.js';
 
 export type AssistantSettingGroup = 'voice' | 'speech' | 'behavior' | 'companion';
@@ -391,13 +392,14 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     help: 'How the assistant addresses you (left empty falls back to a default).',
   },
   {
-    key: 'CODEBUDDY_SENSORY_ALWAYS_RESPOND',
-    label: 'Always respond',
+    key: 'CODEBUDDY_SENSORY_RESPONSE_POLICY',
+    label: 'Response policy',
     group: 'behavior',
-    type: 'toggle',
-    default: 'false',
+    type: 'enum',
+    options: ['contextual', 'addressed', 'always'],
+    default: 'contextual',
     envFile: 'vision',
-    help: 'Responds even when the utterance is not clearly addressed to the assistant.',
+    help: 'Contextual keeps natural follow-ups and optional judged chime-ins; addressed disables chime-ins; always is only for push-to-talk or testing.',
   },
   {
     key: 'CODEBUDDY_SENSORY_CHIME_IN',
@@ -406,7 +408,7 @@ export const ASSISTANT_SETTINGS: AssistantSetting[] = [
     type: 'toggle',
     default: 'false',
     envFile: 'vision',
-    help: 'Allows opportunistic short interjections.',
+    help: 'Allows opportunistic judged interjections when the response policy is contextual.',
   },
   {
     key: 'CODEBUDDY_SENSORY_ENGAGE_WINDOW_MS',
@@ -887,6 +889,14 @@ export function readAssistantConfig(paths?: AssistantEnvPaths): Record<string, s
         config[setting.key] = 'default';
       }
     }
+
+    // Surface the same non-mutating legacy/invalid-value migration used by the daemon.
+    // Otherwise an old ALWAYS_RESPOND=true file would run unfiltered while the UI falsely
+    // displayed the new contextual default.
+    config.CODEBUDDY_SENSORY_RESPONSE_POLICY = resolveSensoryResponsePolicy({
+      ...lisa,
+      ...vision,
+    }).policy;
 
     return config;
   } catch {

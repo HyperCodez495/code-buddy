@@ -1319,8 +1319,14 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
           // speech reaction's gate reads, so a greeted visitor's natural reply is
           // treated as addressed — no wake-word needed. Without this shared wiring
           // the greeting played but never opened a conversation.
-          const { createResponseDecider } = await import('../sensory/respond-decider.js');
-          const responseDecider = createResponseDecider();
+          const { createResponseDecider, resolveSensoryResponsePolicy } = await import(
+            '../sensory/respond-decider.js'
+          );
+          const responsePolicy = resolveSensoryResponsePolicy();
+          for (const warning of responsePolicy.warnings) {
+            logger.warn(`[respond-policy] ${warning}`);
+          }
+          const responseDecider = createResponseDecider({ chimeIn: responsePolicy.chimeIn });
           {
             const { shouldWireVisionReaction, wireVisionReaction } = await import('../sensory/vision-reaction.js');
             if (shouldWireVisionReaction({ camera: process.env.CODEBUDDY_SENSORY_CAMERA, token: sensoryToken })) {
@@ -1552,13 +1558,10 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   latestVoiceTiming = timing;
                 },
               });
-              // Human-like response gate: listen to everything, speak only when addressed or
-              // (opt-in) when the conversation warrants it. ALWAYS_RESPOND reverts to replying
-              // to every utterance. The engagement window is anchored to the last ADDRESS (the
-              // decider handles it) — we deliberately do NOT refresh it per reply, or ambient
-              // cross-talk after one address would make the robot answer the whole room.
-              const alwaysRespond = process.env.CODEBUDDY_SENSORY_ALWAYS_RESPOND === 'true';
-              const chimeIn = process.env.CODEBUDDY_SENSORY_CHIME_IN === 'true';
+              // Human-like response policy: contextual/addressed always install the shared
+              // decider. Only contextual permits the optional high-bar chime-in judge; addressed
+              // keeps deterministic address/greeting/continuity only. `always` is the explicit
+              // unfiltered push-to-talk/test escape hatch resolved and warned at startup above.
 
               // Reminder voice-ack: a spoken "c'est fait" marks a PENDING reminder done. It binds
               // only to a reminder fired in its window (safety: never from ambient speech / the
@@ -1732,7 +1735,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
                   return timing;
                 },
               };
-              if (!alwaysRespond) {
+              if (responsePolicy.gateEnabled) {
                 // Reuse the session decider shared with the vision greeting above, so a
                 // person-arrival greeting's open engagement window carries into this gate.
                 wireOpts.shouldRespond = (t) =>
@@ -1746,11 +1749,13 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               sensoryTeardown.push(wireSpeechReaction(wireOpts));
               sensoryTeardown.push(() => replyFn.dispose());
               sensoryTeardown.push(() => conversationBridge.flush());
-              const gateLabel = alwaysRespond
-                ? 'always-respond'
-                : chimeIn
-                  ? 'gate[addressed+greeting+chime-in]'
-                  : 'gate[addressed+greeting]';
+              const gateLabel = responsePolicy.policy === 'always'
+                ? 'always-respond[unfiltered:test-or-push-to-talk-only]'
+                : responsePolicy.policy === 'contextual'
+                  ? responsePolicy.chimeIn
+                    ? 'gate[contextual+chime-in]'
+                    : 'gate[contextual]'
+                  : 'gate[addressed:no-chime-in]';
               logger.info(
                 `Sensory speech reaction: Enabled (speech_end → STT → ${
                   gateLabel
