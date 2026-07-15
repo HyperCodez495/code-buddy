@@ -306,11 +306,25 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
   }
 
   function shouldReviewPlan(plan: ConversationPlan, request: string): boolean {
-    return (
-      semanticReviewEnabled() &&
-      shouldRunSemanticResponseGate({ plan }) &&
-      deriveArgumentObligations(plan, request).length > 0
-    );
+    if (!semanticReviewEnabled() || !shouldRunSemanticResponseGate({ plan })) return false;
+
+    // The dialogue classifier deliberately maps otherwise-unclassified prose
+    // to a developed `opinion`. That is useful for producing a warm,
+    // substantial reply, but it does not make an everyday status statement
+    // ("voilà, ça marche de nouveau") worth a second blocking LLM round-trip.
+    // On voice this used to hold every streamed token for 15–20 seconds and
+    // made a healthy audio loop appear silent. Keep the gate for an actual
+    // question/challenge/fresh fact and for a deliberation inherited from the
+    // shared Telegram/Cowork thread; let standalone conversational statements
+    // retain first-token streaming.
+    const isGenericDevelopedStatement =
+      plan.depth === 'developed' &&
+      plan.act === 'opinion' &&
+      !plan.analysis.continuesDeliberation &&
+      !request.includes('?');
+    if (isGenericDevelopedStatement) return false;
+
+    return deriveArgumentObligations(plan, request).length > 0;
   }
 
   function conversationHistory(currentHeard?: string): HybridTurn[] {

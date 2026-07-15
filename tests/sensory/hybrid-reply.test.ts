@@ -721,4 +721,67 @@ describe('hybrid reply — routing & memory', () => {
     expect(emotionalChunks).toEqual(['Bon', 'jour.']);
     expect(semanticReview).not.toHaveBeenCalled();
   });
+
+  it('does not let an old deep thread delay an unrelated everyday voice statement', async () => {
+    const semanticReview = vi.fn();
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      sharedHistory: () => [
+        { role: 'user', content: 'La conscience fonde-t-elle notre liberté ?' },
+        { role: 'assistant', content: 'Elle éclaire le choix sans abolir toute causalité.' },
+      ],
+      chitchat: async () => 'Oui, je te reçois bien.',
+      chitchatStream: async function* () {
+        yield 'Oui, ';
+        yield 'je te reçois bien.';
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of reply.stream(
+      'Voilà, ça marche de nouveau, maintenant je peux te parler.'
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['Oui, ', 'je te reçois bien.']);
+    expect(semanticReview).not.toHaveBeenCalled();
+  });
+
+  it('still buffers a genuine continuation of a deep shared conversation', async () => {
+    const revised = 'Je poursuis le raisonnement avec une distinction plus précise.';
+    const semanticReview = vi.fn(async () => ({
+      response: revised,
+      outcome: 'revised' as const,
+      reason: 'revision_completed' as const,
+      revisionAttempts: 1 as const,
+    }));
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      prefetch: () => null,
+      jokes: () => null,
+      classify: () => false,
+      sharedHistory: () => [
+        { role: 'user', content: 'La conscience fonde-t-elle notre liberté ?' },
+        { role: 'assistant', content: 'Elle éclaire le choix sans abolir toute causalité.' },
+      ],
+      chitchat: async () => 'unused',
+      chitchatStream: async function* () {
+        yield 'Brouillon profond qui doit rester inaudible.';
+      },
+      agentReply: async () => 'unused',
+      semanticReview,
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of reply.stream('Continue.')) chunks.push(chunk);
+
+    expect(chunks).toEqual([revised]);
+    expect(semanticReview).toHaveBeenCalledOnce();
+  });
 });
