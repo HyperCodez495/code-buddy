@@ -170,6 +170,25 @@ def prepare_dataset(payload: dict[str, Any], staging: Path, profile: str) -> tup
     return staging / "data", scene_list, len(panoramas)
 
 
+def prepare_python_compatibility(staging: Path) -> Path:
+    """Bridge the released PyTorch 2.3.1 environment to PanoWorld's import guard.
+
+    PanoWorld implements and uses its own RMSNorm, but model.py also references
+    nn.RMSNorm inside an isinstance tuple. PyTorch 2.3.1 does not expose that
+    attribute. The alias only makes that type guard importable; it does not
+    replace the model's custom RMSNorm implementation.
+    """
+    compatibility = staging / "python-compat"
+    compatibility.mkdir(parents=True, exist_ok=True)
+    (compatibility / "sitecustomize.py").write_text(
+        "import torch.nn as nn\n"
+        "if not hasattr(nn, 'RMSNorm'):\n"
+        "    nn.RMSNorm = nn.LayerNorm\n",
+        encoding="utf-8",
+    )
+    return compatibility
+
+
 def find_outputs(output_dir: Path) -> tuple[Path, Path, list[Path], list[Path]]:
     ply_files = sorted(output_dir.rglob("point_cloud.ply"))
     camera_files = sorted(output_dir.rglob("cameras.json"))
@@ -249,6 +268,7 @@ def main() -> int:
     run_output.mkdir()
     staging = result_path.parent / "panoworld-staging"
     data_root, scene_list, view_count = prepare_dataset(payload, staging, profile)
+    compatibility = prepare_python_compatibility(staging)
     config = root / "configs" / (
         "inference_2048_1024.yaml" if profile == "single-2048" else "inference_1024_512.yaml"
     )
@@ -270,7 +290,19 @@ def main() -> int:
     ]
     started = time.monotonic()
     print(f"CODEBUDDY_PROGRESS 0.10 preparing {view_count} panorama(s)", flush=True)
-    process = subprocess.Popen(command, cwd=root, start_new_session=True)
+    child_environment = os.environ.copy()
+    current_python_path = child_environment.get("PYTHONPATH")
+    child_environment["PYTHONPATH"] = (
+        f"{compatibility}{os.pathsep}{current_python_path}"
+        if current_python_path
+        else str(compatibility)
+    )
+    process = subprocess.Popen(
+        command,
+        cwd=root,
+        env=child_environment,
+        start_new_session=True,
+    )
 
     def stop_child(_signum: int, _frame: Any) -> None:
         if process.poll() is None:

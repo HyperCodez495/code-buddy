@@ -98,6 +98,10 @@ not semantic object understanding or a native Unreal mesh.
 The shipped runner also rejects non-2:1 panoramas, requires measured camera-to-world
 poses for `multi-1024`, creates the released RealSee3D directory format in the job
 directory, records the pinned upstream commit, and writes the result manifest atomically.
+It injects a process-local `sitecustomize` compatibility guard for the released
+PyTorch 2.3.1 environment: PanoWorld uses its own RMSNorm implementation but references
+the later `torch.nn.RMSNorm` symbol in an initialization type check. The upstream source
+and checkpoint remain unchanged.
 
 ## LongCat avatar
 

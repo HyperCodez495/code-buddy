@@ -91,6 +91,9 @@ describe('PanoWorld GPU runner', () => {
     expect(await readFile(join(staging, 'viewpoints', 'view_000', 'extrinsics.txt'), 'utf8')).toContain(
       '1 0 0 0'
     );
+    await expect(
+      readFile(join(item.root, 'panoworld-staging', 'python-compat', 'sitecustomize.py'), 'utf8')
+    ).resolves.toContain("hasattr(nn, 'RMSNorm')");
   });
 
   it('rejects multi-view input without measured camera poses', async () => {
