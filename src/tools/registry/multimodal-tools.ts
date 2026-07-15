@@ -38,8 +38,10 @@ import {
 } from '../video/film-assemble.js';
 import {
   gpuMediaWorkerFromEnv,
+  parseAvatarVideoPayload,
   type GpuMediaJobKind,
 } from '../gpu-media-worker.js';
+import { scheduleAvatarDelivery } from '../gpu-avatar-delivery.js';
 
 // ============================================================================
 // Lazy-loaded tool instances
@@ -720,7 +722,12 @@ export class GpuMediaJobTool implements ITool {
           if (kind !== 'panoworld_reconstruct' && kind !== 'avatar_video_render') {
             throw new Error('job_kind must be panoworld_reconstruct or avatar_video_render');
           }
-          result = await client.submit(kind as GpuMediaJobKind, input.payload);
+          const avatarPayload =
+            kind === 'avatar_video_render' ? parseAvatarVideoPayload(input.payload) : undefined;
+          result = await client.submit(kind as GpuMediaJobKind, avatarPayload ?? input.payload);
+          if (avatarPayload?.channelTarget) {
+            scheduleAvatarDelivery(client, (result as { id: string }).id, avatarPayload);
+          }
           break;
         }
         case 'status':

@@ -79,7 +79,11 @@ version instead of guessing a payload shape.
 Avatar MP4 transfer uses the same bearer authentication. The worker serves only the
 fixed `avatar.mp4` name from a successful job, resolves the canonical path back inside
 that job directory, rejects empty files and caps responses at 512 MiB. The client checks
-the declared and received lengths before exposing the bytes to a channel adapter.
+the declared and received lengths before exposing the bytes to a channel adapter. When
+an avatar payload includes `channelTarget`, Code Buddy monitors the asynchronous job,
+downloads the completed MP4 and publishes it to the same conversation/thread. Telegram
+uses authenticated multipart upload (50 MiB Bot API limit); the Darkstar bearer URL is
+never exposed to Telegram.
 
 Job states are `queued`, `running`, `succeeded`, `failed`, or `cancelled`. A worker must
 serialize incompatible loads: PanoWorld and LongCat must not occupy the same RTX 3090 at

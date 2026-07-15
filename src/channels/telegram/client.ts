@@ -35,6 +35,7 @@ import type { MessageButton as ProMessageButton } from '../pro/types.js';
 import { TelegramProFormatter } from './pro-formatter.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
+const TELEGRAM_UPLOAD_LIMIT = 50 * 1024 * 1024;
 
 /**
  * Telegram channel implementation
@@ -138,6 +139,44 @@ export class TelegramChannel extends BaseChannel {
       );
     }
 
+    return data.result as T;
+  }
+
+  private async apiMultipartRequest<T>(
+    method: string,
+    params: Record<string, unknown>,
+    fileParam: string,
+    attachment: MessageAttachment
+  ): Promise<T> {
+    if (!attachment.data || !/^[A-Za-z0-9+/]*={0,2}$/u.test(attachment.data)) {
+      throw new Error('Telegram attachment data must be valid base64');
+    }
+    const bytes = Buffer.from(attachment.data, 'base64');
+    if (bytes.byteLength === 0 || bytes.byteLength > TELEGRAM_UPLOAD_LIMIT) {
+      throw new Error('Telegram attachment must be between 1 byte and 50 MiB');
+    }
+    const form = new FormData();
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue;
+      form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+    const fallbackExtension = attachment.type === 'video' ? 'mp4' : 'bin';
+    const requestedName = attachment.fileName?.replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 128);
+    const fileName = requestedName || `attachment.${fallbackExtension}`;
+    const blobBytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    form.append(
+      fileParam,
+      new Blob([blobBytes], { type: attachment.mimeType || 'application/octet-stream' }),
+      fileName
+    );
+
+    const response = await fetch(`${this.apiUrl}/${method}`, { method: 'POST', body: form });
+    const data = (await response.json()) as TelegramApiResponse<T>;
+    if (!data.ok) {
+      throw new Error(
+        `Telegram API error: ${data.description || 'Unknown error'} (${data.error_code})`
+      );
+    }
     return data.result as T;
   }
 
@@ -292,7 +331,10 @@ export class TelegramChannel extends BaseChannel {
       chat_id: message.channelId,
       caption: message.content,
       parse_mode: this.getParseMode(message.parseMode),
+      disable_notification: message.silent ?? this.telegramConfig.disableNotification,
     };
+    if (message.replyTo) params.reply_to_message_id = parseInt(message.replyTo, 10);
+    if (message.threadId) params.message_thread_id = parseInt(message.threadId, 10);
 
     let method: string;
     let fileParam: string;
@@ -325,13 +367,25 @@ export class TelegramChannel extends BaseChannel {
     if (attachment.url) {
       params[fileParam] = attachment.url;
     } else if (attachment.data) {
-      // Base64 data - would need multipart form upload
-      // For now, just return an error
-      return {
-        success: false,
-        error: 'Base64 attachment upload not yet supported',
-        timestamp: new Date(),
-      };
+      try {
+        const result = await this.apiMultipartRequest<TelegramMessage>(
+          method,
+          params,
+          fileParam,
+          attachment
+        );
+        return {
+          success: true,
+          messageId: String(result.message_id),
+          timestamp: new Date(),
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date(),
+        };
+      }
     }
 
     try {

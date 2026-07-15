@@ -224,6 +224,48 @@ describe('TelegramChannel', () => {
       expect(body.reply_markup.inline_keyboard).toHaveLength(2);
     });
 
+    it('should upload a base64 avatar video using multipart form data', async () => {
+      mockFetch.mockResolvedValueOnce({
+        json: () => Promise.resolve({ ok: true, result: { message_id: 3 } }),
+      });
+
+      const result = await channel.send({
+        channelId: '12345',
+        threadId: '42',
+        content: 'Lisa en vidéo',
+        attachments: [
+          {
+            type: 'video',
+            data: Buffer.from('synthetic-mp4').toString('base64'),
+            mimeType: 'video/mp4',
+            fileName: 'lisa.mp4',
+          },
+        ],
+      });
+
+      expect(result).toMatchObject({ success: true, messageId: '3' });
+      const lastCall = mockFetch.mock.calls.at(-1);
+      expect(String(lastCall?.[0])).toContain('/sendVideo');
+      const form = lastCall?.[1]?.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+      expect(form.get('chat_id')).toBe('12345');
+      expect(form.get('message_thread_id')).toBe('42');
+      expect(form.get('video')).toBeInstanceOf(Blob);
+    });
+
+    it('should reject malformed base64 attachment data', async () => {
+      const result = await channel.send({
+        channelId: '12345',
+        content: 'invalid video',
+        attachments: [{ type: 'video', data: 'not base64!' }],
+      });
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'Telegram attachment data must be valid base64',
+      });
+    });
+
     it('should handle send error', async () => {
       mockFetch.mockResolvedValueOnce({
         json: () =>
