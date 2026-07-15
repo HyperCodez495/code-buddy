@@ -24,8 +24,8 @@ $env:CODEBUDDY_GPU_WORKER_TOKEN = '<secret-from-a-secret-store>'
 $env:CODEBUDDY_PANOWORLD_RUNNER = 'C:\Windows\System32\wsl.exe'
 $env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = '["-d","Ubuntu-22.04","--","bash","/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/panoworld-wsl.sh"]'
 $env:WSLENV = 'CODEBUDDY_GPU_JOB_REQUEST/p:CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
-$env:CODEBUDDY_LONGCAT_RUNNER = 'D:\DEV\LongCat\.venv\Scripts\python.exe'
-$env:CODEBUDDY_LONGCAT_RUNNER_ARGS = '["D:/DEV/LongCat/codebuddy_runner.py"]'
+$env:CODEBUDDY_LONGCAT_RUNNER = 'C:\Windows\System32\wsl.exe'
+$env:CODEBUDDY_LONGCAT_RUNNER_ARGS = '["-d","Ubuntu-22.04","--","bash","/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/longcat-wsl.sh"]'
 
 buddy gpu-worker --host 100.73.222.64 --port 4310 `
   --root D:\DEV D:\LisaMedia --state-dir D:\CodeBuddyData\gpu-worker
@@ -158,9 +158,45 @@ without waiting for it; the MP4 can be added later to the same channel conversat
 }
 ```
 
-The current contract intentionally rejects 720p. Before enabling the worker, adapt the
-official loader so Whisper and UMT5 run on one rank, their embeddings are broadcast and
-the encoders are unloaded before the INT8 DiT is loaded.
+The current contract intentionally rejects 720p. The released multi-GPU loader replicates
+too much state for two 24 GiB cards, so it is not used by the Darkstar profile.
+
+The reference Darkstar deployment uses a more conservative single-GPU profile. It loads
+UMT5 and Whisper sequentially, returns their embeddings to CPU, then streams the official
+INT8 DiT shards and distilled LoRA before rendering on GPU 0. This design is derived from
+[community PR #115](https://github.com/meituan-longcat/LongCat-Video/pull/115), which is
+useful but remains unmerged; Code Buddy owns a hardened adapter that removes shell-built
+file and FFmpeg commands, verifies the checkpoint/model key set, stays on INT8 for Ampere
+and reports stable progress phases. The adapter replaces the upstream eager dequantizing
+linear layers one at a time with TorchAO 0.10 INT8 kernels before `torch.compile`; this
+avoids both WSL2 system-memory fallback during denoising and a full-model BF16 conversion
+peak.
+
+Install the isolated Python environment and the selective 41.67 GiB checkpoint set in
+WSL2. The downloader pins both official Hugging Face revisions, omits duplicate
+FP16/FP32/Flax/PyTorch files and verifies every large LFS artifact by byte size and
+SHA-256:
+
+```bash
+scripts/gpu-runners/setup-longcat-env.sh
+scripts/gpu-runners/download-longcat-avatar.sh
+```
+
+The initial measured profile renders 93 frames at 25 FPS (3.72 seconds). Longer source
+audio is reported as truncated in the result manifest rather than silently presented as
+fully rendered. Video continuation remains disabled until its peak VRAM and identity
+drift have been measured on Darkstar.
+
+The first profile targets clean Lisa TTS audio directly; the optional 67 MB vocal
+separator is intentionally omitted. Music/mixed-audio isolation can be enabled later as
+a distinct measured profile.
+
+`start-darkstar-worker.ps1` does not advertise `avatar_video_render` merely because files
+were downloaded. LongCat is enabled only when a successful real smoke render writes a
+JSON `D:\CodeBuddyData\gpu-worker\longcat-ready` marker containing the exact runner,
+upstream and two checkpoint revisions. A stale or incompatible marker fails closed.
+Removing the marker and restarting the scheduled task rolls the capability back without
+affecting PanoWorld.
 
 ## Operational gates
 

@@ -107,12 +107,6 @@ avatar whisper-large-v3/tokenizer.json 2480617 -
 avatar whisper-large-v3/tokenizer_config.json 282843 -
 avatar whisper-large-v3/vocab.json 1036558 -
 
-# Vocal isolation used by the released Avatar 1.5 pipeline.
-avatar vocal_separator/Kim_Vocal_2.onnx 66759214 ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b
-avatar vocal_separator/download_checks.json 17194 -
-avatar vocal_separator/mdx_model_data.json 11975 -
-avatar vocal_separator/vr_model_data.json 4380 -
-
 # Foundation tokenizer, UMT5 encoder and VAE. Deliberately omit the base video DiT.
 base tokenizer/special_tokens_map.json 7079 -
 base tokenizer/spiece.model 4548313 e3909a67b780650b35cf529ac782ad2b6b26e6d1f849d3fbb6a872905f452458
@@ -128,4 +122,10 @@ base text_encoder/model.safetensors.index.json 22476 -
 base vae/config.json 724 -
 base vae/diffusion_pytorch_model.safetensors 507591892 d6e524b3fffede1787a74e81b30976dce5400c4439ba64222168e607ed19e793
 
+READY_MANIFEST="$WEIGHTS_ROOT/codebuddy-longcat-avatar-1.5.json"
+READY_TEMP="$READY_MANIFEST.tmp-$$"
+printf '%s\n' \
+  "{\"avatarRevision\":\"$AVATAR_REV\",\"baseRevision\":\"$BASE_REV\",\"selectedBytes\":44747926126}" \
+  > "$READY_TEMP"
+mv -- "$READY_TEMP" "$READY_MANIFEST"
 echo "LongCat Avatar 1.5 selective checkpoint set is complete in $WEIGHTS_ROOT"
