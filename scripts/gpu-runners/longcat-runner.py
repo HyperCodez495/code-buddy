@@ -10,11 +10,12 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
 
-RUNNER_VERSION = "1"
+RUNNER_VERSION = "2"
 UPSTREAM_COMMIT = "6b3f4b8582a8bc3f20f795735f5383716c4ba794"
 AVATAR_REVISION = "92016c71d5d318d0f5d84e4db30015a571484ab6"
 BASE_REVISION = "03b55529b1d1d4045f5fbe14d65c8c6e8116b278"
@@ -107,14 +108,23 @@ def stream_inference(command: list[str]) -> None:
     )
     assert child.stdout is not None
     cancelled = False
+    forced_kill: threading.Timer | None = None
 
-    def forward_signal(signum: int, _frame: Any) -> None:
-        nonlocal cancelled
-        cancelled = True
+    def kill_process_group(sig: signal.Signals) -> None:
         try:
-            os.killpg(child.pid, signal.SIGTERM)
+            os.killpg(child.pid, sig)
         except ProcessLookupError:
             pass
+
+    def forward_signal(signum: int, _frame: Any) -> None:
+        nonlocal cancelled, forced_kill
+        cancelled = True
+        forwarded = signal.Signals(signum)
+        kill_process_group(forwarded)
+        if forced_kill is None:
+            forced_kill = threading.Timer(10.0, kill_process_group, args=(signal.SIGKILL,))
+            forced_kill.daemon = True
+            forced_kill.start()
 
     previous_sigterm = signal.signal(signal.SIGTERM, forward_signal)
     previous_sigint = signal.signal(signal.SIGINT, forward_signal)
@@ -136,6 +146,8 @@ def stream_inference(command: list[str]) -> None:
                 progress(value, message)
         return_code = child.wait()
     finally:
+        if forced_kill is not None:
+            forced_kill.cancel()
         signal.signal(signal.SIGTERM, previous_sigterm)
         signal.signal(signal.SIGINT, previous_sigint)
     if cancelled:
@@ -155,17 +167,30 @@ def verify_upstream(repo: Path) -> None:
         ).stdout.strip()
         if head != UPSTREAM_COMMIT:
             raise RunnerError(f"LongCat upstream commit is {head}, expected {UPSTREAM_COMMIT}")
-        for arguments in (
-            ["git", "-C", str(repo), "diff", "--quiet", "--", "longcat_video"],
-            ["git", "-C", str(repo), "diff", "--cached", "--quiet", "--", "longcat_video"],
-        ):
-            completed = subprocess.run(arguments, check=False, timeout=15)
-            if completed.returncode != 0:
-                raise RunnerError("LongCat tracked source differs from the pinned commit")
+        status = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--",
+                "longcat_video",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout
+        if status.strip():
+            raise RunnerError("LongCat source differs from the pinned commit")
     except subprocess.TimeoutExpired as error:
         raise RunnerError("timed out while verifying the LongCat source") from error
     except FileNotFoundError as error:
         raise RunnerError("git is required to verify the LongCat source") from error
+    except subprocess.CalledProcessError as error:
+        raise RunnerError("failed to verify the LongCat source repository") from error
 
 
 def atomic_json(path: Path, value: dict[str, Any]) -> None:

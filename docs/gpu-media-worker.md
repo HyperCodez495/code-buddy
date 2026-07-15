@@ -61,6 +61,12 @@ The request path is also available as `%CODEBUDDY_GPU_JOB_REQUEST%`. This is req
 for Windows-to-WSL runners because `WSLENV` translates `/p` path variables without
 letting a shell reinterpret Windows backslashes.
 
+The worker also injects `CODEBUDDY_GPU_ALLOWED_ROOTS_JSON` from its trusted `--root`
+configuration. The PanoWorld runner canonicalizes the request, result, model,
+checkpoint, input and output paths and fails closed if any of them resolves outside
+those roots. The Windows launcher forwards this JSON through `WSLENV`; it is not taken
+from the submitted payload.
+
 ## Protocol
 
 The worker implements four JSON endpoints:
@@ -132,7 +138,10 @@ The expected output manifest points to the 3DGS PLY, cameras, rendered panoramas
 maps, elapsed time and the verified checkpoint SHA-256. The result is spatial memory,
 not semantic object understanding or a native Unreal mesh.
 
-The shipped runner also rejects non-2:1 panoramas, requires measured camera-to-world
+The stable WSL entry point is `scripts/gpu-runners/codebuddy_runner.py`; it replaces
+itself with the implementation process so termination signals are preserved. The
+shipped runner rejects non-2:1 panoramas and enforces the selected profile's exact
+2048×1024 or 1024×512 dimensions, requires measured camera-to-world
 poses for `multi-1024`, creates the released RealSee3D directory format in the job
 directory, records the pinned upstream commit, and writes the result manifest atomically.
 It injects a process-local `sitecustomize` compatibility guard for the released
@@ -145,6 +154,13 @@ digest together with byte size and nanosecond modification time; any file change
 invalidates it, while unchanged 4–5 GiB weights avoid roughly one minute of redundant
 disk reads per job. Manifests state whether the digest was `computed` or came from the
 validated `stat-cache`.
+
+Checkpoint verification and upstream commit resolution happen before the Pickle
+checkpoint is loaded. Successful manifests contain `status: "succeeded"`; a SIGTERM or
+SIGINT terminates the inference process group and atomically writes a
+`status: "cancelled"` manifest carrying the same profile, commit and checkpoint digest.
+If the inference process group ignores the graceful signal, the runner escalates to
+SIGKILL after a bounded 10-second grace period.
 
 ## LongCat avatar
 
@@ -204,7 +220,8 @@ a distinct measured profile.
 `start-darkstar-worker.ps1` does not advertise `avatar_video_render` merely because files
 were downloaded. LongCat is enabled only when a successful real smoke render writes a
 JSON `D:\CodeBuddyData\gpu-worker\longcat-ready` marker containing the exact runner,
-upstream and two checkpoint revisions. A stale or incompatible marker fails closed.
+upstream and two checkpoint revisions. The current hardened contract requires
+`runnerVersion: "2"`; a stale or incompatible marker fails closed.
 Removing the marker and restarting the scheduled task rolls the capability back without
 affecting PanoWorld.
 

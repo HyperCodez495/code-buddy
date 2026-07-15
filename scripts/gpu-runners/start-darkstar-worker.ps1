@@ -45,7 +45,7 @@ Remove-Item Env:CODEBUDDY_LONGCAT_RUNNER_ARGS -ErrorAction SilentlyContinue
 if (Test-Path -LiteralPath $LongCatReadyFile -PathType Leaf) {
   $longcatReady = Get-Content -LiteralPath $LongCatReadyFile -Raw | ConvertFrom-Json
   if (
-    $longcatReady.runnerVersion -ne '1' -or
+    $longcatReady.runnerVersion -ne '2' -or
     $longcatReady.upstreamCommit -ne '6b3f4b8582a8bc3f20f795735f5383716c4ba794' -or
     $longcatReady.avatarRevision -ne '92016c71d5d318d0f5d84e4db30015a571484ab6' -or
     $longcatReady.baseRevision -ne '03b55529b1d1d4045f5fbe14d65c8c6e8116b278'
@@ -64,7 +64,7 @@ if (Test-Path -LiteralPath $LongCatReadyFile -PathType Leaf) {
     '/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/longcat-wsl.sh'
   ) | ConvertTo-Json -Compress
 }
-$forwarded = 'CODEBUDDY_GPU_JOB_REQUEST/p:CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
+$forwarded = 'CODEBUDDY_GPU_JOB_REQUEST/p:CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID:CODEBUDDY_GPU_ALLOWED_ROOTS_JSON'
 $env:WSLENV = if ($env:WSLENV) { "${env:WSLENV}:$forwarded" } else { $forwarded }
 
 New-Item -ItemType Directory -Path $StateDir -Force | Out-Null

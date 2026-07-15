@@ -33,6 +33,7 @@ await writeFile(
     kind: request.kind,
     artifact: 'result.bin',
     requestEnvMatchesArgument: process.env.CODEBUDDY_GPU_JOB_REQUEST === requestPath,
+    allowedRoots: JSON.parse(process.env.CODEBUDDY_GPU_ALLOWED_ROOTS_JSON ?? '[]'),
   })}\n`,
   'utf8'
 );

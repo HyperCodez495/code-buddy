@@ -168,6 +168,25 @@ def resolve_parent(model: nn.Module, name: str) -> tuple[nn.Module, str]:
     return parent, parts[-1]
 
 
+def validate_checkpoint_tensor(key: str, current: Any, tensor: torch.Tensor) -> None:
+    """Reject incompatible tensors before mutating the meta-materialized model."""
+    if not isinstance(current, (nn.Parameter, torch.Tensor)):
+        raise ValueError(f"checkpoint target is not a tensor: {key}")
+    if tuple(current.shape) != tuple(tensor.shape):
+        raise ValueError(
+            f"checkpoint shape mismatch for {key}: "
+            f"{tuple(tensor.shape)} != {tuple(current.shape)}"
+        )
+    if key.endswith(".weight_int8") and tensor.dtype != torch.int8:
+        raise ValueError(f"checkpoint dtype mismatch for INT8 tensor {key}: {tensor.dtype}")
+    if key.endswith(".weight_scale") and tensor.dtype != torch.float32:
+        raise ValueError(f"checkpoint dtype mismatch for scale tensor {key}: {tensor.dtype}")
+    if current.dtype == torch.bfloat16 and tensor.dtype != torch.bfloat16:
+        raise ValueError(f"checkpoint dtype mismatch for BF16 tensor {key}: {tensor.dtype}")
+    if current.dtype.is_floating_point and not tensor.dtype.is_floating_point:
+        raise ValueError(f"checkpoint dtype is not floating point for {key}: {tensor.dtype}")
+
+
 def load_streamed_int8_dit(
     checkpoint_dir: Path, cp_split_hw: list[int]
 ) -> LongCatVideoAvatarTransformer3DModel:
@@ -226,16 +245,7 @@ def load_streamed_int8_dit(
         for key, tensor in shard.items():
             parent, attribute = resolve_parent(dit, key)
             current = getattr(parent, attribute)
-            if not isinstance(current, (nn.Parameter, torch.Tensor)):
-                raise ValueError(f"checkpoint target is not a tensor: {key}")
-            if tuple(current.shape) != tuple(tensor.shape):
-                raise ValueError(
-                    f"checkpoint shape mismatch for {key}: {tuple(tensor.shape)} != {tuple(current.shape)}"
-                )
-            if current.dtype == torch.int8 and tensor.dtype != torch.int8:
-                raise ValueError(f"checkpoint dtype mismatch for INT8 tensor {key}: {tensor.dtype}")
-            if current.dtype.is_floating_point and not tensor.dtype.is_floating_point:
-                raise ValueError(f"checkpoint dtype is not floating point for {key}: {tensor.dtype}")
+            validate_checkpoint_tensor(key, current, tensor)
             if isinstance(current, nn.Parameter):
                 current.data = tensor
             else:
@@ -350,19 +360,23 @@ def optimize_int8_kernels(
         module = getattr(parent, attribute)
         if not isinstance(module, QuantizedLinear):
             raise ValueError(f"quantized layer changed during conversion: {name}")
-        linear = nn.Linear(
-            module.in_features,
-            module.out_features,
-            bias=module.bias is not None,
-            device="cpu",
-            dtype=torch.bfloat16,
-        )
-        linear.weight.data.copy_(
-            module.weight_int8.to(torch.bfloat16)
-            * module.weight_scale.to(torch.bfloat16).unsqueeze(1)
-        )
+        # Materialize only this layer in BF16. A meta Linear avoids allocating a
+        # second BF16 weight before TorchAO converts it back to an INT8 AQT.
+        dequantized = module.weight_int8.to(torch.bfloat16)
+        scale = module.weight_scale.to(torch.bfloat16).unsqueeze(1)
+        dequantized.mul_(scale)
+        with torch.device("meta"):
+            linear = nn.Linear(
+                module.in_features,
+                module.out_features,
+                bias=module.bias is not None,
+                dtype=torch.bfloat16,
+            )
+        linear.weight = nn.Parameter(dequantized, requires_grad=False)
         if module.bias is not None:
-            linear.bias.data.copy_(module.bias.to(torch.bfloat16))
+            linear.bias = nn.Parameter(module.bias.to(torch.bfloat16), requires_grad=False)
+        linear.train(module.training)
+        del dequantized, scale
         quantize_(linear, quantization)
         setattr(parent, attribute, linear)
         if index % 16 == 0:

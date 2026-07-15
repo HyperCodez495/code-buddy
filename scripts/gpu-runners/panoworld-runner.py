@@ -18,6 +18,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -71,6 +72,36 @@ def required_text(value: Any, label: str) -> str:
     return value.strip()
 
 
+def configured_allowed_roots() -> list[Path]:
+    raw = os.environ.get("CODEBUDDY_GPU_ALLOWED_ROOTS_JSON")
+    if not raw:
+        fail("CODEBUDDY_GPU_ALLOWED_ROOTS_JSON is required")
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as error:
+        fail(f"CODEBUDDY_GPU_ALLOWED_ROOTS_JSON is invalid: {error}")
+    if not isinstance(values, list) or not values:
+        fail("CODEBUDDY_GPU_ALLOWED_ROOTS_JSON must contain at least one root")
+    roots: list[Path] = []
+    for index, value in enumerate(values):
+        root = linux_path(required_text(value, f"allowedRoots[{index}]")).resolve()
+        if not root.is_dir():
+            fail(f"allowed root does not exist: {root}")
+        roots.append(root)
+    return roots
+
+
+def bounded_path(path: Path, roots: list[Path], label: str) -> Path:
+    resolved = path.resolve()
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return resolved
+        except ValueError:
+            continue
+    fail(f"{label} is outside configured roots: {resolved}")
+
+
 def load_request(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -111,7 +142,7 @@ def write_matrix(path: Path, matrix: list[float]) -> None:
     )
 
 
-def validate_panorama(path: Path) -> None:
+def validate_panorama(path: Path, profile: str) -> tuple[int, int]:
     if not path.is_file():
         fail(f"panorama does not exist: {path}")
     try:
@@ -122,6 +153,13 @@ def validate_panorama(path: Path) -> None:
         fail(f"panorama is unreadable: {path}: {error}")
     if height <= 0 or width != height * 2:
         fail(f"panorama must have an exact 2:1 ratio: {path}")
+    expected = (2048, 1024) if profile == "single-2048" else (1024, 512)
+    if (width, height) != expected:
+        fail(
+            f"{profile} requires a {expected[0]}x{expected[1]} panorama, "
+            f"received {width}x{height}: {path}"
+        )
+    return width, height
 
 
 def sha256(path: Path) -> str:
@@ -167,7 +205,9 @@ def checkpoint_sha256(path: Path) -> tuple[str, str]:
     return digest, "computed"
 
 
-def prepare_dataset(payload: dict[str, Any], staging: Path, profile: str) -> tuple[Path, Path, int]:
+def prepare_dataset(
+    payload: dict[str, Any], staging: Path, profile: str, allowed_roots: list[Path]
+) -> tuple[Path, Path, int]:
     panoramas = payload.get("panoramas")
     if not isinstance(panoramas, list) or not panoramas:
         fail("panoramas must contain at least one view")
@@ -185,8 +225,12 @@ def prepare_dataset(payload: dict[str, Any], staging: Path, profile: str) -> tup
     for index, raw in enumerate(panoramas):
         if not isinstance(raw, dict):
             fail(f"panoramas[{index}] must be an object")
-        source = linux_path(required_text(raw.get("imagePath"), f"panoramas[{index}].imagePath"))
-        validate_panorama(source)
+        source = bounded_path(
+            linux_path(required_text(raw.get("imagePath"), f"panoramas[{index}].imagePath")),
+            allowed_roots,
+            f"panoramas[{index}].imagePath",
+        )
+        validate_panorama(source, profile)
         room_id = required_text(raw.get("roomId"), f"panoramas[{index}].roomId")
         view_name = f"view_{index:03d}"
         view_dir = viewpoints / view_name
@@ -257,10 +301,29 @@ def git_commit(root: Path) -> str | None:
         return None
 
 
+def required_git_commit(root: Path) -> str:
+    commit = git_commit(root) or os.environ.get("CODEBUDDY_PANOWORLD_COMMIT", "").strip()
+    if not re.fullmatch(r"[a-fA-F0-9]{40,64}", commit):
+        fail("cannot determine the pinned PanoWorld git commit")
+    return commit.lower()
+
+
+def cancellation_grace_seconds() -> float:
+    raw = os.environ.get("CODEBUDDY_PANOWORLD_CANCEL_GRACE_SECONDS", "10")
+    try:
+        value = float(raw)
+    except ValueError:
+        fail("CODEBUDDY_PANOWORLD_CANCEL_GRACE_SECONDS must be numeric")
+    if not 0.1 <= value <= 10:
+        fail("CODEBUDDY_PANOWORLD_CANCEL_GRACE_SECONDS must be between 0.1 and 10")
+    return value
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         fail("usage: panoworld-runner.py REQUEST_JSON")
-    request_path = linux_path(sys.argv[1]).resolve()
+    allowed_roots = configured_allowed_roots()
+    request_path = bounded_path(linux_path(sys.argv[1]), allowed_roots, "request JSON")
     request = load_request(request_path)
     job_id = required_text(request.get("id"), "job id")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", job_id):
@@ -273,8 +336,14 @@ def main() -> int:
     result_value = os.environ.get("CODEBUDDY_GPU_JOB_RESULT")
     if not result_value:
         fail("CODEBUDDY_GPU_JOB_RESULT is required")
-    result_path = linux_path(result_value).resolve()
-    root = linux_path(os.environ.get("CODEBUDDY_PANOWORLD_ROOT", "/mnt/d/DEV/PanoWorld")).resolve()
+    result_path = bounded_path(linux_path(result_value), allowed_roots, "result manifest")
+    if result_path.parent != request_path.parent:
+        fail("result manifest must be beside the request JSON")
+    root = bounded_path(
+        linux_path(os.environ.get("CODEBUDDY_PANOWORLD_ROOT", "/mnt/d/DEV/PanoWorld")),
+        allowed_roots,
+        "PanoWorld root",
+    )
     if not (root / "inference.py").is_file():
         fail(f"PanoWorld inference.py not found under {root}")
 
@@ -288,13 +357,19 @@ def main() -> int:
         if profile == "single-2048"
         else "CODEBUDDY_PANOWORLD_1024_CHECKPOINT"
     )
-    checkpoint = linux_path(
-        os.environ.get(checkpoint_env, str(root / "checkpoints" / checkpoint_name))
-    ).resolve()
+    checkpoint = bounded_path(
+        linux_path(os.environ.get(checkpoint_env, str(root / "checkpoints" / checkpoint_name))),
+        allowed_roots,
+        "PanoWorld checkpoint",
+    )
     if not checkpoint.is_file():
         fail(f"PanoWorld checkpoint not found: {checkpoint}")
 
-    output_dir = linux_path(required_text(payload.get("outputDir"), "outputDir")).resolve()
+    output_dir = bounded_path(
+        linux_path(required_text(payload.get("outputDir"), "outputDir")),
+        allowed_roots,
+        "outputDir",
+    )
     if not output_dir.is_dir():
         fail(f"outputDir must already exist: {output_dir}")
     run_output = output_dir / job_id
@@ -302,7 +377,7 @@ def main() -> int:
         fail(f"job output directory already exists: {run_output}")
     run_output.mkdir()
     staging = result_path.parent / "panoworld-staging"
-    data_root, scene_list, view_count = prepare_dataset(payload, staging, profile)
+    data_root, scene_list, view_count = prepare_dataset(payload, staging, profile, allowed_roots)
     compatibility = prepare_python_compatibility(staging)
     config = root / "configs" / (
         "inference_2048_1024.yaml" if profile == "single-2048" else "inference_1024_512.yaml"
@@ -324,6 +399,18 @@ def main() -> int:
         f"inference.out_dir={run_output}",
     ]
     started = time.monotonic()
+    print("CODEBUDDY_PROGRESS 0.05 verifying checkpoint", flush=True)
+    checkpoint_hash, checkpoint_hash_source = checkpoint_sha256(checkpoint)
+    commit = required_git_commit(root)
+    base_manifest: dict[str, Any] = {
+        "sceneId": required_text(payload.get("sceneId"), "sceneId"),
+        "profile": profile,
+        "viewCount": view_count,
+        "checkpointPath": external_path(checkpoint),
+        "checkpointSha256": checkpoint_hash,
+        "checkpointHashSource": checkpoint_hash_source,
+        "panoWorldCommit": commit,
+    }
     print(f"CODEBUDDY_PROGRESS 0.10 preparing {view_count} panorama(s)", flush=True)
     child_environment = os.environ.copy()
     current_python_path = child_environment.get("PYTHONPATH")
@@ -339,36 +426,61 @@ def main() -> int:
         start_new_session=True,
     )
 
-    def stop_child(_signum: int, _frame: Any) -> None:
+    cancel_grace = cancellation_grace_seconds()
+    cancellation_signal: int | None = None
+    force_kill_timer: threading.Timer | None = None
+
+    def stop_child(signum: int, _frame: Any) -> None:
+        nonlocal cancellation_signal, force_kill_timer
+        cancellation_signal = signum
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            if force_kill_timer is None:
+                def force_stop() -> None:
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
+                force_kill_timer = threading.Timer(cancel_grace, force_stop)
+                force_kill_timer.daemon = True
+                force_kill_timer.start()
 
     signal.signal(signal.SIGTERM, stop_child)
     signal.signal(signal.SIGINT, stop_child)
     exit_code = process.wait()
+    if force_kill_timer is not None:
+        force_kill_timer.cancel()
+    if cancellation_signal is not None:
+        atomic_json(
+            result_path,
+            {
+                **base_manifest,
+                "status": "cancelled",
+                "signal": signal.Signals(cancellation_signal).name,
+                "elapsedMs": round((time.monotonic() - started) * 1000),
+            },
+        )
+        print("CODEBUDDY_PROGRESS 1.00 cancelled", flush=True)
+        return 130
     if exit_code != 0:
         fail(f"PanoWorld inference exited with code {exit_code}")
 
     print("CODEBUDDY_PROGRESS 0.95 collecting outputs", flush=True)
     ply, cameras, rendered, depths = find_outputs(run_output)
-    print("CODEBUDDY_PROGRESS 0.97 verifying checkpoint", flush=True)
-    checkpoint_hash, checkpoint_hash_source = checkpoint_sha256(checkpoint)
     manifest: dict[str, Any] = {
-        "sceneId": required_text(payload.get("sceneId"), "sceneId"),
-        "profile": profile,
-        "viewCount": view_count,
+        **base_manifest,
+        "status": "succeeded",
         "plyPath": external_path(ply),
         "camerasPath": external_path(cameras),
         "renderedPanoramas": [external_path(path) for path in rendered],
         "depthMaps": [external_path(path) for path in depths],
-        "checkpointPath": external_path(checkpoint),
-        "checkpointSha256": checkpoint_hash,
-        "checkpointHashSource": checkpoint_hash_source,
         "elapsedMs": round((time.monotonic() - started) * 1000),
     }
-    commit = git_commit(root)
-    if commit:
-        manifest["panoWorldCommit"] = commit
     atomic_json(result_path, manifest)
     print("CODEBUDDY_PROGRESS 1.00 finalizing result", flush=True)
     return 0

@@ -19,4 +19,4 @@ if [[ -z "$REQUEST_PATH" ]]; then
   exit 2
 fi
 
-exec "$ENV_DIR/bin/python" "$SCRIPT_DIR/panoworld-runner.py" "$REQUEST_PATH"
+exec "$ENV_DIR/bin/python" "$SCRIPT_DIR/codebuddy_runner.py" "$REQUEST_PATH"

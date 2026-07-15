@@ -279,6 +279,7 @@ export function createGpuMediaWorkerServer(
       env: {
         ...process.env,
         ...runner.env,
+        CODEBUDDY_GPU_ALLOWED_ROOTS_JSON: JSON.stringify(config.allowedRoots),
         CODEBUDDY_GPU_JOB_ID: job.id,
         CODEBUDDY_GPU_JOB_REQUEST: requestPath,
         CODEBUDDY_GPU_JOB_RESULT: resultPath,

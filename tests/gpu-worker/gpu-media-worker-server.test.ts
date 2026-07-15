@@ -96,6 +96,7 @@ describe('GPU media worker server', () => {
           jobId: submitted.id,
           artifact: 'result.bin',
           requestEnvMatchesArgument: true,
+          allowedRoots: [context.data],
         },
       });
       expect(context.worker.getJob(submitted.id)?.payload).toBeTruthy();
