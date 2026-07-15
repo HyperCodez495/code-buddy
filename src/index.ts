@@ -3477,6 +3477,16 @@ addLazyCommand(
 
 addLazyCommand(
   program,
+  'replay',
+  'Inspect, restore, or fork a time-travel session timeline',
+  async () => {
+    const { createReplayCommand } = await import('./commands/replay.js');
+    return createReplayCommand();
+  },
+);
+
+addLazyCommand(
+  program,
   'forge',
   'Counterfactual Forge: compare competing strategies against one proof contract',
   async () => {
