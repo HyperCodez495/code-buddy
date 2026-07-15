@@ -123,6 +123,30 @@ const AUTHORED_EXTRA_TOOLS: CodeBuddyTool[] = [
   DIFF_FILES_TOOL_DEFINITION,
 ] as unknown as CodeBuddyTool[];
 
+/** Opt-in exact recovery for summaries annotated with [segment:…]. */
+export const CONTEXT_EXPAND_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'context_expand',
+    description:
+      'Expand the exact original messages archived for a compacted [segment:…] summary in the current session. Use context_expand whenever a [segment:…] summary is insufficient to answer precisely.',
+    parameters: {
+      type: 'object',
+      properties: {
+        segment_id: {
+          type: 'string',
+          description: 'Segment identifier shown inside a [segment:…] marker.',
+        },
+        max_tokens: {
+          type: 'number',
+          description: 'Maximum tokens to return (default 4000, hard maximum 8000).',
+        },
+      },
+      required: ['segment_id'],
+    },
+  },
+};
+
 /**
  * Plugin tool definition interface
  */
@@ -191,6 +215,7 @@ export function getBuiltinToolNames(): string[] {
     CODE_EXPLORER_TOOLS,
     WINDOWS_TOOLS,
     AUTHORED_EXTRA_TOOLS,
+    [CONTEXT_EXPAND_TOOL],
   ];
 
   return Array.from(new Set(
@@ -230,6 +255,7 @@ export function initializeToolRegistry(): void {
   // Register all tool groups
   registerGroup(CORE_TOOLS);
   registerGroup(SELF_DESCRIBE_TOOLS);
+  registerGroup([CONTEXT_EXPAND_TOOL], () => process.env.CODEBUDDY_CONTEXT_ZOOM === 'true');
 
   // Register Morph tool separately with its own enabled check
   const morphMetadata = metadataMap.get('edit_file') || {

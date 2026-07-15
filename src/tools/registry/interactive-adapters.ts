@@ -87,6 +87,7 @@ import {
   createBugFinderTools,
   createDocumentGeneratorTools,
   createDelegateAgentTools,
+  createContextExpandTools,
 } from './index.js';
 import type { ITool } from './types.js';
 import { createAuthoredExtraTools } from './authored-extra-tools.js';
@@ -113,6 +114,7 @@ export function createInteractiveToolAdapters(options: InteractiveAdapterOptions
 
   const allTools: ITool[] = [
     new ToolSearchTool(),
+    ...createContextExpandTools(),
     ...createTextEditorTools(),
     ...createBashTools(),
     ...createLsTools(),

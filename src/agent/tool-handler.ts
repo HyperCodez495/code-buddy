@@ -86,6 +86,8 @@ export interface ToolHandlerDependencies {
   repairCoordinator: RepairCoordinator;
   /** Resolve the active conversation lazily (sessions can switch at runtime). */
   sessionIdProvider?: () => string | null | undefined;
+  /** Resolve the ContextManager-owned conversation ID used by context_expand. */
+  contextZoomSessionIdProvider?: () => string | null | undefined;
   /** Optional stable agent identity. A private UUID is generated when omitted. */
   agentId?: string;
 }
@@ -1179,7 +1181,9 @@ export class ToolHandler {
     }
 
     const metadata = registeredTool.metadata;
-    const sessionId = this.deps.sessionIdProvider?.() ?? this.currentRunId;
+    const sessionId = toolName === 'context_expand'
+      ? this.deps.contextZoomSessionIdProvider?.() ?? this.deps.sessionIdProvider?.() ?? this.currentRunId
+      : this.deps.sessionIdProvider?.() ?? this.currentRunId;
     const recoverySessionId = this.recoverySessionIdForExecution(executionExtra);
     const contextExtra = {
       ...(executionExtra ?? {}),

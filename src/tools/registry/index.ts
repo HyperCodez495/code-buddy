@@ -44,6 +44,9 @@ export {
 // Tool Adapters - Remind (dated reminders — the agent's proper path vs shelling `buddy remind add`)
 export { RemindTool, createRemindTools } from './remind-tools.js';
 
+// Opt-in hierarchical context recovery
+export { ContextExpandTool, createContextExpandTools } from './context-expand-tools.js';
+
 // Safe runtime authoring for widgets, executable tools, and skills.
 export {
   ExtensionForgeTool,
