@@ -31,6 +31,14 @@ buddy gpu-worker --host 100.73.222.64 --port 4310 `
   --root D:\DEV D:\LisaMedia --state-dir D:\CodeBuddyData\gpu-worker
 ```
 
+Install either official checkpoint with a resumable download that checks both the
+Hugging Face LFS byte size and SHA-256 before removing the `.partial` suffix:
+
+```bash
+scripts/gpu-runners/download-panoworld-checkpoint.sh 1024
+scripts/gpu-runners/download-panoworld-checkpoint.sh 2048
+```
+
 `scripts/gpu-runners/start-darkstar-worker.ps1` is the persistent Windows launcher used
 by the reference Darkstar installation. It reads the bearer token from an ACL-restricted
 file, enables only roots that exist, and never prints the token. The PanoWorld wrapper
