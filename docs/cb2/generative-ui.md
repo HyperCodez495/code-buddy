@@ -1,0 +1,54 @@
+# GUI générative opt-in
+
+La couche d’interface générative détecte au plus un candidat par réponse : un
+payload d’outil `data: { type: … }`, ou un tableau Markdown d’au moins trois
+lignes visibles (hors séparateur Markdown) et deux colonnes. Les réponses de moins de 200 caractères sont ignorées.
+Le texte original n’est jamais modifié ; le pipeline renvoie séparément un
+document HTML optionnel destiné au renderer inline existant.
+
+## Activation
+
+La détection automatique exige les deux variables suivantes :
+
+```bash
+CODEBUDDY_WIDGETS=true
+CODEBUDDY_WIDGETS_AUTO=true
+```
+
+Sans elles, le résultat texte est byte-identique et aucune détection, lecture du
+registre ou génération n’est effectuée. La création LLM sur un type sans widget
+compatible demande en plus :
+
+```bash
+CODEBUDDY_WIDGETS_AUTOGEN=true
+```
+
+Cette troisième variable est désactivée par défaut. La génération réutilise le
+proposer existant, puis le gate fail-closed et la persistance
+`authored-<kind>/widget.html`; elle ne contourne jamais la validation authored.
+
+## Registre et sélection
+
+`meta.json` accepte désormais `dataTypes: string[]`, `usedCount` et
+`lastUsedAt`. Un ancien widget sans `dataTypes` reste lisible et rendu par son
+type historique, mais il n’est jamais sélectionné automatiquement. S’il existe
+plusieurs templates déclarés pour le même type, le plus utilisé est choisi. Une
+sélection auto réussie incrémente `usedCount` et met à jour `lastUsedAt`.
+
+La commande suivante affiche ces déclarations et statistiques :
+
+```bash
+buddy widgets stats
+```
+
+## Sécurité et tolérance aux pannes
+
+Le rendu reste entièrement côté serveur. Les templates Mustache authored sont
+réanalysés par le firewall au rendu, toutes les interpolations sont échappées,
+les URL dangereuses sont neutralisées et le document final embarque une CSP
+`default-src 'none'`. Aucun `<script>` n’est accepté ou renvoyé.
+
+Le pipeline est `never-throws` : indisponibilité du registre, erreur de rendu,
+échec du proposer, rejet du gate ou erreur de persistance produisent simplement
+`widgetHtml: null`, journalisent au niveau debug, et laissent la réponse texte
+inchangée.

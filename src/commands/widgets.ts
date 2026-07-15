@@ -11,6 +11,7 @@ import type { Command } from 'commander';
 import { logger } from '../utils/logger.js';
 import {
   authoredWidgetsDir,
+  listAuthoredWidgetRegistry,
   renderWidgetForData,
   resolveWidgetSource,
 } from '../widgets/widget-registry.js';
@@ -124,6 +125,25 @@ export function registerWidgetsCommand(program: Command): void {
       } catch (e) {
         logger.error(`preview failed: ${e instanceof Error ? e.message : String(e)}`);
         process.exitCode = 1;
+      }
+    });
+
+  widgets
+    .command('stats')
+    .description('List authored widget data types and automatic-render usage')
+    .action(() => {
+      const authored = listAuthoredWidgetRegistry();
+      logger.info(`Authored widget usage (${authored.length}):`);
+      if (authored.length === 0) {
+        logger.info('  (none)');
+        return;
+      }
+      for (const widget of authored) {
+        const dataTypes = widget.dataTypes.length > 0 ? widget.dataTypes.join(', ') : '(auto-match disabled)';
+        const lastUsed = widget.lastUsedAt === null ? 'never' : new Date(widget.lastUsedAt).toISOString();
+        logger.info(
+          `  • ${widget.kind}  dataTypes=${dataTypes}  used=${widget.usedCount}  lastUsed=${lastUsed}`
+        );
       }
     });
 

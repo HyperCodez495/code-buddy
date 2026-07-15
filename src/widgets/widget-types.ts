@@ -2,11 +2,10 @@
  * Widgets — rich, self-contained UI components rendered INLINE in a conversation
  * (ChatGPT-Apps-SDK style), driven by a tool's structured `data` payload.
  *
- * A widget is a body fragment (HTML + scoped CSS + JS) that reads its data from
- * `window.__WIDGET_DATA__` and renders into the page. `renderWidgetDocument`
- * wraps it in a sandboxed HTML document with the data injected. Curated widgets
- * ship in-repo; authored ones are generated on the fly and reused (see the
- * self-learning engine, Phase 2) — mirroring the authored-skills pattern.
+ * A widget is a body fragment (HTML + scoped CSS) rendered entirely on the
+ * server. `renderWidgetDocument` wraps the inert fragment in a sandboxed HTML
+ * document. Curated widgets ship in-repo; authored ones are safe Mustache
+ * templates generated on the fly and reused (see the self-learning engine).
  *
  * @module widgets/widget-types
  */
@@ -74,6 +73,20 @@ export interface WidgetProposal {
   sample: unknown;
   /** Optional human-readable brief the proposer was given. */
   brief?: string;
+  /** Data discriminators this template may be auto-selected for. */
+  dataTypes?: string[];
+}
+
+/** One authored widget loaded from the on-disk registry. */
+export interface AuthoredWidget {
+  kind: string;
+  template: string;
+  /** Empty for legacy metadata, which deliberately disables auto-matching. */
+  dataTypes: string[];
+  usedCount: number;
+  lastUsedAt: number | null;
+  createdAt: number | null;
+  brief: string | null;
 }
 
 /** Result of running a proposal through the widget gate (fail-closed). */
