@@ -16,18 +16,26 @@ or tool result. Plain HTTP is rejected for public addresses. Prefer a Tailscale 
 only permits the Code Buddy host to reach the worker port.
 
 On Darkstar, the worker itself is started with runner executables and allowed filesystem
-roots. Runner arguments are JSON arrays so no command is interpreted by a shell:
+roots. Runner arguments are JSON arrays so no command is interpreted by a shell. The
+reference deployment keeps PanoWorld in WSL2 and Node on Windows:
 
 ```powershell
 $env:CODEBUDDY_GPU_WORKER_TOKEN = '<secret-from-a-secret-store>'
-$env:CODEBUDDY_PANOWORLD_RUNNER = 'D:\DEV\PanoWorld\.venv\Scripts\python.exe'
-$env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = '["D:/DEV/PanoWorld/codebuddy_runner.py"]'
+$env:CODEBUDDY_PANOWORLD_RUNNER = 'C:\Windows\System32\wsl.exe'
+$env:CODEBUDDY_PANOWORLD_RUNNER_ARGS = '["-d","Ubuntu-22.04","--","bash","/mnt/d/DEV/code-buddy-gpu-worker/scripts/gpu-runners/panoworld-wsl.sh"]'
+$env:WSLENV = 'CODEBUDDY_GPU_JOB_RESULT/p:CODEBUDDY_GPU_JOB_ID'
 $env:CODEBUDDY_LONGCAT_RUNNER = 'D:\DEV\LongCat\.venv\Scripts\python.exe'
 $env:CODEBUDDY_LONGCAT_RUNNER_ARGS = '["D:/DEV/LongCat/codebuddy_runner.py"]'
 
 buddy gpu-worker --host 100.73.222.64 --port 4310 `
   --root D:\DEV D:\LisaMedia --state-dir D:\CodeBuddyData\gpu-worker
 ```
+
+`scripts/gpu-runners/start-darkstar-worker.ps1` is the persistent Windows launcher used
+by the reference Darkstar installation. It reads the bearer token from an ACL-restricted
+file, enables only roots that exist, and never prints the token. The PanoWorld wrapper
+pins the WSL Conda environment, CUDA architecture `8.6`, compiler paths and extension
+cache before entering `panoworld-runner.py`.
 
 Each runner receives the generated `request.json` as its final argument and writes its
 JSON result manifest to `%CODEBUDDY_GPU_JOB_RESULT%`. Standard output/error are bounded
@@ -82,6 +90,10 @@ Profiles are deliberately bounded:
 The expected output manifest points to the 3DGS PLY, cameras, rendered panoramas, depth
 maps, elapsed time and the verified checkpoint SHA-256. The result is spatial memory,
 not semantic object understanding or a native Unreal mesh.
+
+The shipped runner also rejects non-2:1 panoramas, requires measured camera-to-world
+poses for `multi-1024`, creates the released RealSee3D directory format in the job
+directory, records the pinned upstream commit, and writes the result manifest atomically.
 
 ## LongCat avatar
 
