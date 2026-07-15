@@ -558,6 +558,52 @@ const channelAgentCache = new Map<string, CachedChannelAgent>();
 const channelTurnTails = new Map<string, Promise<void>>();
 const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
 const CHANNEL_AGENT_MAX = 50;
+const DEFAULT_CHANNEL_TURN_TIMEOUT_MS = 3 * 60 * 1000;
+const MIN_CHANNEL_TURN_TIMEOUT_MS = 1_000;
+const MAX_CHANNEL_TURN_TIMEOUT_MS = 15 * 60 * 1000;
+const CHANNEL_TURN_TIMEOUT_CLEANUP_MS = 10_000;
+
+type ChannelTurnPhase =
+  | 'starting'
+  | 'continuity'
+  | 'runtime'
+  | 'grounding'
+  | 'generation'
+  | 'review'
+  | 'delivery'
+  | 'settlement'
+  | 'persistence';
+
+interface ChannelTurnControl {
+  readonly signal: AbortSignal;
+  phase(phase: ChannelTurnPhase): void;
+  throwIfAborted(): void;
+}
+
+interface ChannelTurnDiagnostics {
+  channelType: string;
+  sessionHash?: string;
+  messageHash?: string;
+}
+
+class ChannelTurnTimeoutError extends Error {
+  constructor(
+    readonly timeoutMs: number,
+    readonly phase: ChannelTurnPhase,
+  ) {
+    super(`channel turn timed out after ${timeoutMs}ms during ${phase}`);
+    this.name = 'ChannelTurnTimeoutError';
+  }
+}
+
+function channelTurnTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const configured = Number(env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_CHANNEL_TURN_TIMEOUT_MS;
+  return Math.min(
+    MAX_CHANNEL_TURN_TIMEOUT_MS,
+    Math.max(MIN_CHANNEL_TURN_TIMEOUT_MS, Math.floor(configured)),
+  );
+}
 
 function evictChannelAgent(sessionKey: string, discard = false): void {
   const cached = channelAgentCache.get(sessionKey);
@@ -577,19 +623,110 @@ function evictChannelAgent(sessionKey: string, discard = false): void {
  */
 async function serializeChannelTurn<T>(
   sessionKey: string,
-  task: () => Promise<T>,
+  task: (control: ChannelTurnControl) => Promise<T>,
   lifecycle: {
     onStart?: () => void;
     onSettled?: () => void;
+    onTimeout?: (error: ChannelTurnTimeoutError) => Promise<void>;
+    diagnostics?: ChannelTurnDiagnostics;
   } = {},
 ): Promise<T> {
+  const queuedAt = Date.now();
   const previous = channelTurnTails.get(sessionKey) ?? Promise.resolve();
   const run = previous.catch(() => undefined).then(async () => {
+    const startedAt = Date.now();
+    const timeoutMs = channelTurnTimeoutMs();
+    const controller = new AbortController();
+    let phase: ChannelTurnPhase = 'starting';
+    let watchdogCount = 0;
+    const diagnosticFields = {
+      ...lifecycle.diagnostics,
+      queueWaitMs: startedAt - queuedAt,
+    };
+    logger.info('Channel turn started', diagnosticFields);
     lifecycle.onStart?.();
+    const watchdogIntervalMs = Math.min(30_000, Math.max(1_000, Math.floor(timeoutMs / 3)));
+    const watchdog = setInterval(() => {
+      watchdogCount++;
+      logger.warn('Channel turn watchdog still active', {
+        ...diagnosticFields,
+        phase,
+        elapsedMs: Date.now() - startedAt,
+        watchdogCount,
+      });
+    }, watchdogIntervalMs);
+    watchdog.unref?.();
+    let timeout: NodeJS.Timeout | undefined;
+    let timeoutCleanup: Promise<void> | undefined;
+    const timeoutError = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        const error = new ChannelTurnTimeoutError(timeoutMs, phase);
+        controller.abort(error);
+        logger.error('Channel turn watchdog timed out', {
+          ...diagnosticFields,
+          phase,
+          elapsedMs: Date.now() - startedAt,
+          timeoutMs,
+        });
+        const cleanup = Promise.resolve(lifecycle.onTimeout?.(error))
+          .catch((cleanupError: unknown) => {
+            logger.warn('Channel turn timeout cleanup failed', {
+              ...diagnosticFields,
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            });
+          })
+          .then(() => true);
+        let cleanupTimer: NodeJS.Timeout | undefined;
+        const cleanupDeadline = new Promise<boolean>((resolve) => {
+          cleanupTimer = setTimeout(() => resolve(false), CHANNEL_TURN_TIMEOUT_CLEANUP_MS);
+          cleanupTimer.unref?.();
+        });
+        timeoutCleanup = Promise.race([cleanup, cleanupDeadline]).then((completed) => {
+          if (cleanupTimer) clearTimeout(cleanupTimer);
+          if (!completed) {
+            logger.warn('Channel turn timeout cleanup exceeded deadline', {
+              ...diagnosticFields,
+              cleanupTimeoutMs: CHANNEL_TURN_TIMEOUT_CLEANUP_MS,
+            });
+          }
+        });
+        void timeoutCleanup.finally(() => reject(error));
+      }, timeoutMs);
+      timeout.unref?.();
+    });
+    const control: ChannelTurnControl = {
+      signal: controller.signal,
+      phase(nextPhase) {
+        phase = nextPhase;
+        logger.info('Channel turn phase', {
+          ...diagnosticFields,
+          phase,
+          elapsedMs: Date.now() - startedAt,
+        });
+      },
+      throwIfAborted() {
+        if (controller.signal.aborted) throw controller.signal.reason;
+      },
+    };
     try {
-      return await task();
+      const controlledTask = task(control).catch(async (error: unknown) => {
+        // Abort checks inside the task can observe the timeout immediately.
+        // Keep the FIFO closed until timeout cleanup (including the visible
+        // fail-soft reply) has completed.
+        if (controller.signal.aborted && timeoutCleanup) await timeoutCleanup;
+        throw error;
+      });
+      return await Promise.race([controlledTask, timeoutError]);
     } finally {
+      if (timeout) clearTimeout(timeout);
+      clearInterval(watchdog);
       lifecycle.onSettled?.();
+      logger.info('Channel turn settled', {
+        ...diagnosticFields,
+        phase,
+        elapsedMs: Date.now() - startedAt,
+        timedOut: controller.signal.aborted,
+      });
     }
   });
   const tail = run.then(
@@ -602,6 +739,44 @@ async function serializeChannelTurn<T>(
   } finally {
     if (channelTurnTails.get(sessionKey) === tail) channelTurnTails.delete(sessionKey);
   }
+}
+
+const CONVERSATIONAL_SLASH_VERBS = new Set([
+  'analyse',
+  'analyze',
+  'cherche',
+  'compare',
+  'dis',
+  'donne',
+  'explique',
+  'find',
+  'montre',
+  'raconte',
+  'resume',
+  'résume',
+  'show',
+  'tell',
+]);
+
+/** Telegram users sometimes prefix a natural request with `/` as if it were a prompt box. */
+function normalizeConversationalSlashMessage<T extends {
+  content: string;
+  contentType?: string;
+  isCommand?: boolean;
+  commandName?: string;
+  commandArgs?: string[];
+}>(message: T): T {
+  const match = message.content.trim().match(/^\/([^\s@]+)(?:@[^\s]+)?\s+([\s\S]+)$/u);
+  const verb = match?.[1]?.toLocaleLowerCase('fr');
+  if (!match || !verb || !CONVERSATIONAL_SLASH_VERBS.has(verb)) return message;
+  return {
+    ...message,
+    content: `${match[1]} ${match[2]}`.trim(),
+    contentType: 'text',
+    isCommand: false,
+    commandName: undefined,
+    commandArgs: undefined,
+  };
 }
 
 /** Keep long or queued channel turns visibly alive without sending chat noise. */
@@ -904,6 +1079,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
     let generativeSessionKey: string | undefined;
     let generativeTurnEngaged = false;
     let cognitiveTurn: ChannelCognitiveTurn | null = null;
+    let deliveryState: 'not_started' | 'started' | 'delivered' = 'not_started';
     try {
       // 1. DM pairing gate — unapproved senders get a code, then we stop.
       const { checkDMPairing, getDMPairing } = await import('../../channels/core.js');
@@ -937,6 +1113,16 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         contentLength: message.content.length,
         attachmentCount: message.attachments?.length ?? 0,
       });
+
+      const normalizedMessage = normalizeConversationalSlashMessage(message);
+      if (normalizedMessage !== message) {
+        message = normalizedMessage;
+        logger.info('Channel slash prompt reclassified as conversation', {
+          channelType: channel.type,
+          sessionHash: hashForLog(sessionKey),
+          messageHash: hashForLog(message.id),
+        });
+      }
 
       // /council <task> — convene the multi-LLM council (ask several capable
       // LLMs, an impartial judge keeps the best, and it learns which model is
@@ -1085,7 +1271,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
 
       const queuedAt = Date.now();
-      await serializeChannelTurn(sessionKey, async () => {
+      await serializeChannelTurn(sessionKey, async (turn) => {
       const queueWaitMs = Date.now() - queuedAt;
       if (queueWaitMs >= 1_000) {
         logger.info('Channel turn dequeued after waiting', {
@@ -1095,6 +1281,8 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           queueWaitMs,
         });
       }
+      turn.phase('continuity');
+      turn.throwIfAborted();
       // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
       // persists in-memory across messages; restored from disk on a cold start.
       // botId selects the per-bot persona and is already baked into sessionKey,
@@ -1125,6 +1313,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           ...(message.threadId ? { threadId: message.threadId } : {}),
           externalId: message.id,
         });
+        turn.throwIfAborted();
         if (claim === 'duplicate') {
           logger.info('Duplicate channel turn skipped before generation', {
             channelType: channel.type,
@@ -1176,6 +1365,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
               history: routingHistory,
               env: process.env,
             })) ?? undefined;
+          turn.throwIfAborted();
         } catch (error) {
           logger.debug('Companion pilot routing unavailable on channel', {
             channelType: channel.type,
@@ -1207,6 +1397,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         });
         return;
       }
+      turn.phase('runtime');
       const { agent, effectiveRuntime } = await getOrCreateChannelAgent(
         sessionKey,
         runtimeResolved,
@@ -1215,7 +1406,9 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         routeModel,
         companionRoute
       );
+      turn.throwIfAborted();
 
+      turn.phase('grounding');
       let attachedImageEvidence: string | undefined;
       const imageAttachmentCount = message.attachments?.filter((attachment) => attachment.type === 'image').length ?? 0;
       if (imageAttachmentCount > 0) {
@@ -1230,6 +1423,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         const visual = await groundAttachedImages(message.attachments, message.content, {
           ...(telegramFileResolver ? { resolveUrl: telegramFileResolver } : {}),
         });
+        turn.throwIfAborted();
         attachedImageEvidence = renderAttachedImageEvidence(visual) || undefined;
         logger.info('Channel attached-image perception completed', {
           channelType: channel.type,
@@ -1250,6 +1444,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           content: message.content,
           egress: effectiveRuntime.egress,
         });
+        turn.throwIfAborted();
       }
 
       const agentInput = attachedImageEvidence
@@ -1372,6 +1567,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           responseLength: response.length,
         });
       } else {
+        turn.phase('generation');
         const entries = await agent.processUserMessage(agentInput, {
           surface: channel.type,
           ...(attachedImageEvidence || imageAttachmentCount > 0
@@ -1384,6 +1580,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
               }
             : {}),
         });
+        turn.throwIfAborted();
         const lastEntry = entries[entries.length - 1];
         response = lastEntry ? String(lastEntry.content) : '';
         rawAgentFailure = isAgentFailureResponse(response);
@@ -1430,6 +1627,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       // so it cannot cross this second model boundary without a new projection.
       const semanticEvidence = companionFreshEvidence?.trim() || undefined;
       if (semanticReviewEligible && preparedConversation) {
+        turn.phase('review');
         try {
           const { reviewSemanticResponse } = await import(
             '../../conversation/semantic-response-runtime.js'
@@ -1447,6 +1645,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
               model: effectiveRuntime.model,
             },
           });
+          turn.throwIfAborted();
           const rejectedFreshGrounding =
             reviewed.outcome === 'fail_open' &&
             (reviewed.audit?.issueCodes.includes('ungrounded_fresh_claim') === true ||
@@ -1529,6 +1728,9 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       //    robust HTML subset (bold / code / tables / links) so it doesn't show
       //    raw; if Telegram rejects the HTML (success:false) fall back to plain
       //    text. Other channels keep native markdown (Discord/Slack render it).
+      turn.throwIfAborted();
+      turn.phase('delivery');
+      deliveryState = 'started';
       if (channel.type === 'telegram' && response.trim()) {
         const {
           renderTelegramHtml,
@@ -1617,6 +1819,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         deliveredChunks,
         delivered,
       });
+      if (delivered) deliveryState = 'delivered';
       if (!delivered) {
         // The cached agent already contains the generated assistant turn. Drop
         // it and skip persistence so the next request cannot build on a reply
@@ -1631,6 +1834,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
       releaseTranscriptSnapshotHold?.();
       releaseTranscriptSnapshotHold = undefined;
+      turn.phase('settlement');
       if (continuesVoiceConversation && deliveredAssistantContent) {
         const assistantClaim = await conversationBridge.claimChannelTurnDurably({
           role: 'assistant',
@@ -1640,6 +1844,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           ...(message.threadId ? { threadId: message.threadId } : {}),
           externalId: `${message.id}:assistant`,
         });
+        turn.throwIfAborted();
         if (assistantClaim === 'failed') {
           logger.warn('Delivered channel turn could not be committed to shared continuity', {
             channelType: channel.type,
@@ -1662,6 +1867,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           } else {
             await turnToSettle.fail();
           }
+          turn.throwIfAborted();
         } catch (error) {
           logger.warn('Channel cognitive settlement uncertain', {
             channelType: channel.type,
@@ -1717,8 +1923,37 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
 
       // 8. Persist the conversation so it survives a daemon restart / cache eviction.
+      turn.throwIfAborted();
+      turn.phase('persistence');
       if (shouldPersistChannelSession) await persistChannelSession(agent, sessionKey);
-      }, channelTypingLifecycle(channel, message.channel.id));
+      turn.throwIfAborted();
+      }, {
+        ...channelTypingLifecycle(channel, message.channel.id),
+        onTimeout: async () => {
+          await (cognitiveTurn as ChannelCognitiveTurn | null)?.fail().catch(() => undefined);
+          cognitiveTurn = null;
+          releaseTranscriptSnapshotHold?.();
+          releaseTranscriptSnapshotHold = undefined;
+          if (generativeTurnEngaged && generativeSessionKey) {
+            evictChannelAgent(generativeSessionKey, true);
+          }
+          if (deliveryState === 'not_started') {
+            deliveryState = 'started';
+            const result = await channel.send({
+              channelId: message.channel.id,
+              content:
+                "Je suis restée bloquée trop longtemps sur cette réponse. J’ai libéré la conversation : renvoie-moi ta demande et je repars proprement.",
+              replyTo: message.id,
+            });
+            if (result?.success) deliveryState = 'delivered';
+          }
+        },
+        diagnostics: {
+          channelType: channel.type,
+          sessionHash: hashForLog(sessionKey),
+          messageHash: hashForLog(message.id),
+        },
+      });
     } catch (err) {
       await (cognitiveTurn as ChannelCognitiveTurn | null)?.fail().catch(() => undefined);
       cognitiveTurn = null;
@@ -1727,7 +1962,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       if (generativeTurnEngaged && generativeSessionKey) {
         evictChannelAgent(generativeSessionKey, true);
       }
-      logger.error('Channel AI response failed', { error: err instanceof Error ? err.message : String(err) });
+      const timedOut = err instanceof ChannelTurnTimeoutError;
+      logger.error('Channel AI response failed', {
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.name : 'unknown',
+        deliveryState,
+      });
+      if (timedOut && deliveryState !== 'not_started') {
+        // Delivery is either confirmed or transport-uncertain. Retrying here
+        // could duplicate a late Telegram send, so only release the FIFO.
+        return;
+      }
       try {
         const { conversationFailureReply } = await import(
           '../../conversation/conversation-orchestrator.js'

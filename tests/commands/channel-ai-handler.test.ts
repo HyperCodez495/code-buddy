@@ -169,6 +169,7 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     delete process.env.CODEBUDDY_PREFETCH_CACHE_FILE;
     delete process.env.CODEBUDDY_PREFETCH_ITEMS_FILE;
     delete process.env.CODEBUDDY_PREFETCH;
+    delete process.env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS;
     process.env.CODEBUDDY_CONVERSATION_PERSIST = 'false';
     resetCrossChannelConversationBridge();
     process.env.GROK_API_KEY = 'test-key';
@@ -237,6 +238,32 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
       channelId: 'chan-42',
       content: 'Here is your answer.',
       replyTo: msg.id,
+    });
+  });
+
+  it('reclassifies a natural Telegram slash prompt as conversation text', async () => {
+    const manager = makeManager();
+    await registerAIMessageHandler(manager as any);
+    const send = makeSuccessfulSend();
+    const message = {
+      ...makeMessage('/donne moi la météo', 'sess-slash-prompt'),
+      contentType: 'command',
+      isCommand: true,
+      commandName: 'donne',
+      commandArgs: ['moi', 'la', 'météo'],
+    };
+
+    await manager.emit(message, { type: 'telegram', send });
+
+    expect(hoisted.getRouteAgentConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'donne moi la météo',
+        contentType: 'text',
+        isCommand: false,
+      }),
+    );
+    expect(hoisted.processUserMessage).toHaveBeenCalledWith('donne moi la météo', {
+      surface: 'telegram',
     });
   });
 
@@ -364,6 +391,114 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     ]);
   });
 
+  it('times out a stuck turn, replies first, then advances the same-session FIFO', async () => {
+    vi.useFakeTimers();
+    process.env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS = '1000';
+    try {
+      const never = new Promise<never>(() => undefined);
+      hoisted.processUserMessage.mockImplementation(async (content: string) => {
+        if (content === 'stuck turn') return never;
+        return [{ role: 'assistant', content: `answer:${content}` }];
+      });
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const delivered: string[] = [];
+      const send = vi.fn(async (outbound: { content?: string }) => {
+        delivered.push(String(outbound.content ?? ''));
+        return { success: true, timestamp: new Date() };
+      });
+      const channel = { type: 'telegram', send };
+
+      const first = manager.emit(makeMessage('stuck turn', 'sess-timeout'), channel);
+      await vi.advanceTimersByTimeAsync(0);
+      const second = manager.emit(makeMessage('next turn', 'sess-timeout'), channel);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(hoisted.processUserMessage.mock.calls.map((call) => call[0])).toEqual([
+        'stuck turn',
+      ]);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.all([first, second]);
+
+      expect(hoisted.processUserMessage.mock.calls.map((call) => call[0])).toEqual([
+        'stuck turn',
+        'next turn',
+      ]);
+      expect(delivered).toHaveLength(2);
+      expect(delivered[0]).toContain('libéré la conversation');
+      expect(telegramHtmlChunkToPlain(delivered[1] ?? '')).toBe('answer:next turn');
+      expect(hoisted.dispose).toHaveBeenCalledWith({ skipSessionLearning: true });
+    } finally {
+      delete process.env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS;
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases the FIFO without a duplicate fallback when settlement hangs after delivery', async () => {
+    vi.useFakeTimers();
+    process.env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS = '1000';
+    try {
+      registerChannelBotPersona('lisa-timeout', {
+        name: 'Lisa',
+        systemPrompt: 'Tu es Lisa, compagne conversationnelle.',
+      });
+      const never = new Promise<never>(() => undefined);
+      hoisted.processUserMessage.mockImplementation(async (content: string) => [
+        { role: 'assistant', content: `answer:${content}` },
+      ]);
+      hoisted.cognitiveBegin
+        .mockResolvedValueOnce({
+          correlationId: 'channel:telegram:stuck-settlement',
+          turnContext: '',
+          evidence: '',
+          complete: () => never,
+          fail: hoisted.cognitiveFail,
+          cancel: hoisted.cognitiveCancel,
+        })
+        .mockResolvedValueOnce(null);
+      const manager = makeManager();
+      await registerAIMessageHandler(manager as any);
+      const delivered: string[] = [];
+      let markFirstDelivered!: () => void;
+      const firstDelivered = new Promise<void>((resolve) => {
+        markFirstDelivered = resolve;
+      });
+      const send = vi.fn(async (outbound: { content?: string }) => {
+        delivered.push(telegramHtmlChunkToPlain(String(outbound.content ?? '')));
+        if (delivered.length === 1) markFirstDelivered();
+        return { success: true, timestamp: new Date() };
+      });
+      const channel = { type: 'telegram', send };
+
+      const first = manager.emit(
+        makeMessage('first delivered', 'sess-post-delivery-timeout', 'lisa-timeout'),
+        channel,
+      );
+      await firstDelivered;
+      expect(delivered).toEqual(['answer:first delivered']);
+      const second = manager.emit(
+        makeMessage('second queued', 'sess-post-delivery-timeout', 'lisa-timeout'),
+        channel,
+      );
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.all([first, second]);
+
+      expect(delivered).toEqual([
+        'answer:first delivered',
+        'answer:second queued',
+      ]);
+      expect(delivered.join('\n')).not.toContain('libéré la conversation');
+      expect(hoisted.processUserMessage.mock.calls.map((call) => call[0])).toEqual([
+        'first delivered',
+        'second queued',
+      ]);
+    } finally {
+      delete process.env.CODEBUDDY_CHANNEL_TURN_TIMEOUT_MS;
+      vi.useRealTimers();
+    }
+  });
+
   it('bounds a slow typing transport to one in-flight request and stops after the turn', async () => {
     vi.useFakeTimers();
     try {
@@ -437,6 +572,10 @@ describe('registerAIMessageHandler inbound roundtrip (GAP-7)', () => {
     const bridge = getCrossChannelConversationBridge();
     await bridge.recordVoiceTurn({ role: 'user', content: 'Nous parlions du libre arbitre.' });
     await bridge.recordVoiceTurn({ role: 'assistant', content: 'Je distinguais choix et causalité.' });
+    // Relationship events are timestamped to the millisecond. Keep the new
+    // channel turn chronologically distinct so UUID tie-breaking cannot make
+    // this assertion random on very fast test hosts.
+    await new Promise<void>((resolve) => setTimeout(resolve, 2));
 
     const manager = makeManager();
     await registerAIMessageHandler(manager as any);
