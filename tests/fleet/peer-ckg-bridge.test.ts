@@ -256,4 +256,73 @@ describe('peer.ckg.sync', () => {
     expect(existsSync(destination.getLedgerPath())).toBe(false);
     expect(existsSync(statePath)).toBe(false);
   });
+
+  describe('hardening against a malicious peer (post-review)', () => {
+    function syncEntry(name: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        v: 1,
+        kind: 'entity',
+        recordedAt: new Date(clock).toISOString(),
+        agentId: 'malicious/first-hand',
+        contentHash: `hash-${name}`,
+        id: `id-${name}`,
+        type: 'fact',
+        name,
+        text: `${name} text`,
+        ...overrides,
+      };
+    }
+
+    function pullWith(response: Record<string, unknown>, limit = 2) {
+      process.env.CODEBUDDY_CKG_SYNC = 'true';
+      const request = async () => response;
+      return pullFromPeer('hostile-peer', { ckg: destination, statePath, request, limit });
+    }
+
+    it('rejects a page larger than the requested limit without ingesting anything', async () => {
+      const entries = [syncEntry('a'), syncEntry('b'), syncEntry('c')];
+      await expect(pullWith({ entries, maxTs: clock }, 2)).rejects.toThrow(/more entries than requested/);
+      expect(existsSync(destination.getLedgerPath())).toBe(false);
+    });
+
+    it('rejects oversized entry fields (ledger bloat protection)', async () => {
+      const entries = [syncEntry('giant', { text: 'x'.repeat(20_000) })];
+      await expect(pullWith({ entries, maxTs: clock }, 5)).rejects.toThrow(/disallowed or malformed/);
+      expect(existsSync(destination.getLedgerPath())).toBe(false);
+    });
+
+    it('rejects a poisoned maxTs far in the future (cursor freeze protection)', async () => {
+      const entries = [syncEntry('honest')];
+      await expect(pullWith({ entries, maxTs: clock + 10 * 60 * 1000 }, 5)).rejects.toThrow(
+        /unreasonably far in the future/,
+      );
+    });
+
+    it('rejects a maxTs that does not match the newest returned entry', async () => {
+      const entries = [syncEntry('honest')];
+      await expect(pullWith({ entries, maxTs: clock + 1 }, 5)).rejects.toThrow(
+        /must equal the newest returned entry/,
+      );
+    });
+
+    it('never lets a peer supersede first-hand local knowledge — it coexists instead', async () => {
+      process.env.CODEBUDDY_CKG_SYNC = 'true';
+      const local = destination.remember({ type: 'fact', name: 'shared-key', text: 'local truth' });
+      expect(local).not.toBeNull();
+
+      const remoteText = 'remote different claim';
+      const entries = [syncEntry('shared-key', { text: remoteText })];
+      const result = await pullWith({ entries, maxTs: clock }, 5);
+      expect(result.ingested).toBe(1);
+
+      const current = destination.getCurrentEntity('fact', 'shared-key');
+      expect(current?.text).toBe('local truth');
+
+      const { createHash } = await import('crypto');
+      const disambiguator = createHash('sha256').update(`fact|${remoteText}`).digest('hex').slice(0, 8);
+      const coexisting = destination.getCurrentEntity('fact', `shared-key#peer-${disambiguator}`);
+      expect(coexisting?.text).toBe(remoteText);
+      expect(coexisting?.contributors.every((contributor) => contributor.startsWith('peer:'))).toBe(true);
+    });
+  });
 });

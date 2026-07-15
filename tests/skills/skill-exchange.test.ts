@@ -60,15 +60,15 @@ function useHome(home: string): void {
   process.env.USERPROFILE = home;
 }
 
-function writeAuthoredSkill(name = 'authored-demo'): string {
+function writeAuthoredSkill(name = 'authored-demo', version = '1.2.3'): string {
   const dir = path.join(workspace, '.codebuddy', 'skills', name);
   fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: Demo exchange skill\nversion: 1.2.3\n---\n\n# Demo\nTreat scripts as inert package data.\n`,
+    `---\nname: ${name}\ndescription: Demo exchange skill\nversion: ${version}\n---\n\n# Demo\nTreat scripts as inert package data.\n`,
     'utf-8',
   );
-  fs.writeFileSync(path.join(dir, 'scripts', 'never-run.sh'), '#!/bin/sh\necho should-not-run\n', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'scripts', 'never-run.js'), '// inert helper — must never be executed\nconsole.log("should-not-run");\n', 'utf-8');
   return dir;
 }
 
@@ -130,7 +130,7 @@ describe('skill exchange export', () => {
       publicKey: expect.stringContaining('BEGIN PUBLIC KEY'),
       signature: expect.any(String),
     });
-    expect(manifest.files.map((file) => file.path)).toEqual(['SKILL.md', 'scripts/never-run.sh']);
+    expect(manifest.files.map((file) => file.path)).toEqual(['SKILL.md', 'scripts/never-run.js']);
     for (const file of manifest.files) {
       const actual = fs.readFileSync(path.join(packageDir, file.path));
       expect(file.sha256).toBe(createHash('sha256').update(actual).digest('hex'));
@@ -283,5 +283,70 @@ describe('buddy skills exchange CLI', () => {
     const outputText = logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(JSON.parse(outputText)).toMatchObject({ name: 'authored-demo', trusted: false });
     expect(fs.existsSync(destination)).toBe(false);
+  });
+});
+
+describe('skill exchange hardening (post-review)', () => {
+  it('refuses packages containing non-scannable files (.sh, .py, extensionless)', () => {
+    useHome(authorHome);
+    const dir = writeAuthoredSkill();
+    fs.writeFileSync(path.join(dir, 'scripts', 'setup.sh'), '#!/bin/sh\necho nope\n', 'utf-8');
+    exportSkill('authored-demo', output);
+    const packageDir = path.join(output, 'authored-demo');
+
+    useHome(installerHome);
+    expect(() => installSkill(packageDir, { trust: true, destRoot: destination })).toThrow(/non-scannable/i);
+    expect(fs.existsSync(path.join(destination, 'imported-authored-demo'))).toBe(false);
+  });
+
+  it('refuses a cross-author overwrite of an installed exchange skill', () => {
+    const packageA = exportDemo();
+    useHome(installerHome);
+    installSkill(packageA, { trust: true, destRoot: destination });
+
+    const authorBHome = path.join(tempRoot, 'author-b-home');
+    fs.mkdirSync(authorBHome, { recursive: true });
+    useHome(authorBHome);
+    writeAuthoredSkill();
+    const outputB = path.join(tempRoot, 'registry-b');
+    exportSkill('authored-demo', outputB);
+
+    useHome(installerHome);
+    expect(() =>
+      installSkill(path.join(outputB, 'authored-demo'), { trust: true, destRoot: destination }),
+    ).toThrow(/cross-author overwrite/i);
+  });
+
+  it('refuses a version downgrade from the same author but accepts an upgrade', () => {
+    useHome(authorHome);
+    writeAuthoredSkill('authored-demo', '1.2.3');
+    exportSkill('authored-demo', output);
+    useHome(installerHome);
+    installSkill(path.join(output, 'authored-demo'), { trust: true, destRoot: destination });
+
+    useHome(authorHome);
+    writeAuthoredSkill('authored-demo', '1.0.0');
+    exportSkill('authored-demo', output);
+    useHome(installerHome);
+    expect(() =>
+      installSkill(path.join(output, 'authored-demo'), { trust: true, destRoot: destination }),
+    ).toThrow(/version downgrade/i);
+
+    useHome(authorHome);
+    writeAuthoredSkill('authored-demo', '1.3.0');
+    exportSkill('authored-demo', output);
+    useHome(installerHome);
+    const upgraded = installSkill(path.join(output, 'authored-demo'), { destRoot: destination });
+    expect(upgraded.version).toBe('1.3.0');
+  });
+
+  it('installs one level under the skills root by default so the registry can discover it', () => {
+    const packageDir = exportDemo();
+    useHome(installerHome);
+    const result = installSkill(packageDir, { trust: true });
+    expect(result.path).toBe(
+      path.join(installerHome, '.codebuddy', 'skills', 'imported-authored-demo'),
+    );
+    expect(fs.existsSync(path.join(result.path, 'SKILL.md'))).toBe(true);
   });
 });

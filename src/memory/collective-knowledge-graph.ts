@@ -329,6 +329,29 @@ export class CollectiveKnowledgeGraph {
   }
 
   /**
+   * Read-only view of the current (non-superseded) entity for a type + name.
+   * Lets the peer CKG bridge detect first-hand local knowledge that a remote
+   * entry would supersede, so it can coexist under a disambiguated name instead.
+   */
+  getCurrentEntity(
+    type: EntityType,
+    name: string,
+  ): { contentHash: string; text: string; contributors: string[] } | null {
+    try {
+      this.load();
+      const entity = this.current.get(entityId(type, name));
+      if (!entity) return null;
+      return {
+        contentHash: entity.contentHash,
+        text: entity.text,
+        contributors: [...entity.contributors],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Ingest a DISCOVERY and auto-link it to its nearest existing discoveries — Patrice's
    * vision: "à chaque découverte, l'enregistrer et relier les découvertes aux plus proches"
    * (Zettelkasten / A-MEM). Uses the multilingual embeddings to find semantic neighbours and

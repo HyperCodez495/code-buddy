@@ -8,6 +8,7 @@
  * preventing gossip loops on subsequent serves.
  */
 
+import { createHash } from 'crypto';
 import {
   existsSync,
   mkdirSync,
@@ -36,6 +37,13 @@ const CKG_SYNC_TYPES: readonly CkgSyncType[] = ['lesson', 'decision', 'fact', 'd
 const DEFAULT_PAGE_LIMIT = 200;
 const MAX_PAGE_LIMIT = 500;
 const DEFAULT_RUN_MAX = 1000;
+// A malicious peer must not be able to bloat the local ledger: every field of
+// a synced entry is size-capped, and a page may never exceed what was asked.
+const MAX_TEXT_LENGTH = 16_384;
+const MAX_NAME_LENGTH = 256;
+const MAX_FIELD_LENGTH = 128;
+const MAX_RECORDED_AT_LENGTH = 64;
+const MAX_CURSOR_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export type CkgSyncType = 'lesson' | 'decision' | 'fact' | 'discovery';
 
@@ -233,10 +241,13 @@ export async function pullFromPeer(
         types,
         limit: requestLimit,
       });
-      const response = parseSyncResponse(raw, sinceTs, localAllowed);
+      const response = parseSyncResponse(raw, sinceTs, localAllowed, requestLimit);
       fetched += response.entries.length;
 
       for (const entry of response.entries) {
+        // Belt-and-braces: parseSyncResponse already rejects oversized pages,
+        // but the run cap must hold even if that invariant ever regresses.
+        if (candidates.length >= runMax) break;
         if (runSeen.has(entry.id)) {
           skipped += 1;
           continue;
@@ -245,7 +256,7 @@ export async function pullFromPeer(
         candidates.push(entry);
         if (dryRun) continue;
 
-        const stored = ckg.remember(toPeerRememberInput(entry, normalizedPeerId));
+        const stored = ckg.remember(toPeerRememberInput(entry, normalizedPeerId, ckg));
         if (!stored) {
           state.peers[normalizedPeerId] = {
             sinceTs,
@@ -370,6 +381,18 @@ function parseEntry(value: unknown): CkgSyncEntry | null {
   ) {
     return null;
   }
+  if (
+    value.recordedAt.length > MAX_RECORDED_AT_LENGTH ||
+    !Number.isFinite(Date.parse(value.recordedAt)) ||
+    value.agentId.length > MAX_FIELD_LENGTH ||
+    value.contentHash.length > MAX_FIELD_LENGTH ||
+    value.id.length > MAX_FIELD_LENGTH ||
+    value.name.length > MAX_NAME_LENGTH ||
+    (typeof value.text === 'string' && value.text.length > MAX_TEXT_LENGTH) ||
+    (typeof value.source === 'string' && value.source.length > MAX_FIELD_LENGTH)
+  ) {
+    return null;
+  }
   return {
     v: 1,
     kind: 'entity',
@@ -393,12 +416,19 @@ function parseSyncResponse(
   value: unknown,
   sinceTs: number,
   localAllowed: Set<CkgSyncType>,
+  requestLimit: number,
 ): CkgSyncResponse {
   if (!isRecord(value) || !Array.isArray(value.entries)) {
     throw new Error('CKG_SYNC_RESPONSE_INVALID: response must contain an entries array');
   }
+  if (value.entries.length > requestLimit) {
+    throw new Error('CKG_SYNC_RESPONSE_INVALID: peer returned more entries than requested');
+  }
   if (typeof value.maxTs !== 'number' || !Number.isFinite(value.maxTs) || value.maxTs < sinceTs) {
     throw new Error('CKG_SYNC_RESPONSE_INVALID: maxTs must be a finite advancing cursor');
+  }
+  if (value.maxTs > Date.now() + MAX_CURSOR_CLOCK_SKEW_MS) {
+    throw new Error('CKG_SYNC_RESPONSE_INVALID: maxTs is unreasonably far in the future');
   }
   const entries: CkgSyncEntry[] = [];
   for (const rawEntry of value.entries) {
@@ -408,15 +438,39 @@ function parseSyncResponse(
     }
     entries.push(entry);
   }
+  if (entries.length > 0) {
+    const newest = Math.max(...entries.map((entry) => Date.parse(entry.recordedAt)));
+    if (value.maxTs !== newest) {
+      throw new Error('CKG_SYNC_RESPONSE_INVALID: maxTs must equal the newest returned entry');
+    }
+  }
   return { entries, maxTs: value.maxTs };
 }
 
-function toPeerRememberInput(entry: CkgSyncEntry, peerId: string): CkgRememberInput {
+function toPeerRememberInput(
+  entry: CkgSyncEntry,
+  peerId: string,
+  ckg: CollectiveKnowledgeGraph,
+): CkgRememberInput {
   const provenance = `peer:${peerId}`;
+  const text = entry.text ?? entry.name;
+  // First-hand local knowledge is never superseded by a peer: when the current
+  // local entity was asserted by a non-peer contributor with different content,
+  // the remote entry coexists under a disambiguated name (mirrors the
+  // rememberFact coexist verdict) instead of becoming the current version.
+  let name = entry.name;
+  const current = ckg.getCurrentEntity(entry.type, entry.name);
+  const hasLocalContributor =
+    current !== null &&
+    current.contributors.some((contributor) => !contributor.startsWith('peer:'));
+  if (current && hasLocalContributor && current.text !== text) {
+    const disambiguator = createHash('sha256').update(`${entry.type}|${text}`).digest('hex').slice(0, 8);
+    name = `${entry.name}#peer-${disambiguator}`;
+  }
   return {
-    text: entry.text ?? entry.name,
+    text,
     type: entry.type,
-    name: entry.name,
+    name,
     agentId: provenance,
     source: provenance,
     ...(entry.confidence !== undefined ? { confidence: entry.confidence } : {}),

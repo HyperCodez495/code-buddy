@@ -95,3 +95,23 @@ CODEBUDDY_CKG_SYNC=true buddy research sync mon-pair --dry-run
 ```
 
 Le pair distant doit lui aussi démarrer avec `CODEBUDDY_CKG_SYNC=true`; sinon il répond explicitement `CKG_SYNC_NOT_ENABLED`.
+
+## Durcissement contre un pair malveillant
+
+La revue de sécurité de la campagne a ajouté ces garde-fous côté demandeur (aucun ne suppose le
+pair honnête) :
+
+- **Page bornée** : une réponse ne peut contenir plus d'entrées que la limite demandée
+  (`requestLimit`) — un pair ne peut pas contourner `CODEBUDDY_CKG_SYNC_MAX` en renvoyant tout en
+  une seule page. Ceinture-bretelles : la boucle d'ingestion s'arrête aussi à `runMax`.
+- **Champs bornés** : chaque entrée reçue est plafonnée (`text` ≤ 16 384, `name` ≤ 256,
+  `id`/`agentId`/`source`/`contentHash` ≤ 128, `recordedAt` ≤ 64 et date valide) — pas de gonflement
+  du ledger JSONL partagé par du contenu géant.
+- **Curseur non empoisonnable** : `maxTs` doit être fini, ≥ `sinceTs`, ≤ `now + 5 min` de dérive, et
+  égal à la date de l'entrée la plus récente de la page — un pair ne peut pas figer la synchro future
+  en renvoyant un curseur dans le futur.
+- **Pas de supersede du savoir local de première main** : si l'entité locale courante a un
+  contributeur non-`peer:` avec un texte différent, l'entrée distante **coexiste** sous un nom
+  désambiguïsé (`<nom>#peer-<hash>`) au lieu de devenir la version courante.
+
+Toute violation fait échouer le pull par `CKG_SYNC_RESPONSE_INVALID` (fail-closed) sans rien écrire.

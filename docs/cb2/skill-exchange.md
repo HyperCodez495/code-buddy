@@ -101,7 +101,14 @@ refus avec leur raison, sans clé privée.
   `review`, `quarantine` ou erreur de scan bloquent l'installation.
 - **Exécution à l'installation** : aucune commande, aucun hook et aucun script du paquet n'est
   lancé.
-- **Écrasement local** : les skills sans marqueur de provenance exchange ne sont jamais remplacés.
+- **Écrasement local** : les skills sans marqueur de provenance exchange ne sont jamais remplacés ;
+  un skill exchange installé n'est remplaçable que par le **même auteur** et jamais par une **version
+  inférieure** (anti-downgrade).
+- **Fichiers non analysables** : le firewall ne scanne que `SKILL.md`/`.ts`/`.js` ; tout paquet
+  contenant un fichier exécutable non scannable (`.sh`, `.py`, sans extension…) est **refusé** — pas
+  de code non analysé sous une promesse « signé + firewalled ».
+- **Découvrabilité** : l'installation se fait un seul niveau sous `~/.codebuddy/skills/` pour que le
+  registre (`findSkillFiles`, profondeur 1) trouve réellement le skill installé.
 - **Compromission de la clé privée locale** : hors périmètre du format ; protéger le compte et le
   dossier `~/.codebuddy`. Révoquer une clé exige actuellement de la retirer manuellement du trust
   store et de distribuer un nouvel identifiant (gestion de révocation prévue après P0).

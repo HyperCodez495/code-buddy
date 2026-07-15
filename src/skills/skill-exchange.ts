@@ -123,7 +123,9 @@ function auditLogPath(): string {
 }
 
 function defaultDestRoot(): string {
-  return path.join(os.homedir(), '.codebuddy', 'skills', 'managed');
+  // One level under the skills root: the registry's findSkillFiles only
+  // descends one level, so a deeper default would install invisible skills.
+  return path.join(os.homedir(), '.codebuddy', 'skills');
 }
 
 function appendAudit(entry: AuditEntry): void {
@@ -211,6 +213,36 @@ function copyFiles(sourceRoot: string, destinationRoot: string, files: readonly 
 
 function validateSkillName(name: string): void {
   if (!SAFE_NAME_RE.test(name)) throw new Error(`Invalid skill name: ${name}`);
+}
+
+// The skill firewall only scans SKILL.md/.ts/.js content; every other allowed
+// extension is inert data. Anything else (.sh, .py, extensionless executables…)
+// would ship unscanned under a "signed + firewalled" promise, so it is refused.
+const INERT_EXCHANGE_EXTENSIONS = new Set([
+  '.md', '.markdown', '.txt', '.json', '.yaml', '.yml', '.toml', '.csv',
+  '.ts', '.js', '.mjs', '.cjs',
+]);
+const INERT_EXCHANGE_BASENAMES = new Set(['LICENSE', 'LICENCE', 'NOTICE', 'README']);
+
+function isScannableExchangePath(relativePath: string): boolean {
+  const base = path.posix.basename(relativePath);
+  if (INERT_EXCHANGE_BASENAMES.has(base)) return true;
+  return INERT_EXCHANGE_EXTENSIONS.has(path.posix.extname(base).toLowerCase());
+}
+
+function compareVersions(a: string, b: string): number {
+  const parse = (value: string): [number, number, number] | null => {
+    const match = value.trim().match(/^(\d+)\.(\d+)\.(\d+)/);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+  };
+  const left = parse(a);
+  const right = parse(b);
+  // Unparseable versions never block an install; the author gate still applies.
+  if (!left || !right) return 0;
+  for (let index = 0; index < 3; index++) {
+    if (left[index] !== right[index]) return left[index]! < right[index]! ? -1 : 1;
+  }
+  return 0;
 }
 
 function findLocalSkill(name: string): string {
@@ -365,6 +397,10 @@ function validatePackage(packageDir: string): { manifest: ExchangeManifest; trus
   if (actualFiles.length !== declaredFiles.length || actualFiles.some((file, index) => file !== declaredFiles[index])) {
     throw new Error('Package contains missing or unsigned files');
   }
+  const unscannable = actualFiles.filter((file) => !isScannableExchangePath(file));
+  if (unscannable.length > 0) {
+    throw new Error(`Package contains non-scannable files (refused): ${unscannable.join(', ')}`);
+  }
   for (const file of manifest.files) {
     const absolute = path.join(resolvedDir, ...file.path.split('/'));
     if (!isInside(resolvedDir, absolute) || sha256File(absolute) !== file.sha256) {
@@ -460,20 +496,31 @@ function importedName(name: string): string {
   return base.startsWith('imported-') ? base : `imported-${base}`;
 }
 
-function isExistingExchangeSkill(destination: string): boolean {
+interface ExchangeProvenance {
+  author: string;
+  version?: string;
+}
+
+function readExchangeProvenance(destination: string): ExchangeProvenance | null {
   const skillFile = path.join(destination, 'SKILL.md');
-  if (!fs.existsSync(skillFile)) return false;
+  if (!fs.existsSync(skillFile)) return null;
   const match = fs.readFileSync(skillFile, 'utf-8').match(FRONTMATTER_RE);
-  if (!match) return false;
+  if (!match) return null;
   try {
     const metadata = yaml.parse(match[1] ?? '') as unknown;
-    return isRecord(metadata) && metadata.exchange === true;
+    if (!isRecord(metadata) || metadata.exchange !== true || typeof metadata.author !== 'string') {
+      return null;
+    }
+    return {
+      author: metadata.author,
+      ...(typeof metadata.version === 'string' ? { version: metadata.version } : {}),
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 
-function writeExchangeProvenance(skillFile: string, name: string, author: string, installedAt: string): void {
+function writeExchangeProvenance(skillFile: string, name: string, author: string, installedAt: string, version: string): void {
   const content = fs.readFileSync(skillFile, 'utf-8');
   const match = content.match(FRONTMATTER_RE);
   if (!match) throw new Error('Installed SKILL.md is missing frontmatter');
@@ -486,6 +533,7 @@ function writeExchangeProvenance(skillFile: string, name: string, author: string
     source: 'exchange',
     exchange: true,
     author,
+    version,
     installedAt,
     pinned: true,
   };
@@ -502,9 +550,23 @@ export function installSkill(dir: string, options: InstallSkillOptions = {}): In
     const destinationRoot = path.resolve(options.destRoot ?? defaultDestRoot());
     const destination = path.join(destinationRoot, name);
 
-    // Collision check follows shape/signature/hash/firewall verification.
-    if (fs.existsSync(destination) && !isExistingExchangeSkill(destination)) {
-      throw new Error(`Refusing to overwrite non-exchange skill: ${name}`);
+    // Collision checks follow shape/signature/hash/firewall verification: never
+    // overwrite a non-exchange skill, another author's skill, or a newer version.
+    if (fs.existsSync(destination)) {
+      const existing = readExchangeProvenance(destination);
+      if (!existing) {
+        throw new Error(`Refusing to overwrite non-exchange skill: ${name}`);
+      }
+      if (existing.author !== manifest.author) {
+        throw new Error(
+          `Refusing cross-author overwrite of ${name}: installed author ${existing.author}, package author ${manifest.author}`,
+        );
+      }
+      if (existing.version !== undefined && compareVersions(manifest.version, existing.version) < 0) {
+        throw new Error(
+          `Refusing version downgrade of ${name}: installed ${existing.version}, package ${manifest.version}`,
+        );
+      }
     }
     if (!validation.trusted && options.trust !== true) {
       throw new Error(`Unknown exchange author ${manifest.author}; pass --trust for explicit TOFU approval`);
@@ -524,7 +586,7 @@ export function installSkill(dir: string, options: InstallSkillOptions = {}): In
     try {
       fs.mkdirSync(temporary, { recursive: true });
       copyFiles(path.resolve(dir), temporary, manifest.files.map((file) => file.path));
-      writeExchangeProvenance(path.join(temporary, 'SKILL.md'), name, manifest.author, installedAt);
+      writeExchangeProvenance(path.join(temporary, 'SKILL.md'), name, manifest.author, installedAt, manifest.version);
       fs.mkdirSync(destinationRoot, { recursive: true });
       if (fs.existsSync(destination)) {
         fs.renameSync(destination, backup);
