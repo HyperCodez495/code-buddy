@@ -318,6 +318,21 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
     patchFormat: 'unified',
     promptProfile: 'rich',
   },
+  // GPT-5.6 Luna — the fast, low-cost sibling served $0 via the ChatGPT/Codex
+  // OAuth backend. Same context/reasoning envelope as Sol, tuned for speed:
+  // used as the low-latency everyday model (see `luna` alias + fast-model routing).
+  {
+    model: 'gpt-5.6-luna*',
+    strengths: ['code', 'thinking'],
+    supportsReasoning: true,
+    supportedReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    supportsToolCalls: true,
+    supportsVision: true,
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    patchFormat: 'unified',
+    promptProfile: 'rich',
+  },
   {
     model: 'gpt-5.6',
     strengths: ['code', 'thinking'],

@@ -61,6 +61,7 @@ const BUILTIN_PRICING: Record<string, ModelPricing> = {
 
   // OpenAI
   'gpt-5.6-sol': { inputPerMillion: 5.0, outputPerMillion: 30.0 },
+  'gpt-5.6-luna': { inputPerMillion: 1.0, outputPerMillion: 6.0 },
   'gpt-5.6': { inputPerMillion: 5.0, outputPerMillion: 30.0 },
   'gpt-5': { inputPerMillion: 5.0, outputPerMillion: 15.0 },
   'gpt-4.1': { inputPerMillion: 2.0, outputPerMillion: 8.0 },
