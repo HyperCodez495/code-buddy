@@ -15,6 +15,8 @@ import { logger } from '../utils/logger.js';
 import { isDangerousCommand, matchAllDangerousPatterns } from '../security/dangerous-patterns.js';
 import { sendTelegramAlert } from './alert.js';
 import { buildFilteredSubprocessEnv } from '../utils/subprocess-env.js';
+import { assertSafeUrl } from '../security/ssrf-guard.js';
+import { safeFetchFollow } from '../security/safe-fetch.js';
 
 export interface SensoryEventContext {
   modality?: string;
@@ -97,9 +99,13 @@ async function runWebhook(
   action: { url: string; method?: string; headers?: Record<string, string> },
   ctx: SensoryEventContext,
 ): Promise<ActionResult> {
-  if (!/^https?:\/\//i.test(action.url)) return { ok: false, detail: 'invalid url' };
   try {
-    const res = await fetch(action.url, {
+    const ssrfCheck = await assertSafeUrl(action.url);
+    if (!ssrfCheck.safe) {
+      return { ok: false, detail: `blocked by SSRF guard: ${ssrfCheck.reason}` };
+    }
+
+    const res = await safeFetchFollow(action.url, {
       method: action.method ?? 'POST',
       headers: { 'Content-Type': 'application/json', ...(action.headers ?? {}) },
       body: JSON.stringify({ event: ctx }),

@@ -23,6 +23,7 @@ import {
   type SensoryAction,
   type SensoryEventContext,
 } from './sensory-action-executor.js';
+import { assertSafeUrl, getSSRFGuard } from '../security/ssrf-guard.js';
 
 export interface SensoryRule {
   id: string;
@@ -73,14 +74,35 @@ export function validateRule(rule: SensoryRule): { ok: boolean; errors: string[]
   } else if (a.type === 'agent') {
     if (!a.prompt?.trim()) errors.push('agent action needs a prompt');
   } else if (a.type === 'webhook') {
-    if (!/^https?:\/\//i.test(a.url ?? '')) errors.push('webhook url must start with http(s)://');
+    const urlCheck = getSSRFGuard().isSafeUrlSync(a.url ?? '');
+    if (!urlCheck.safe) errors.push(`webhook url rejected by SSRF guard: ${urlCheck.reason}`);
   } else if (a.type !== 'alert') {
     errors.push(`unknown action.type '${(a as { type?: string }).type}'`);
   }
   return { ok: errors.length === 0, errors };
 }
 
+async function validateRuleForUse(rule: SensoryRule): Promise<{ ok: boolean; errors: string[] }> {
+  const validation = validateRule(rule);
+  if (!validation.ok || rule.action.type !== 'webhook') return validation;
+
+  const urlCheck = await assertSafeUrl(rule.action.url);
+  if (!urlCheck.safe) {
+    return {
+      ok: false,
+      errors: [`webhook url rejected by SSRF guard: ${urlCheck.reason}`],
+    };
+  }
+  return validation;
+}
+
 export async function saveSensoryRules(rules: SensoryRule[], path = rulesPath()): Promise<void> {
+  const validations = await Promise.all(rules.map((rule) => validateRuleForUse(rule)));
+  const invalidIndex = validations.findIndex((validation) => !validation.ok);
+  if (invalidIndex >= 0) {
+    const validation = validations[invalidIndex];
+    throw new Error(`Invalid sensory rule: ${validation?.errors.join('; ') || 'validation failed'}`);
+  }
   await mkdir(join(path, '..'), { recursive: true });
   await writeFile(path, JSON.stringify(rules, null, 2), 'utf8');
 }
@@ -89,7 +111,7 @@ export const listSensoryRules = loadSensoryRules;
 
 /** Add or replace a rule by id. Rejects (no write) when invalid. */
 export async function upsertSensoryRule(rule: SensoryRule): Promise<{ ok: boolean; errors: string[] }> {
-  const v = validateRule(rule);
+  const v = await validateRuleForUse(rule);
   if (!v.ok) return v;
   const rules = await loadSensoryRules();
   const idx = rules.findIndex((r) => r.id === rule.id);
@@ -207,9 +229,15 @@ export function wireSensoryRules(
     try {
       const mt = (await stat(rulesPath())).mtimeMs;
       if (mt === loadedMtimeMs) return;
-      rules = await loadSensoryRules();
+      const loadedRules = await loadSensoryRules();
+      const validations = await Promise.all(loadedRules.map((rule) => validateRuleForUse(rule)));
+      rules = loadedRules.filter((_rule, index) => validations[index]?.ok === true);
+      const rejectedCount = loadedRules.length - rules.length;
       loadedMtimeMs = mt;
       logger.info(`[rules] reloaded ${rules.length} sensory rule(s)`);
+      if (rejectedCount > 0) {
+        logger.warn(`[rules] rejected ${rejectedCount} unsafe sensory rule(s) during reload`);
+      }
     } catch {
       /* file missing → keep current rules */
     }
