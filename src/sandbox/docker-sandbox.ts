@@ -305,6 +305,7 @@ export class DockerSandbox extends EventEmitter implements SandboxBackendInterfa
     opts?: Partial<SandboxConfig> | SandboxExecOptions
   ): Promise<SandboxResult> {
     const merged = { ...this.config, ...opts };
+    const signal = opts && 'signal' in opts ? opts.signal : undefined;
     const containerName = `codebuddy-sandbox-${randomUUID().slice(0, 8)}`;
     const startTime = Date.now();
 
@@ -315,6 +316,7 @@ export class DockerSandbox extends EventEmitter implements SandboxBackendInterfa
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let aborted = false;
 
       this.activeContainers.add(containerName);
       globalActiveContainers.add(containerName);
@@ -338,9 +340,21 @@ export class DockerSandbox extends EventEmitter implements SandboxBackendInterfa
         }
         proc.kill('SIGKILL');
       }, merged.timeout);
+      const onAbort = (): void => {
+        aborted = true;
+        try {
+          spawnSync('docker', ['kill', containerName], { stdio: 'pipe', timeout: 5000 });
+        } catch {
+          // Container may not have reached its running state yet.
+        }
+        try { proc.kill('SIGTERM'); } catch { /* launcher already exited */ }
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
 
       proc.on('close', (code) => {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
         this.activeContainers.delete(containerName);
         globalActiveContainers.delete(containerName);
         this.emit('container:stopped', containerName);
@@ -349,7 +363,16 @@ export class DockerSandbox extends EventEmitter implements SandboxBackendInterfa
         if (exitCode === 125) DockerSandbox.invalidateProbeCache(merged.image);
         const durationMs = Date.now() - startTime;
 
-        if (timedOut) {
+        if (aborted) {
+          resolve({
+            success: false,
+            output: stdout,
+            error: 'Command aborted by user',
+            exitCode: 130,
+            durationMs,
+            containerId: containerName,
+          });
+        } else if (timedOut) {
           resolve({
             success: false,
             output: stdout,
@@ -372,6 +395,7 @@ export class DockerSandbox extends EventEmitter implements SandboxBackendInterfa
 
       proc.on('error', (err) => {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
         this.activeContainers.delete(containerName);
         globalActiveContainers.delete(containerName);
         this.emit('container:stopped', containerName);

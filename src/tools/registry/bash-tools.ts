@@ -50,12 +50,13 @@ export class BashExecuteTool implements ITool {
     // The session's workingDirectory (embedded engines) — commands must run
     // there, not in the host process cwd. Undefined keeps CLI behavior.
     const cwd = context?.cwd;
+    const signal = context?.abortSignal;
 
     if (typeof timeout === 'number') {
-      return await getBash().execute(command, timeout, cwd);
+      return await getBash().execute(command, timeout, cwd, signal);
     }
 
-    return await getBash().execute(command, undefined, cwd);
+    return await getBash().execute(command, undefined, cwd, signal);
   }
 
   getSchema(): ToolSchema {

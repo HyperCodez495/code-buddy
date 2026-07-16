@@ -130,6 +130,14 @@ interface ToolExecutionOutcome {
   streamChunks: string[];
 }
 
+function abortedToolResult(startedAt: number): ToolResult {
+  const elapsedSeconds = Math.max(0, Date.now() - startedAt) / 1000;
+  return {
+    success: false,
+    error: `aborted by user after ${elapsedSeconds.toFixed(1)}s`,
+  };
+}
+
 function configuredSensoryRuntime(
   surface: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -674,13 +682,18 @@ export class AgentExecutor {
   private async executeToolForBatch(
     toolCall: CodeBuddyToolCall,
     executionExtra?: Record<string, unknown>,
+    signal?: AbortSignal,
+    startedAt = Date.now(),
   ): Promise<{ result: ToolResult; streamChunks: string[] }> {
     const streamChunks: string[] = [];
+    const extraWithSignal = signal
+      ? { ...(executionExtra ?? {}), abortSignal: signal }
+      : executionExtra;
 
-    try {
+    const execute = async (): Promise<{ result: ToolResult; streamChunks: string[] }> => {
       const streamingTools = new Set(['bash', 'reason', 'generate_document']);
       if (streamingTools.has(toolCall.function.name)) {
-        const generator = this.deps.toolHandler.executeToolStreaming(toolCall, executionExtra);
+        const generator = this.deps.toolHandler.executeToolStreaming(toolCall, extraWithSignal);
         let generated = await generator.next();
         while (!generated.done) {
           streamChunks.push(generated.value);
@@ -697,25 +710,56 @@ export class AgentExecutor {
       if (streamingAdapter.supportsStreaming(toolCall.function.name)) {
         const result = await streamingAdapter.wrapWithStreaming(
           toolCall.function.name,
-          () => this.executeToolViaLane(toolCall, executionExtra),
+          () => this.executeToolViaLane(toolCall, extraWithSignal),
           (chunk: string) => streamChunks.push(chunk),
         );
         return { result, streamChunks };
       }
 
       return {
-        result: await this.executeToolViaLane(toolCall, executionExtra),
+        result: await this.executeToolViaLane(toolCall, extraWithSignal),
         streamChunks,
       };
-    } catch (error) {
-      return {
-        result: {
-          success: false,
-          error: `Tool execution failed: ${getErrorMessage(error)}`,
-        },
-        streamChunks,
-      };
+    };
+
+    if (!signal) {
+      try {
+        return await execute();
+      } catch (error) {
+        return {
+          result: { success: false, error: `Tool execution failed: ${getErrorMessage(error)}` },
+          streamChunks,
+        };
+      }
     }
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: { result: ToolResult; streamChunks: string[] }): void => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      };
+      const onAbort = (): void => finish({
+        result: abortedToolResult(startedAt),
+        streamChunks,
+      });
+
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      void execute().then(
+        finish,
+        (error: unknown) => finish({
+          result: { success: false, error: `Tool execution failed: ${getErrorMessage(error)}` },
+          streamChunks,
+        }),
+      );
+    });
   }
 
   /**
@@ -1644,12 +1688,6 @@ export class AgentExecutor {
           );
 
           toolExecution: for (const batch of executionBatches) {
-            if (abortController?.signal.aborted) {
-              yield { type: "content", content: "\n\n[Operation cancelled by user]" };
-              yield { type: "done" };
-              return;
-            }
-
             // Compaction mutates shared transcript state, so keep this preflight
             // ordered even when the calls themselves are safe to run together.
             for (const toolCall of batch) {
@@ -1680,6 +1718,13 @@ export class AgentExecutor {
               batch,
               async (toolCall) => {
                 const startedAt = Date.now();
+                if (abortController?.signal.aborted) {
+                  return {
+                    result: abortedToolResult(startedAt),
+                    startedAt,
+                    streamChunks: [],
+                  };
+                }
                 if (
                   relationshipSafety &&
                   (isBlockedRelationshipInteractiveToolCall(toolCall) ||
@@ -1704,8 +1749,20 @@ export class AgentExecutor {
                   };
                 }
 
+                if (abortController?.signal.aborted) {
+                  return {
+                    result: abortedToolResult(startedAt),
+                    startedAt,
+                    streamChunks: [],
+                  };
+                }
                 emitFleetToolStarted(toolCall);
-                const execution = await this.executeToolForBatch(toolCall, turnExecutionExtra);
+                const execution = await this.executeToolForBatch(
+                  toolCall,
+                  turnExecutionExtra,
+                  abortController?.signal,
+                  startedAt,
+                );
                 return { ...execution, startedAt };
               },
               (error) => ({
@@ -1850,13 +1907,6 @@ export class AgentExecutor {
               preparedMessages.push(msg);
             }
 
-            // Check abort after tool execution completes
-            if (abortController?.signal.aborted) {
-              yield { type: "content", content: "\n\n[Operation cancelled by user]" };
-              yield { type: "done" };
-              return;
-            }
-
             // Build three deliberately separate views of one observation:
             //   1. recovery: exact native output persisted before any hook/optimizer,
             //   2. display: provider-sanitized ToolResult emitted to the UI,
@@ -1872,7 +1922,8 @@ export class AgentExecutor {
                 ? this.deps.toolHandler.getRecoverySessionId()
                 : undefined;
             let rawForRecovery = formatToolResultForRecovery(result);
-            if (toolCall.id && recoveryStore) {
+            const executionWasAborted = result.error?.startsWith('aborted by user after ') ?? false;
+            if (toolCall.id && recoveryStore && !executionWasAborted) {
               const existingRecovery = recoveryStore.restore(
                 toolCall.id,
                 toolWorkspace,
@@ -2069,6 +2120,12 @@ export class AgentExecutor {
           }
 
           if (terminateDetectedStreaming) break;
+
+          if (abortController?.signal.aborted) {
+            yield { type: "content", content: "\n\n[Operation cancelled by user]" };
+            yield { type: "done" };
+            return;
+          }
 
           inputTokens = this.deps.tokenCounter.countMessageTokens(
             messages as Parameters<TokenCounter['countMessageTokens']>[0],

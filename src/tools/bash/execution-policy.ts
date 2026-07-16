@@ -244,7 +244,8 @@ export function executableIdentitiesStillMatch(
 export async function executeInWorkspaceSandbox(
   command: string,
   cwd: string,
-  timeout: number
+  timeout: number,
+  signal?: AbortSignal,
 ): Promise<SandboxedExecution> {
   const shellEnv = getShellEnvPolicy().buildEnv(getFilteredEnv());
   const env = Object.fromEntries(
@@ -257,6 +258,7 @@ export async function executeInWorkspaceSandbox(
     timeout,
     allowUnsandboxed: false,
     env,
+    ...(signal ? { abortSignal: signal } : {}),
   });
 
   if (!(await sandbox.isAvailable()) || sandbox.getBackend() === 'docker') {
@@ -295,7 +297,7 @@ export async function executeInWorkspaceSandbox(
         reason: 'No native or Docker workspace sandbox is available',
       };
     }
-    const dockerResult = await docker.execute(command);
+    const dockerResult = await docker.execute(command, signal ? { signal } : undefined);
     await docker.cleanup();
     return {
       available: true,

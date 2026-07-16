@@ -1467,35 +1467,56 @@ describe('AgentExecutor', () => {
       expect(cancelChunk).toBeDefined();
     });
 
-    it('should handle abort during tool execution', async () => {
+    it('propagates abort to in-flight tools and pairs every call with an aborted result', async () => {
       const abortController = new AbortController();
-      const toolCall = makeToolCall('read_file', { path: '/big.txt' }, 'call_1');
+      const toolCalls = [
+        makeToolCall('read_file', { path: '/big-1.txt' }, 'call_1'),
+        makeToolCall('grep', { pattern: 'slow' }, 'call_2'),
+      ];
 
       // Stream returns tool calls
       (deps.streamingHandler.getAccumulatedMessage as jest.Mock).mockReturnValue({
         content: 'Reading...',
-        tool_calls: [toolCall],
+        tool_calls: toolCalls,
       });
       (deps.streamingHandler.extractToolCalls as jest.Mock).mockReturnValue({
         toolCalls: [],
         remainingContent: '',
       });
 
-      // Tool execution triggers abort (simulates user pressing Ctrl+C mid-tool)
-      (deps.toolHandler.executeTool as jest.Mock).mockImplementation(async () => {
-        abortController.abort();
-        return { success: true, output: 'done' };
-      });
+      const receivedSignals: AbortSignal[] = [];
+      (deps.toolHandler.executeTool as jest.Mock).mockImplementation(
+        (_toolCall: unknown, extra?: Record<string, unknown>) => {
+          receivedSignals.push(extra?.abortSignal as AbortSignal);
+          return new Promise(() => {});
+        },
+      );
 
       const history: ChatEntry[] = [];
       const messages: CodeBuddyMessage[] = [];
 
-      const chunks = await collectChunks(
+      const turn = collectChunks(
         executor.processUserMessageStream('Read big file', history, messages, abortController)
       );
+      const deadline = Date.now() + 1000;
+      while (receivedSignals.length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      abortController.abort();
+      const chunks = await turn;
 
       const cancelChunk = chunks.find(c => c.content?.includes('cancelled'));
       expect(cancelChunk).toBeDefined();
+      expect(receivedSignals).toHaveLength(2);
+      expect(receivedSignals.every((signal) => signal === abortController.signal)).toBe(true);
+      expect(
+        messages
+          .filter((entry) => entry.role === 'tool')
+          .map((entry) => ({ id: entry.tool_call_id, content: entry.content })),
+      ).toEqual([
+        { id: 'call_1', content: expect.stringMatching(/aborted by user after \d+\.\ds/) },
+        { id: 'call_2', content: expect.stringMatching(/aborted by user after \d+\.\ds/) },
+      ]);
     });
 
     it('should yield tool_calls chunks', async () => {

@@ -108,12 +108,17 @@ export class BashTool implements Disposable {
    *   actually exercises (the executor streams tools), so it must honor the
    *   session cwd exactly like the non-streaming `execute` does.
    */
-  async *executeStreaming(command: string, timeout: number = 30000, cwd?: string): AsyncGenerator<string, ToolResult, undefined> {
+  async *executeStreaming(
+    command: string,
+    timeout: number = 30000,
+    cwd?: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<string, ToolResult, undefined> {
     return yield* executeStreamingImpl(command, timeout, {
       getCurrentDirectory: () => cwd ?? this.currentDirectory,
       getSandboxManager: () => this.sandboxManager,
       getRunningProcesses: () => this.runningProcesses,
-    });
+    }, signal);
   }
 
   /**
@@ -122,12 +127,13 @@ export class BashTool implements Disposable {
    */
   private executeWithSpawn(
     command: string,
-    options: { timeout: number; cwd: string }
+    options: { timeout: number; cwd: string; signal?: AbortSignal }
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let aborted = false;
 
       const isWindows = process.platform === 'win32';
 
@@ -191,6 +197,12 @@ export class BashTool implements Disposable {
           killProcess('SIGKILL');
         }, gracePeriod);
       }, options.timeout);
+      const onAbort = (): void => {
+        aborted = true;
+        killProcess('SIGTERM');
+      };
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
 
       const maxBuffer = 1024 * 1024; // 1MB limit
 
@@ -211,10 +223,17 @@ export class BashTool implements Disposable {
       proc.on('close', (exitCode: number | null) => {
         this.runningProcesses.delete(proc);
         clearTimeout(timer);
+        options.signal?.removeEventListener('abort', onAbort);
         if (gracefulTerminationTimer) {
           clearTimeout(gracefulTerminationTimer);
         }
-        if (timedOut) {
+        if (aborted) {
+          resolve({
+            stdout: stdout.trim(),
+            stderr: 'Command aborted by user',
+            exitCode: 130,
+          });
+        } else if (timedOut) {
           resolve({
             stdout: stdout.trim(),
             stderr: 'Command timed out (graceful termination attempted)',
@@ -232,6 +251,7 @@ export class BashTool implements Disposable {
       proc.on('error', (error: Error) => {
         this.runningProcesses.delete(proc);
         clearTimeout(timer);
+        options.signal?.removeEventListener('abort', onAbort);
         if (gracefulTerminationTimer) {
           clearTimeout(gracefulTerminationTimer);
         }
@@ -271,8 +291,13 @@ export class BashTool implements Disposable {
    *   CLI but wrong for embedded sessions: a Cowork deck export wrote its
    *   .pptx into cowork/ instead of the session dir.
   */
-  async execute(command: string, timeout: number = 30000, cwd?: string): Promise<ToolResult> {
-    return this.executeInternal(command, timeout, cwd, true);
+  async execute(
+    command: string,
+    timeout: number = 30000,
+    cwd?: string,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
+    return this.executeInternal(command, timeout, cwd, true, signal);
   }
 
   private async executeInternal(
@@ -280,8 +305,12 @@ export class BashTool implements Disposable {
     timeout: number,
     cwd: string | undefined,
     allowSelfHealing: boolean,
+    signal?: AbortSignal,
   ): Promise<ToolResult> {
     try {
+      if (signal?.aborted) {
+        return { success: false, error: 'Command aborted by user' };
+      }
       const effectiveCwd = cwd ?? this.currentDirectory;
       // Validate input with schema (enhanced validation)
       const schemaValidation = validateWithSchema(
@@ -347,6 +376,9 @@ export class BashTool implements Disposable {
       // approval and sandboxing so the command the user sees is exactly the
       // command that will execute.
       const executionCommand = await this.resolveRtkCommand(command);
+      if (signal?.aborted) {
+        return { success: false, error: 'Command aborted by user' };
+      }
       const policy = await evaluateShellExecution(executionCommand, effectiveCwd);
       if (policy.action === 'deny') {
         return {
@@ -359,7 +391,15 @@ export class BashTool implements Disposable {
       let escalationReason = policy.reason;
 
       if (policy.action === 'sandbox') {
-        const sandboxed = await executeInWorkspaceSandbox(executionCommand, effectiveCwd, timeout);
+        const sandboxed = await executeInWorkspaceSandbox(
+          executionCommand,
+          effectiveCwd,
+          timeout,
+          signal,
+        );
+        if (signal?.aborted) {
+          return { success: false, error: 'Command aborted by user' };
+        }
         if (sandboxed.available && sandboxed.result) {
           if (sandboxed.result.exitCode === 0) {
             return this.formatProcessResult(
@@ -426,10 +466,15 @@ export class BashTool implements Disposable {
       const result = await this.executeWithSpawn(executionCommand, {
         timeout,
         cwd: effectiveCwd,
+        ...(signal ? { signal } : {}),
       });
 
       if (result.exitCode !== 0) {
         const errorMessage = result.stderr || `Command exited with code ${result.exitCode}`;
+
+        if (signal?.aborted || result.exitCode === 130) {
+          return { success: false, error: 'Command aborted by user', output: result.stdout };
+        }
 
         // Attempt self-healing if enabled
         if (this.selfHealingEnabled && allowSelfHealing) {
@@ -441,7 +486,7 @@ export class BashTool implements Disposable {
               // of the approved one. Route it through validation, RTK freeze,
               // policy, sandbox and exact approval again; only disable nested
               // healing to keep the retry budget bounded.
-              return this.executeInternal(fixCmd, timeout * 2, effectiveCwd, false);
+              return this.executeInternal(fixCmd, timeout * 2, effectiveCwd, false, signal);
             }
           );
 

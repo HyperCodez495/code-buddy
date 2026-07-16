@@ -41,6 +41,8 @@ export interface OSSandboxConfig {
   env: Record<string, string>;
   /** Timeout in milliseconds */
   timeout: number;
+  /** Optional cancellation for the currently tracked execution. */
+  abortSignal?: AbortSignal;
   /** Resource limits */
   limits: {
     /** Max memory in bytes */
@@ -284,7 +286,7 @@ async function execBubblewrap(
   // Add the command
   bwrapArgs.push(command, ...args);
 
-  return execWithTimeout('bwrap', bwrapArgs, config.timeout, 'bubblewrap');
+  return execWithTimeout('bwrap', bwrapArgs, config.timeout, 'bubblewrap', config.abortSignal);
 }
 
 // ============================================================================
@@ -372,7 +374,13 @@ async function execSeatbelt(
       ...args,
     ];
 
-    const result = await execWithTimeout('sandbox-exec', sandboxArgs, config.timeout, 'seatbelt');
+    const result = await execWithTimeout(
+      'sandbox-exec',
+      sandboxArgs,
+      config.timeout,
+      'seatbelt',
+      config.abortSignal,
+    );
     return result;
   } finally {
     // Clean up profile file
@@ -602,7 +610,13 @@ async function execLandlock(
     bwrapArgs.push(command, ...args);
 
     // Execute bwrap with the seccomp filter passed via fd 9
-    const result = await execWithSeccomp('bwrap', bwrapArgs, config.timeout, seccompPath);
+    const result = await execWithSeccomp(
+      'bwrap',
+      bwrapArgs,
+      config.timeout,
+      seccompPath,
+      config.abortSignal,
+    );
     return result;
   } finally {
     // Clean up seccomp filter file
@@ -624,7 +638,8 @@ function execWithSeccomp(
   command: string,
   args: string[],
   timeout: number,
-  seccompPath: string
+  seccompPath: string,
+  signal?: AbortSignal,
 ): Promise<OSSandboxResult> {
   return new Promise((resolve) => {
     const startTime = Date.now();
@@ -651,6 +666,7 @@ function execWithSeccomp(
 
     const proc = spawn('sh', ['-c', shellCmd], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(signal ? { signal } : {}),
     });
 
     let stdout = '';
@@ -795,14 +811,14 @@ export class OSSandbox extends EventEmitter implements SandboxBackendInterface {
 
         case 'docker':
           // Fall back to Docker (handled elsewhere)
-          result = await execUnsandboxed(command, args, this.config.timeout);
+          result = await execUnsandboxed(command, args, this.config.timeout, this.config.abortSignal);
           result.backend = 'docker';
           result.sandboxed = false; // Mark as not sandboxed by OS
           break;
 
         case 'none':
         default:
-          result = await execUnsandboxed(command, args, this.config.timeout);
+          result = await execUnsandboxed(command, args, this.config.timeout, this.config.abortSignal);
           break;
       }
     } catch (error) {
@@ -1014,13 +1030,15 @@ function execWithTimeout(
   command: string,
   args: string[],
   timeout: number,
-  backend: SandboxBackend
+  backend: SandboxBackend,
+  signal?: AbortSignal,
 ): Promise<OSSandboxResult> {
   return new Promise((resolve) => {
     const startTime = Date.now();
 
     const options: SpawnOptions = {
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(signal ? { signal } : {}),
     };
 
     const proc = spawn(command, args, options);
@@ -1076,13 +1094,15 @@ function execWithTimeout(
 function execUnsandboxed(
   command: string,
   args: string[],
-  timeout: number
+  timeout: number,
+  signal?: AbortSignal,
 ): Promise<OSSandboxResult> {
   return new Promise((resolve) => {
     const startTime = Date.now();
 
     const proc = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(signal ? { signal } : {}),
     });
 
     let stdout = '';

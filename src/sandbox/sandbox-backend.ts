@@ -20,6 +20,8 @@ export interface SandboxExecOptions {
   networkEnabled?: boolean;
   /** Memory limit (backend-specific format) */
   memoryLimit?: string;
+  /** Abort the running sandbox process/container. */
+  signal?: AbortSignal;
 }
 
 export interface SandboxExecResult {

@@ -122,6 +122,15 @@ const PRECISE_RUNTIME_APPROVAL_TOOLS = new Set<string>([
 
 const LEGACY_TOOL_METADATA = new Map(TOOL_METADATA.map((metadata) => [metadata.name, metadata]));
 
+function abortSignalFromExecutionExtra(
+  executionExtra?: Record<string, unknown>,
+): AbortSignal | undefined {
+  const candidate = executionExtra?.abortSignal;
+  return candidate && typeof candidate === 'object' && 'aborted' in candidate
+    ? candidate as AbortSignal
+    : undefined;
+}
+
 export interface NormalizedHallucinatedToolCall {
   toolName: string;
   args: Record<string, unknown>;
@@ -509,10 +518,12 @@ export class ToolHandler {
         : {}),
     };
     const sessionId = this.deps.sessionIdProvider?.() ?? this.currentRunId;
+    const abortSignal = abortSignalFromExecutionExtra(executionExtra);
     const context: IToolExecutionContext = {
       cwd: this.currentWorkingDirectory ?? process.cwd(),
       botId: this.currentBotId,
       ...(sessionId ? { sessionId } : {}),
+      ...(abortSignal ? { abortSignal } : {}),
       ...(Object.keys(contextExtra).length > 0 ? { extra: contextExtra } : {}),
     };
 
@@ -1187,6 +1198,7 @@ export class ToolHandler {
       ? this.deps.contextZoomSessionIdProvider?.() ?? this.deps.sessionIdProvider?.() ?? this.currentRunId
       : this.deps.sessionIdProvider?.() ?? this.currentRunId;
     const recoverySessionId = this.recoverySessionIdForExecution(executionExtra);
+    const abortSignal = abortSignalFromExecutionExtra(executionExtra);
     const contextExtra = {
       ...(executionExtra ?? {}),
       ...(
@@ -1199,6 +1211,7 @@ export class ToolHandler {
       cwd: this.currentWorkingDirectory ?? process.cwd(),
       botId: this.currentBotId,
       ...(sessionId ? { sessionId } : {}),
+      ...(abortSignal ? { abortSignal } : {}),
       ...(Object.keys(contextExtra).length > 0 ? { extra: contextExtra } : {}),
     };
 
@@ -1437,7 +1450,12 @@ export class ToolHandler {
         // Session cwd override — the streaming path is what embedded hosts
         // (Cowork) actually exercise; without it, streamed bash ran in the
         // Electron process cwd regardless of the session workingDirectory.
-        const gen = this.bash.executeStreaming(command, timeout, this.currentWorkingDirectory);
+        const gen = this.bash.executeStreaming(
+          command,
+          timeout,
+          this.currentWorkingDirectory,
+          abortSignalFromExecutionExtra(executionExtra),
+        );
         let result = await gen.next();
         while (!result.done) {
           yield result.value;

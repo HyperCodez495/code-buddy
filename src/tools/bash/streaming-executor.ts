@@ -35,8 +35,12 @@ export interface StreamingExecutorDeps {
 export async function* executeStreaming(
   command: string,
   timeout: number = 30000,
-  deps: StreamingExecutorDeps
+  deps: StreamingExecutorDeps,
+  signal?: AbortSignal,
 ): AsyncGenerator<string, ToolResult, undefined> {
+  if (signal?.aborted) {
+    return { success: false, error: 'Command aborted by user' };
+  }
   // Validate command (static checks)
   const validation = validateCommand(command);
   if (!validation.valid) {
@@ -73,6 +77,9 @@ export async function* executeStreaming(
   // Freeze the transformed command before policy/approval. Buffered and
   // streaming execution now authorize exactly what they dispatch.
   const policy = await evaluateShellExecution(executionCommand, cwd);
+  if (signal?.aborted) {
+    return { success: false, error: 'Command aborted by user' };
+  }
   if (policy.action === 'deny') {
     return { success: false, error: `Command blocked by execution policy: ${policy.reason}` };
   }
@@ -81,7 +88,7 @@ export async function* executeStreaming(
   let escalationReason = policy.reason;
 
   if (policy.action === 'sandbox') {
-    const sandboxed = await executeInWorkspaceSandbox(executionCommand, cwd, timeout);
+    const sandboxed = await executeInWorkspaceSandbox(executionCommand, cwd, timeout, signal);
     if (sandboxed.available && sandboxed.result) {
       const { stdout, stderr, exitCode, backend } = sandboxed.result;
       if (exitCode === 0 || !isSandboxBoundaryFailure(sandboxed.result)) {
@@ -155,6 +162,8 @@ export async function* executeStreaming(
   let stdout = '';
   let stderr = '';
   let timedOut = false;
+  let aborted = false;
+  let onAbort: () => void = () => {};
 
   const timer = setTimeout(() => {
     timedOut = true;
@@ -166,6 +175,22 @@ export async function* executeStreaming(
     const chunks: string[] = [];
     let resolve: (() => void) | null = null;
     let done = false;
+
+    const killProcess = (): void => {
+      try {
+        if (!isWindows && proc.pid) process.kill(-proc.pid, 'SIGTERM');
+        else proc.kill('SIGTERM');
+      } catch {
+        try { proc.kill('SIGTERM'); } catch { /* process already exited */ }
+      }
+    };
+    onAbort = (): void => {
+      aborted = true;
+      killProcess();
+      if (resolve) { resolve(); resolve = null; }
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
 
     const onData = (data: Buffer, isStderr: boolean) => {
       const text = data.toString();
@@ -195,6 +220,7 @@ export async function* executeStreaming(
     }
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
     runningProcesses.delete(proc);
     if (!proc.killed && proc.exitCode === null) {
       proc.kill('SIGTERM');
@@ -202,6 +228,10 @@ export async function* executeStreaming(
         try { if (!proc.killed) proc.kill('SIGKILL'); } catch { /* already dead */ }
       }, 5000);
     }
+  }
+
+  if (aborted) {
+    return { success: false, error: 'Command aborted by user', output: stdout };
   }
 
   if (timedOut) {

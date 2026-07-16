@@ -69,4 +69,25 @@ describe('BashTool - Streaming Execution', () => {
     expect(result.value.success).toBe(false);
     expect(result.value.error).toContain('timed out');
   }, 10000);
+
+  (process.platform === 'win32' ? it.skip : it)('kills a long-running process when aborted', async () => {
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const outsidePath = `/tmp/codebuddy-abort-${process.pid}-${Date.now()}`;
+    const gen = bash.executeStreaming(
+      `sleep 60 > ${outsidePath}`,
+      30000,
+      undefined,
+      controller.signal,
+    );
+    const firstResult = gen.next();
+
+    setTimeout(() => controller.abort(), 50);
+    let result = await firstResult;
+    while (!result.done) result = await gen.next();
+
+    expect(result.value.success).toBe(false);
+    expect(result.value.error).toContain('aborted by user');
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+  }, 5000);
 });
