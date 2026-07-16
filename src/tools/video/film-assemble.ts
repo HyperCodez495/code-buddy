@@ -36,7 +36,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { logger } from '../../utils/logger.js';
-import { writeMediaSidecar } from '../media-generation-tool.js';
+import {
+  ensureConfinedMediaDirectory,
+  writeMediaSidecar,
+} from '../media-generation-tool.js';
 
 // ============================================================================
 // Types
@@ -218,6 +221,28 @@ function round2(n: number): number {
 function even(n: number): number {
   const r = Math.round(n);
   return r % 2 === 0 ? r : r + 1;
+}
+
+function validateExplicitOutput(output: string | undefined): string | null {
+  if (output === undefined) return null;
+  if (
+    !output.trim() ||
+    output.includes('\0') ||
+    path.isAbsolute(output) ||
+    path.win32.isAbsolute(output) ||
+    /[\\/]$/.test(output)
+  ) {
+    return 'Film output must be a relative file path inside the media directory.';
+  }
+  const segments = output.split(/[\\/]+/);
+  if (segments.some((segment) => segment === '..')) {
+    return 'Film output must not contain parent-directory traversal (..).';
+  }
+  const fileName = segments.at(-1);
+  if (!fileName || fileName === '.') {
+    return 'Film output must name a file inside the media directory.';
+  }
+  return null;
 }
 
 /**
@@ -776,6 +801,10 @@ export async function assembleFilm(
   if (!input.clips || input.clips.length === 0) {
     return fail('At least one clip is required to assemble a film.');
   }
+  const outputValidationError = validateExplicitOutput(input.output);
+  if (outputValidationError) {
+    return fail(outputValidationError);
+  }
   if (!(await ffmpegAvailable(spawn, ffmpegBin))) {
     return fail('ffmpeg is required for film assembly but was not found on PATH.');
   }
@@ -824,15 +853,34 @@ export async function assembleFilm(
 
   // 4. Resolve output path.
   const rootDir = path.resolve(input.rootDir ?? process.cwd());
+  const rootReal = await fs.realpath(rootDir);
   const id = deps.createId?.() ?? `${Date.now()}-${randomUUID()}`;
   const safeName = (input.name ?? 'film').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 60) || 'film';
-  let outputPath = input.output ? path.resolve(rootDir, input.output) : '';
-  if (!outputPath) {
-    const dir = path.join(rootDir, '.codebuddy', 'media-generation', 'films');
-    await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
-    outputPath = path.join(dir, `${safeName}-${id}.mp4`);
-  } else {
-    await fs.mkdir(path.dirname(outputPath), { recursive: true }).catch(() => undefined);
+  const outputSegments = input.output?.split(/[\\/]+/).filter((segment) => segment !== '.') ?? [];
+  const outputFileName = outputSegments.pop() ?? `${safeName}-${id}.mp4`;
+  let outputPath: string;
+  try {
+    const outputDir = await ensureConfinedMediaDirectory(rootDir, rootReal, [
+      '.codebuddy',
+      'media-generation',
+      'films',
+      ...outputSegments,
+    ]);
+    outputPath = path.join(outputDir, outputFileName);
+    try {
+      const outputMetadata = await fs.lstat(outputPath);
+      if (outputMetadata.isSymbolicLink() || !outputMetadata.isFile()) {
+        return fail('Film output path must be a regular file and must not be a symbolic link.');
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  } catch (error) {
+    return fail(
+      `Film output path is not confined to the media directory: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 
   const usingXfade = specs.some((s) => s.type !== 'cut' && s.duration > 0);

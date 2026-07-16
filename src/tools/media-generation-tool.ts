@@ -1823,7 +1823,7 @@ async function saveGeneratedAsset(
   return outputPath;
 }
 
-async function ensureConfinedMediaDirectory(
+export async function ensureConfinedMediaDirectory(
   rootPath: string,
   rootReal: string,
   segments: string[],
