@@ -17,6 +17,7 @@
  */
 
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
@@ -71,6 +72,7 @@ import {
   emotionGuidance,
   immediateEmotionAcknowledgement,
   IMMEDIATE_EMOTION_ACKNOWLEDGEMENTS,
+  openerKey,
   pushOpener,
 } from '../companion/reply-augment.js';
 import {
@@ -1322,6 +1324,108 @@ export interface SpokenPromptAugmentationOptions {
 /** Recent reply openings (first few words), so the companion doesn't reuse the same entry twice. */
 let recentReplyOpeners: string[] = [];
 
+const REPEATED_OPENER_REWRITES: ReadonlyArray<{
+  pattern: RegExp;
+  alternatives: readonly string[];
+}> = [
+  { pattern: /^alors\b/iu, alternatives: ['Voyons', 'Bon', "D'accord"] },
+  { pattern: /^voyons\b/iu, alternatives: ['Bon', "D'accord", 'Alors'] },
+  { pattern: /^bon\b/iu, alternatives: ["D'accord", 'Voyons', 'Très bien'] },
+  { pattern: /^ok\b/iu, alternatives: ['Très bien', "D'accord", 'Voyons'] },
+  { pattern: /^oui\b/iu, alternatives: ['En effet', 'Tout à fait', "D'accord"] },
+  {
+    pattern: /^bonne question\b/iu,
+    alternatives: ['Question intéressante', 'Voyons', 'Regardons cela'],
+  },
+  { pattern: /^je pense\b/iu, alternatives: ['À mon sens', 'Il me semble', 'De mon point de vue'] },
+];
+
+/** Deterministically replace a repeated opening before it reaches any synthesizer. */
+export function rewriteRepeatedVoiceOpener(
+  text: string,
+  recentOpeners: readonly string[] = recentReplyOpeners,
+): string {
+  if (!text || !recentOpeners.includes(openerKey(text))) return text;
+  for (const rewrite of REPEATED_OPENER_REWRITES) {
+    const match = text.match(rewrite.pattern);
+    if (!match) continue;
+    const tail = text.slice(match[0].length);
+    for (const alternative of rewrite.alternatives) {
+      const candidate = `${alternative}${tail}`;
+      if (!recentOpeners.includes(openerKey(candidate))) return candidate;
+    }
+  }
+  const first = text.charAt(0).toLocaleLowerCase('fr-FR');
+  return `Pour le dire autrement, ${first}${text.slice(1)}`;
+}
+
+const SHORT_SEGMENT_CACHE_MAX_CHARS = 60;
+const SHORT_SEGMENT_CACHE_MAX_ENTRIES = 64;
+
+function shortSegmentVoiceIdentity(voice: string | undefined, env: NodeJS.ProcessEnv): string {
+  const engine = resolveTtsEngine(env);
+  if (engine === 'pocket') return `pocket:${env.CODEBUDDY_POCKET_VOICE || 'estelle'}`;
+  if (engine === 'voicebox') {
+    return `voicebox:${env.CODEBUDDY_VOICEBOX_PROFILE?.trim() || 'default'}`;
+  }
+  return `piper:${voice || env.CODEBUDDY_TTS_VOICE || env.CODEBUDDY_TTS_PIPER_MODEL || 'default'}`;
+}
+
+function cacheShortSegments(
+  synth: SynthFn,
+  voice: string,
+  cache: Map<string, Uint8Array>,
+  nextTempSequence: () => number,
+  env: NodeJS.ProcessEnv,
+): SynthFn {
+  return async (text, opts): Promise<string> => {
+    const clean = text.trim();
+    if (
+      env.CODEBUDDY_TTS_CACHE === 'false' ||
+      !clean ||
+      clean.length > SHORT_SEGMENT_CACHE_MAX_CHARS ||
+      opts?.signal?.aborted
+    ) {
+      return synth(text, opts);
+    }
+    const key = createHash('sha1').update(`${text}|${voice}`).digest('hex');
+    const hit = cache.get(key);
+    if (hit) {
+      try {
+        cache.delete(key);
+        cache.set(key, hit);
+        const { writeFile } = await import('fs/promises');
+        const wav = join(
+          tmpdir(),
+          `cb-voice-segment-${process.pid}-${nextTempSequence()}-${key.slice(0, 10)}.wav`,
+        );
+        await writeFile(wav, hit);
+        logger.info('[voice] short-segment tts cache hit');
+        return wav;
+      } catch {
+        cache.delete(key);
+      }
+    }
+
+    const wav = await synth(text, opts);
+    try {
+      const { readFile } = await import('fs/promises');
+      const bytes = await readFile(wav);
+      cache.delete(key);
+      cache.set(key, bytes);
+      while (cache.size > SHORT_SEGMENT_CACHE_MAX_ENTRIES) {
+        const oldest = cache.keys().next().value as string | undefined;
+        if (!oldest) break;
+        cache.delete(oldest);
+      }
+      logger.info('[voice] short-segment tts cache store');
+    } catch {
+      /* a cache miss or unreadable WAV must not alter normal synthesis */
+    }
+    return wav;
+  };
+}
+
 /**
  * Build the per-turn prompt additions for a spoken reply.
  *
@@ -1765,6 +1869,9 @@ function makeDefaultSynth(voice?: string, rootDir?: string): SynthFn {
   }
   return async (text: string, opts: VoiceStepOptions = {}): Promise<string> => {
     if (opts.signal?.aborted) throw new Error('TTS synthesis was interrupted');
+    if (text.trim().length > SHORT_SEGMENT_CACHE_MAX_CHARS) {
+      return (await synthFresh(text, opts)).wav;
+    }
     const cacheVoice = opts.delivery && engine === 'voicebox'
       ? `${baseCacheVoice}:${voiceRendererDeliveryInstruction(opts.delivery)}`
       : baseCacheVoice;
@@ -2199,13 +2306,14 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   const visualConsent = new VisualConsentGate();
   const turnCoordinator = getVoiceTurnCoordinator();
   const env = options.env ?? process.env;
+  const shortSegmentCache = new Map<string, Uint8Array>();
+  let shortSegmentTempSequence = 0;
 
   // Resolve any persona-specific fallback voice per reply. Shared by the streaming and
   // blocking paths so synthesis selection has one source of truth.
   const resolveSynth = async (): Promise<SynthFn> => {
-    if (options.synth) return options.synth;
     let voice = options.voice;
-    if (!voice) {
+    if (!options.synth && !voice) {
       try {
         const { getActivePersonaVoiceAsync } = await import('../personas/persona-manager.js');
         voice = (await getActivePersonaVoiceAsync()).voice;
@@ -2213,7 +2321,14 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         /* keep env default */
       }
     }
-    return makeDefaultSynth(voice, options.rootDir);
+    const baseSynth = options.synth ?? makeDefaultSynth(voice, options.rootDir);
+    return cacheShortSegments(
+      baseSynth,
+      shortSegmentVoiceIdentity(voice, env),
+      shortSegmentCache,
+      () => ++shortSegmentTempSequence,
+      env,
+    );
   };
 
   // The single in-flight turn's cancellation handle. null while idle.
@@ -2656,6 +2771,16 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             stream: timedReplyStream,
             synth,
             play: timedPlay,
+            sanitize: (() => {
+              let firstSegment = true;
+              return (raw: string): string => {
+                const clean = prepareSpeech(raw);
+                if (!clean) return '';
+                if (!firstSegment) return clean;
+                firstSegment = false;
+                return rewriteRepeatedVoiceOpener(clean);
+              };
+            })(),
             ...(timedStreamSpeak ? { streamSpeak: timedStreamSpeak } : {}),
             signal,
             cap: options.sentenceCap ?? voiceSentenceCap(),
@@ -2756,6 +2881,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
             `modelReady=${readiness.modelReady} speakReady=${readiness.speakReady}`,
         );
       }
+      if (!emptyReplyRecovery) reply = rewriteRepeatedVoiceOpener(reply);
       recentReplyOpeners = pushOpener(recentReplyOpeners, reply);
       // The textual answer is now committed even if the local audio device fails;
       // publish it to the shared channel so the conversation never disappears.

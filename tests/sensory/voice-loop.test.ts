@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   makeVoiceReply,
   describeVoiceReadiness,
@@ -16,6 +19,7 @@ import {
   lookupInstantBackchannelWav,
   immediateThinkingAcknowledgement,
   isRemoteVoiceRoute,
+  rewriteRepeatedVoiceOpener,
   resolveResidentVoicePermissionMode,
 } from '../../src/sensory/voice-loop.js';
 import {
@@ -191,6 +195,105 @@ describe('voice loop — adaptive latency buffers', () => {
       { CODEBUDDY_VOICE_BACKCHANNEL: 'true' },
       'http://127.0.0.1:11434/v1',
     )).not.toBeNull();
+  });
+});
+
+describe('voice loop — hard opener variation', () => {
+  it('rewrites a matching recent opener deterministically', () => {
+    expect(rewriteRepeatedVoiceOpener(
+      'Alors, regardons les faits.',
+      ['alors regardons les faits'],
+    )).toBe('Voyons, regardons les faits.');
+  });
+
+  it('rewrites a repeated generated opener before synthesis', async () => {
+    const synthesized: string[] = [];
+    const onHeard = makeVoiceReply({
+      replyFn: async () => 'Alors, cette ouverture ne doit pas se répéter.',
+      synth: async (text) => {
+        synthesized.push(text);
+        return '/tmp/repeated-opener.wav';
+      },
+      play: async () => {},
+    });
+
+    await onHeard('Première question.');
+    await onHeard('Deuxième question.');
+
+    expect(synthesized).toHaveLength(2);
+    expect(synthesized[0]).toBe('Alors, cette ouverture ne doit pas se répéter.');
+    expect(synthesized[1]).toBe('Voyons, cette ouverture ne doit pas se répéter.');
+  });
+});
+
+describe('voice loop — short segment TTS cache', () => {
+  it('synthesizes an identical short segment only once across streamed turns', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'voice-segment-cache-'));
+    const synthesized: string[] = [];
+    let turn = 0;
+    try {
+      const onHeard = makeVoiceReply({
+        streamFn: async function* () {
+          turn += 1;
+          yield turn === 1 ? 'Première réponse distincte. Oui.' : 'Seconde réponse distincte. Oui.';
+        },
+        replyFn: async () => 'unused',
+        synth: async (text) => {
+          synthesized.push(text);
+          const wav = join(dir, `synth-${synthesized.length}.wav`);
+          await writeFile(wav, `wav:${text}`);
+          return wav;
+        },
+        play: async () => {},
+      });
+
+      await onHeard('Question une.');
+      await onHeard('Question deux.');
+
+      expect(synthesized.filter((text) => text === 'Oui.')).toHaveLength(1);
+      expect(synthesized).toEqual([
+        'Première réponse distincte.',
+        'Oui.',
+        'Seconde réponse distincte.',
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not cache variable segments longer than sixty characters', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'voice-segment-no-cache-'));
+    const longSegment = `${'Une explication volontairement variable '.repeat(2)}reste distincte.`;
+    const synthesized: string[] = [];
+    let turn = 0;
+    try {
+      const onHeard = makeVoiceReply({
+        streamFn: async function* () {
+          turn += 1;
+          yield `${turn === 1 ? 'Ouverture initiale.' : 'Nouvelle ouverture.'} ${longSegment}`;
+        },
+        replyFn: async () => 'unused',
+        synth: async (text) => {
+          synthesized.push(text);
+          const wav = join(dir, `synth-${synthesized.length}.wav`);
+          await writeFile(wav, `wav:${text}`);
+          return wav;
+        },
+        play: async () => {},
+      });
+
+      await onHeard('Question longue une.');
+      await onHeard('Question longue deux.');
+
+      expect(longSegment.length).toBeGreaterThan(60);
+      const longSyntheses = synthesized.filter((text) =>
+        text.includes('explication volontairement variable'),
+      );
+      expect(longSyntheses).toHaveLength(2);
+      expect(longSyntheses.every((text) => text.length > 60)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
