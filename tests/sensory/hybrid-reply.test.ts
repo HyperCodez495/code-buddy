@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   isSubstantiveQuery,
   requiresGroundedAgentQuery,
@@ -243,9 +243,28 @@ describe('hybrid reply — realtime grounded-agent gate', () => {
 });
 
 describe('hybrid reply — validated spoken prefix', () => {
-  it('keeps the latency pilot disabled by default', async () => {
+  const previousRoute = {
+    model: process.env.CODEBUDDY_SENSORY_SPEAK_MODEL,
+    baseURL: process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL,
+    prefix: process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX,
+  };
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries({
+      CODEBUDDY_SENSORY_SPEAK_MODEL: previousRoute.model,
+      CODEBUDDY_SENSORY_SPEAK_BASE_URL: previousRoute.baseURL,
+      CODEBUDDY_VOICE_SPOKEN_PREFIX: previousRoute.prefix,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it('keeps the latency buffer disabled by default on a local route', async () => {
     const previous = process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
     delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = 'local-test-model';
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = 'http://127.0.0.1:11434/v1';
     try {
       const causes: string[] = [];
       const prefixReply = vi.fn(async () => 'Proposition qui ne doit pas être générée.');
@@ -265,6 +284,59 @@ describe('hybrid reply — validated spoken prefix', () => {
       if (previous === undefined) delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
       else process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = previous;
     }
+  });
+
+  it('enables the spoken prefix by default on a remote route', async () => {
+    delete process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX;
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = 'remote-test-model';
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+    const prefixReply = vi.fn(async () => 'Une distinction simple permet déjà de répondre.');
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      classify: () => true,
+      chitchat: async () => 'unused',
+      prefixReply,
+      agentReply: async () => 'unused',
+      semanticReview: async (input) => ({
+        response: input.draft,
+        outcome: 'accepted',
+        reason: 'audit_passed',
+        revisionAttempts: 0,
+      }),
+    });
+
+    await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?"))
+      .resolves.toBe('Une distinction simple permet déjà de répondre.');
+    expect(prefixReply).toHaveBeenCalledOnce();
+  });
+
+  it('keeps explicit spoken-prefix overrides authoritative on either route', async () => {
+    const prefixReply = vi.fn(async () => 'Une distinction simple permet déjà de répondre.');
+    const reply = makeHybridReply({
+      fastReply: () => null,
+      classify: () => true,
+      chitchat: async () => 'unused',
+      prefixReply,
+      agentReply: async () => 'unused',
+      semanticReview: async (input) => ({
+        response: input.draft,
+        outcome: 'accepted',
+        reason: 'audit_passed',
+        revisionAttempts: 0,
+      }),
+    });
+
+    process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'false';
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = 'remote-test-model';
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+    await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?")).resolves.toBe('');
+
+    process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX = 'true';
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = 'local-test-model';
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = 'http://127.0.0.1:11434/v1';
+    await expect(reply.spokenPrefix("Penses-tu qu'une IA peut aimer ?"))
+      .resolves.toBe('Une distinction simple permet déjà de répondre.');
+    expect(prefixReply).toHaveBeenCalledOnce();
   });
 
   it('is conservatively limited to low-stakes developed/deliberative conversation', () => {

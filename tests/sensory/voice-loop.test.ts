@@ -14,6 +14,8 @@ import {
   sayNow,
   buildSpokenPromptAugmentation,
   lookupInstantBackchannelWav,
+  immediateThinkingAcknowledgement,
+  isRemoteVoiceRoute,
   resolveResidentVoicePermissionMode,
 } from '../../src/sensory/voice-loop.js';
 import {
@@ -144,6 +146,44 @@ describe('voice loop — instant backchannel cache', () => {
     expect(await lookupInstantBackchannelWav('Le ciel est bleu.', {}, lookup)).toBeNull();
     expect(await lookupInstantBackchannelWav('Alors…', { CODEBUDDY_TTS_CACHE: 'false' }, lookup)).toBeNull();
     expect(calls).toBe(0);
+  });
+});
+
+describe('voice loop — adaptive latency buffers', () => {
+  const question = 'Pourquoi le ciel est-il bleu ?';
+
+  it('recognizes remote routes without treating loopback or invalid URLs as cloud', () => {
+    expect(isRemoteVoiceRoute('https://chatgpt.com/backend-api/codex')).toBe(true);
+    expect(isRemoteVoiceRoute('http://127.0.0.1:11434/v1')).toBe(false);
+    expect(isRemoteVoiceRoute('http://localhost:11434/v1')).toBe(false);
+    expect(isRemoteVoiceRoute('http://[::1]:11434/v1')).toBe(false);
+    expect(isRemoteVoiceRoute('not a URL')).toBe(false);
+  });
+
+  it('enables backchannels by default only for remote routes', () => {
+    expect(immediateThinkingAcknowledgement(
+      question,
+      {},
+      'https://chatgpt.com/backend-api/codex',
+    )).not.toBeNull();
+    expect(immediateThinkingAcknowledgement(
+      question,
+      {},
+      'http://127.0.0.1:11434/v1',
+    )).toBeNull();
+  });
+
+  it('keeps explicit backchannel overrides authoritative on either route', () => {
+    expect(immediateThinkingAcknowledgement(
+      question,
+      { CODEBUDDY_VOICE_BACKCHANNEL: 'false' },
+      'https://chatgpt.com/backend-api/codex',
+    )).toBeNull();
+    expect(immediateThinkingAcknowledgement(
+      question,
+      { CODEBUDDY_VOICE_BACKCHANNEL: 'true' },
+      'http://127.0.0.1:11434/v1',
+    )).not.toBeNull();
   });
 });
 

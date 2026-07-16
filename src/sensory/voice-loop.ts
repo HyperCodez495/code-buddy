@@ -425,6 +425,32 @@ const INSTANT_BACKCHANNELS = new Set<string>([
   ),
 ]);
 
+/** True only for a valid non-loopback HTTP(S) route. Invalid/unknown routes fail local. */
+export function isRemoteVoiceRoute(baseURL: string | undefined): boolean {
+  if (!baseURL) return false;
+  try {
+    const url = new URL(baseURL);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    const hostname = url.hostname
+      .toLowerCase()
+      .replace(/^\[|\]$/g, '')
+      .replace(/\.$/, '');
+    return hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1';
+  } catch {
+    return false;
+  }
+}
+
+/** Explicit true/false wins; otherwise latency buffers follow the resolved route. */
+export function voiceLatencyBufferEnabled(
+  configured: string | undefined,
+  baseURL: string | undefined,
+): boolean {
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+  return isRemoteVoiceRoute(baseURL);
+}
+
 /**
  * Last-mile structural and relationship gate for a generated opening proposition. Invalid
  * candidates fail closed; truncating one could silently change the claim being spoken.
@@ -483,17 +509,18 @@ export async function lookupInstantBackchannelWav(
 
 /**
  * A tiny deterministic backchannel for non-emotional questions. It is yielded
- * before imports/routing/model I/O and prewarmed in the TTS cache, so the user
- * gets an immediate conversational response while the actual answer starts.
+ * immediately after route selection and is prewarmed in the TTS cache, so the
+ * user gets an early conversational response while remote generation starts.
  */
 export function immediateThinkingAcknowledgement(
   heard: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  baseURL?: string,
 ): string | null {
-  // Fast local inference now reaches useful text sooner than a spoken filler
-  // finishes. Keep generic acknowledgements as an explicit preference; warm
-  // emotional reactions remain independent and still play immediately.
-  if (env.CODEBUDDY_VOICE_BACKCHANNEL !== 'true') return null;
+  // Fast local inference reaches useful text sooner than a filler finishes, while
+  // a remote provider benefits from masking network latency. Explicit preference
+  // remains authoritative in both directions; emotional reactions stay independent.
+  if (!voiceLatencyBufferEnabled(env.CODEBUDDY_VOICE_BACKCHANNEL, baseURL)) return null;
   const normalized = normalizeFastReplyInput(heard);
   if (!normalized) return null;
   const asksQuestion =
@@ -1346,6 +1373,7 @@ async function prepareSpokenTurn(
   spokenPrefix?: string,
   delivery?: VoiceDeliveryProfile,
   replyOpts?: VoiceStepOptions,
+  resolvedRoute?: VoiceModelRoute,
 ): Promise<{
   CodeBuddyClient: typeof import('../codebuddy/client.js').CodeBuddyClient;
   route: VoiceModelRoute;
@@ -1357,7 +1385,7 @@ async function prepareSpokenTurn(
   const [clientModule, personaVoice, route, augmentation] = await Promise.all([
     import('../codebuddy/client.js'),
     import('../personas/persona-manager.js').then((m) => m.getActivePersonaVoiceAsync()),
-    resolveVoiceModel(heard, { history }),
+    resolvedRoute ?? resolveVoiceModel(heard, { history }),
     buildSpokenPromptAugmentation(heard, history, spokenPrefix, delivery),
   ]);
   const basePrompt = personaVoice.spokenPrompt || SPEAK_SYSTEM_PROMPT;
@@ -1532,10 +1560,11 @@ export async function* streamCompanionReply(
   let cognitiveLease: VoiceCognitiveContextLease | undefined;
   let cognitiveLeaseSettled = false;
   try {
+    const resolvedRoute = await resolveVoiceModel(heard, { history });
     const acknowledgement = replyOpts?.spokenPrefix
       ? null
       : immediateEmotionAcknowledgement(detectEmotion(heard)) ??
-        immediateThinkingAcknowledgement(heard);
+        immediateThinkingAcknowledgement(heard, process.env, resolvedRoute.baseURL);
     let full = '';
     if (acknowledgement) {
       full = `${acknowledgement} `;
@@ -1548,6 +1577,7 @@ export async function* streamCompanionReply(
       replyOpts?.spokenPrefix ?? acknowledgement ?? undefined,
       delivery,
       replyOpts,
+      resolvedRoute,
     );
     const { CodeBuddyClient, route, systemPrompt } = prepared;
     reportReplyTimingPhase(

@@ -29,6 +29,7 @@ import type {
   StreamReplyFn,
   VoiceStepOptions,
 } from './voice-loop.js';
+import { resolveVoiceModel, voiceLatencyBufferEnabled } from './voice-loop.js';
 import type { PermissionMode } from '../security/permission-modes.js';
 import {
   intentKeyForQuery,
@@ -737,13 +738,15 @@ export function makeHybridReply(options: HybridReplyOptions = {}): HybridReplyHa
     heard: string,
     replyOpts?: VoiceStepOptions,
   ): Promise<string> => {
-    // The extra generation + semantic audit must be measured before becoming a default hot
-    // path. Keeping the pilot opt-in also makes the pre-existing latency baseline unchanged.
-    if (process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX !== 'true') return '';
     if (replyOpts?.signal?.aborted) return '';
     const startedAt = Date.now();
     try {
       const recent = conversationHistory(heard);
+      const route = await resolveVoiceModel(heard, { history: recent });
+      if (!voiceLatencyBufferEnabled(
+        process.env.CODEBUDDY_VOICE_SPOKEN_PREFIX,
+        route.baseURL,
+      )) return '';
       const prepared = prepareConversationTurn(heard, recent);
       if (!isSpokenPrefixEligible(heard, prepared.plan)) {
         reportPrefixCause(replyOpts, 'ineligible');
