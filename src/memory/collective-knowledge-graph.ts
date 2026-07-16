@@ -34,7 +34,6 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { logger } from '../utils/logger.js';
 import { contentHash, computeSalience, type EntityType, type RelationType } from './knowledge-graph.js';
-import { scanForSecrets, redactSecrets } from '../fleet/privacy-lint.js';
 import { defaultFleetAgentId } from '../fleet/colab-store.js';
 import { getCodeBuddyHome } from '../utils/codebuddy-home.js';
 import { EmbeddingProvider } from '../embeddings/embedding-provider.js';
@@ -52,6 +51,7 @@ import {
   type StructuredFact,
 } from './ckg-fact-reconciliation.js';
 import { writeFileSync } from 'fs';
+import { redactRememberInput } from './ckg-redaction.js';
 
 /** Multilingual embeddings — all-MiniLM (the global default) is English-leaning and misses
  *  French synonyms (measured: it failed paraphrase recall); this model discriminates French
@@ -280,27 +280,28 @@ export class CollectiveKnowledgeGraph {
    */
   remember(input: CkgRememberInput): CkgRecallResult | null {
     try {
-      const raw = (input.text ?? '').trim();
+      const safeInput = redactRememberInput(input);
+      const raw = (safeInput.text ?? '').trim();
       if (!raw) return null;
-      // Privacy: redact secrets before anything is persisted or shared.
-      const text = scanForSecrets(raw).hasSecrets ? redactSecrets(raw) : raw;
-      const type: EntityType = input.type ?? 'fact';
-      const name = input.name?.trim() || normalizeName(text);
+      // Privacy: redact every persisted remember field before deriving ids or hashes.
+      const text = raw;
+      const type: EntityType = safeInput.type ?? 'fact';
+      const name = safeInput.name?.trim() || normalizeName(text);
       const id = entityId(type, name);
       const recordedAt = new Date().toISOString();
-      const agentId = input.agentId ?? this.agentId;
+      const agentId = safeInput.agentId ?? this.agentId;
       const ch = contentHash(type, text);
-      const confidence = clamp01(input.confidence ?? 0.8);
+      const confidence = clamp01(safeInput.confidence ?? 0.8);
 
       const entityEvent: LedgerEvent = {
         v: 1, kind: 'entity', recordedAt, agentId, contentHash: ch,
         id, type, name, text, confidence,
-        ...(input.source ? { source: input.source } : {}),
+        ...(safeInput.source ? { source: safeInput.source } : {}),
       };
       this.append(entityEvent);
       this.applyEntity(entityEvent);
 
-      for (const rel of input.relations ?? []) {
+      for (const rel of safeInput.relations ?? []) {
         const targetType: EntityType = rel.targetType ?? 'concept';
         const targetId = entityId(targetType, rel.targetName);
         const relCh = contentHash('relation', `${id}|${rel.predicate}|${targetId}`);
@@ -308,7 +309,7 @@ export class CollectiveKnowledgeGraph {
           v: 1, kind: 'relation', recordedAt, agentId, contentHash: relCh,
           sourceId: id, targetId, relType: rel.predicate,
           ...(rel.reason ? { reason: rel.reason } : {}),
-          ...(input.source ? { source: input.source } : {}),
+          ...(safeInput.source ? { source: safeInput.source } : {}),
         };
         this.append(relEvent);
         this.applyRelation(relEvent);

@@ -19,9 +19,10 @@ import { createInterface, type Interface } from 'readline';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
-import { scanForSecrets, redactSecrets } from '../fleet/privacy-lint.js';
+import { redactSecrets } from '../fleet/privacy-lint.js';
+import { redactRememberInput } from './ckg-redaction.js';
 
-/** Methods whose `text` field must be secret-redacted before reaching the engine store. */
+/** Methods whose persisted remember fields must be secret-redacted before reaching the engine. */
 const WRITE_METHODS = new Set(['remember', 'ingest', 'ingestPublication']);
 
 /** Repo root derived from this module (<root>/src/memory or <root>/dist/memory → <root>). */
@@ -160,10 +161,10 @@ export class BuddyMemoryClient {
   }
 
   private redactParams(params: Record<string, unknown>): Record<string, unknown> {
-    const out = { ...params };
-    for (const key of ['text', 'abstract', 'title']) {
+    const out = redactRememberInput(params);
+    for (const key of ['abstract', 'title']) {
       const v = out[key];
-      if (typeof v === 'string' && scanForSecrets(v).hasSecrets) out[key] = redactSecrets(v);
+      if (typeof v === 'string') out[key] = redactSecrets(v);
     }
     return out;
   }
