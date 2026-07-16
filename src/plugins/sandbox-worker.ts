@@ -240,9 +240,10 @@ export class PluginSandbox {
     });
 
     // Handle worker errors
-    this.worker.on('error', (error) => {
+    this.worker.on('error', (error: unknown) => {
+      const err = error instanceof Error ? error : new Error(String(error));
       for (const pending of this.pendingCalls.values()) {
-        pending.reject(error);
+        pending.reject(err);
       }
       this.pendingCalls.clear();
     });
