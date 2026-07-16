@@ -284,6 +284,10 @@ export interface VoiceReplyOptions {
   avatarEnabled?: boolean;
   /** Observability hook fired once per turn, including silence/failure/interruption. */
   onTiming?: (timing: VoiceReplyTiming) => void;
+  /** Environment snapshot used by readiness checks. Injectable for deterministic diagnostics. */
+  env?: NodeJS.ProcessEnv;
+  /** Route seam used only to diagnose an empty generated reply. */
+  resolveRoute?: (heard: string) => Promise<VoiceModelRoute>;
   /**
    * Explicit one-shot visual grounding. It runs before streaming, phatic
    * shortcuts, and ACT routing, so camera questions work in every voice mode.
@@ -303,6 +307,10 @@ export interface VoiceReadiness {
   voice?: string;
   /** True when speech-out has a configured primary path. */
   speakReady: boolean;
+  /** False when a resolved voice route fell back to the possibly-unpulled default model. */
+  modelReady: boolean;
+  /** Combined cognition + speech readiness signal. */
+  ready: boolean;
   /** True when CODEBUDDY_SENSORY_SPEAK_ACT is on (spoken commands drive a real agent turn). */
   act: boolean;
   /** Voice ACT permission posture when act is on. Resident legacy `plan` migrates to `default`. */
@@ -334,7 +342,10 @@ export function resolveResidentVoicePermissionMode(
 /** Pure prereq check (testable) — what the default `makeVoiceReply()` needs to actually
  *  SPEAK. The robot still HEARS without these; it just stays silent. Used by the server to
  *  fail LOUD (name the env) instead of being mutely wired. */
-export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): VoiceReadiness {
+export function describeVoiceReadiness(
+  env: NodeJS.ProcessEnv = process.env,
+  route?: Pick<VoiceModelRoute, 'reason'>,
+): VoiceReadiness {
   const override = env.CODEBUDDY_SENSORY_SPEAK_MODEL;
   const agentModel = env.CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL?.trim();
   const routed = !override || override.toLowerCase() === 'auto';
@@ -346,6 +357,8 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
     : ttsEngine === 'voicebox'
       ? (env.CODEBUDDY_VOICEBOX_PROFILE?.trim() || undefined)
       : piperVoice;
+  const speakReady = ttsEngine === 'pocket' || Boolean(voice);
+  const modelReady = route?.reason !== 'fallback default';
   const warnings: string[] = [];
   if (ttsEngine === 'piper' && !piperVoice) {
     warnings.push(
@@ -402,7 +415,9 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
     routed,
     ttsEngine,
     ...(voice ? { voice } : {}),
-    speakReady: ttsEngine === 'pocket' || Boolean(voice),
+    speakReady,
+    modelReady,
+    ready: speakReady && modelReady,
     act,
     ...(permissionMode ? { permissionMode } : {}),
     warnings,
@@ -840,6 +855,8 @@ export const DEFAULT_TTS_PREWARM_PHRASES = [
   "J'écoute la suite.",
   ...VOICE_INTERACTION_PREWARM_PHRASES,
 ];
+
+const EMPTY_REPLY_RECOVERY = "Je n'ai pas réussi.";
 
 export function getDefaultVoicePrewarmPhrases(limit?: number): string[] {
   const unique = [
@@ -2181,6 +2198,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
   );
   const visualConsent = new VisualConsentGate();
   const turnCoordinator = getVoiceTurnCoordinator();
+  const env = options.env ?? process.env;
 
   // Resolve any persona-specific fallback voice per reply. Shared by the streaming and
   // blocking paths so synthesis selection has one source of truth.
@@ -2708,7 +2726,8 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       // if nothing meaningful survives. `reply` is what we synth, log, and hand to onSpoke.
       const preparedReply = prepareSpeech(rawReply);
       const relationshipGuard = guardRelationshipReply(preparedReply ?? '');
-      const reply = relationshipGuard.response;
+      let reply = relationshipGuard.response;
+      let emptyReplyRecovery = false;
       if (reply) firstSafeReleaseMs ??= Date.now() - startedAt;
       if (relationshipGuard.intervened) {
         logger.warn(
@@ -2719,7 +2738,23 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         if ((rawReply ?? '').trim()) {
           logger.info(`[voice] reply muted after sanitize inputChars=${(rawReply ?? '').length}`);
         }
-        return; // nothing to say → silence (never an error)
+        let route: VoiceModelRoute | undefined;
+        try {
+          route = await (options.resolveRoute ?? ((text) => resolveVoiceModel(text, { env })))(heard);
+        } catch (error) {
+          logger.debug(
+            `[voice] empty-reply readiness route unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const readiness = describeVoiceReadiness(env, route);
+        if (readiness.ready) return;
+        reply = EMPTY_REPLY_RECOVERY;
+        emptyReplyRecovery = true;
+        mode = 'failed';
+        logger.warn(
+          `[voice] empty reply with degraded readiness — speaking recovery ` +
+            `modelReady=${readiness.modelReady} speakReady=${readiness.speakReady}`,
+        );
       }
       recentReplyOpeners = pushOpener(recentReplyOpeners, reply);
       // The textual answer is now committed even if the local audio device fails;
@@ -2738,7 +2773,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
         playMs = Date.now() - playStart;
         if (signal.aborted) return;
         if (streamed) {
-          mode = 'blocking';
+          if (!emptyReplyRecovery) mode = 'blocking';
           spoke = true;
           logger.info(
             `[voice] spoke (${resolveTtsEngine()} audio stream) chars=${reply.length}`
@@ -2769,7 +2804,7 @@ export function makeVoiceReply(options: VoiceReplyOptions = {}): VoiceReplyHandl
       playMs = Date.now() - playStart;
       // A barge-in kills the player early; don't claim we "spoke" the whole line.
       if (signal.aborted) return;
-      mode = 'blocking';
+      if (!emptyReplyRecovery) mode = 'blocking';
       spoke = true;
       logger.info(`[voice] spoke chars=${reply.length}`);
       logger.info(

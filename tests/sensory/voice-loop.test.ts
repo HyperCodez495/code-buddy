@@ -28,6 +28,7 @@ describe('voice loop — readiness (fail-loud prereqs)', () => {
     const r = describeVoiceReadiness({});
     expect(r.ttsEngine).toBe('pocket');
     expect(r.speakReady).toBe(true);
+    expect(r.ready).toBe(true);
     expect(r.voice).toBe('estelle');
     // No pinned model → the reply model is latency-routed at call time.
     expect(r.routed).toBe(true);
@@ -119,6 +120,12 @@ describe('voice loop — readiness (fail-loud prereqs)', () => {
     expect(r.warnings.some((warning) => warning.includes("Legacy resident voice posture 'plan'")))
       .toBe(true);
     expect(r.warnings.some((warning) => warning.includes("scoped 'default' posture"))).toBe(true);
+  });
+
+  it('marks the unresolved fallback model route as degraded', () => {
+    const readiness = describeVoiceReadiness({}, { reason: 'fallback default' });
+    expect(readiness.modelReady).toBe(false);
+    expect(readiness.ready).toBe(false);
   });
 });
 
@@ -632,6 +639,7 @@ describe('voice loop — TTS prewarm corpus', () => {
     );
     expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Coucou Patrice. Je suis là.');
     expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Amuse-toi bien chez tes amis.');
+    expect(DEFAULT_TTS_PREWARM_PHRASES).toContain("Je n'ai pas réussi.");
     expect(DEFAULT_TTS_PREWARM_PHRASES).toContain('Bonne nuit Patrice. Repose-toi bien, je veille tranquillement.');
     expect(getDefaultVoicePrewarmPhrases(2)).toHaveLength(2);
   });
@@ -924,11 +932,51 @@ describe('voice loop — heard → think → speak', () => {
     expect(turns.at(-1)?.content).toBe(synthesized);
   });
 
-  it('stays silent (no synth, no play) when the reply is empty', async () => {
+  it('speaks a prewarmed recovery when an empty reply comes from a degraded route', async () => {
+    const synthesized: string[] = [];
+    let playCalls = 0;
+    let spoke = '';
+    const onHeard = makeVoiceReply({
+      replyFn: async () => '   ',
+      env: {},
+      resolveRoute: async () => ({
+        model: 'llama3.2',
+        apiKey: 'ollama',
+        baseURL: 'http://127.0.0.1:11434/v1',
+        reason: 'fallback default',
+      }),
+      synth: async (text) => {
+        synthesized.push(text);
+        return '/tmp/empty-recovery.wav';
+      },
+      play: async () => {
+        playCalls += 1;
+      },
+      onSpoke: (text) => {
+        spoke = text;
+      },
+    });
+
+    await expect(onHeard('mmh')).resolves.toBeUndefined();
+
+    expect(synthesized).toEqual(["Je n'ai pas réussi."]);
+    expect(playCalls).toBe(1);
+    expect(spoke).toBe("Je n'ai pas réussi.");
+    expect(onHeard.lastTiming).toMatchObject({ mode: 'failed', spoke: true });
+  });
+
+  it('keeps a healthy empty reply silent', async () => {
     let synthCalls = 0;
     let playCalls = 0;
     const onHeard = makeVoiceReply({
       replyFn: async () => '   ', // whitespace → nothing to say
+      env: { CODEBUDDY_SENSORY_SPEAK_MODEL: 'ready-model' },
+      resolveRoute: async () => ({
+        model: 'ready-model',
+        apiKey: 'test',
+        baseURL: 'https://provider.example/v1',
+        reason: 'pinned (CODEBUDDY_SENSORY_SPEAK_MODEL)',
+      }),
       synth: async () => {
         synthCalls += 1;
         return '/tmp/x.wav';
@@ -942,6 +990,26 @@ describe('voice loop — heard → think → speak', () => {
 
     expect(synthCalls).toBe(0);
     expect(playCalls).toBe(0);
+  });
+
+  it('never throws when degraded empty-reply recovery synthesis fails', async () => {
+    const onHeard = makeVoiceReply({
+      replyFn: async () => '',
+      env: {},
+      resolveRoute: async () => ({
+        model: 'llama3.2',
+        apiKey: 'ollama',
+        baseURL: 'http://127.0.0.1:11434/v1',
+        reason: 'fallback default',
+      }),
+      synth: async () => {
+        throw new Error('tts unavailable');
+      },
+      play: async () => {},
+    });
+
+    await expect(onHeard('mmh')).resolves.toBeUndefined();
+    expect(onHeard.lastTiming).toMatchObject({ mode: 'failed', spoke: false });
   });
 
   it('never throws when synth fails, and does not play', async () => {
