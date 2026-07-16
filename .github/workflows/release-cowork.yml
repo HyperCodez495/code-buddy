@@ -21,6 +21,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install root project dependencies
+        run: npm ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install cowork dependencies
         working-directory: cowork
         run: npm ci
