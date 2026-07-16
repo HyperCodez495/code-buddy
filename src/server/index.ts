@@ -331,7 +331,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
   });
 
   // Peer route resolution endpoint (for testing/debugging)
-  app.post('/api/routing/resolve', async (req, res) => {
+  app.post('/api/routing/resolve', requireScope('admin'), async (req, res) => {
     const message = req.body.message as InboundMessage | undefined;
     const accountId = req.body.accountId as string | undefined;
 
@@ -398,12 +398,12 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/cron/jobs/:id/trigger', async (req, res) => {
+  app.post('/api/cron/jobs/:id/trigger', requireScope('admin'), async (req, res) => {
     try {
       const { getCronScheduler } = await import('../scheduler/cron-scheduler.js');
       const scheduler = getCronScheduler();
       await scheduler.loadFromDisk();
-      const run = await scheduler.runJobNow(req.params.id);
+      const run = await scheduler.runJobNow(String(req.params.id || ''));
       if (run) {
         res.json({ success: true, run });
       } else {
@@ -425,7 +425,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/notifications/preferences', async (req, res) => {
+  app.post('/api/notifications/preferences', requireScope('admin'), async (req, res) => {
     try {
       if (!req.body || typeof req.body !== 'object') {
         res.status(400).json({ error: 'Request body must be a JSON object' });
@@ -451,7 +451,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/webhooks', async (req, res) => {
+  app.post('/api/webhooks', requireScope('admin'), async (req, res) => {
     try {
       const { name, agentMessage, secret } = req.body;
       if (!name || typeof name !== 'string' || !agentMessage || typeof agentMessage !== 'string') {
@@ -471,11 +471,11 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.delete('/api/webhooks/:id', async (req, res) => {
+  app.delete('/api/webhooks/:id', requireScope('admin'), async (req, res) => {
     try {
       const { WebhookManager } = await import('../webhooks/webhook-manager.js');
       const mgr = new WebhookManager();
-      if (mgr.remove(req.params.id)) {
+      if (mgr.remove(String(req.params.id || ''))) {
         res.json({ success: true });
       } else {
         res.status(404).json({ error: 'Webhook not found' });
@@ -485,12 +485,12 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/webhooks/:id/trigger', async (req, res) => {
+  app.post('/api/webhooks/:id/trigger', requireScope('admin'), async (req, res) => {
     try {
       const { WebhookManager } = await import('../webhooks/webhook-manager.js');
       const mgr = new WebhookManager();
       const signature = req.headers['x-webhook-signature'] as string | undefined;
-      const result = mgr.processPayload(req.params.id, req.body, signature);
+      const result = mgr.processPayload(String(req.params.id || ''), req.body, signature);
       if ('error' in result) {
         const status = result.error === 'Webhook not found' ? 404 : 400;
         res.status(status).json(result);
@@ -544,7 +544,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/heartbeat/start', async (_req, res) => {
+  app.post('/api/heartbeat/start', requireScope('admin'), async (_req, res) => {
     try {
       const { getHeartbeatEngine } = await import('../daemon/heartbeat.js');
       const engine = getHeartbeatEngine();
@@ -555,7 +555,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/heartbeat/stop', async (_req, res) => {
+  app.post('/api/heartbeat/stop', requireScope('admin'), async (_req, res) => {
     try {
       const { getHeartbeatEngine } = await import('../daemon/heartbeat.js');
       const engine = getHeartbeatEngine();
@@ -566,7 +566,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/heartbeat/tick', async (_req, res) => {
+  app.post('/api/heartbeat/tick', requireScope('admin'), async (_req, res) => {
     try {
       const { getHeartbeatEngine } = await import('../daemon/heartbeat.js');
       const engine = getHeartbeatEngine();
@@ -602,7 +602,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/hub/install', async (req, res) => {
+  app.post('/api/hub/install', requireScope('admin'), async (req, res) => {
     try {
       const { name, version } = req.body;
       if (!name || typeof name !== 'string') {
@@ -622,11 +622,11 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.delete('/api/hub/:name', async (req, res) => {
+  app.delete('/api/hub/:name', requireScope('admin'), async (req, res) => {
     try {
       const { getSkillsHub } = await import('../skills/hub.js');
       const hub = getSkillsHub();
-      const removed = await hub.uninstall(req.params.name);
+      const removed = await hub.uninstall(String(req.params.name || ''));
       if (removed) {
         res.json({ success: true });
       } else {
@@ -660,7 +660,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.put('/api/identity/:name', async (req, res) => {
+  app.put('/api/identity/:name', requireScope('admin'), async (req, res) => {
     try {
       const { content } = req.body;
       if (!content || typeof content !== 'string') {
@@ -674,7 +674,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
       const { getIdentityManager } = await import('../identity/identity-manager.js');
       const mgr = getIdentityManager();
       await mgr.load(process.cwd());
-      await mgr.set(req.params.name, content);
+      await mgr.set(String(req.params.name || ''), content);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -702,7 +702,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/groups/block', async (req, res) => {
+  app.post('/api/groups/block', requireScope('admin'), async (req, res) => {
     try {
       const { userId } = req.body;
       if (!userId || typeof userId !== 'string') {
@@ -718,11 +718,11 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.delete('/api/groups/block/:userId', async (req, res) => {
+  app.delete('/api/groups/block/:userId', requireScope('admin'), async (req, res) => {
     try {
       const { getGroupSecurity } = await import('../channels/group-security.js');
       const mgr = getGroupSecurity();
-      if (mgr.removeFromBlocklist(req.params.userId)) {
+      if (mgr.removeFromBlocklist(String(req.params.userId || ''))) {
         res.json({ success: true });
       } else {
         res.status(404).json({ error: 'User not in blocklist' });
@@ -743,7 +743,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/auth-profiles', async (req, res) => {
+  app.post('/api/auth-profiles', requireScope('admin'), async (req, res) => {
     try {
       const profile = req.body;
       if (!profile || typeof profile !== 'object') {
@@ -774,11 +774,11 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.delete('/api/auth-profiles/:id', async (req, res) => {
+  app.delete('/api/auth-profiles/:id', requireScope('admin'), async (req, res) => {
     try {
       const { getAuthProfileManager } = await import('../auth/profile-manager.js');
       const mgr = getAuthProfileManager();
-      if (mgr.removeProfile(req.params.id)) {
+      if (mgr.removeProfile(String(req.params.id || ''))) {
         res.json({ success: true });
       } else {
         res.status(404).json({ error: 'Profile not found' });
@@ -788,7 +788,7 @@ function createApp(config: ServerConfig, cognitiveHub: CognitiveHub): Applicatio
     }
   });
 
-  app.post('/api/auth-profiles/reset', async (_req, res) => {
+  app.post('/api/auth-profiles/reset', requireScope('admin'), async (_req, res) => {
     try {
       const { resetAuthProfileManager, getAuthProfileManager } =
         await import('../auth/profile-manager.js');
