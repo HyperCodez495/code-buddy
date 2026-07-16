@@ -85,6 +85,30 @@ async function getGitDiff(repoPath: string, baseBranch?: string): Promise<string
   }
 }
 
+async function stashWorkingTree(repoPath: string, runId: string): Promise<string | undefined> {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['stash', 'push', '--include-untracked', '--message', `codebuddy-self-improve-${runId}`],
+    { cwd: repoPath },
+  );
+  if (stdout.toLowerCase().includes('no local changes to save')) return undefined;
+  const { stdout: stashOid } = await execFileAsync(
+    'git',
+    ['rev-parse', '--verify', 'refs/stash'],
+    { cwd: repoPath },
+  );
+  return stashOid.trim() || undefined;
+}
+
+async function restoreStashedWorkingTree(repoPath: string, stashOid: string): Promise<void> {
+  await execFileAsync('git', ['stash', 'apply', '--index', stashOid], { cwd: repoPath });
+  const { stdout } = await execFileAsync('git', ['stash', 'list', '--format=%H'], { cwd: repoPath });
+  const stashIndex = stdout.split('\n').findIndex((oid) => oid.trim() === stashOid);
+  if (stashIndex >= 0) {
+    await execFileAsync('git', ['stash', 'drop', `stash@{${stashIndex}}`], { cwd: repoPath });
+  }
+}
+
 export type AgenticCodingRunStatus =
   | 'validation_failed'
   | 'blocked'
@@ -5734,7 +5758,9 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
 
   let originalBranch: string | undefined;
   let sandboxBranch: string | undefined;
+  let sandboxInitialized = false;
   let selfImprovementApproved = false;
+  let selfImprovementWipStash: string | undefined;
 
   if (isSelfImprovement && (options.applyEdits || options.runVerification) && validationErrors.length === 0 && blockedReasons.length === 0) {
     const approvedByDecisionFile = Boolean(options.requireApproval && approvalDecision?.decision === 'approved');
@@ -5766,7 +5792,9 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
         originalBranch = await getOriginalBranch(finalContract.repo);
         const runId = options.runId || 'default';
         sandboxBranch = `tmp-self-improve-${runId}`;
-        await execAsync(`git checkout -B ${sandboxBranch}`, { cwd: finalContract.repo });
+        selfImprovementWipStash = await stashWorkingTree(finalContract.repo, runId);
+        await execFileAsync('git', ['checkout', '-B', sandboxBranch], { cwd: finalContract.repo });
+        sandboxInitialized = true;
       } catch (error) {
         blockedReasons.push(`Failed to initialize sandbox branch for self-improvement: ${error instanceof Error ? error.message : String(error)}`);
         auditLogger.log({
@@ -5886,7 +5914,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       message: error instanceof Error ? error.message : String(error),
     });
   } finally {
-    if (selfImprovementApproved && originalBranch && sandboxBranch) {
+    if (selfImprovementApproved && originalBranch && sandboxBranch && sandboxInitialized) {
       const verificationFailed = verification.some((result) => result.status !== 'passed');
       const finalStatus: AgenticCodingRunStatus =
         validationErrors.length > 0 ? 'validation_failed'
@@ -5898,21 +5926,37 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
           : 'verified';
 
       if (executionCompleted && finalStatus === 'verified') {
-        auditLogger.log({
-          action: 'self_improvement',
-          decision: 'allow',
-          source: 'runAgenticCodingCell',
-          target: finalContract.repo,
-          details: `Self-improvement verified successfully on branch ${sandboxBranch}`
-        });
+        try {
+          if (selfImprovementWipStash) {
+            await restoreStashedWorkingTree(finalContract.repo, selfImprovementWipStash);
+            selfImprovementWipStash = undefined;
+          }
+          auditLogger.log({
+            action: 'self_improvement',
+            decision: 'allow',
+            source: 'runAgenticCodingCell',
+            target: finalContract.repo,
+            details: `Self-improvement verified successfully on branch ${sandboxBranch}`
+          });
+        } catch (restoreError) {
+          const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+          blockedReasons.push(`Failed to restore pre-existing work after self-improvement: ${detail}`);
+          auditLogger.log({
+            action: 'self_improvement',
+            decision: 'block',
+            source: 'runAgenticCodingCell',
+            target: finalContract.repo,
+            details: `Self-improvement verified, but pre-existing work restoration failed: ${detail}. The stash was retained.`
+          });
+        }
       } else {
+        let rollbackError: unknown;
         try {
           const diff = await getGitDiff(finalContract.repo);
-          await execAsync('git reset --hard', { cwd: finalContract.repo });
-          await execAsync('git clean -fd', { cwd: finalContract.repo });
-          await execAsync(`git checkout -f ${originalBranch}`, { cwd: finalContract.repo });
-          await execAsync(`git branch -D ${sandboxBranch}`, { cwd: finalContract.repo });
-          
+          await execFileAsync('git', ['reset', '--hard'], { cwd: finalContract.repo });
+          await execFileAsync('git', ['clean', '-fd'], { cwd: finalContract.repo });
+          await execFileAsync('git', ['checkout', '-f', originalBranch], { cwd: finalContract.repo });
+          await execFileAsync('git', ['branch', '-D', sandboxBranch], { cwd: finalContract.repo });
           auditLogger.log({
             action: 'self_improvement',
             decision: 'block',
@@ -5920,7 +5964,28 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
             target: finalContract.repo,
             details: `Self-improvement rolled back (status: ${finalStatus}). Diff:\n${diff}`
           });
-        } catch (rollbackError) {
+        } catch (error) {
+          rollbackError = error;
+        }
+
+        try {
+          if (selfImprovementWipStash) {
+            await restoreStashedWorkingTree(finalContract.repo, selfImprovementWipStash);
+            selfImprovementWipStash = undefined;
+          }
+        } catch (restoreError) {
+          const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+          blockedReasons.push(`Failed to restore pre-existing work after rollback: ${detail}`);
+          auditLogger.log({
+            action: 'self_improvement',
+            decision: 'block',
+            source: 'runAgenticCodingCell',
+            target: finalContract.repo,
+            details: `Self-improvement rollback could not restore pre-existing work: ${detail}. The stash was retained.`
+          });
+        }
+
+        if (rollbackError) {
           auditLogger.log({
             action: 'self_improvement',
             decision: 'block',
@@ -5929,6 +5994,21 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
             details: `Self-improvement rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
           });
         }
+      }
+    } else if (selfImprovementWipStash) {
+      try {
+        await restoreStashedWorkingTree(finalContract.repo, selfImprovementWipStash);
+        selfImprovementWipStash = undefined;
+      } catch (restoreError) {
+        const detail = restoreError instanceof Error ? restoreError.message : String(restoreError);
+        blockedReasons.push(`Failed to restore pre-existing work after sandbox initialization failure: ${detail}`);
+        auditLogger.log({
+          action: 'self_improvement',
+          decision: 'block',
+          source: 'runAgenticCodingCell',
+          target: finalContract.repo,
+          details: `Sandbox initialization failed and pre-existing work could not be restored: ${detail}. The stash was retained.`
+        });
       }
     }
     if (isSelfImprovement) {
