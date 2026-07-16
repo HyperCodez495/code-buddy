@@ -67,6 +67,13 @@ export interface BudgetCheck {
   remainingUsd?: number;
 }
 
+export interface BudgetDecision {
+  allowed: boolean;
+  reason?: string;
+  /** Remaining headroom across the applicable daily and saga caps. */
+  remainingUsd?: number;
+}
+
 export class CostTracker {
   private readonly file: string;
   private cached: CostEntry[] | null = null;
@@ -78,6 +85,9 @@ export class CostTracker {
 
   /** Append a new charge to the ledger and refresh the cache. */
   async charge(entry: CostEntry): Promise<void> {
+    if (!isCostEntry(entry)) {
+      throw new Error('FLEET_COST_INVALID_ENTRY: refusing to persist an invalid charge');
+    }
     const ledger = await this.load();
     ledger.push(entry);
     this.cached = ledger;
@@ -93,15 +103,22 @@ export class CostTracker {
     }
     try {
       const raw = await fs.promises.readFile(this.file, 'utf-8');
-      const parsed = JSON.parse(raw) as CostEntry[];
-      this.cached = Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed) || !parsed.every(isCostEntry)) {
+        throw new Error('ledger does not contain a valid CostEntry array');
+      }
+      this.cached = parsed;
       return this.cached;
     } catch (err) {
-      logger.warn?.('[cost-tracker] failed to read ledger', {
+      logger.warn('[cost-tracker] failed to read ledger', {
         err: err instanceof Error ? err.message : String(err),
       });
-      this.cached = [];
-      return [];
+      // A missing ledger is handled above. Any other read/parse/schema
+      // failure must not look like an empty ledger or the budget gate would
+      // silently reset to zero spend.
+      throw new Error(
+        `FLEET_COST_LEDGER_UNAVAILABLE: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -139,6 +156,12 @@ export class CostTracker {
     sagaId: string | undefined,
     budget: CostBudget = DEFAULT_BUDGET,
   ): Promise<BudgetCheck> {
+    if (!isNonNegativeFinite(estimatedUsd)) {
+      return { ok: false, reason: 'Invalid estimated fleet cost' };
+    }
+    if (!isValidBudget(budget)) {
+      return { ok: false, reason: 'Invalid fleet cost budget' };
+    }
     const summary = await this.summary();
     if (summary.todayUsd + estimatedUsd > budget.maxDailyUsd) {
       return {
@@ -148,6 +171,7 @@ export class CostTracker {
         )}$ > cap ${budget.maxDailyUsd}$`,
       };
     }
+    let sagaRemainingUsd = Number.POSITIVE_INFINITY;
     if (sagaId) {
       const ledger = await this.load();
       const sagaSpend = ledger
@@ -161,10 +185,34 @@ export class CostTracker {
           )}$ + ${estimatedUsd.toFixed(2)}$ > cap ${budget.maxSagaUsd}$`,
         };
       }
+      sagaRemainingUsd = budget.maxSagaUsd - sagaSpend - estimatedUsd;
     }
     return {
       ok: true,
-      remainingUsd: Math.max(0, budget.maxDailyUsd - summary.todayUsd - estimatedUsd),
+      remainingUsd: Math.max(
+        0,
+        Math.min(
+          budget.maxDailyUsd - summary.todayUsd - estimatedUsd,
+          sagaRemainingUsd,
+        ),
+      ),
+    };
+  }
+
+  /**
+   * Incoming-call budget API. Keeps the historical `canSpend` method intact
+   * while exposing the allow/deny vocabulary used by fleet bridges.
+   */
+  async isWithinBudget(
+    estimatedUsd: number,
+    budget: CostBudget = DEFAULT_BUDGET,
+    sagaId?: string,
+  ): Promise<BudgetDecision> {
+    const check = await this.canSpend(estimatedUsd, sagaId, budget);
+    return {
+      allowed: check.ok,
+      ...(check.reason ? { reason: check.reason } : {}),
+      ...(check.remainingUsd !== undefined ? { remainingUsd: check.remainingUsd } : {}),
     };
   }
 
@@ -192,6 +240,12 @@ export class CostTracker {
   // ─────── internals ───────
 
   private defaultFile(): string {
+    // Bridge tests exercise the real budget gate. Keep those charges active
+    // and persistent for the worker lifetime without polluting the developer's
+    // real fleet ledger in ~/.codebuddy.
+    if (process.env.NODE_ENV === 'test') {
+      return path.join(os.tmpdir(), `codebuddy-fleet-cost-ledger-${process.pid}.json`);
+    }
     const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
     return path.join(home, '.codebuddy', 'fleet-cost-ledger.json');
   }
@@ -208,6 +262,34 @@ export class CostTracker {
     await fs.promises.writeFile(tmp, JSON.stringify(ledger, null, 2));
     await fs.promises.rename(tmp, this.file);
   }
+}
+
+function isNonNegativeFinite(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
+function isValidBudget(value: CostBudget): boolean {
+  return isNonNegativeFinite(value.maxDailyUsd) && isNonNegativeFinite(value.maxSagaUsd);
+}
+
+function isCostEntry(value: unknown): value is CostEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.at === 'string' &&
+    Number.isFinite(Date.parse(entry.at)) &&
+    typeof entry.peerId === 'string' &&
+    typeof entry.provider === 'string' &&
+    typeof entry.model === 'string' &&
+    typeof entry.usd === 'number' &&
+    isNonNegativeFinite(entry.usd) &&
+    (entry.sagaId === undefined || typeof entry.sagaId === 'string') &&
+    (entry.runId === undefined || typeof entry.runId === 'string') &&
+    (entry.tokensIn === undefined ||
+      (typeof entry.tokensIn === 'number' && isNonNegativeFinite(entry.tokensIn))) &&
+    (entry.tokensOut === undefined ||
+      (typeof entry.tokensOut === 'number' && isNonNegativeFinite(entry.tokensOut)))
+  );
 }
 
 let cachedTracker: CostTracker | null = null;

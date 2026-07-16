@@ -37,6 +37,7 @@ import {
   type PeerChatProviderInfo,
 } from './peer-chat-client-factory.js';
 import { beginFleetWork } from './fleet-load.js';
+import { executeCostCappedFleetCall } from './fleet-cost-cap.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
 import {
   broadcastChatSessionEnd,
@@ -610,15 +611,25 @@ export async function wirePeerSessionBridge(
         { role: 'system' as const, content: session.systemPrompt },
         ...session.messages,
       ];
-      const chatOptions: ChatOptions | undefined = session.model
-        ? { model: session.model }
-        : undefined;
-
       const turnStartedAt = Date.now();
       let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
       const doneLoad = beginFleetWork('peer.chat-session');
       try {
-        response = await client.chat(requestMessages, undefined, chatOptions);
+        response = await executeCostCappedFleetCall({
+          peerId: ctx.connectionId,
+          provider: selected.providerResolved ?? session.provider ?? cachedProviderInfo?.provider,
+          model: session.model,
+          sagaId: ctx.traceId,
+          runId: session.sessionId,
+          requestedMaxTokens: params.maxTokens,
+          inputText: requestMessages.map((message) => message.content).join('\n'),
+          client,
+          invoke: (maxTokens) => client.chat(
+            requestMessages,
+            undefined,
+            { ...(session.model ? { model: session.model } : {}), maxTokens },
+          ),
+        });
       } catch (err) {
         // Roll back the user message we appended so a retry doesn't
         // double-count it. Keeps session state consistent with what the

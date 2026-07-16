@@ -21,6 +21,7 @@
 
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
 import { beginFleetWork } from './fleet-load.js';
+import { executeCostCappedFleetCall } from './fleet-cost-cap.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-method-registry.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -207,18 +208,27 @@ export function wirePeerChatBridge(
     const selected = resolveClientForRequest(provider, model, 'peer.chat');
     const client = selected.client;
 
-    const chatOptions: ChatOptions | undefined = model ? { model } : undefined;
     const doneLoad = beginFleetWork('peer.chat');
     let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
     try {
-      response = await client.chat(
-        [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt },
-        ],
-        undefined, // no tools
-        chatOptions,
-      );
+      response = await executeCostCappedFleetCall({
+        peerId: ctx.connectionId,
+        provider: selected.providerResolved ?? selected.providerRequested ?? cachedProviderInfo?.provider,
+        model,
+        sagaId: ctx.traceId,
+        runId: ctx.traceId,
+        requestedMaxTokens: params.maxTokens,
+        inputText: `${systemPrompt}\n${prompt}`,
+        client,
+        invoke: (maxTokens) => client.chat(
+          [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          undefined, // no tools
+          { ...(model ? { model } : {}), maxTokens },
+        ),
+      });
     } finally {
       doneLoad();
     }

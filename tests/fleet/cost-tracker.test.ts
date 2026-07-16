@@ -188,6 +188,25 @@ describe('CostTracker — budget caps', () => {
     });
     expect(check.ok).toBe(false);
   });
+
+  it('exposes an allow/deny decision for inbound fleet calls', async () => {
+    const t = newTracker();
+    const decision = await t.isWithinBudget(
+      0.2,
+      { maxDailyUsd: 5, maxSagaUsd: 0.1 },
+      'incoming-trace',
+    );
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain('saga');
+  });
+
+  it('fails closed when the ledger is malformed', async () => {
+    fs.writeFileSync(tmpFile, '{not valid json');
+    const t = newTracker();
+
+    await expect(t.isWithinBudget(0.01)).rejects.toThrow('FLEET_COST_LEDGER_UNAVAILABLE');
+  });
 });
 
 describe('CostTracker — vacuum', () => {

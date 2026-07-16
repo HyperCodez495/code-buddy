@@ -223,7 +223,10 @@ describe('peer.chat-session.start', () => {
     });
     expect(defaultClient.calls).toHaveLength(0);
     expect(lemonadeClient.calls).toHaveLength(1);
-    expect(lemonadeClient.calls[0]?.opts).toEqual({ model: 'qwen-local' });
+    expect(lemonadeClient.calls[0]?.opts).toEqual({
+      model: 'qwen-local',
+      maxTokens: 4096,
+    });
 
     const listed = await dispatch('peer.chat-session.list', {});
     expect(listed.payload).toMatchObject({
