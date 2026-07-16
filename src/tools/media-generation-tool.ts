@@ -1097,7 +1097,7 @@ function isImageBytesForMime(bytes: Buffer, mime: string): boolean {
     && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
 }
 
-async function readBoundedResponseBytes(
+export async function readBoundedResponseBytes(
   response: Response,
   maxBytes: number,
   timeoutMs: number,
@@ -1211,7 +1211,13 @@ async function generateComfyUIImage(
   if (!viewResponse.ok) {
     throw new Error(`ComfyUI /view returned ${viewResponse.status} for ${image.filename}`);
   }
-  const bytes = Buffer.from(await viewResponse.arrayBuffer());
+  const bytes = await readBoundedResponseBytes(
+    viewResponse,
+    MAX_EDIT_REFERENCE_BYTES,
+    120_000,
+    runtime.signal,
+    'ComfyUI image output',
+  );
   const outputPath = await saveGeneratedAsset(bytes, {
     rootDir: runtime.rootDir,
     dirName: 'images',
@@ -1755,7 +1761,13 @@ async function tryDownloadAsset(
   if (!response.ok) {
     return {};
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = await readBoundedResponseBytes(
+    response,
+    options.maxBytes,
+    120_000,
+    undefined,
+    'Generated media download',
+  );
   if (bytes.length <= 0 || bytes.length > options.maxBytes) {
     return {};
   }
