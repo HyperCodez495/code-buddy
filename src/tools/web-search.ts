@@ -2,6 +2,7 @@ import axios, { type AxiosRequestConfig } from 'axios';
 import { ToolResult, getErrorMessage } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { assertSafeUrl } from '../security/ssrf-guard.js';
+import { safeFetchFollow } from '../security/safe-fetch.js';
 
 // ============================================================================
 // Types
@@ -898,16 +899,26 @@ export class WebSearchTool {
         };
       }
 
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CodeBuddyCLI/1.0; +https://github.com/code-buddy)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        timeout: DEFAULT_TIMEOUT_MS,
-        maxRedirects: 5,
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await safeFetchFollow(url, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; CodeBuddyCLI/1.0; +https://github.com/code-buddy)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      const html = response.data;
+      if (!response.ok) {
+        throw new Error(`Page request failed with HTTP ${response.status}`);
+      }
+
+      const html = await response.text();
       const text = this.extractTextFromHtml(html);
 
       const maxLength = 8000;

@@ -2,6 +2,7 @@ import { UnifiedVfsRouter } from '../services/vfs/unified-vfs-router.js';
 import path from 'path';
 import { ToolResult, getErrorMessage } from '../types/index.js';
 import { assertSafeUrl } from '../security/ssrf-guard.js';
+import { safeFetchFollow } from '../security/safe-fetch.js';
 
 export interface ImageInput {
   type: 'base64' | 'url' | 'file';
@@ -117,30 +118,43 @@ export class ImageTool {
       throw new Error(`URL blocked by SSRF guard: ${ssrfCheck.reason}`);
     }
 
-    const axios = (await import('axios')).default;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await safeFetchFollow(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'CodeBuddyCLI/1.0'
+        }
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
-    const response = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 30000,
-      maxContentLength: this.maxFileSizeMB * 1024 * 1024,
-      headers: {
-        'User-Agent': 'CodeBuddyCLI/1.0'
-      }
-    });
+    if (!response.ok) {
+      throw new Error(`Image request failed with HTTP ${response.status}`);
+    }
 
-    const buffer = Buffer.from(response.data);
+    const contentLength = Number(response.headers.get('content-length'));
+    const maxFileSizeBytes = this.maxFileSizeMB * 1024 * 1024;
+    if (Number.isFinite(contentLength) && contentLength > maxFileSizeBytes) {
+      throw new Error(`Image file too large. Max: ${this.maxFileSizeMB}MB`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength > maxFileSizeBytes) {
+      throw new Error(`Image file too large. Max: ${this.maxFileSizeMB}MB`);
+    }
+
     const base64 = buffer.toString('base64');
 
     // Try to determine media type from headers or URL
-    // axios >=1.16 widened the header value type (string | number | true | string[] | AxiosHeaders),
-    // so coerce to a string before parsing the MIME type.
-    const contentTypeHeader = response.headers['content-type'];
-    const contentType = typeof contentTypeHeader === 'string' ? contentTypeHeader : 'image/png';
-    const mediaType = contentType.split(';')[0]?.trim() || 'image/png';
+    const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'image/png';
 
     return {
       base64,
-      mediaType,
+      mediaType: contentType,
       source: `url:${url}`
     };
   }

@@ -7,6 +7,7 @@
 
 import type { ToolResult } from '../types/index.js';
 import { assertSafeUrl } from '../security/ssrf-guard.js';
+import { safeFetchFollow } from '../security/safe-fetch.js';
 
 // ============================================================================
 // Types
@@ -121,13 +122,16 @@ export class FetchTool {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       try {
-        const response = await fetch(url, {
+        const requestInit: RequestInit = {
           method,
           headers: requestHeaders,
           body: requestBody,
-          redirect: followRedirects ? 'follow' : 'manual',
+          redirect: 'manual',
           signal: controller.signal,
-        });
+        };
+        const response = followRedirects
+          ? await safeFetchFollow(url, requestInit)
+          : await fetch(url, requestInit);
 
         clearTimeout(timeoutId);
 
