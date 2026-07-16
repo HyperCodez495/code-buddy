@@ -6,10 +6,11 @@ name: Release Cowork
 #   git push origin cowork-v1.0.0-rc.8
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'cowork-v*'
-
+      
 permissions:
   contents: write
   packages: write
