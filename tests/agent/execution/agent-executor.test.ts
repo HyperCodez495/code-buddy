@@ -1242,8 +1242,10 @@ describe('AgentExecutor', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      (deps.client.chatStream as jest.Mock).mockImplementationOnce(async function* () {
-        throw new Error('Network error');
+      (deps.client.chatStream as jest.Mock).mockImplementation(async function* () {
+        throw Object.assign(new Error('Network error'), {
+          headers: { 'retry-after': '0' },
+        });
       });
 
       const history: ChatEntry[] = [];
@@ -1254,6 +1256,7 @@ describe('AgentExecutor', () => {
       expect(entries.length).toBe(1);
       expect(entries[0].content).toContain('error');
       expect(entries[0].content).toContain('Network error');
+      expect(deps.client.chatStream).toHaveBeenCalledTimes(3);
     });
 
     it('should handle empty/missing assistant content gracefully', async () => {
@@ -1465,6 +1468,33 @@ describe('AgentExecutor', () => {
 
       const cancelChunk = chunks.find(c => c.content?.includes('cancelled'));
       expect(cancelChunk).toBeDefined();
+    });
+
+    it('retries a transient provider stream and emits reconnection progress', async () => {
+      (deps.client.chatStream as jest.Mock)
+        .mockImplementationOnce(async function* () {
+          throw Object.assign(new Error('service unavailable'), {
+            status: 503,
+            headers: { 'retry-after': '0' },
+          });
+        })
+        .mockImplementationOnce(async function* () {
+          yield { choices: [{ delta: { content: 'Recovered' } }] };
+        });
+      (deps.streamingHandler.getAccumulatedMessage as jest.Mock).mockReturnValue({
+        content: 'Recovered',
+        tool_calls: undefined,
+      });
+
+      const chunks = await collectChunks(
+        executor.processUserMessageStream('Hello', [], [], null),
+      );
+
+      expect(chunks).toContainEqual({
+        type: 'reasoning',
+        reasoning: 'Reconnexion 1/2',
+      });
+      expect(deps.client.chatStream).toHaveBeenCalledTimes(2);
     });
 
     it('propagates abort to in-flight tools and pairs every call with an aborted result', async () => {

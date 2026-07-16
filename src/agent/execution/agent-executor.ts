@@ -77,6 +77,7 @@ import {
   renderLisaOperationalSelfResponse,
 } from '../../identity/lisa-introspection.js';
 import type { TimelineToolCall } from '../../sessions/timeline.js';
+import { withLlmStreamRetry } from '../../codebuddy/llm-retry.js';
 import {
   createOrderedToolBatches,
   executeBoundedInOrder,
@@ -1495,23 +1496,40 @@ export class AgentExecutor {
           }
         }
 
-        const stream = this.deps.client.chatStream(
-          preparedMessages,
-          tools,
-          undefined,
-          this.config.isGrokModel() &&
-            this.deps.toolSelectionStrategy.shouldUseSearchFor(turnQueryText)
-            ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
-        );
-
         this.deps.streamingHandler.reset();
 
         // Stall guard: some backends (ChatGPT/Codex OAuth observed) accept
         // the request then never send a byte — without a bound this loop
         // hangs FOREVER (turns stuck for hours in Cowork and headless waves).
         // Fail fast with a clear error instead; the caller/user retries.
-        for await (const chunk of withStallGuard(stream)) {
+        const streamFactory = () => withStallGuard(this.deps.client.chatStream(
+          preparedMessages,
+          tools,
+          {
+            streamRetry: false,
+            ...(abortController?.signal ? { signal: abortController.signal } : {}),
+          },
+          this.config.isGrokModel() &&
+            this.deps.toolSelectionStrategy.shouldUseSearchFor(turnQueryText)
+            ? { search_parameters: { mode: "auto" } }
+            : { search_parameters: { mode: "off" } },
+        ));
+        for await (const streamEvent of withLlmStreamRetry(streamFactory, {
+          maxRetries: 2,
+          baseDelayMs: 500,
+          ...(abortController?.signal ? { signal: abortController.signal } : {}),
+        })) {
+          if (streamEvent.type === 'retry') {
+            // A fresh stream restarts from the beginning. Reset the accumulator
+            // so only the successful attempt is persisted in the transcript.
+            this.deps.streamingHandler.reset();
+            yield {
+              type: 'reasoning',
+              reasoning: `Reconnexion ${streamEvent.retry}/${streamEvent.maxRetries}`,
+            };
+            continue;
+          }
+          const chunk = streamEvent.value;
           if (abortController?.signal.aborted) {
             yield { type: "content", content: "\n\n[Operation cancelled by user]" };
             yield { type: "done" };

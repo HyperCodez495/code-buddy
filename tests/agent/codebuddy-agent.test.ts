@@ -771,8 +771,11 @@ describe('CodeBuddyAgent', () => {
       // processUserMessage consumes the streaming generator, so the error must
       // originate there (a mockChat rejection alone never reaches this path).
       mockChat.mockRejectedValueOnce(new Error('API rate limited'));
-      mockChatStream.mockImplementationOnce(async function* () {
-        throw new Error('API rate limited');
+      mockChatStream.mockImplementation(async function* () {
+        throw Object.assign(new Error('API rate limited'), {
+          status: 429,
+          headers: { 'retry-after': '0' },
+        });
         // eslint-disable-next-line no-unreachable
         yield undefined as never;
       });
@@ -785,6 +788,7 @@ describe('CodeBuddyAgent', () => {
       expect(entries.length).toBeGreaterThanOrEqual(1);
       const errorEntry = entries.find(e => e.type === 'assistant' && e.content.includes('error'));
       expect(errorEntry).toBeDefined();
+      expect(mockChatStream).toHaveBeenCalledTimes(3);
     });
 
     it('should clear tool selection cache on each new message', async () => {
