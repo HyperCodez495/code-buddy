@@ -1239,6 +1239,10 @@ describe('AgentExecutor', () => {
       // but not pushed as a ChatEntry. Invariant: pre-check is invoked (and the
       // loop stops before any tool execution).
       expect(config.estimateSessionCostLimitReached).toHaveBeenCalled();
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+      expect(messages.filter((entry) => entry.role === 'tool')).toEqual([
+        expect.objectContaining({ tool_call_id: toolCall.id }),
+      ]);
     });
 
     it('should handle API errors gracefully', async () => {
@@ -2333,6 +2337,28 @@ describe('AgentExecutor', () => {
   // =========================================================================
 
   describe('LaneQueue Integration', () => {
+    it('pairs skipped calls with synthetic results in single-tool mode', async () => {
+      config.singleToolMode = true;
+      executor = new AgentExecutor(deps, config);
+      const calls = [
+        makeToolCall('read_file', {}, 'single_1'),
+        makeToolCall('grep', {}, 'single_2'),
+        makeToolCall('list_files', {}, 'single_3'),
+      ];
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: calls },
+        { content: 'Done.' },
+      ]);
+      const messages: CodeBuddyMessage[] = [];
+
+      await executor.processUserMessage('Use one tool', [], messages);
+
+      expect(deps.toolHandler.executeTool).toHaveBeenCalledTimes(1);
+      expect(
+        messages.filter((entry) => entry.role === 'tool').map((entry) => entry.tool_call_id),
+      ).toEqual(['single_1', 'single_2', 'single_3']);
+    });
+
     it('executes read-only calls concurrently and appends tool results in call order', async () => {
       const toolCalls = [
         makeToolCall('read_file', { path: '/one' }, 'call_1'),
@@ -2503,11 +2529,56 @@ describe('AgentExecutor', () => {
   // =========================================================================
 
   describe('Message Queue Steering', () => {
-    it('should handle steering messages during tool execution', async () => {
+    it('cuts a text stream at a safe point and reinjects the steering message', async () => {
+      let queued = true;
+      const mockMQ = {
+        hasSteeringMessage: jest.fn(() => queued),
+        consumeSteeringMessage: jest.fn(() => {
+          queued = false;
+          return {
+            content: 'Redirect the answer',
+            source: 'user',
+            timestamp: new Date(),
+          };
+        }),
+        hasPendingMessages: jest.fn().mockReturnValue(false),
+        getMode: jest.fn().mockReturnValue('steer'),
+      };
+      deps.messageQueue = mockMQ as unknown as NonNullable<ExecutorDependencies['messageQueue']>;
+      (deps.client.chatStream as jest.Mock)
+        .mockImplementationOnce(async function* () {
+          yield { choices: [{ delta: { content: 'Partial answer' } }] };
+          yield { choices: [{ delta: { content: ' must not be consumed' } }] };
+        })
+        .mockImplementationOnce(async function* () {
+          yield { choices: [{ delta: { content: 'Redirected answer' } }] };
+        });
+      (deps.streamingHandler.getAccumulatedMessage as jest.Mock)
+        .mockReturnValueOnce({ content: 'Partial answer', tool_calls: undefined })
+        .mockReturnValueOnce({ content: 'Redirected answer', tool_calls: undefined });
+
+      const messages: CodeBuddyMessage[] = [];
+      const chunks = await collectChunks(
+        new AgentExecutor(deps, config).processUserMessageStream('Start', [], messages, null),
+      );
+
+      expect(chunks).toContainEqual({
+        type: 'steer',
+        steer: { content: 'Redirect the answer', source: 'user' },
+      });
+      expect(deps.client.chatStream).toHaveBeenCalledTimes(2);
+      expect(messages.map((entry) => [entry.role, entry.content])).toEqual([
+        ['assistant', 'Partial answer'],
+        ['user', 'Redirect the answer'],
+        ['assistant', 'Redirected answer'],
+      ]);
+    });
+
+    it('defers steering until every observed tool call has a result', async () => {
       const toolCall = makeToolCall('bash', { command: 'echo test' }, 'call_1');
 
       const mockMQ = {
-        hasSteeringMessage: jest.fn().mockReturnValueOnce(true).mockReturnValue(false),
+        hasSteeringMessage: jest.fn().mockReturnValue(true),
         consumeSteeringMessage: jest.fn().mockReturnValueOnce({
           content: 'Stop and do this instead',
           source: 'user',
@@ -2546,6 +2617,18 @@ describe('AgentExecutor', () => {
       const steerChunk = chunks.find((c: any) => c.type === 'steer');
       expect(steerChunk).toBeDefined();
       expect((steerChunk as any).steer.content).toBe('Stop and do this instead');
+      expect(deps.toolHandler.executeToolStreaming).toHaveBeenCalledWith(
+        toolCall,
+        undefined,
+      );
+      const assistantIndex = messages.findIndex((entry) => entry.role === 'assistant');
+      const resultIndex = messages.findIndex((entry) => entry.role === 'tool');
+      const steerIndex = messages.findIndex(
+        (entry) => entry.role === 'user' && entry.content === 'Stop and do this instead',
+      );
+      expect(assistantIndex).toBeLessThan(resultIndex);
+      expect(resultIndex).toBeLessThan(steerIndex);
+      expect(messages[resultIndex]?.tool_call_id).toBe('call_1');
     });
 
     it('should process followup messages at end of stream', async () => {

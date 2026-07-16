@@ -1497,6 +1497,8 @@ export class AgentExecutor {
         }
 
         this.deps.streamingHandler.reset();
+        let steeringRequestedDuringText = false;
+        let streamObservedToolCalls = false;
 
         // Stall guard: some backends (ChatGPT/Codex OAuth observed) accept
         // the request then never send a byte — without a bound this loop
@@ -1523,6 +1525,7 @@ export class AgentExecutor {
             // A fresh stream restarts from the beginning. Reset the accumulator
             // so only the successful attempt is persisted in the transcript.
             this.deps.streamingHandler.reset();
+            streamObservedToolCalls = false;
             yield {
               type: 'reasoning',
               reasoning: `Reconnexion ${streamEvent.retry}/${streamEvent.maxRetries}`,
@@ -1543,6 +1546,7 @@ export class AgentExecutor {
           }
 
           if (result.hasNewToolCalls && result.toolCalls) {
+            streamObservedToolCalls = true;
             yield {
               type: "tool_calls",
               toolCalls: relationshipSafety
@@ -1557,6 +1561,17 @@ export class AgentExecutor {
 
           if (result.shouldEmitTokenCount && result.tokenCount !== undefined) {
             yield { type: "token_count", tokenCount: inputTokens + result.tokenCount };
+          }
+
+          // Steering is safe only while this response is still pure text. Do
+          // not consume the queue yet: the accumulated message is authoritative
+          // and may reveal a tool call in the same chunk.
+          if (
+            !streamObservedToolCalls &&
+            this.deps.messageQueue?.hasSteeringMessage()
+          ) {
+            steeringRequestedDuringText = true;
+            break;
           }
         }
 
@@ -1645,6 +1660,20 @@ export class AgentExecutor {
         totalOutputTokens += currentOutputTokens;
         yield { type: "token_count", tokenCount: inputTokens + totalOutputTokens };
 
+        if (steeringRequestedDuringText && !hasToolCalls) {
+          const steering = this.deps.messageQueue?.consumeSteeringMessage();
+          if (steering) {
+            yield { type: 'steer', steer: { content: steering.content, source: steering.source } };
+            messages.push({ role: 'user', content: steering.content });
+            history.push({
+              type: 'user',
+              content: steering.content,
+              timestamp: steering.timestamp,
+            });
+            continue;
+          }
+        }
+
         if (toolCalls && toolCalls.length > 0) {
           toolRounds++;
 
@@ -1652,43 +1681,43 @@ export class AgentExecutor {
           if (this.config.estimateSessionCostLimitReached(inputTokens, totalOutputTokens)) {
             const sessionCost = this.config.getSessionCost();
             const sessionCostLimit = this.config.getSessionCostLimit();
+            for (const toolCall of toolCalls) {
+              const toolResult: ToolResult = {
+                success: false,
+                error: 'Skipped because the session cost limit was reached before tool execution.',
+              };
+              history.push({
+                type: 'tool_result',
+                content: toolResult.error ?? 'Tool skipped',
+                timestamp: new Date(),
+                toolCall,
+                toolResult,
+              });
+              messages.push({
+                role: 'tool',
+                content: toolResult.error ?? 'Tool skipped',
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name,
+              } as CodeBuddyMessage);
+              yield { type: 'tool_result', toolCall, toolResult };
+            }
             yield { type: "content", content: `\n\nSession cost limit reached ($${sessionCost.toFixed(2)} / $${sessionCostLimit.toFixed(2)}). Stopping before tool execution.` };
             yield { type: "done" };
             return;
           }
 
-          // Check for steering messages (steer mode: interrupt execution)
-          const mq = this.deps.messageQueue;
-          if (mq?.hasSteeringMessage()) {
-            const steering = mq.consumeSteeringMessage();
-            if (steering) {
-              yield { type: "steer", steer: { content: steering.content, source: steering.source } };
-              // Inject as user message and skip remaining tool calls
-              messages.push({ role: "user", content: steering.content });
-              history.push({
-                type: "user",
-                content: steering.content,
-                timestamp: new Date(),
-              });
-              // Rollback toolRounds since we didn't actually execute any tools
-              toolRounds--;
-              continue; // Re-enter loop to get new LLM response
-            }
-          }
-
-          // Single-tool mode: only execute first tool call, re-enqueue rest
+          // Single-tool mode executes only the first call. The remaining calls
+          // still receive synthetic results below so the provider transcript
+          // never contains an unresolved assistant tool call.
           const streamToolCallsToExecute = this.config.singleToolMode
             ? toolCalls.slice(0, 1)
             : toolCalls;
+          const deferredToolCalls = this.config.singleToolMode
+            ? toolCalls.slice(1)
+            : [];
 
-          if (this.config.singleToolMode && toolCalls.length > 1) {
-            const deferred = toolCalls.slice(1);
-            preparedMessages.push({
-              role: 'assistant',
-              content: null,
-              tool_calls: deferred,
-            } as CodeBuddyMessage);
-            logger.debug(`Single-tool mode (stream): deferred ${deferred.length} tool calls`);
+          if (deferredToolCalls.length > 0) {
+            logger.debug(`Single-tool mode (stream): skipped ${deferredToolCalls.length} extra tool calls`);
           }
 
           if (!this.deps.streamingHandler.hasYieldedToolCalls()) {
@@ -2137,12 +2166,52 @@ export class AgentExecutor {
           }
           }
 
+          for (const toolCall of deferredToolCalls) {
+            const toolResult: ToolResult = {
+              success: false,
+              error: 'Skipped because single-tool mode executes one call per round.',
+            };
+            history.push({
+              type: 'tool_result',
+              content: toolResult.error ?? 'Tool skipped',
+              timestamp: new Date(),
+              toolCall,
+              toolResult,
+            });
+            messages.push({
+              role: 'tool',
+              content: toolResult.error ?? 'Tool skipped',
+              tool_call_id: toolCall.id,
+              name: toolCall.function.name,
+            } as CodeBuddyMessage);
+            yield { type: 'tool_result', toolCall, toolResult };
+          }
+
           if (terminateDetectedStreaming) break;
 
           if (abortController?.signal.aborted) {
             yield { type: "content", content: "\n\n[Operation cancelled by user]" };
             yield { type: "done" };
             return;
+          }
+
+          // Tool-call/result pairs are complete at this boundary, so a steer
+          // that arrived while tools were running can now be injected safely.
+          const deferredSteering = this.deps.messageQueue?.hasSteeringMessage()
+            ? this.deps.messageQueue.consumeSteeringMessage()
+            : null;
+          if (deferredSteering) {
+            yield {
+              type: 'steer',
+              steer: { content: deferredSteering.content, source: deferredSteering.source },
+            };
+            messages.push({ role: 'user', content: deferredSteering.content });
+            history.push({
+              type: 'user',
+              content: deferredSteering.content,
+              timestamp: deferredSteering.timestamp,
+            });
+            continue;
           }
 
           inputTokens = this.deps.tokenCounter.countMessageTokens(
