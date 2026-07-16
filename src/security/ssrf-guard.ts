@@ -26,6 +26,8 @@ import { logger } from '../utils/logger.js';
 export interface SSRFCheckResult {
   safe: boolean;
   reason?: string;
+  /** DNS addresses that were resolved and validated for this check. */
+  addresses?: Array<{ address: string; family: number }>;
 }
 
 export interface SSRFGuardConfig {
@@ -313,6 +315,9 @@ export class SSRFGuard {
     if (this.config.resolveDns) {
       try {
         const addresses = await dns.lookup(host, { all: true });
+        if (addresses.length === 0) {
+          return { safe: false, reason: `DNS resolution returned no addresses for ${host}` };
+        }
         for (const { address, family } of addresses) {
           const result = family === 6
             ? this.checkIPv6(address)
@@ -321,6 +326,10 @@ export class SSRFGuard {
             return { safe: false, reason: `Host ${host} resolves to private IP: ${address} — ${result.reason}` };
           }
         }
+        return {
+          safe: true,
+          addresses: addresses.map(({ address, family }) => ({ address, family })),
+        };
       } catch (err) {
         // DNS resolution failure → fail closed
         return { safe: false, reason: `DNS resolution failed for ${host}: ${err}` };

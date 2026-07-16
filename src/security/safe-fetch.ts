@@ -1,4 +1,7 @@
-import { assertSafeUrl } from './ssrf-guard.js';
+import type { LookupOptions } from 'node:dns';
+import { Agent, type Dispatcher } from 'undici';
+import { logger } from '../utils/logger.js';
+import { assertSafeUrl, type SSRFCheckResult } from './ssrf-guard.js';
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -10,10 +13,65 @@ function shouldRewriteToGet(status: number, method: string): boolean {
   return status === 303 || ((status === 301 || status === 302) && method === 'POST');
 }
 
-async function assertRedirectTargetIsSafe(url: string): Promise<void> {
+type PinnedAddress = NonNullable<SSRFCheckResult['addresses']>[number];
+
+interface RequestInitWithDispatcher extends RequestInit {
+  dispatcher?: Dispatcher;
+}
+
+async function assertRedirectTargetIsSafe(url: string): Promise<SSRFCheckResult> {
   const check = await assertSafeUrl(url);
   if (!check.safe) {
     throw new Error(`URL blocked by SSRF guard: ${check.reason}`);
+  }
+  return check;
+}
+
+function createPinnedDispatcher(pinned: PinnedAddress): Agent {
+  try {
+    return new Agent({
+      connect: {
+        lookup: (
+          _hostname: string,
+          options: LookupOptions,
+          callback: (
+            error: NodeJS.ErrnoException | null,
+            address: string | Array<{ address: string; family: number }>,
+            family?: number,
+          ) => void,
+        ): void => {
+          if (options.all) {
+            callback(null, [{ address: pinned.address, family: pinned.family }]);
+            return;
+          }
+          callback(null, pinned.address, pinned.family);
+        },
+      },
+    });
+  } catch (err) {
+    throw new Error(`SSRF DNS pinning dispatcher is unavailable: ${err}`);
+  }
+}
+
+async function fetchWithOptionalPinning(
+  url: string,
+  init: RequestInit,
+  pinned: PinnedAddress | undefined,
+): Promise<Response> {
+  if (!pinned) {
+    return fetch(url, init);
+  }
+
+  const dispatcher = createPinnedDispatcher(pinned);
+  try {
+    const pinnedInit: RequestInitWithDispatcher = { ...init, dispatcher };
+    return await fetch(url, pinnedInit);
+  } finally {
+    // Do not await graceful close here: fetch resolves when headers arrive, while
+    // close resolves after the caller consumes the response body.
+    void dispatcher.close().catch(err => {
+      logger.warn('Failed to close SSRF DNS pinning dispatcher', { url, err });
+    });
   }
 }
 
@@ -36,15 +94,16 @@ export async function safeFetchFollow(
   let currentHeaders = new Headers(init.headers);
 
   for (let redirectCount = 0; ; redirectCount += 1) {
-    await assertRedirectTargetIsSafe(currentUrl);
+    const check = await assertRedirectTargetIsSafe(currentUrl);
+    const [pinnedAddress] = check.addresses ?? [];
 
-    const response = await fetch(currentUrl, {
+    const response = await fetchWithOptionalPinning(currentUrl, {
       ...init,
       method: currentMethod,
       headers: currentHeaders,
       body: currentBody,
       redirect: 'manual',
-    });
+    }, pinnedAddress);
 
     if (!REDIRECT_STATUSES.has(response.status)) {
       return response;
@@ -54,6 +113,11 @@ export async function safeFetchFollow(
     if (!location) {
       return response;
     }
+
+    // This response is not returned to a caller, so release its body explicitly.
+    // That lets the per-hop dispatcher's graceful close complete promptly.
+    await response.body?.cancel();
+
     if (redirectCount >= maxRedirects) {
       throw new Error(`Too many redirects (maximum ${maxRedirects})`);
     }
