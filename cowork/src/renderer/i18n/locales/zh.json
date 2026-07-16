@@ -2986,5 +2986,63 @@
       "select": "打开",
       "close": "关闭"
     }
+  },
+  "rail": {
+    "chat": {
+      "label": "新对话",
+      "help": "与 Code Buddy 聊天，添加文件，将请求转化为行动。"
+    },
+    "plan": {
+      "label": "计划",
+      "help": "在让代理执行之前，将任务分解为可读的步骤。"
+    },
+    "activity": {
+      "label": "活动",
+      "help": "查看会话期间产生的工具、文件、模型和决策。"
+    },
+    "workspace": {
+      "label": "文件",
+      "help": "浏览项目文件并打开代理生成的产物。"
+    },
+    "studio": {
+      "label": "应用工作室",
+      "help": "通过生成、测试和改进循环构建应用程序。"
+    },
+    "creations": {
+      "label": "创作",
+      "help": "查找您的交付成果：文档、表格、演示文稿和导出文件。"
+    },
+    "videostudio": {
+      "label": "视频工作室",
+      "help": "准备故事板，生成场景，并组装可验证的视频。"
+    },
+    "assistant": {
+      "label": "助手",
+      "help": "配置实时语音模式、Pocket TTS、音量和打断设置。"
+    },
+    "meeting": {
+      "label": "会议",
+      "help": "在获得同意的情况下录制本地会议，具有可恢复的检查点和自动笔记。"
+    },
+    "library": {
+      "label": "资料库",
+      "help": "浏览工作区中可重复使用的媒体和资源。"
+    },
+    "capabilities": {
+      "label": "能力",
+      "help": "启用代理可用的技能、工具、MCP 服务器和提供商。"
+    },
+    "os": {
+      "label": "任务控制中心",
+      "help": "驱动 2.0 循环：Constitution、多 LLM 交换、Shadow Twin 和证据。"
+    },
+    "labs": {
+      "label": "实验室",
+      "help": "探索实验性功能和新的编排模式。"
+    },
+    "advanced": {
+      "label": "高级",
+      "help": "访问专家设置、监督和高级集成。"
+    }
   }
 }
