@@ -7,6 +7,7 @@ import {
   getDefaultVoicePrewarmPhrases,
   isFactualVoiceQuestion,
   resolveVoiceModel,
+  codexOAuthVoiceRoute,
   resetVoiceModelCache,
   prewarmVoiceModel,
   prewarmVoiceRuntime,
@@ -174,6 +175,40 @@ describe('voice loop — model resolution (env authoritative)', () => {
     expect(r.baseURL).toBe('http://localhost:9999/v1');
     expect(r.apiKey).toBe('secret');
     expect(r.reason).toContain('pinned');
+  });
+
+  it('routes a pinned gpt-5.6-luna through the ChatGPT OAuth backend ($0)', async () => {
+    const r = await resolveVoiceModel('Bonjour', {
+      env: { CODEBUDDY_SENSORY_SPEAK_MODEL: 'gpt-5.6-luna' } as NodeJS.ProcessEnv,
+      hasCodexOAuth: () => true,
+    });
+    expect(r.model).toBe('gpt-5.6-luna');
+    expect(r.apiKey).toBe('oauth-chatgpt');
+    expect(r.baseURL).toContain('chatgpt.com/backend-api/codex');
+    expect(r.reason).toContain('OAuth');
+  });
+
+  it('falls back to the local route for gpt-5.6-luna when not logged in (offline)', async () => {
+    const r = await resolveVoiceModel('Bonjour', {
+      env: {
+        CODEBUDDY_SENSORY_SPEAK_MODEL: 'gpt-5.6-luna',
+        CODEBUDDY_SENSORY_SPEAK_BASE_URL: 'http://localhost:11434/v1',
+      } as NodeJS.ProcessEnv,
+      hasCodexOAuth: () => false,
+    });
+    expect(r.model).toBe('gpt-5.6-luna');
+    expect(r.baseURL).toContain('11434'); // local, not OAuth
+    expect(r.reason).toContain('pinned');
+    expect(r.reason).not.toContain('OAuth');
+  });
+
+  it('codexOAuthVoiceRoute: OAuth route for subscription models, null otherwise', () => {
+    expect(codexOAuthVoiceRoute('gpt-5.6-luna', () => true)).toEqual({
+      apiKey: 'oauth-chatgpt',
+      baseURL: 'https://chatgpt.com/backend-api/codex',
+    });
+    expect(codexOAuthVoiceRoute('gpt-5.6-luna', () => false)).toBeNull();
+    expect(codexOAuthVoiceRoute('mistral-small:24b', () => true)).toBeNull();
   });
 
   it('uses a larger pinned factual lane while keeping social chat on the fast model', async () => {

@@ -21,6 +21,8 @@ import { existsSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { logger } from '../utils/logger.js';
+import { CHATGPT_OAUTH_SENTINEL, CHATGPT_RESPONSES_BASE_URL } from '../codebuddy/client.js';
+import { isChatGptSubscriptionModel } from '../providers/chatgpt-models.js';
 import { getAvatarEventBus } from '../avatar/avatar-event-bus.js';
 import {
   createAvatarTurnId,
@@ -892,6 +894,8 @@ export interface VoiceModelResolverDeps {
   history?: ConversationTurn[];
   /** Summaries/utility calls stay on the fast lane even if their transcript looks factual. */
   forceFastLane?: boolean;
+  /** Test seam: whether ChatGPT/Codex OAuth creds exist (default: checks ~/.codebuddy/codex-auth.json). */
+  hasCodexOAuth?: () => boolean;
   selectFastestModel?: (
     heard: string,
     options: { taskType: string; localOnly: boolean; env: NodeJS.ProcessEnv }
@@ -959,6 +963,23 @@ function refreshVoiceRoute(
 }
 
 /**
+ * When a pinned voice model is a ChatGPT/Codex subscription model (gpt-5.6-luna,
+ * o-series, codex-*), route it through the OAuth Codex backend so the spoken
+ * reply is served $0 via the subscription — instead of the local Ollama endpoint
+ * (which does not have it). Returns the OAuth apiKey/baseURL when creds exist,
+ * else null → the caller keeps the local route (offline / not logged in).
+ * Luna is the intended low-latency voice model: faster + smarter than local.
+ */
+export function codexOAuthVoiceRoute(
+  model: string,
+  hasOAuth: () => boolean = () => existsSync(join(homedir(), '.codebuddy', 'codex-auth.json')),
+): { apiKey: string; baseURL: string } | null {
+  if (!isChatGptSubscriptionModel(model)) return null;
+  if (!hasOAuth()) return null;
+  return { apiKey: CHATGPT_OAUTH_SENTINEL, baseURL: CHATGPT_RESPONSES_BASE_URL };
+}
+
+/**
  * Resolve which LLM answers a spoken utterance. Fluidity is everything for a
  * companion (a 16s reply breaks the spell), so by default we route to the
  * LOWEST-LATENCY capable LLM via the shared selector — the same "which LLM is
@@ -989,6 +1010,21 @@ export async function resolveVoiceModel(
 
   // Explicit pin wins (env authoritative) — no routing, no cache.
   if (override && override.toLowerCase() !== 'auto') {
+    // A pinned ChatGPT/Codex model (e.g. gpt-5.6-luna) is served $0 via the OAuth
+    // Codex backend, not the local Ollama endpoint — route it there when logged in.
+    const oauth = deps.hasCodexOAuth
+      ? codexOAuthVoiceRoute(override, deps.hasCodexOAuth)
+      : codexOAuthVoiceRoute(override);
+    if (oauth) {
+      return {
+        model: override,
+        apiKey: oauth.apiKey,
+        baseURL: oauth.baseURL,
+        reason: useFactLane
+          ? 'factual lane via ChatGPT OAuth (CODEBUDDY_SENSORY_SPEAK_FACT_MODEL)'
+          : 'pinned via ChatGPT OAuth (CODEBUDDY_SENSORY_SPEAK_MODEL)',
+      };
+    }
     return {
       model: override,
       apiKey,
