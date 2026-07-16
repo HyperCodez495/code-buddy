@@ -40,10 +40,9 @@ jobs:
 
       - name: Build Windows installer
         working-directory: cowork
-        run: npm run build:win
+        run: npm run build:win -- --win nsis --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # electron-builder tries to publish/check GitHub releases unless told not to
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload exe artifact
