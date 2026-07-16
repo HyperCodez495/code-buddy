@@ -11,6 +11,7 @@
  * renders NewShell when `newShellEnabled` is set.
  */
 import { useAppStore } from '../store';
+import { useTranslation } from 'react-i18next';
 import type { PrimaryView } from '../store';
 import { DockWorkspace } from './DockWorkspace';
 import { ActivityPane } from './ActivityPane';
@@ -82,96 +83,24 @@ const AdvancedCommandCenter = lazy(() =>
 
 interface RailItem {
   view: PrimaryView;
-  label: string;
   glyph: string;
-  help: string;
 }
 
 const RAIL: RailItem[] = [
-  {
-    view: 'chat',
-    label: 'Chat',
-    glyph: '💬',
-    help: 'Discute avec Code Buddy, joins des fichiers et transforme une demande en action.',
-  },
-  {
-    view: 'plan',
-    label: 'Plan',
-    glyph: '📋',
-    help: 'Décompose une mission en étapes lisibles avant de laisser l’agent exécuter.',
-  },
-  {
-    view: 'activity',
-    label: 'Activité',
-    glyph: '📊',
-    help: 'Observe les outils, fichiers, modèles et décisions produits pendant la session.',
-  },
-  {
-    view: 'workspace',
-    label: 'Fichiers',
-    glyph: '📁',
-    help: 'Explore les fichiers du projet et ouvre les artefacts générés par les agents.',
-  },
-  {
-    view: 'studio',
-    label: 'App Studio',
-    glyph: '🛠️',
-    help: 'Construis une application avec une boucle de génération, test et amélioration.',
-  },
-  {
-    view: 'creations',
-    label: 'Créations',
-    glyph: '✨',
-    help: 'Retrouve tes livrables : documents, feuilles, présentations et exports.',
-  },
-  {
-    view: 'videostudio',
-    label: 'Video Studio',
-    glyph: '🎬',
-    help: 'Prépare un storyboard, génère des scènes et assemble une vidéo vérifiable.',
-  },
-  {
-    view: 'assistant',
-    label: 'Assistant',
-    glyph: '🎙️',
-    help: 'Configure le mode vocal temps réel, Pocket TTS, le volume et les interruptions.',
-  },
-  {
-    view: 'meeting',
-    label: 'Réunion',
-    glyph: '📝',
-    help: 'Enregistre une réunion locale avec consentement, checkpoints récupérables et notes automatiques.',
-  },
-  {
-    view: 'library',
-    label: 'Bibliothèque',
-    glyph: '🖼️',
-    help: 'Consulte les médias et ressources réutilisables du workspace.',
-  },
-  {
-    view: 'capabilities',
-    label: 'Capacités',
-    glyph: '🧰',
-    help: 'Active les skills, outils, serveurs MCP et providers disponibles pour l’agent.',
-  },
-  {
-    view: 'os',
-    label: 'Mission Control',
-    glyph: '🛰️',
-    help: 'Pilote le loop 2.0 : Constitution, Exchange multi-LLM, Shadow Twin et preuves.',
-  },
-  {
-    view: 'labs',
-    label: 'Labs',
-    glyph: '🧪',
-    help: 'Découvre les fonctionnalités expérimentales et les nouveaux modes d’orchestration.',
-  },
-  {
-    view: 'advanced',
-    label: 'Avancé',
-    glyph: '⚙️',
-    help: 'Accède aux réglages experts, à la supervision et aux intégrations avancées.',
-  },
+  { view: 'chat', glyph: '💬' },
+  { view: 'plan', glyph: '📋' },
+  { view: 'activity', glyph: '📊' },
+  { view: 'workspace', glyph: '📁' },
+  { view: 'studio', glyph: '🛠️' },
+  { view: 'creations', glyph: '✨' },
+  { view: 'videostudio', glyph: '🎬' },
+  { view: 'assistant', glyph: '🎙️' },
+  { view: 'meeting', glyph: '📝' },
+  { view: 'library', glyph: '🖼️' },
+  { view: 'capabilities', glyph: '🧰' },
+  { view: 'os', glyph: '🛰️' },
+  { view: 'labs', glyph: '🧪' },
+  { view: 'advanced', glyph: '⚙️' },
 ];
 
 const THEME_OPTIONS = [
@@ -349,6 +278,7 @@ function StudioView() {
 }
 
 export function NewShell() {
+  const { t } = useTranslation();
   const primaryView = useAppStore((st) => st.primaryView);
   const setPrimaryView = useAppStore((st) => st.setPrimaryView);
   const setShowCommandPalette = useAppStore((st) => st.setShowCommandPalette);
@@ -400,11 +330,13 @@ export function NewShell() {
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain">
           {RAIL.map((item) => {
             const active = primaryView === item.view;
+            const label = t(`rail.${item.view}.label`, item.view);
+            const help = t(`rail.${item.view}.help`, '');
             return (
               <GuidedTooltip
                 key={item.view}
-                title={item.label}
-                description={item.help}
+                title={label}
+                description={help}
                 kicker="Espace Cowork"
                 side="right"
               >
@@ -412,7 +344,7 @@ export function NewShell() {
                   type="button"
                   aria-current={active ? 'page' : undefined}
                   onClick={() => setPrimaryView(item.view)}
-                  title={item.label}
+                  title={label}
                   className={`mx-1 flex flex-col items-center gap-0.5 rounded-md py-2 text-[10px] transition-colors ${
                     active
                       ? 'bg-accent text-foreground'
@@ -420,7 +352,7 @@ export function NewShell() {
                   }`}
                 >
                   <span className="text-lg leading-none">{item.glyph}</span>
-                  <span>{item.label}</span>
+                  <span>{label}</span>
                 </button>
               </GuidedTooltip>
             );
