@@ -1726,11 +1726,12 @@ describe('AgentExecutor', () => {
         { content: 'Voici la réponse finale.' },
       ]);
 
+      const messages: CodeBuddyMessage[] = [];
       const chunks = await collectChunks(
         executor.processUserMessageStream(
           'Vérifie.',
           [],
-          [],
+          messages,
           null,
           Date.now(),
           undefined,
@@ -1740,6 +1741,10 @@ describe('AgentExecutor', () => {
       const visible = chunks.map((chunk) => chunk.content ?? '').join('');
       expect(visible).not.toContain('Using tools to help you');
       expect(visible).toContain('Voici la réponse finale.');
+      const toolCallingAssistant = messages.find((message) =>
+        message.role === 'assistant' && Array.isArray(message.tool_calls),
+      );
+      expect(toolCallingAssistant?.content).toBeNull();
     });
 
     it('separates a genuine companion pre-tool preamble from its final answer', async () => {
@@ -2684,6 +2689,23 @@ describe('AgentExecutor', () => {
   // =========================================================================
 
   describe('Cost Tracking', () => {
+    it('records cumulative input cost across provider rounds', async () => {
+      const toolCall = makeToolCall('read_file', { path: '/x' }, 'cost_round_1');
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: [toolCall] },
+        { content: 'Done.' },
+      ]);
+      (deps.tokenCounter.countMessageTokens as jest.Mock).mockImplementation(
+        (batch: CodeBuddyMessage[]) => batch.length,
+      );
+      const messages: CodeBuddyMessage[] = [{ role: 'user', content: 'start' }];
+
+      await executor.processUserMessage('start', [], messages);
+
+      // Round 1 sees one message; round 2 sees assistant call + result too.
+      expect(config.recordSessionCost).toHaveBeenCalledWith(1 + 3, 100);
+    });
+
     it('should record session cost after processing', async () => {
       const history: ChatEntry[] = [];
       const messages: CodeBuddyMessage[] = [];
@@ -3320,8 +3342,12 @@ describe('AgentExecutor', () => {
         )
       );
 
-      // Exactly 1 call regardless of abort — cost recording happens once at end of loop.
-      expect((streamConfig.recordSessionCost as jest.Mock).mock.calls.length).toBeLessThanOrEqual(1);
+      // Exactly one finally-backed record, including the interrupted provider round.
+      expect(streamConfig.recordSessionCost).toHaveBeenCalledTimes(1);
+      expect(streamConfig.recordSessionCost).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.any(Number),
+      );
     });
 
     it('starts prompt building, tool selection, and context lookup before awaiting any one', async () => {

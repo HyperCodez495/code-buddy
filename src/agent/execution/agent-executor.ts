@@ -78,6 +78,20 @@ import {
 } from '../../identity/lisa-introspection.js';
 import type { TimelineToolCall } from '../../sessions/timeline.js';
 import { withLlmStreamRetry } from '../../codebuddy/llm-retry.js';
+import { getStreamingAdapter } from '../../tools/streaming-adapter.js';
+import { notify } from '../proactive/notification-default-sink.js';
+import { getProgressTracker } from '../planner/progress-default-sink.js';
+import { trackRecentFile } from '../../knowledge/code-graph-context-provider.js';
+import { getKnowledgeGraph } from '../../knowledge/knowledge-graph.js';
+import { updateGraphForFile } from '../../knowledge/graph-updater.js';
+import { resolve as resolvePath } from 'node:path';
+import { maybeAutoCommit } from '../../tools/auto-commit.js';
+import {
+  applyToolOutputMasking,
+  expireOldToolResults,
+  pruneImageContent,
+} from '../../context/tool-output-masking.js';
+import { IncrementalMessageTokenCounter } from './incremental-token-counter.js';
 import {
   createOrderedToolBatches,
   executeBoundedInOrder,
@@ -706,7 +720,6 @@ export class AgentExecutor {
         };
       }
 
-      const { getStreamingAdapter } = await import('../../tools/streaming-adapter.js');
       const streamingAdapter = getStreamingAdapter();
       if (streamingAdapter.supportsStreaming(toolCall.function.name)) {
         const result = await streamingAdapter.wrapWithStreaming(
@@ -1153,10 +1166,12 @@ export class AgentExecutor {
     const { injection: ctxLevel, complexity: queryComplexity } = classifyQuery(turnQueryText);
     logger.debug(`Query classified as '${queryComplexity}' — context injection level: ${JSON.stringify(ctxLevel)}`);
 
-    // Calculate input tokens
-    let inputTokens = this.deps.tokenCounter.countMessageTokens(
-      messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
+    const incrementalTokenCounter = new IncrementalMessageTokenCounter(
+      (batch) => this.deps.tokenCounter.countMessageTokens(
+        batch as Parameters<TokenCounter['countMessageTokens']>[0],
+      ),
     );
+    let inputTokens = incrementalTokenCounter.count(messages);
     yield {
       type: "token_count",
       tokenCount: inputTokens,
@@ -1165,6 +1180,17 @@ export class AgentExecutor {
     const maxToolRounds = this.config.maxToolRounds;
     let toolRounds = 0;
     let totalOutputTokens = 0;
+    let totalInputTokensForCost = 0;
+    let sessionCostRecorded = false;
+    const recordTurnCost = (): void => {
+      if (sessionCostRecorded) return;
+      sessionCostRecorded = true;
+      try {
+        this.config.recordSessionCost(totalInputTokensForCost, totalOutputTokens);
+      } catch (error) {
+        logger.warn('Failed to record session cost', { error: getErrorMessage(error) });
+      }
+    };
 
     // In-loop recovery budgets (Hermes parity): bound re-prompts WITHIN a turn
     // so a length-truncated or post-tool-empty response is recovered instead of
@@ -1182,11 +1208,7 @@ export class AgentExecutor {
     let lengthContinuations = 0;
     let emptyRetries = 0;
 
-    // Phase (d).21 ship 4 — start a progress session for this turn.
-    // The default sink (boot-wired) logs at 25/50/75/100. Lazy-import to
-    // avoid circular load at module init time.
     try {
-      const { getProgressTracker } = await import('../planner/progress-default-sink.js');
       getProgressTracker().start(maxToolRounds);
     } catch { /* progress tracker optional */ }
 
@@ -1220,9 +1242,10 @@ export class AgentExecutor {
           if (mwResult.action === 'compact') {
             // Trigger context compaction IN PLACE — prepareMessages() is pure
             // and its discarded return made this action a silent no-op.
-            compactTurnMessagesInPlace(this.deps.contextManager, messages, {
+            const compacted = compactTurnMessagesInPlace(this.deps.contextManager, messages, {
               isolatedSharedHost,
             });
+            if (compacted) incrementalTokenCounter.invalidate();
             // S7: record a fork run at the compaction boundary for lineage.
             // No-op unless this session is linked to an observability run.
             const forkId = recordCompactionFork(
@@ -1327,6 +1350,7 @@ export class AgentExecutor {
         const firstMessage = messages[0];
         if (rebuiltSystemPrompt && firstMessage && firstMessage.role === 'system') {
           firstMessage.content = rebuiltSystemPrompt;
+          incrementalTokenCounter.invalidate();
           logger.debug(
             `[agent-executor] system prompt rebuilt query-aware (${rebuiltSystemPrompt.length} chars)`,
           );
@@ -1380,6 +1404,9 @@ export class AgentExecutor {
             content: `<companion_current_turn_context ephemeral="true">\n${currentTurnContext}\n</companion_current_turn_context>`,
           });
         }
+
+        inputTokens = incrementalTokenCounter.count(messages);
+        totalInputTokensForCost += inputTokens;
 
         // Context warning — always check regardless of pipeline state
         {
@@ -1562,14 +1589,21 @@ export class AgentExecutor {
           yield { type: 'content', content: `${content}\n\n` };
         }
 
+        const persistedAssistantContent = synthesizedToolFallback && hasToolCalls
+          ? null
+          : content;
         const assistantEntry: ChatEntry = {
           type: "assistant",
-          content: content,
+          content: persistedAssistantContent ?? '',
           timestamp: new Date(),
           toolCalls: toolCalls,
         };
         history.push(assistantEntry);
-        messages.push({ role: "assistant", content: content, tool_calls: toolCalls });
+        messages.push({
+          role: 'assistant',
+          content: persistedAssistantContent,
+          tool_calls: toolCalls,
+        });
 
         const currentOutputTokens = this.deps.streamingHandler.getTokenCount() || 0;
         totalOutputTokens += currentOutputTokens;
@@ -1666,12 +1700,11 @@ export class AgentExecutor {
                     estimatedTokens,
                     contextWindow,
                   });
-                  compactTurnMessagesInPlace(this.deps.contextManager, messages, {
-                    isolatedSharedHost,
-                  });
-                  inputTokens = this.deps.tokenCounter.countMessageTokens(
-                    messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
-                  );
+                const compacted = compactTurnMessagesInPlace(this.deps.contextManager, messages, {
+                  isolatedSharedHost,
+                });
+                if (compacted) incrementalTokenCounter.invalidate();
+                inputTokens = incrementalTokenCounter.count(messages);
                 }
               } catch { /* proactive compaction is non-critical */ }
             }
@@ -1818,7 +1851,6 @@ export class AgentExecutor {
             // Default sink logs at info (success) / warn (failure). Gated by
             // quiet hours + rate limit in NotificationManager.
             try {
-              const { notify } = await import('../proactive/notification-default-sink.js');
               const _toolDurationStream = Date.now() - _streamToolStartMs;
               notify({
                 channelType: 'cli',
@@ -1831,7 +1863,6 @@ export class AgentExecutor {
             } catch { /* notification optional */ }
             // Phase (d).21 ship 4 — progress update.
             try {
-              const { getProgressTracker } = await import('../planner/progress-default-sink.js');
               getProgressTracker().update(
                 toolCall.id,
                 result.success ? 'completed' : 'failed',
@@ -1846,15 +1877,11 @@ export class AgentExecutor {
                 const args = JSON.parse(toolCall.function.arguments || '{}');
                 const filePath = args.path || args.file_path || args.target_file || '';
                 if (filePath) {
-                  const { trackRecentFile } = await import('../../knowledge/code-graph-context-provider.js');
                   trackRecentFile(filePath);
                   if (['create_file', 'str_replace_editor', 'file_write'].includes(toolCall.function.name)) {
-                    const { getKnowledgeGraph } = await import('../../knowledge/knowledge-graph.js');
                     const kg = getKnowledgeGraph();
                     if (kg.getStats().tripleCount > 0) {
-                      const { updateGraphForFile } = await import('../../knowledge/graph-updater.js');
-                      const pathMod = await import('path');
-                      const absPath = pathMod.default.resolve(process.cwd(), filePath);
+                      const absPath = resolvePath(process.cwd(), filePath);
                       updateGraphForFile(kg, absPath, process.cwd());
                     }
                   }
@@ -2014,7 +2041,6 @@ export class AgentExecutor {
             // --- Auto-commit after file-modifying tools (streaming path) ---
             if (result?.success) {
               try {
-                const { maybeAutoCommit } = await import('../../tools/auto-commit.js');
                 const acResult = await maybeAutoCommit(
                   toolCall.function.name,
                   toolCall.function.arguments || '{}',
@@ -2129,9 +2155,7 @@ export class AgentExecutor {
             continue;
           }
 
-          inputTokens = this.deps.tokenCounter.countMessageTokens(
-            messages as Parameters<TokenCounter['countMessageTokens']>[0],
-          );
+          inputTokens = incrementalTokenCounter.count(messages);
           yield { type: "token_count", tokenCount: inputTokens + totalOutputTokens };
 
           // Run after_turn middleware (handles cost recording + limit)
@@ -2153,10 +2177,10 @@ export class AgentExecutor {
 
           // Apply TTL-based tool result expiry + image pruning + backward-scanned FIFO masking (streaming path)
           try {
-            const { applyToolOutputMasking, expireOldToolResults, pruneImageContent } = await import('../../context/tool-output-masking.js');
             expireOldToolResults(messages, toolRounds);
             pruneImageContent(messages);
             applyToolOutputMasking(messages);
+            incrementalTokenCounter.invalidate();
           } catch { /* masking is optional */ }
         } else {
           // ── In-loop recovery (Hermes parity) ─────────────────────────────
@@ -2230,7 +2254,7 @@ export class AgentExecutor {
         yield { type: "content", content: "\n\nMaximum tool execution rounds reached." };
       }
 
-      this.config.recordSessionCost(inputTokens, totalOutputTokens);
+      recordTurnCost();
 
       // Display per-turn token usage (streaming path). Pass the model
       // name so estimateCost can zero out subscription-billed models
@@ -2240,13 +2264,17 @@ export class AgentExecutor {
       const streamTurnCost = this.deps.client.isSubscriptionAuth?.()
         ? 0
         : estimateCost(
-            inputTokens,
+            totalInputTokensForCost,
             totalOutputTokens,
             undefined,
             undefined,
             this.deps.client.getCurrentModel(),
           );
-      const streamUsageDisplay = formatTokenUsage({ inputTokens, outputTokens: totalOutputTokens, cost: streamTurnCost });
+      const streamUsageDisplay = formatTokenUsage({
+        inputTokens: totalInputTokensForCost,
+        outputTokens: totalOutputTokens,
+        cost: streamTurnCost,
+      });
       logger.info(`Token usage: ${streamUsageDisplay}`);
       yield { type: "content", content: `\n${streamUsageDisplay}` };
 
@@ -2304,6 +2332,7 @@ export class AgentExecutor {
       yield { type: "content", content: errorEntry.content };
       yield { type: "done" };
     } finally {
+      recordTurnCost();
       if (timelineEnabled) {
         await this.recordCompletedTimelineTurn(
           timelineHistoryStart,
