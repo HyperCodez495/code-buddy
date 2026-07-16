@@ -1,40 +1,46 @@
-name: Build Cowork (Windows)
+name: Build Windows Exe
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # lets you trigger it manually from the Actions tab
+  push:
+    branches: [ main ]
+    paths:
+      - 'cowork/**'
+      - '.github/workflows/build-windows.yml'
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install root dependencies
-        run: npm ci
-
-      - name: Install Cowork dependencies
+      - name: Install cowork dependencies
         working-directory: cowork
         run: npm ci
+        env:
+          # avoid GitHub API rate limiting / publish-token errors during install
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Core
-        run: npx tsc -p .
-
-      - name: Build Cowork
+      - name: Build Windows installer
         working-directory: cowork
         run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder tries to publish/check GitHub releases unless told not to
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload EXE
+      - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Cowork-Windows
+          name: code-buddy-cowork-windows
           path: |
-            cowork/release/**
-            cowork/dist/**
-            cowork/dist-electron/**
+            cowork/release/*.exe
+            cowork/release/*.msi
           if-no-files-found: warn
