@@ -44,6 +44,88 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 type OptionalContextBlock = CodeBuddyMessage | null;
+export const TRUNCATED_TOOL_OUTPUT_STUB = '[output tronqué pour tenir dans le contexte]';
+const MIN_SLIMMABLE_TOOL_OUTPUT_CHARS = 512;
+
+/** True when the provider transcript is not already in canonical call/result order. */
+export function transcriptNeedsToolRepair(messages: readonly CodeBuddyMessage[]): boolean {
+  const seenCallIds = new Set<string>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (!message) continue;
+    if (message.role === 'tool') return true;
+    const calls = 'tool_calls' in message && Array.isArray(message.tool_calls)
+      ? message.tool_calls
+      : [];
+    if (calls.length === 0) continue;
+
+    for (let callIndex = 0; callIndex < calls.length; callIndex++) {
+      const callId = calls[callIndex]?.id;
+      if (!callId || seenCallIds.has(callId)) return true;
+      seenCallIds.add(callId);
+      const result = messages[index + callIndex + 1];
+      if (
+        result?.role !== 'tool' ||
+        (result as { tool_call_id?: string }).tool_call_id !== callId
+      ) {
+        return true;
+      }
+    }
+    index += calls.length;
+  }
+  return false;
+}
+
+function contextThresholdExceeded(
+  contextManager: ContextManagerV2,
+  messages: CodeBuddyMessage[],
+): boolean {
+  try {
+    if (
+      typeof contextManager.shouldAutoCompact !== 'function' ||
+      typeof contextManager.getStats !== 'function'
+    ) {
+      return true;
+    }
+    const stats = contextManager.getStats(messages);
+    return contextManager.shouldAutoCompact(messages) || stats.isNearLimit;
+  } catch {
+    // Preserve the old full-preparation path for partial host test doubles and
+    // third-party context managers whose budget inspection failed.
+    return true;
+  }
+}
+
+/**
+ * Replace old, large tool observations first until the context is back below
+ * its compaction threshold. Message identity fields, especially
+ * `tool_call_id`, are preserved verbatim.
+ */
+export function slimToolResultsToFit(
+  contextManager: ContextManagerV2,
+  messages: CodeBuddyMessage[],
+): CodeBuddyMessage[] {
+  if (!contextThresholdExceeded(contextManager, messages)) return messages;
+  let result: CodeBuddyMessage[] | null = null;
+
+  for (let index = 0; index < messages.length; index++) {
+    const source = (result ?? messages)[index];
+    if (
+      source?.role !== 'tool' ||
+      typeof source.content !== 'string' ||
+      source.content.length < MIN_SLIMMABLE_TOOL_OUTPUT_CHARS ||
+      source.content === TRUNCATED_TOOL_OUTPUT_STUB
+    ) {
+      continue;
+    }
+
+    if (!result) result = [...messages];
+    result[index] = { ...source, content: TRUNCATED_TOOL_OUTPUT_STUB } as CodeBuddyMessage;
+    if (!contextThresholdExceeded(contextManager, result)) return result;
+  }
+
+  return result ?? messages;
+}
 
 /** Run one best-effort context provider without delaying or failing its siblings. */
 async function buildOptionalContextBlock(
@@ -59,18 +141,36 @@ async function buildOptionalContextBlock(
 }
 
 /**
- * Phase 1 — Compact via contextManager + repair orphaned tool_call/tool_result
- * pairs left by compression. Always runs at the start of every turn.
+ * Phase 1 — Slim large observations, compact only if still necessary, and
+ * repair only when the transcript is dirty. The canonical fast path returns
+ * the original array without replaying compaction or transcript repair.
  */
 export function prepareTurnMessages(
   contextManager: ContextManagerV2,
   messages: CodeBuddyMessage[],
   options: { isolatedSharedHost?: boolean } = {},
 ): CodeBuddyMessage[] {
-  const prepared = options.isolatedSharedHost
-    ? contextManager.prepareMessagesRaw(messages)
-    : contextManager.prepareMessages(messages);
-  return repairToolCallPairs(prepared);
+  const dirty = transcriptNeedsToolRepair(messages);
+  const thresholdExceeded = contextThresholdExceeded(contextManager, messages);
+  const hasContextEngine = !options.isolatedSharedHost &&
+    typeof contextManager.getContextEngine === 'function' &&
+    contextManager.getContextEngine() !== null;
+
+  if (!dirty && !thresholdExceeded && !hasContextEngine) return [...messages];
+
+  const slimmed = thresholdExceeded
+    ? slimToolResultsToFit(contextManager, messages)
+    : messages;
+  const stillOverThreshold = thresholdExceeded &&
+    contextThresholdExceeded(contextManager, slimmed);
+  const prepared = stillOverThreshold || hasContextEngine
+    ? options.isolatedSharedHost
+      ? contextManager.prepareMessagesRaw(slimmed)
+      : contextManager.prepareMessages(slimmed)
+    : slimmed;
+
+  if (transcriptNeedsToolRepair(prepared)) return repairToolCallPairs(prepared);
+  return prepared === messages ? [...prepared] : prepared;
 }
 
 /**
@@ -81,7 +181,9 @@ export function prepareTurnMessages(
 export function prepareIsolatedTurnMessages(
   messages: CodeBuddyMessage[],
 ): CodeBuddyMessage[] {
-  return repairToolCallPairs(messages);
+  return transcriptNeedsToolRepair(messages)
+    ? repairToolCallPairs(messages)
+    : [...messages];
 }
 
 /**
