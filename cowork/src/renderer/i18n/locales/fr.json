@@ -3177,5 +3177,63 @@
     "kyutaiSTT": "Kyutai STT",
     "kyutaiTTS": "Kyutai TTS",
     "audioTooling": "Outils audio"
+  },
+  "rail": {
+    "chat": {
+      "label": "Chat",
+      "help": "Discute avec Code Buddy, joins des fichiers et transforme une demande en action."
+    },
+    "plan": {
+      "label": "Plan",
+      "help": "Décompose une mission en étapes lisibles avant de laisser l’agent exécuter."
+    },
+    "activity": {
+      "label": "Activité",
+      "help": "Observe les outils, fichiers, modèles et décisions produits pendant la session."
+    },
+    "workspace": {
+      "label": "Fichiers",
+      "help": "Explore les fichiers du projet et ouvre les artefacts générés par les agents."
+    },
+    "studio": {
+      "label": "App Studio",
+      "help": "Construis une application avec une boucle de génération, test et amélioration."
+    },
+    "creations": {
+      "label": "Créations",
+      "help": "Retrouve tes livrables : documents, feuilles, présentations et exports."
+    },
+    "videostudio": {
+      "label": "Video Studio",
+      "help": "Prépare un storyboard, génère des scènes et assemble une vidéo vérifiable."
+    },
+    "assistant": {
+      "label": "Assistant",
+      "help": "Configure le mode vocal temps réel, Pocket TTS, le volume et les interruptions."
+    },
+    "meeting": {
+      "label": "Réunion",
+      "help": "Enregistre une réunion locale avec consentement, checkpoints récupérables et notes automatiques."
+    },
+    "library": {
+      "label": "Bibliothèque",
+      "help": "Consulte les médias et ressources réutilisables du workspace."
+    },
+    "capabilities": {
+      "label": "Capacités",
+      "help": "Active les skills, outils, serveurs MCP et providers disponibles pour l’agent."
+    },
+    "os": {
+      "label": "Mission Control",
+      "help": "Pilote le loop 2.0 : Constitution, Exchange multi-LLM, Shadow Twin et preuves."
+    },
+    "labs": {
+      "label": "Labs",
+      "help": "Découvre les fonctionnalités expérimentales et les nouveaux modes d’orchestration."
+    },
+    "advanced": {
+      "label": "Avancé",
+      "help": "Accède aux réglages experts, à la supervision et aux intégrations avancées."
+    }
   }
 }
