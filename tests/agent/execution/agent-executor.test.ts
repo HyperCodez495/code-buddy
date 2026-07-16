@@ -2282,6 +2282,80 @@ describe('AgentExecutor', () => {
   // =========================================================================
 
   describe('LaneQueue Integration', () => {
+    it('executes read-only calls concurrently and appends tool results in call order', async () => {
+      const toolCalls = [
+        makeToolCall('read_file', { path: '/one' }, 'call_1'),
+        makeToolCall('grep', { pattern: 'two' }, 'call_2'),
+        makeToolCall('list_files', { path: '/three' }, 'call_3'),
+      ];
+      const started: string[] = [];
+      const releases = new Map<string, () => void>();
+      (deps.toolHandler.executeTool as jest.Mock).mockImplementation(
+        (toolCall: ReturnType<typeof makeToolCall>) => new Promise((resolve) => {
+          started.push(toolCall.id);
+          releases.set(toolCall.id, () => resolve({
+            success: true,
+            output: `result:${toolCall.id}`,
+          }));
+        }),
+      );
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: toolCalls },
+        { content: 'Done.' },
+      ]);
+
+      const messages: CodeBuddyMessage[] = [];
+      const turn = executor.processUserMessage('Read three files', [], messages);
+      const deadline = Date.now() + 1000;
+      while (started.length < 3 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      expect(started).toEqual(['call_1', 'call_2', 'call_3']);
+      releases.get('call_3')?.();
+      releases.get('call_1')?.();
+      releases.get('call_2')?.();
+      await turn;
+
+      expect(
+        messages
+          .filter((entry) => entry.role === 'tool')
+          .map((entry) => entry.tool_call_id),
+      ).toEqual(['call_1', 'call_2', 'call_3']);
+    });
+
+    it('uses mutating calls as exclusive barriers between read batches', async () => {
+      const calls = [
+        makeToolCall('read_file', {}, 'read_before'),
+        makeToolCall('create_file', {}, 'write_middle'),
+        makeToolCall('grep', {}, 'read_after'),
+      ];
+      const events: string[] = [];
+      (deps.toolHandler.executeTool as jest.Mock).mockImplementation(
+        async (toolCall: ReturnType<typeof makeToolCall>) => {
+          events.push(`start:${toolCall.id}`);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          events.push(`end:${toolCall.id}`);
+          return { success: true, output: toolCall.id };
+        },
+      );
+      setupLLMFlow(deps, [
+        { content: '', tool_calls: calls },
+        { content: 'Done.' },
+      ]);
+
+      await executor.processUserMessage('Read, write, read', [], []);
+
+      expect(events).toEqual([
+        'start:read_before',
+        'end:read_before',
+        'start:write_middle',
+        'end:write_middle',
+        'start:read_after',
+        'end:read_after',
+      ]);
+    });
+
     it('should use lane queue when provided', async () => {
       const mockLaneQueue = {
         enqueue: jest.fn().mockImplementation((_lane: string, fn: () => unknown) => fn()),

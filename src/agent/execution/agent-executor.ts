@@ -77,6 +77,10 @@ import {
   renderLisaOperationalSelfResponse,
 } from '../../identity/lisa-introspection.js';
 import type { TimelineToolCall } from '../../sessions/timeline.js';
+import {
+  createOrderedToolBatches,
+  executeBoundedInOrder,
+} from './ordered-tool-executor.js';
 
 export interface TimelineTurnData {
   turn: number;
@@ -117,6 +121,14 @@ const RELATIONSHIP_INTERACTIVE_TOOLS = new Set(['ask_human', 'ask_user_question'
 const RELATIONSHIP_BLOCK_MARKER = '__codebuddyRelationshipSafetyBlocked';
 const SAFE_INTERACTIVE_QUESTION = 'Peux-tu préciser ce que tu souhaites faire ensuite ?';
 const SAFE_TOOL_RESULT = 'Résultat traité en interne par Lisa.';
+const MAX_PARALLEL_TOOL_CALLS = 5;
+
+interface ToolExecutionOutcome {
+  result?: ToolResult;
+  blockedContent?: string;
+  startedAt: number;
+  streamChunks: string[];
+}
 
 function configuredSensoryRuntime(
   surface: string | undefined,
@@ -656,6 +668,54 @@ export class AgentExecutor {
         timeout: timeoutMs,
       }
     );
+  }
+
+  /** Execute one tool and buffer optional streaming-adapter output. */
+  private async executeToolForBatch(
+    toolCall: CodeBuddyToolCall,
+    executionExtra?: Record<string, unknown>,
+  ): Promise<{ result: ToolResult; streamChunks: string[] }> {
+    const streamChunks: string[] = [];
+
+    try {
+      const streamingTools = new Set(['bash', 'reason', 'generate_document']);
+      if (streamingTools.has(toolCall.function.name)) {
+        const generator = this.deps.toolHandler.executeToolStreaming(toolCall, executionExtra);
+        let generated = await generator.next();
+        while (!generated.done) {
+          streamChunks.push(generated.value);
+          generated = await generator.next();
+        }
+        return {
+          result: generated.value ?? { success: false, error: 'Tool returned no result' },
+          streamChunks,
+        };
+      }
+
+      const { getStreamingAdapter } = await import('../../tools/streaming-adapter.js');
+      const streamingAdapter = getStreamingAdapter();
+      if (streamingAdapter.supportsStreaming(toolCall.function.name)) {
+        const result = await streamingAdapter.wrapWithStreaming(
+          toolCall.function.name,
+          () => this.executeToolViaLane(toolCall, executionExtra),
+          (chunk: string) => streamChunks.push(chunk),
+        );
+        return { result, streamChunks };
+      }
+
+      return {
+        result: await this.executeToolViaLane(toolCall, executionExtra),
+        streamChunks,
+      };
+    } catch (error) {
+      return {
+        result: {
+          success: false,
+          error: `Tool execution failed: ${getErrorMessage(error)}`,
+        },
+        streamChunks,
+      };
+    }
   }
 
   /**
@@ -1578,136 +1638,125 @@ export class AgentExecutor {
             };
           }
 
-          // Buffer for streaming adapter chunks (cannot yield from inside a callback)
-          const streamChunkBuffer: Array<{ type: "tool_stream"; toolStreamData: { toolCallId: string; toolName: string; delta: string } }> = [];
+          const executionBatches = createOrderedToolBatches(
+            streamToolCallsToExecute,
+            (toolCall) => this.isToolParallelizable(toolCall),
+          );
 
-          for (const toolCall of streamToolCallsToExecute) {
+          toolExecution: for (const batch of executionBatches) {
             if (abortController?.signal.aborted) {
               yield { type: "content", content: "\n\n[Operation cancelled by user]" };
               yield { type: "done" };
               return;
             }
 
-            if (
-              relationshipSafety &&
-              (isBlockedRelationshipInteractiveToolCall(toolCall) ||
-                unsafeRelationshipOutboundToolCall(toolCall))
-            ) {
-              const blockedContent =
-                'Relationship safety policy blocked manipulative outbound content.';
-              logger.warn('[agent-executor] relationship safety blocked outbound tool call', {
-                toolName: toolCall.function.name,
-              });
-              pushBlockedToolMessage(messages, toolCall, blockedContent);
-              yield {
-                type: 'content',
-                content: `\n${SAFE_RELATIONSHIP_REPAIR}\n`,
-              };
-              continue;
-            }
-
-            // --- Proactive context compaction (streaming path) ---
-            try {
-              const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
-              const estimatedTokens = estimateToolResultTokens(toolCall.function.name, toolArgs);
-              const modelName = this.deps.client.getCurrentModel();
-              const { getModelToolConfig } = await import('../../config/model-tools.js');
-              const modelConfig = getModelToolConfig(modelName);
-              const contextWindow = modelConfig.contextWindow ?? 128_000;
-              if (shouldCompactBeforeToolExec(inputTokens, estimatedTokens, contextWindow)) {
-                logger.debug('Proactive compaction (stream): compacting before tool execution', {
-                  toolName: toolCall.function.name,
-                  inputTokens,
-                  estimatedTokens,
-                  contextWindow,
-                });
-                // IN PLACE — the discarded return used to make this a no-op,
-                // so the recomputed inputTokens never shrank and this guard
-                // re-fired on every tool call while the transcript kept growing.
-                compactTurnMessagesInPlace(this.deps.contextManager, messages, {
-                  isolatedSharedHost,
-                });
-                inputTokens = this.deps.tokenCounter.countMessageTokens(
-                  messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
-                );
-              }
-            } catch { /* proactive compaction is non-critical */ }
-
-            // --- User hooks: PreToolUse (streaming path) ---
-            const streamPreHook = await runPreToolUseHook(process.cwd(), toolCall);
-            if (!streamPreHook.allowed) {
-              const blockedContent = streamPreHook.feedback ?? 'Action blocked by PreToolUse hook';
-              yield { type: "content", content: `\n[Hook blocked: ${blockedContent}]\n` };
-              pushBlockedToolMessage(messages, toolCall, blockedContent);
-              continue;
-            }
-
-            // Phase (d).2 — broadcast tool_started to the fleet (opt-in via
-            // CODEBUDDY_FLEET_STREAM=1). Best-effort, no-op when disabled
-            // or when the WS server isn't running.
-            emitFleetToolStarted(toolCall);
-
-            // Use streaming execution for tools that support it (bash, reason, + adapter-based)
-            let result: ToolResult;
-            const _streamToolStartMs = Date.now();
-            const STREAMING_TOOLS = ['bash', 'reason', 'generate_document'];
-            if (STREAMING_TOOLS.includes(toolCall.function.name)) {
-              const gen = this.deps.toolHandler.executeToolStreaming(toolCall, turnExecutionExtra);
-              let genResult = await gen.next();
-              while (!genResult.done) {
-                // Check abort between stream chunks
-                if (abortController?.signal.aborted) {
-                  await gen.return({ success: false, error: 'Aborted' });
-                  yield { type: "content", content: "\n\n[Operation cancelled by user]" };
-                  yield { type: "done" };
-                  return;
+            // Compaction mutates shared transcript state, so keep this preflight
+            // ordered even when the calls themselves are safe to run together.
+            for (const toolCall of batch) {
+              try {
+                const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+                const estimatedTokens = estimateToolResultTokens(toolCall.function.name, toolArgs);
+                const modelName = this.deps.client.getCurrentModel();
+                const modelConfig = getModelToolConfig(modelName);
+                const contextWindow = modelConfig.contextWindow ?? 128_000;
+                if (shouldCompactBeforeToolExec(inputTokens, estimatedTokens, contextWindow)) {
+                  logger.debug('Proactive compaction (stream): compacting before tool execution', {
+                    toolName: toolCall.function.name,
+                    inputTokens,
+                    estimatedTokens,
+                    contextWindow,
+                  });
+                  compactTurnMessagesInPlace(this.deps.contextManager, messages, {
+                    isolatedSharedHost,
+                  });
+                  inputTokens = this.deps.tokenCounter.countMessageTokens(
+                    messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]
+                  );
                 }
-                if (!relationshipSafety) {
+              } catch { /* proactive compaction is non-critical */ }
+            }
+
+            const outcomes = await executeBoundedInOrder<CodeBuddyToolCall, ToolExecutionOutcome>(
+              batch,
+              async (toolCall) => {
+                const startedAt = Date.now();
+                if (
+                  relationshipSafety &&
+                  (isBlockedRelationshipInteractiveToolCall(toolCall) ||
+                    unsafeRelationshipOutboundToolCall(toolCall))
+                ) {
+                  logger.warn('[agent-executor] relationship safety blocked outbound tool call', {
+                    toolName: toolCall.function.name,
+                  });
+                  return {
+                    blockedContent: 'Relationship safety policy blocked manipulative outbound content.',
+                    startedAt,
+                    streamChunks: [],
+                  };
+                }
+
+                const streamPreHook = await runPreToolUseHook(process.cwd(), toolCall);
+                if (!streamPreHook.allowed) {
+                  return {
+                    blockedContent: streamPreHook.feedback ?? 'Action blocked by PreToolUse hook',
+                    startedAt,
+                    streamChunks: [],
+                  };
+                }
+
+                emitFleetToolStarted(toolCall);
+                const execution = await this.executeToolForBatch(toolCall, turnExecutionExtra);
+                return { ...execution, startedAt };
+              },
+              (error) => ({
+                result: {
+                  success: false,
+                  error: `Tool execution failed: ${getErrorMessage(error)}`,
+                },
+                startedAt: Date.now(),
+                streamChunks: [],
+              }),
+              MAX_PARALLEL_TOOL_CALLS,
+            );
+
+            // Promise completion order is intentionally ignored. Provider-facing
+            // results and every observable side effect are replayed by call index.
+            for (let outcomeIndex = 0; outcomeIndex < batch.length; outcomeIndex++) {
+              const toolCall = batch[outcomeIndex];
+              const outcome = outcomes[outcomeIndex];
+              if (!toolCall || !outcome) continue;
+
+              if (outcome.blockedContent) {
+                const relationshipBlocked = relationshipSafety &&
+                  (isBlockedRelationshipInteractiveToolCall(toolCall) ||
+                    unsafeRelationshipOutboundToolCall(toolCall));
+                yield {
+                  type: 'content',
+                  content: relationshipBlocked
+                    ? `\n${SAFE_RELATIONSHIP_REPAIR}\n`
+                    : `\n[Hook blocked: ${outcome.blockedContent}]\n`,
+                };
+                pushBlockedToolMessage(messages, toolCall, outcome.blockedContent);
+                continue;
+              }
+
+              let result = outcome.result ?? {
+                success: false,
+                error: 'Tool returned no result',
+              };
+              const _streamToolStartMs = outcome.startedAt;
+              if (!relationshipSafety) {
+                for (const delta of outcome.streamChunks) {
                   yield {
-                    type: "tool_stream",
+                    type: 'tool_stream',
                     toolStreamData: {
                       toolCallId: toolCall.id,
                       toolName: toolCall.function.name,
-                      delta: genResult.value,
+                      delta,
                     },
                   };
                 }
-                genResult = await gen.next();
               }
-              result = genResult.value ?? { success: false, error: 'Tool returned no result' };
-            } else {
-              // Check if the streaming adapter supports this tool
-              const { getStreamingAdapter } = await import('../../tools/streaming-adapter.js');
-              const streamingAdapter = getStreamingAdapter();
-              if (streamingAdapter.supportsStreaming(toolCall.function.name)) {
-                const tc = toolCall; // capture for closure
-                result = await streamingAdapter.wrapWithStreaming(
-                  tc.function.name,
-                  () => this.executeToolViaLane(tc, turnExecutionExtra),
-                  (chunk: string) => {
-                    // We cannot yield from inside a callback, so we accumulate
-                    // chunks and emit them after. Instead, use a buffer approach.
-                    if (!relationshipSafety) {
-                      streamChunkBuffer.push({
-                        type: "tool_stream" as const,
-                        toolStreamData: {
-                          toolCallId: tc.id,
-                          toolName: tc.function.name,
-                          delta: chunk,
-                        },
-                      });
-                    }
-                  },
-                );
-                // Flush buffered streaming chunks
-                for (const chunk of streamChunkBuffer) {
-                  yield chunk;
-                }
-                streamChunkBuffer.length = 0;
-              } else {
-                result = await this.executeToolViaLane(toolCall, turnExecutionExtra);
-              }
-            }
 
             // Expand the current turn's cached schema after discovery or live
             // authoring. Without this, a newly created tool is dispatchable but
@@ -1977,7 +2026,7 @@ export class AgentExecutor {
             if (streamTerminateMsg !== null) {
               yield { type: "content", content: `\n\n${streamTerminateMsg}` };
               terminateDetectedStreaming = true;
-              break;
+              break toolExecution;
             }
 
             // --- Interactive Shell Handoff detection (streaming path) ---
@@ -1992,7 +2041,7 @@ export class AgentExecutor {
                 }
               };
               terminateDetectedStreaming = true;
-              break;
+              break toolExecution;
             }
 
             // --- Plan Approval detection (streaming path) ---
@@ -2007,7 +2056,7 @@ export class AgentExecutor {
                 }
               };
               terminateDetectedStreaming = true;
-              break;
+              break toolExecution;
             }
 
             // --- Yield signal detection (Native Engine v2026.3.14, streaming path) ---
@@ -2017,10 +2066,13 @@ export class AgentExecutor {
               await processYieldSignal(streamYieldChildId, messages);
             }
           }
+          }
 
           if (terminateDetectedStreaming) break;
 
-          inputTokens = this.deps.tokenCounter.countMessageTokens(messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]);
+          inputTokens = this.deps.tokenCounter.countMessageTokens(
+            messages as Parameters<TokenCounter['countMessageTokens']>[0],
+          );
           yield { type: "token_count", tokenCount: inputTokens + totalOutputTokens };
 
           // Run after_turn middleware (handles cost recording + limit)
