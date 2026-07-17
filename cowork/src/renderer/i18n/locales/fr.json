@@ -3235,5 +3235,40 @@
       "label": "Avancé",
       "help": "Accède aux réglages experts, à la supervision et aux intégrations avancées."
     }
+  },
+  "home": {
+    "title": "Que veux-tu faire ?",
+    "subtitle": "Dis-le à Code Buddy — il code, cherche et crée sur ton dossier.",
+    "composerPlaceholder": "Ex : corrige le bug de connexion, ou crée un tableau de bord…",
+    "send": "Envoyer",
+    "recentSessions": "Sessions récentes",
+    "untitled": "Sans titre",
+    "studioSubjectHint": "Ton sujet accompagnera le studio choisi.",
+    "missionsReady": "Missions prêtes",
+    "quick": {
+      "codeFix": {
+        "label": "Coder / corriger",
+        "hint": "Décris le bug ou la fonctionnalité"
+      },
+      "search": {
+        "label": "Rechercher",
+        "hint": "Recherche large + flow de planification"
+      },
+      "document": {
+        "label": "Créer un document",
+        "hint": "Excel, Word, PDF, charts"
+      }
+    },
+    "studio": {
+      "app": "App",
+      "deck": "Deck",
+      "sheet": "Feuille",
+      "document": "Document",
+      "pod": "Pod",
+      "image": "Image",
+      "video": "Vidéo",
+      "drive": "Drive",
+      "search": "Recherche"
+    }
   }
 }
