@@ -3235,5 +3235,40 @@
       "label": "Advanced",
       "help": "Access expert settings, supervision, and advanced integrations."
     }
+  },
+  "home": {
+    "title": "What do you want to do?",
+    "subtitle": "Tell Code Buddy — it codes, researches, and creates in your folder.",
+    "composerPlaceholder": "E.g.: fix the login bug, or build a dashboard…",
+    "send": "Send",
+    "recentSessions": "Recent sessions",
+    "untitled": "Untitled",
+    "studioSubjectHint": "Your topic will carry over to the studio you pick.",
+    "missionsReady": "Ready-to-run missions",
+    "quick": {
+      "codeFix": {
+        "label": "Code / fix",
+        "hint": "Describe the bug or feature"
+      },
+      "search": {
+        "label": "Search",
+        "hint": "Broad research + planning flow"
+      },
+      "document": {
+        "label": "Create a document",
+        "hint": "Excel, Word, PDF, charts"
+      }
+    },
+    "studio": {
+      "app": "App",
+      "deck": "Deck",
+      "sheet": "Sheet",
+      "document": "Document",
+      "pod": "Pod",
+      "image": "Image",
+      "video": "Video",
+      "drive": "Drive",
+      "search": "Search"
+    }
   }
 }
