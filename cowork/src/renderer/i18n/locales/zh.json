@@ -3044,5 +3044,40 @@
       "label": "高级",
       "help": "访问专家设置、监督和高级集成。"
     }
+  },
+  "home": {
+    "title": "你想做什么？",
+    "subtitle": "告诉 Code Buddy —— 它会在你的文件夹中编码、搜索和创建。",
+    "composerPlaceholder": "例如：修复登录错误，或创建仪表盘……",
+    "send": "发送",
+    "recentSessions": "最近的会话",
+    "untitled": "无标题",
+    "studioSubjectHint": "你的主题将随你选择的工作室一起传递。",
+    "missionsReady": "可直接运行的任务",
+    "quick": {
+      "codeFix": {
+        "label": "编写 / 修复",
+        "hint": "描述错误或功能"
+      },
+      "search": {
+        "label": "搜索",
+        "hint": "广泛搜索 + 规划流程"
+      },
+      "document": {
+        "label": "创建文档",
+        "hint": "Excel、Word、PDF、图表"
+      }
+    },
+    "studio": {
+      "app": "应用",
+      "deck": "演示",
+      "sheet": "表格",
+      "document": "文档",
+      "pod": "播客",
+      "image": "图片",
+      "video": "视频",
+      "drive": "云盘",
+      "search": "搜索"
+    }
   }
 }
